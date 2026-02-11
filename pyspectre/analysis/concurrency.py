@@ -9,20 +9,27 @@ for mathematical proofs of thread safety. Covers:
 - Memory ordering issues
 - Happens-before relationships
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 import z3
+
+
 class MemoryOrder(Enum):
     """Memory ordering semantics."""
+
     RELAXED = auto()
     ACQUIRE = auto()
     RELEASE = auto()
     ACQ_REL = auto()
     SEQ_CST = auto()
+
+
 class OperationKind(Enum):
     """Types of memory operations."""
+
     READ = auto()
     WRITE = auto()
     READ_MODIFY_WRITE = auto()
@@ -32,15 +39,21 @@ class OperationKind(Enum):
     THREAD_CREATE = auto()
     THREAD_JOIN = auto()
     BARRIER = auto()
+
+
 class ThreadState(Enum):
     """Thread execution states."""
+
     NOT_STARTED = auto()
     RUNNING = auto()
     BLOCKED = auto()
     WAITING = auto()
     TERMINATED = auto()
+
+
 class ConcurrencyIssueKind(Enum):
     """Types of concurrency issues."""
+
     DATA_RACE = auto()
     RACE_CONDITION = auto()
     DEADLOCK = auto()
@@ -56,9 +69,12 @@ class ConcurrencyIssueKind(Enum):
     JOIN_WITHOUT_START = auto()
     SPURIOUS_WAKEUP = auto()
     SIGNAL_SAFETY = auto()
+
+
 @dataclass
 class ConcurrencyIssue:
     """Represents a detected concurrency issue."""
+
     kind: ConcurrencyIssueKind
     message: str
     threads_involved: list[str] = field(default_factory=list)
@@ -69,15 +85,19 @@ class ConcurrencyIssue:
     constraints: list[Any] = field(default_factory=list)
     counterexample: dict[str, Any] = field(default_factory=dict)
     severity: str = "error"
+
     def format(self) -> str:
         """Format issue for display."""
         loc = f" at line {self.line_number}" if self.line_number else ""
         threads = f" (threads: {', '.join(self.threads_involved)})" if self.threads_involved else ""
         res = f" on {self.shared_resource}" if self.shared_resource else ""
         return f"[{self.kind.name}]{loc}{threads}{res}: {self.message}"
+
+
 @dataclass(frozen=True)
 class MemoryOperation:
     """Represents a memory operation for analysis."""
+
     thread_id: str
     operation: OperationKind
     address: str
@@ -85,10 +105,13 @@ class MemoryOperation:
     order: MemoryOrder = MemoryOrder.SEQ_CST
     line_number: int | None = None
     timestamp: int = 0
+
     def is_write(self) -> bool:
         return self.operation in {OperationKind.WRITE, OperationKind.READ_MODIFY_WRITE}
+
     def is_read(self) -> bool:
         return self.operation in {OperationKind.READ, OperationKind.READ_MODIFY_WRITE}
+
     def conflicts_with(self, other: MemoryOperation) -> bool:
         """Check if this operation conflicts with another."""
         if self.address != other.address:
@@ -96,42 +119,54 @@ class MemoryOperation:
         if self.thread_id == other.thread_id:
             return False
         return self.is_write() or other.is_write()
+
+
 @dataclass
 class Thread:
     """Represents a thread for analysis."""
+
     thread_id: str
     state: ThreadState = ThreadState.NOT_STARTED
     operations: list[MemoryOperation] = field(default_factory=list)
     held_locks: set[str] = field(default_factory=set)
     waiting_for: str | None = None
+
     def add_operation(self, op: MemoryOperation) -> None:
         """Add an operation to this thread's history."""
         self.operations.append(op)
+
+
 class HappensBeforeGraph:
     """
     Tracks happens-before relationships between operations.
     Used to determine if a data race exists (concurrent, conflicting accesses).
     """
+
     def __init__(self):
         self._edges: set[tuple[int, int]] = set()
         self._operations: dict[int, MemoryOperation] = {}
         self._op_counter = 0
+
     def add_operation(self, op: MemoryOperation) -> int:
         """Add operation and return its ID."""
         op_id = self._op_counter
         self._op_counter += 1
         self._operations[op_id] = op
         return op_id
+
     def add_edge(self, from_op: int, to_op: int) -> None:
         """Add happens-before edge."""
         self._edges.add((from_op, to_op))
+
     def add_program_order(self, thread_id: str, op_ids: list[int]) -> None:
         """Add program order edges for a thread."""
         for i in range(len(op_ids) - 1):
             self._edges.add((op_ids[i], op_ids[i + 1]))
+
     def add_synchronizes_with(self, release_op: int, acquire_op: int) -> None:
         """Add synchronizes-with edge (release -> acquire)."""
         self._edges.add((release_op, acquire_op))
+
     def happens_before(self, op1: int, op2: int) -> bool:
         """Check if op1 happens-before op2 (transitive)."""
         visited = set()
@@ -147,18 +182,23 @@ class HappensBeforeGraph:
                 if from_op == current:
                     queue.append(to_op)
         return False
+
     def are_concurrent(self, op1: int, op2: int) -> bool:
         """Check if two operations are concurrent (neither happens-before the other)."""
         return not self.happens_before(op1, op2) and not self.happens_before(op2, op1)
+
     def get_operation(self, op_id: int) -> MemoryOperation | None:
         """Get operation by ID."""
         return self._operations.get(op_id)
+
+
 class ConcurrencyAnalyzer:
     """
     Comprehensive concurrency analyzer using Z3.
     Models thread interleavings and detects concurrency bugs
     via SMT solving.
     """
+
     def __init__(self, timeout_ms: int = 10000):
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
@@ -171,6 +211,7 @@ class ConcurrencyAnalyzer:
         self._hb_graph = HappensBeforeGraph()
         self._thread_op_ids: dict[str, list[int]] = {}
         self._issues: list[ConcurrencyIssue] = []
+
     def reset(self) -> None:
         """Reset analyzer state."""
         self._solver.reset()
@@ -181,6 +222,7 @@ class ConcurrencyAnalyzer:
         self._hb_graph = HappensBeforeGraph()
         self._thread_op_ids.clear()
         self._issues.clear()
+
     def create_thread(
         self,
         thread_id: str,
@@ -194,6 +236,7 @@ class ConcurrencyAnalyzer:
             self._main_thread = thread_id
             thread.state = ThreadState.RUNNING
         return thread
+
     def start_thread(
         self,
         thread_id: str,
@@ -217,6 +260,7 @@ class ConcurrencyAnalyzer:
             self._thread_op_ids[thread_id].append(start_op_id)
             self._hb_graph.add_edge(parent_last_op, start_op_id)
         return None
+
     def join_thread(
         self,
         thread_id: str,
@@ -252,6 +296,7 @@ class ConcurrencyAnalyzer:
             self._thread_op_ids[joining_thread].append(join_op_id)
             self._hb_graph.add_edge(child_last_op, join_op_id)
         return None
+
     def record_read(
         self,
         thread_id: str,
@@ -275,6 +320,7 @@ class ConcurrencyAnalyzer:
         self._thread_op_ids.setdefault(thread_id, []).append(op_id)
         self._shared_variables.add(variable)
         return op_id
+
     def record_write(
         self,
         thread_id: str,
@@ -300,6 +346,7 @@ class ConcurrencyAnalyzer:
         self._thread_op_ids.setdefault(thread_id, []).append(op_id)
         self._shared_variables.add(variable)
         return op_id
+
     def record_atomic_rmw(
         self,
         thread_id: str,
@@ -325,6 +372,7 @@ class ConcurrencyAnalyzer:
         self._thread_op_ids.setdefault(thread_id, []).append(op_id)
         self._shared_variables.add(variable)
         return op_id
+
     def acquire_lock(
         self,
         thread_id: str,
@@ -357,6 +405,7 @@ class ConcurrencyAnalyzer:
         if thread:
             thread.held_locks.add(lock_name)
         return None
+
     def release_lock(
         self,
         thread_id: str,
@@ -388,6 +437,7 @@ class ConcurrencyAnalyzer:
         if thread:
             thread.held_locks.discard(lock_name)
         return None
+
     def detect_data_races(self) -> list[ConcurrencyIssue]:
         """
         Detect data races in recorded operations.
@@ -414,6 +464,7 @@ class ConcurrencyAnalyzer:
                         )
                     )
         return issues
+
     def detect_deadlocks(self) -> list[ConcurrencyIssue]:
         """
         Detect potential deadlocks using lock order analysis.
@@ -431,9 +482,11 @@ class ConcurrencyAnalyzer:
                 elif op.operation == OperationKind.LOCK_RELEASE:
                     if op.address in held_locks:
                         held_locks.remove(op.address)
+
         def find_cycle(start: str) -> list[str] | None:
             visited = set()
             path = []
+
             def dfs(node: str) -> list[str] | None:
                 if node in path:
                     cycle_start = path.index(node)
@@ -448,7 +501,9 @@ class ConcurrencyAnalyzer:
                         return result
                 path.pop()
                 return None
+
             return dfs(start)
+
         checked_cycles = set()
         for lock in lock_order_graph:
             cycle = find_cycle(lock)
@@ -464,6 +519,7 @@ class ConcurrencyAnalyzer:
                         )
                     )
         return issues
+
     def detect_atomicity_violations(
         self,
         atomic_regions: list[tuple[str, list[MemoryOperation]]],
@@ -495,6 +551,7 @@ class ConcurrencyAnalyzer:
                         )
                         break
         return issues
+
     def check_race_condition_z3(
         self,
         variable: str,
@@ -543,6 +600,7 @@ class ConcurrencyAnalyzer:
                     ),
                 )
         return (True, None)
+
     def find_problematic_schedule(
         self,
         assertion: z3.BoolRef,
@@ -576,12 +634,14 @@ class ConcurrencyAnalyzer:
             return [(t, o) for _, t, o in schedule]
         self._solver.pop()
         return None
+
     def get_all_issues(self) -> list[ConcurrencyIssue]:
         """Get all detected concurrency issues."""
         all_issues = list(self._issues)
         all_issues.extend(self.detect_data_races())
         all_issues.extend(self.detect_deadlocks())
         return all_issues
+
     def get_summary(self) -> dict[str, Any]:
         """Get summary of concurrency analysis."""
         return {
@@ -591,12 +651,16 @@ class ConcurrencyAnalyzer:
             "total_operations": len(self._hb_graph._operations),
             "happens_before_edges": len(self._hb_graph._edges),
         }
+
+
 class ThreadSafetyChecker:
     """
     High-level thread safety checker for common patterns.
     """
+
     def __init__(self):
         self.analyzer = ConcurrencyAnalyzer()
+
     def check_locked_access(
         self,
         thread_id: str,
@@ -618,6 +682,7 @@ class ThreadSafetyChecker:
                 line_number=line_number,
             )
         return None
+
     def check_double_checked_locking(
         self,
         thread_id: str,
@@ -638,16 +703,21 @@ class ThreadSafetyChecker:
             line_number=line_number,
             severity="warning",
         )
+
+
 class LockOrderChecker:
     """
     Checks and enforces lock ordering to prevent deadlocks.
     """
+
     def __init__(self):
         self._lock_order: list[str] = []
         self._thread_held_locks: dict[str, list[str]] = {}
+
     def set_lock_order(self, order: list[str]) -> None:
         """Set the expected lock acquisition order."""
         self._lock_order = order
+
     def acquire(
         self,
         thread_id: str,
@@ -671,11 +741,14 @@ class LockOrderChecker:
                         )
         held.append(lock_name)
         return None
+
     def release(self, thread_id: str, lock_name: str) -> None:
         """Record lock release."""
         held = self._thread_held_locks.get(thread_id, [])
         if lock_name in held:
             held.remove(lock_name)
+
+
 __all__ = [
     "MemoryOrder",
     "OperationKind",

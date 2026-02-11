@@ -12,6 +12,7 @@ Usage:
     python pyspectre_verify.py file.py --verbose
     python pyspectre_verify.py . --call-graph
 """
+
 import argparse
 import json
 import os
@@ -19,11 +20,11 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-sys.path.insert(0, str(Path(__file__).parent))
 from pyspectre.analysis.z3_prover import (
     Z3Engine,
     is_z3_available,
 )
+
 BUG_EMOJI = {
     "division_by_zero": "➗",
     "modulo_by_zero": "➗",
@@ -38,6 +39,8 @@ BUG_EMOJI = {
     "tainted_data_to_sink": "☠️",
     "unreachable_code": "🚧",
 }
+
+
 def scan_file(
     path: str,
     timeout_ms: int = 5000,
@@ -104,6 +107,8 @@ def scan_file(
         results["error"] = f"Error: {e}"
     results["verification_time_ms"] = (time.time() - start) * 1000
     return results
+
+
 def scan_directory(
     path: str,
     timeout_ms: int = 5000,
@@ -143,6 +148,8 @@ def scan_directory(
     if progress:
         print("\r" + " " * 70 + "\r", end="")
     return all_results
+
+
 def print_results(
     all_results: list[dict[str, Any]], verbose: bool = False, show_call_graph: bool = False
 ):
@@ -246,6 +253,8 @@ def print_results(
         print("  ✅ No crashes found - code is mathematically verified safe!")
     print()
     return total_crashes
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Formally verify Python code won't crash using Z3",
@@ -339,5 +348,7 @@ Results:
             json.dump(all_results, f, indent=2, default=str)
         print(f"  📄 Report written to: {args.json}\n")
     sys.exit(1 if crash_count > 0 else 0)
+
+
 if __name__ == "__main__":
     main()

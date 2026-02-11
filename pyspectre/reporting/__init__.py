@@ -1,4 +1,5 @@
 """Reporting module for PySpectre."""
+
 from pyspectre.reporting.formatters import (
     Formatter,
     HTMLFormatter,
@@ -21,6 +22,7 @@ from pyspectre.reporting.sarif import (
     SARIFResult,
     generate_sarif,
 )
+
 __all__ = [
     "Formatter",
     "TextFormatter",

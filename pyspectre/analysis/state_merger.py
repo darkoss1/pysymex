@@ -10,38 +10,52 @@ Features:
 - Configurable merge policies
 - Constraint subsumption for redundant path elimination
 """
+
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 import z3
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 class MergePolicy(Enum):
     """Merge aggressiveness policies."""
+
     CONSERVATIVE = auto()
     MODERATE = auto()
     AGGRESSIVE = auto()
+
+
 @dataclass
 class MergeStatistics:
     """Statistics about state merging."""
+
     states_before_merge: int = 0
     states_after_merge: int = 0
     merge_operations: int = 0
     subsumption_hits: int = 0
+
     @property
     def reduction_ratio(self) -> float:
         if self.states_before_merge == 0:
             return 0.0
         return 1.0 - (self.states_after_merge / self.states_before_merge)
+
+
 @dataclass
 class AbstractVarInfo:
     """Abstract information about a variable."""
+
     interval_lo: int | None = None
     interval_hi: int | None = None
     may_be_none: bool = False
     must_be_type: str | None = None
     is_tainted: bool = False
+
+
 class StateMerger:
     """Merges equivalent states at control-flow join points using Symbolic Merging.
 
@@ -49,6 +63,7 @@ class StateMerger:
     precise Z3 formulas to represent the union of two path states:
     merged_val = If(branch_condition, val_true_path, val_false_path)
     """
+
     def __init__(
         self,
         policy: MergePolicy = MergePolicy.MODERATE,
@@ -61,9 +76,11 @@ class StateMerger:
         self.stats = MergeStatistics()
         self._join_points: set[int] = set()
         self._pending_states: dict[int, list[VMState]] = {}
+
     def set_join_points(self, join_points: set[int]) -> None:
         """Set the CFG join points for merge consideration."""
         self._join_points = join_points
+
     def detect_join_points(self, instructions: list) -> set[int]:
         """Detect join points from instruction list by finding branch targets."""
         join_points: set[int] = set()
@@ -94,9 +111,11 @@ class StateMerger:
                         break
         self._join_points = join_points
         return join_points
+
     def is_join_point(self, pc: int) -> bool:
         """Check if a program counter is at a join point."""
         return pc in self._join_points
+
     def should_merge(self, state: VMState) -> bool:
         """Determine if the state should be considered for merging."""
         if not self.is_join_point(state.pc):
@@ -104,6 +123,7 @@ class StateMerger:
         if len(state.path_constraints) > self.max_constraints_for_merge:
             return False
         return True
+
     def add_state_for_merge(self, state: VMState) -> VMState | None:
         """Add a state for potential merging. Returns merged state or None."""
         pc = state.pc
@@ -122,6 +142,7 @@ class StateMerger:
         pending.append(state)
         self.stats.states_after_merge += 1
         return state
+
     def _can_merge_symbolically(self, state1: VMState, state2: VMState) -> bool:
         """Check if states are compatible for symbolic merging.
 
@@ -142,6 +163,7 @@ class StateMerger:
         if keys1 != keys2:
             return False
         return True
+
     def _extract_branch_condition(self, state1: VMState, state2: VMState) -> z3.BoolRef | None:
         """Find the condition that distinguishes state1 from state2.
 
@@ -162,6 +184,7 @@ class StateMerger:
             c2 = cons2[common_len]
             return c1
         return None
+
     def _merge_states_symbolically(self, state1: VMState, state2: VMState) -> VMState | None:
         """Merge states by creating conditional symbolic values."""
         condition = self._extract_branch_condition(state1, state2)
@@ -174,6 +197,7 @@ class StateMerger:
             val1 = state1.local_vars[name]
             val2 = state2.local_vars[name]
             from pyspectre.core.types import SymbolicValue
+
             s1 = val1 if hasattr(val1, "conditional_merge") else SymbolicValue.from_const(val1)
             s2 = val2 if hasattr(val2, "conditional_merge") else SymbolicValue.from_const(val2)
             merged.local_vars[name] = s1.conditional_merge(s2, condition)
@@ -182,6 +206,7 @@ class StateMerger:
             val1 = state1.stack[i]
             val2 = state2.stack[i]
             from pyspectre.core.types import SymbolicValue
+
             s1 = val1 if hasattr(val1, "conditional_merge") else SymbolicValue.from_const(val1)
             s2 = val2 if hasattr(val2, "conditional_merge") else SymbolicValue.from_const(val2)
             merged_stack.append(s1.conditional_merge(s2, condition))
@@ -198,6 +223,7 @@ class StateMerger:
                 v1 = dict1.get(attr)
                 v2 = dict2.get(attr)
                 from pyspectre.core.types import SymbolicValue
+
                 if v1 is not None and v2 is not None:
                     s1 = v1 if hasattr(v1, "conditional_merge") else SymbolicValue.from_const(v1)
                     s2 = v2 if hasattr(v2, "conditional_merge") else SymbolicValue.from_const(v2)
@@ -217,6 +243,7 @@ class StateMerger:
                 elif v1 is not None:
                     s1 = v1 if hasattr(v1, "conditional_merge") else SymbolicValue.from_const(v1)
                     from pyspectre.core.types import SymbolicNone
+
                     merged_val = s1.conditional_merge(SymbolicNone(), condition)
                     merged_dict[attr] = merged_val
                     if hasattr(merged_val, "z3_int") and hasattr(s1, "z3_int"):
@@ -226,6 +253,7 @@ class StateMerger:
                 elif v2 is not None:
                     s2 = v2 if hasattr(v2, "conditional_merge") else SymbolicValue.from_const(v2)
                     from pyspectre.core.types import SymbolicNone
+
                     merged_val = s2.conditional_merge(SymbolicNone(), z3.Not(condition))
                     merged_dict[attr] = merged_val
                     if hasattr(merged_val, "z3_int") and hasattr(s2, "z3_int"):
@@ -236,23 +264,29 @@ class StateMerger:
         for lc in linking_constraints:
             merged.path_constraints.append(lc)
         return merged
+
     def _constraints_equal(self, c1: z3.BoolRef, c2: z3.BoolRef) -> bool:
         """Check if two constraints are equivalent."""
         try:
             return z3.eq(c1, c2)
         except Exception:
             return str(c1) == str(c2)
+
     def get_pending_states(self, pc: int) -> list[VMState]:
         """Get pending states at a join point."""
         return self._pending_states.get(pc, [])
+
     def clear_pending(self, pc: int) -> None:
         """Clear pending states at a join point."""
         if pc in self._pending_states:
             del self._pending_states[pc]
+
     def reset(self) -> None:
         """Reset merger state."""
         self._pending_states.clear()
         self.stats = MergeStatistics()
+
+
 def create_state_merger(
     policy: str = "moderate",
     max_constraints: int = 50,

@@ -5,6 +5,7 @@ Provides integrations for:
 - Pre-commit hooks
 - Exit codes for CI pipelines
 """
+
 from __future__ import annotations
 import json
 import sys
@@ -13,8 +14,11 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, TextIO
 from pyspectre.reporting.sarif import Severity, VulnerabilityReport, generate_sarif
+
+
 class ExitCode(IntEnum):
     """Standard exit codes for CI pipelines."""
+
     SUCCESS = 0
     ISSUES_FOUND = 1
     ERROR = 2
@@ -25,9 +29,12 @@ class ExitCode(IntEnum):
     HIGH_FOUND = 11
     MEDIUM_FOUND = 12
     LOW_FOUND = 13
+
+
 @dataclass
 class CIResult:
     """Result of CI analysis run."""
+
     exit_code: ExitCode
     issues_count: int = 0
     critical_count: int = 0
@@ -38,6 +45,7 @@ class CIResult:
     duration_seconds: float = 0.0
     sarif_path: str | None = None
     message: str = ""
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -55,18 +63,23 @@ class CIResult:
             "sarif_path": self.sarif_path,
             "message": self.message,
         }
+
     def to_json(self) -> str:
         """Convert to JSON."""
         return json.dumps(self.to_dict(), indent=2)
+
+
 @dataclass
 class FailureThreshold:
     """Configures when CI should fail."""
+
     min_severity: Severity = Severity.HIGH
     max_critical: int = 0
     max_high: int = 0
     max_medium: int = -1
     max_low: int = -1
     max_total: int = -1
+
     def should_fail(self, result: CIResult) -> bool:
         """Check if the result should cause CI to fail."""
         if self.min_severity == Severity.CRITICAL and result.critical_count > 0:
@@ -91,6 +104,7 @@ class FailureThreshold:
         if self.max_total >= 0 and result.issues_count > self.max_total:
             return True
         return False
+
     def get_exit_code(self, result: CIResult) -> ExitCode:
         """Get the appropriate exit code for the result."""
         if result.critical_count > 0:
@@ -102,6 +116,8 @@ class FailureThreshold:
         if result.low_count > 0:
             return ExitCode.LOW_FOUND
         return ExitCode.SUCCESS
+
+
 class GitHubActionsReporter:
     """Reports results for GitHub Actions.
     Uses GitHub's workflow commands for:
@@ -109,16 +125,22 @@ class GitHubActionsReporter:
     - Creating annotations (errors/warnings)
     - Creating job summaries
     """
+
     def __init__(self, output: TextIO = sys.stdout):
         self.output = output
+
     def set_output(self, name: str, value: str) -> None:
         """Set a GitHub Actions output variable."""
-        github_output = Path.home() / ".github_output"
-        if github_output.exists():
+        import os
+
+        github_output_env = os.environ.get("GITHUB_OUTPUT", "")
+        github_output = Path(github_output_env) if github_output_env else None
+        if github_output and github_output.exists():
             with open(github_output, "a") as f:
                 f.write(f"{name}={value}\n")
         else:
             print(f"::set-output name={name}::{value}", file=self.output)
+
     def error(
         self,
         message: str,
@@ -130,6 +152,7 @@ class GitHubActionsReporter:
         """Create an error annotation."""
         params = self._build_params(file, line, col, title)
         print(f"::error {params}::{self._escape(message)}", file=self.output)
+
     def warning(
         self,
         message: str,
@@ -141,6 +164,7 @@ class GitHubActionsReporter:
         """Create a warning annotation."""
         params = self._build_params(file, line, col, title)
         print(f"::warning {params}::{self._escape(message)}", file=self.output)
+
     def notice(
         self,
         message: str,
@@ -152,18 +176,25 @@ class GitHubActionsReporter:
         """Create a notice annotation."""
         params = self._build_params(file, line, col, title)
         print(f"::notice {params}::{self._escape(message)}", file=self.output)
+
     def group(self, title: str) -> None:
         """Start a collapsible group."""
         print(f"::group::{title}", file=self.output)
+
     def endgroup(self) -> None:
         """End a collapsible group."""
         print("::endgroup::", file=self.output)
+
     def write_summary(self, content: str) -> None:
         """Write to the job summary."""
-        summary_file = Path.home() / ".github_step_summary"
-        if summary_file.exists():
+        import os
+
+        summary_env = os.environ.get("GITHUB_STEP_SUMMARY", "")
+        summary_file = Path(summary_env) if summary_env else None
+        if summary_file and summary_file.exists():
             with open(summary_file, "a") as f:
                 f.write(content + "\n")
+
     def _build_params(
         self,
         file: str | None,
@@ -182,9 +213,11 @@ class GitHubActionsReporter:
         if title:
             parts.append(f"title={title}")
         return ",".join(parts)
+
     def _escape(self, message: str) -> str:
         """Escape special characters for workflow commands."""
         return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
     def report_vulnerability(self, vuln: VulnerabilityReport) -> None:
         """Report a vulnerability as a GitHub annotation."""
         severity = vuln.severity
@@ -211,6 +244,7 @@ class GitHubActionsReporter:
                 line=vuln.line_number or None,
                 title=vuln.vuln_type,
             )
+
     def report_result(self, result: CIResult) -> None:
         """Report the overall analysis result."""
         self.set_output("issues_count", str(result.issues_count))
@@ -222,6 +256,7 @@ class GitHubActionsReporter:
             self.set_output("sarif_path", result.sarif_path)
         summary = self._build_summary(result)
         self.write_summary(summary)
+
     def _build_summary(self, result: CIResult) -> str:
         """Build a markdown summary for the job."""
         status = "✅ Passed" if result.exit_code == ExitCode.SUCCESS else "❌ Failed"
@@ -250,12 +285,15 @@ class GitHubActionsReporter:
                 ]
             )
         return "\n".join(lines)
+
+
 class GitLabReporter:
     """Reports results for GitLab CI.
     Generates:
     - Code Quality report (gl-code-quality-report.json)
     - SAST report format
     """
+
     def generate_code_quality_report(
         self,
         vulnerabilities: list[VulnerabilityReport],
@@ -288,6 +326,7 @@ class GitLabReporter:
             json.dumps(issues, indent=2),
             encoding="utf-8",
         )
+
     def generate_sast_report(
         self,
         vulnerabilities: list[VulnerabilityReport],
@@ -301,7 +340,7 @@ class GitLabReporter:
                 "scanner": {
                     "id": "pyspectre",
                     "name": "PySpectre",
-                    "version": "1.0.0",
+                    "version": "0.3.0a0",
                     "vendor": {"name": "PySpectre"},
                 },
                 "type": "sast",
@@ -345,11 +384,15 @@ class GitLabReporter:
             json.dumps(report, indent=2),
             encoding="utf-8",
         )
+
     def _fingerprint(self, vuln: VulnerabilityReport) -> str:
         """Generate a stable fingerprint for a vulnerability."""
         import hashlib
+
         data = f"{vuln.vuln_type}:{vuln.file_path}:{vuln.line_number}:{vuln.message}"
-        return hashlib.md5(data.encode()).hexdigest()
+        return hashlib.sha256(data.encode()).hexdigest()[:32]
+
+
 def generate_precommit_config() -> str:
     """Generate .pre-commit-config.yaml content."""
     return """# PySpectre pre-commit hook
@@ -365,6 +408,8 @@ repos:
         # Fail on high severity issues
         args: ["--fail-on", "high"]
 """
+
+
 def generate_precommit_hook_script() -> str:
     """Generate a standalone pre-commit hook script."""
     return '''#!/usr/bin/env python3
@@ -390,8 +435,11 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
+
+
 class CIRunner:
     """Runs PySpectre in CI mode."""
+
     def __init__(
         self,
         threshold: FailureThreshold | None = None,
@@ -405,6 +453,7 @@ class CIRunner:
         self.gitlab_ci = gitlab_ci
         self.github_reporter = GitHubActionsReporter() if github_actions else None
         self.gitlab_reporter = GitLabReporter() if gitlab_ci else None
+
     def analyze_and_report(
         self,
         files: list[str],
@@ -456,6 +505,8 @@ class CIRunner:
             self.gitlab_reporter.generate_code_quality_report(vulnerabilities)
             self.gitlab_reporter.generate_sast_report(vulnerabilities)
         return result
+
+
 def run_ci_check(
     files: list[str],
     fail_on: Severity = Severity.HIGH,
@@ -464,29 +515,34 @@ def run_ci_check(
     """Run PySpectre check suitable for CI pipelines.
     Returns exit code.
     """
-    from pyspectre.api import analyze_file
+    import os
+
+    from pyspectre.scanner import scan_file
+
     threshold = FailureThreshold(min_severity=fail_on)
     runner = CIRunner(
         threshold=threshold,
         sarif_output=sarif_output,
-        github_actions="GITHUB_ACTIONS" in __import__("os").environ,
-        gitlab_ci="GITLAB_CI" in __import__("os").environ,
+        github_actions="GITHUB_ACTIONS" in os.environ,
+        gitlab_ci="GITLAB_CI" in os.environ,
     )
     all_vulns: list[VulnerabilityReport] = []
     all_issues: list[dict[str, Any]] = []
     for file_path in files:
         try:
-            result = analyze_file(file_path)
-            if hasattr(result, "issues"):
-                all_issues.extend(result.issues)
+            scan_result = scan_file(file_path)
+            if hasattr(scan_result, "issues") and scan_result.issues:
+                all_issues.extend(scan_result.issues)
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
-    result = runner.analyze_and_report(
+    ci_result = runner.analyze_and_report(
         files=files,
         vulnerabilities=all_vulns,
         issues=all_issues,
     )
-    return result.exit_code.value
+    return ci_result.exit_code.value
+
+
 __all__ = [
     "ExitCode",
     "CIResult",

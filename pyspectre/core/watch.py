@@ -2,6 +2,7 @@
 Provides file watching, incremental analysis, and caching for
 efficient re-analysis during development.
 """
+
 from __future__ import annotations
 import hashlib
 import threading
@@ -14,28 +15,39 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+
 if TYPE_CHECKING:
     from pyspectre.core.engine import SymbolicEngine
+
+
 class FileEventType(Enum):
     """Types of file system events."""
+
     CREATED = auto()
     MODIFIED = auto()
     DELETED = auto()
     RENAMED = auto()
+
+
 @dataclass
 class FileEvent:
     """A file system event."""
+
     path: Path
     event_type: FileEventType
     timestamp: float = field(default_factory=time.time)
     old_path: Path | None = None
+
+
 @dataclass
 class FileState:
     """Tracked state of a file."""
+
     path: Path
     mtime: float
     size: int
     content_hash: str
+
     @classmethod
     def from_path(cls, path: Path) -> FileState:
         """Create state from file path."""
@@ -48,14 +60,18 @@ class FileState:
             size=stat.st_size,
             content_hash=content_hash,
         )
+
     def has_changed(self, other: FileState) -> bool:
         """Check if file has changed."""
         return self.content_hash != other.content_hash
+
+
 class FileWatcher:
     """Watches files for changes.
     A simple polling-based file watcher that doesn't require
     platform-specific dependencies like watchdog.
     """
+
     def __init__(
         self,
         paths: list[Path],
@@ -69,20 +85,24 @@ class FileWatcher:
         self._callbacks: list[Callable[[FileEvent], None]] = []
         self._running = False
         self._thread: threading.Thread | None = None
+
     def on_change(self, callback: Callable[[FileEvent], None]) -> None:
         """Register a callback for file changes."""
         self._callbacks.append(callback)
+
     def start(self) -> None:
         """Start watching for changes."""
         self._running = True
         self._scan_initial()
         self._thread = threading.Thread(target=self._watch_loop, daemon=True)
         self._thread.start()
+
     def stop(self) -> None:
         """Stop watching."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=1.0)
+
     def _get_matching_files(self) -> set[Path]:
         """Get all files matching patterns."""
         files = set()
@@ -93,6 +113,7 @@ class FileWatcher:
                 for pattern in self.patterns:
                     files.update(base_path.rglob(pattern))
         return files
+
     def _scan_initial(self) -> None:
         """Initial scan of all files."""
         for path in self._get_matching_files():
@@ -100,6 +121,7 @@ class FileWatcher:
                 self._states[path] = FileState.from_path(path)
             except OSError:
                 pass
+
     def _watch_loop(self) -> None:
         """Main watch loop."""
         while self._running:
@@ -111,6 +133,7 @@ class FileWatcher:
                     except Exception as e:
                         print(f"Error in file watcher callback: {e}")
             time.sleep(self.poll_interval)
+
     def _check_changes(self) -> list[FileEvent]:
         """Check for file changes."""
         events = []
@@ -145,26 +168,34 @@ class FileWatcher:
                 )
                 del self._states[path]
         return events
+
+
 @dataclass
 class AnalysisCache:
     """Cache for analysis results."""
+
     file_hash: str
     timestamp: float
     result: Any
     dependencies: set[str] = field(default_factory=set)
+
     def is_valid(self, current_hash: str) -> bool:
         """Check if cache is still valid."""
         return self.file_hash == current_hash
+
+
 class IncrementalAnalyzer:
     """Provides incremental analysis with caching.
     Only re-analyzes files that have changed since the last analysis,
     taking into account dependencies between files.
     """
+
     def __init__(self, engine: SymbolicEngine | None = None):
         self.engine = engine
         self._cache: dict[str, AnalysisCache] = {}
         self._dependencies: dict[str, set[str]] = {}
         self._dependents: dict[str, set[str]] = {}
+
     def add_dependency(self, file: str, depends_on: str) -> None:
         """Record that file depends on another file."""
         if file not in self._dependencies:
@@ -173,6 +204,7 @@ class IncrementalAnalyzer:
         if depends_on not in self._dependents:
             self._dependents[depends_on] = set()
         self._dependents[depends_on].add(file)
+
     def get_affected_files(self, changed_file: str) -> set[str]:
         """Get all files affected by a change."""
         affected = {changed_file}
@@ -184,6 +216,7 @@ class IncrementalAnalyzer:
                     affected.add(dependent)
                     to_check.append(dependent)
         return affected
+
     def get_cached(self, file: str) -> AnalysisCache | None:
         """Get cached analysis result."""
         if file not in self._cache:
@@ -206,6 +239,7 @@ class IncrementalAnalyzer:
         except OSError:
             pass
         return None
+
     def cache_result(
         self,
         file: str,
@@ -224,20 +258,25 @@ class IncrementalAnalyzer:
             )
         except OSError:
             pass
+
     def invalidate(self, file: str) -> set[str]:
         """Invalidate cache for a file and its dependents."""
         invalidated = self.get_affected_files(file)
         for f in invalidated:
             self._cache.pop(f, None)
         return invalidated
+
     def clear_cache(self) -> None:
         """Clear all cached results."""
         self._cache.clear()
+
+
 class WatchModeRunner:
     """Runs symbolic analysis in watch mode.
     Watches for file changes and automatically re-runs analysis,
     using incremental analysis to minimize work.
     """
+
     def __init__(
         self,
         paths: list[Path],
@@ -252,6 +291,7 @@ class WatchModeRunner:
         self.watcher = FileWatcher(paths)
         self.analyzer = IncrementalAnalyzer(engine)
         self._running = False
+
     def start(self) -> None:
         """Start watch mode."""
         self._running = True
@@ -266,11 +306,13 @@ class WatchModeRunner:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.stop()
+
     def stop(self) -> None:
         """Stop watch mode."""
         self._running = False
         self.watcher.stop()
         print("\n👋 Watch mode stopped")
+
     def _analyze_all(self) -> None:
         """Analyze all watched files."""
         for path in self.paths:
@@ -279,6 +321,7 @@ class WatchModeRunner:
             elif path.is_dir():
                 for py_file in path.rglob("*.py"):
                     self._analyze_file(py_file)
+
     def _analyze_file(self, path: Path) -> None:
         """Analyze a single file."""
         file_str = str(path)
@@ -301,9 +344,11 @@ class WatchModeRunner:
             print(f"❌ Error analyzing {path.name}: {e}")
             if self.on_error:
                 self.on_error(file_str, e)
+
     def _run_analysis(self, path: Path) -> Any:
         """Run analysis on a file."""
         return {"status": "analyzed", "file": str(path)}
+
     def _handle_change(self, event: FileEvent) -> None:
         """Handle a file change event."""
         if event.event_type == FileEventType.DELETED:
@@ -320,15 +365,20 @@ class WatchModeRunner:
             path = Path(file_str)
             if path.exists():
                 self._analyze_file(path)
+
+
 class DependencyTracker:
     """Tracks import dependencies between Python files."""
+
     def __init__(self):
         self._imports: dict[str, set[str]] = {}
+
     def extract_imports(self, path: Path) -> set[str]:
         """Extract imports from a Python file."""
         imports = set()
         try:
             import ast
+
             content = path.read_text()
             tree = ast.parse(content)
             for node in ast.walk(tree):
@@ -341,6 +391,7 @@ class DependencyTracker:
         except Exception:
             pass
         return imports
+
     def resolve_import(self, import_name: str, base_path: Path) -> Path | None:
         """Try to resolve an import to a file path."""
         relative = base_path.parent / f"{import_name}.py"
@@ -350,6 +401,7 @@ class DependencyTracker:
         if package_init.exists():
             return package_init
         return None
+
     def build_dependency_graph(
         self,
         paths: list[Path],
@@ -366,6 +418,8 @@ class DependencyTracker:
                         deps.add(str(resolved))
                 graph[str(path)] = deps
         return graph
+
+
 __all__ = [
     "FileEventType",
     "FileEvent",

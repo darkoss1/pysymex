@@ -1,4 +1,5 @@
 """Arithmetic and binary operation opcodes."""
+
 from __future__ import annotations
 import dis
 from typing import TYPE_CHECKING
@@ -7,9 +8,12 @@ from pyspectre.analysis.detectors import Issue, IssueKind
 from pyspectre.core.solver import get_model, is_satisfiable
 from pyspectre.core.types import SymbolicString, SymbolicValue
 from pyspectre.execution.dispatcher import OpcodeResult, opcode_handler
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
     from pyspectre.execution.dispatcher import OpcodeDispatcher
+
+
 def check_division_by_zero(
     right: SymbolicValue,
     state: VMState,
@@ -41,6 +45,8 @@ def check_division_by_zero(
             )
         )
     return issues
+
+
 @opcode_handler("UNARY_POSITIVE")
 def handle_unary_positive(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -48,6 +54,8 @@ def handle_unary_positive(
     """Unary positive - essentially no-op."""
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("UNARY_NEGATIVE")
 def handle_unary_negative(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -60,6 +68,8 @@ def handle_unary_negative(
         state.push(top)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("UNARY_NOT")
 def handle_unary_not(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Boolean NOT."""
@@ -77,6 +87,8 @@ def handle_unary_not(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("UNARY_INVERT")
 def handle_unary_invert(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -89,6 +101,8 @@ def handle_unary_invert(
         state.push(top)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_ADD")
 def handle_binary_add(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -111,6 +125,8 @@ def handle_binary_add(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_SUBTRACT")
 def handle_binary_subtract(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -131,6 +147,8 @@ def handle_binary_subtract(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_MULTIPLY")
 def handle_binary_multiply(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -151,6 +169,8 @@ def handle_binary_multiply(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_TRUE_DIVIDE", "BINARY_FLOOR_DIVIDE")
 def handle_binary_divide(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -180,6 +200,8 @@ def handle_binary_divide(
     if issues:
         return OpcodeResult(new_states=[state], issues=issues)
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_MODULO")
 def handle_binary_modulo(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -205,6 +227,8 @@ def handle_binary_modulo(
     if issues:
         return OpcodeResult(new_states=[state], issues=issues)
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_POWER")
 def handle_binary_power(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -221,6 +245,8 @@ def handle_binary_power(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_LSHIFT", "BINARY_RSHIFT")
 def handle_binary_shift(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -235,6 +261,8 @@ def handle_binary_shift(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_AND")
 def handle_binary_and(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -251,6 +279,8 @@ def handle_binary_and(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_OR")
 def handle_binary_or(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Bitwise/logical OR."""
@@ -265,6 +295,8 @@ def handle_binary_or(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_XOR")
 def handle_binary_xor(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -281,6 +313,8 @@ def handle_binary_xor(
     state.push(result)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("BINARY_OP")
 def handle_binary_op(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Unified binary operation (Python 3.11+)."""

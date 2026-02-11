@@ -8,6 +8,7 @@ Provides:
 - Floating-point symbolic analysis
 - Watch mode and incremental analysis
 """
+
 from pyspectre.core.floats import (
     AccuracyAnalyzer,
     FloatAnalyzer,
@@ -82,6 +83,7 @@ from pyspectre.core.watch import (
     IncrementalAnalyzer,
     WatchModeRunner,
 )
+
 __all__ = [
     "SymbolicType",
     "SymbolicValue",

@@ -11,6 +11,7 @@ main scanning pipeline, providing a unified interface for:
 This creates a comprehensive static analysis pipeline that minimizes
 false positives while maximizing bug detection.
 """
+
 from __future__ import annotations
 import dis
 import os
@@ -55,9 +56,12 @@ from .type_inference import (
     TypeAnalyzer,
     TypeEnvironment,
 )
+
+
 @dataclass
 class AnalysisConfig:
     """Configuration for the analysis pipeline."""
+
     type_inference: bool = True
     flow_analysis: bool = True
     pattern_recognition: bool = True
@@ -75,9 +79,12 @@ class AnalysisConfig:
     include_info: bool = False
     timeout_per_function: float = 5.0
     max_iterations: int = 1000
+
+
 @dataclass
 class AnalysisResult:
     """Result of analyzing a single file."""
+
     file_path: str
     issues: list[Issue] = field(default_factory=list)
     taint_violations: list[TaintViolation] = field(default_factory=list)
@@ -86,21 +93,28 @@ class AnalysisResult:
     functions_analyzed: int = 0
     lines_of_code: int = 0
     suppressed_count: int = 0
+
     def has_issues(self) -> bool:
         """Check if any issues were found."""
         return bool(self.issues or self.taint_violations)
+
     def critical_count(self) -> int:
         """Count critical severity issues."""
         return sum(1 for i in self.issues if i.severity == Severity.CRITICAL)
+
     def high_count(self) -> int:
         """Count high severity issues."""
         return sum(1 for i in self.issues if i.severity == Severity.HIGH)
+
     def total_count(self) -> int:
         """Total issue count."""
         return len(self.issues) + len(self.taint_violations)
+
+
 @dataclass
 class FunctionContext:
     """Context for analyzing a single function."""
+
     code: Any
     name: str
     file_path: str
@@ -109,9 +123,12 @@ class FunctionContext:
     type_env: TypeEnvironment | None = None
     patterns: list[PatternMatch] = field(default_factory=list)
     parent: FunctionContext | None = None
+
+
 @dataclass
 class ModuleContext:
     """Context for analyzing a module."""
+
     file_path: str
     module_name: str
     source_code: str
@@ -119,10 +136,13 @@ class ModuleContext:
     functions: dict[str, FunctionContext] = field(default_factory=dict)
     imports: set[str] = field(default_factory=set)
     global_types: dict[str, PyType] = field(default_factory=dict)
+
+
 class AnalysisPipeline:
     """
     Main analysis pipeline integrating all analysis components.
     """
+
     def __init__(self, config: AnalysisConfig | None = None) -> None:
         self.config = config or AnalysisConfig()
         self.type_analyzer = TypeAnalyzer()
@@ -133,8 +153,10 @@ class AnalysisPipeline:
         self.enhanced_analyzer = EnhancedAnalyzer()
         self.function_models = FunctionSummarizer()
         self._setup_patterns()
+
     def _setup_patterns(self) -> None:
         """Set up pattern recognizers."""
+
     def analyze_file(self, file_path: str) -> AnalysisResult:
         """Analyze a single Python file."""
         result = AnalysisResult(file_path=file_path)
@@ -168,6 +190,7 @@ class AnalysisPipeline:
             result.warnings.append(f"Analysis error: {type(e).__name__}: {e}")
         result.analysis_time = time.time() - start_time
         return result
+
     def _analyze_module(
         self,
         module_ctx: ModuleContext,
@@ -186,6 +209,7 @@ class AnalysisPipeline:
         self._analyze_function(module_func_ctx, module_ctx, result)
         result.functions_analyzed += 1
         self._find_functions(module_ctx.code, module_ctx, result)
+
     def _extract_imports(self, module_ctx: ModuleContext) -> None:
         """Extract import information from the module."""
         if not module_ctx.code:
@@ -196,6 +220,7 @@ class AnalysisPipeline:
         for instr in dis.get_instructions(module_ctx.code):
             if instr.opname == "IMPORT_NAME":
                 module_ctx.imports.add(str(instr.argval))
+
     def _find_functions(
         self,
         code: Any,
@@ -217,6 +242,7 @@ class AnalysisPipeline:
                 self._analyze_function(func_ctx, module_ctx, result)
                 result.functions_analyzed += 1
                 self._find_functions(const, module_ctx, result, func_ctx)
+
     def _analyze_function(
         self,
         func_ctx: FunctionContext,
@@ -289,6 +315,7 @@ class AnalysisPipeline:
                                 result.issues.append(issue)
             except Exception:
                 pass
+
     def _filter_issues(
         self,
         issues: list[Issue],
@@ -332,6 +359,7 @@ class AnalysisPipeline:
             if not should_suppress:
                 filtered.append(issue)
         return filtered[: self.config.max_issues_per_file]
+
     def _is_duplicate(self, issue: Issue, existing: list[Issue]) -> bool:
         """Check if issue is a duplicate."""
         for existing_issue in existing:
@@ -342,6 +370,7 @@ class AnalysisPipeline:
             ):
                 return True
         return False
+
     def analyze_directory(
         self,
         directory: str,
@@ -374,15 +403,21 @@ class AnalysisPipeline:
             file_path = str(py_file.absolute())
             results[file_path] = self.analyze_file(file_path)
         return results
+
+
 class ReportFormat(Enum):
     """Output format for analysis reports."""
+
     TEXT = auto()
     JSON = auto()
     HTML = auto()
     SARIF = auto()
+
+
 @dataclass
 class AnalysisSummary:
     """Summary of analysis across all files."""
+
     total_files: int = 0
     total_issues: int = 0
     total_taint_violations: int = 0
@@ -396,6 +431,7 @@ class AnalysisSummary:
     total_functions: int = 0
     files_with_issues: int = 0
     by_kind: dict[IssueKind, int] = field(default_factory=dict)
+
     @classmethod
     def from_results(cls, results: dict[str, AnalysisResult]) -> AnalysisSummary:
         """Create summary from analysis results."""
@@ -422,11 +458,15 @@ class AnalysisSummary:
                     summary.info_count += 1
                 summary.by_kind[issue.kind] = summary.by_kind.get(issue.kind, 0) + 1
         return summary
+
+
 class ReportGenerator:
     """Generate analysis reports in various formats."""
+
     def __init__(self, results: dict[str, AnalysisResult]) -> None:
         self.results = results
         self.summary = AnalysisSummary.from_results(results)
+
     def generate_text(self) -> str:
         """Generate plain text report."""
         lines = []
@@ -487,9 +527,11 @@ class ReportGenerator:
         lines.append("")
         lines.append("=" * 70)
         return "\n".join(lines)
+
     def generate_json(self) -> str:
         """Generate JSON report."""
         import json
+
         data = {
             "summary": {
                 "total_files": self.summary.total_files,
@@ -536,9 +578,11 @@ class ReportGenerator:
             }
             data["files"][file_path] = file_data
         return json.dumps(data, indent=2)
+
     def generate_sarif(self) -> str:
         """Generate SARIF format for IDE integration."""
         import json
+
         sarif = {
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
             "version": "2.1.0",
@@ -547,8 +591,8 @@ class ReportGenerator:
                     "tool": {
                         "driver": {
                             "name": "PySpectre",
-                            "version": "1.0.0",
-                            "informationUri": "https://github.com/pyspectre",
+                            "version": "0.3.0a0",
+                            "informationUri": "https://github.com/darkoss1/pyspecter",
                             "rules": self._get_sarif_rules(),
                         }
                     },
@@ -557,6 +601,7 @@ class ReportGenerator:
             ],
         }
         return json.dumps(sarif, indent=2)
+
     def _get_sarif_rules(self) -> list[dict]:
         """Get SARIF rule definitions."""
         rules = []
@@ -571,6 +616,7 @@ class ReportGenerator:
                 }
             )
         return rules
+
     def _get_sarif_results(self) -> list[dict]:
         """Get SARIF results."""
         results = []
@@ -605,6 +651,8 @@ class ReportGenerator:
                     }
                 )
         return results
+
+
 def analyze(
     target: str,
     config: AnalysisConfig | None = None,
@@ -635,9 +683,12 @@ def analyze(
         return generator.generate_sarif()
     else:
         return generator.generate_text()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command-line interface."""
     import argparse
+
     parser = argparse.ArgumentParser(description="PySpectre Enhanced Static Analysis")
     parser.add_argument(
         "target",
@@ -700,5 +751,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+
 if __name__ == "__main__":
     sys.exit(main())

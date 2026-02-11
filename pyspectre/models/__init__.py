@@ -1,4 +1,5 @@
 """Models module for Python builtins and standard library."""
+
 from pyspectre.models.builtins import (
     AbsModel,
     BoolModel,
@@ -109,6 +110,41 @@ from pyspectre.models.strings import (
     StrStripModel,
     StrUpperModel,
 )
+from pyspectre.models.contextlib_models import (
+    CONTEXTLIB_MODELS,
+    AsyncContextManagerModel,
+    AsyncExitStackModel,
+    ContextDecoratorModel,
+    ContextManagerModel,
+    ExitStackModel,
+    get_contextlib_model,
+)
+from pyspectre.models.asyncio_models import (
+    ASYNCIO_MODELS,
+    ConditionModel,
+    CoroutineModel,
+    EventModel,
+    FutureModel,
+    LockModel,
+    QueueModel,
+    SemaphoreModel,
+    TaskModel,
+    get_asyncio_model,
+)
+from pyspectre.models.dataclasses_models import (
+    DATACLASSES_MODELS,
+    FieldInfo,
+    asdict_model,
+    astuple_model,
+    dataclass_model,
+    field_model,
+    fields_model,
+    get_dataclasses_model,
+    is_dataclass_model,
+    make_dataclass_model,
+    replace_model,
+)
+
 __all__ = [
     "ModelResult",
     "FunctionModel",
@@ -198,4 +234,32 @@ __all__ = [
     "ReSplitModel",
     "ReCompileModel",
     "ReEscapeModel",
+    "CONTEXTLIB_MODELS",
+    "ContextManagerModel",
+    "AsyncContextManagerModel",
+    "ContextDecoratorModel",
+    "ExitStackModel",
+    "AsyncExitStackModel",
+    "get_contextlib_model",
+    "ASYNCIO_MODELS",
+    "CoroutineModel",
+    "TaskModel",
+    "EventModel",
+    "LockModel",
+    "SemaphoreModel",
+    "ConditionModel",
+    "QueueModel",
+    "FutureModel",
+    "get_asyncio_model",
+    "DATACLASSES_MODELS",
+    "FieldInfo",
+    "dataclass_model",
+    "field_model",
+    "asdict_model",
+    "astuple_model",
+    "make_dataclass_model",
+    "replace_model",
+    "is_dataclass_model",
+    "fields_model",
+    "get_dataclasses_model",
 ]

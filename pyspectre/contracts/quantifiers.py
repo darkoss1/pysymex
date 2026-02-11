@@ -7,6 +7,7 @@ Provides:
 - Z3 quantifier encoding
 - Quantifier instantiation heuristics
 """
+
 from __future__ import annotations
 import ast
 import re
@@ -17,18 +18,25 @@ from typing import (
     Any,
 )
 import z3
+
+
 class QuantifierKind(Enum):
     """Types of quantifiers."""
+
     FORALL = auto()
     EXISTS = auto()
     UNIQUE = auto()
     COUNT = auto()
+
+
 @dataclass
 class QuantifierVar:
     """A quantified variable."""
+
     name: str
     sort: z3.SortRef
     z3_var: z3.ExprRef = None
+
     def __post_init__(self):
         if self.z3_var is None:
             if self.sort == z3.IntSort():
@@ -39,14 +47,18 @@ class QuantifierVar:
                 self.z3_var = z3.Real(self.name)
             else:
                 self.z3_var = z3.Const(self.name, self.sort)
+
+
 @dataclass
 class BoundSpec:
     """Specification of variable bounds."""
+
     lower: z3.ExprRef | None = None
     upper: z3.ExprRef | None = None
     lower_inclusive: bool = True
     upper_inclusive: bool = False
     in_collection: z3.ExprRef | None = None
+
     def to_constraint(self, var: z3.ExprRef) -> z3.BoolRef:
         """Convert bound to Z3 constraint."""
         constraints = []
@@ -65,15 +77,19 @@ class BoundSpec:
         if not constraints:
             return z3.BoolVal(True)
         return z3.And(*constraints)
+
+
 @dataclass
 class Quantifier:
     """Represents a quantified expression."""
+
     kind: QuantifierKind
     variables: list[QuantifierVar]
     bounds: list[BoundSpec]
     body: z3.BoolRef
     original_text: str = ""
     instantiation_hints: list[z3.ExprRef] = field(default_factory=list)
+
     def to_z3(self) -> z3.BoolRef:
         """Convert to Z3 quantified formula."""
         bound_constraints = []
@@ -99,6 +115,8 @@ class Quantifier:
             raise NotImplementedError("COUNT quantifier requires special handling")
         else:
             raise ValueError(f"Unknown quantifier kind: {self.kind}")
+
+
 class QuantifierParser:
     """
     Parses quantifier expressions from contract strings.
@@ -108,13 +126,16 @@ class QuantifierParser:
         exists(var, lower <= var < upper, condition)
         exists!(var, range, condition)  # Unique existence
     """
+
     QUANTIFIER_PATTERN = re.compile(
         r"(forall|exists|exists!)\s*\(\s*" r"(\w+)\s*,\s*" r"([^,]+)\s*,\s*" r"(.+)\s*\)$"
     )
     RANGE_PATTERN = re.compile(r"(\d+|\w+)\s*(<=?)\s*(\w+)\s*(<|<=)\s*(\d+|\w+|\w+\([^)]+\))")
     IN_PATTERN = re.compile(r"(\w+)\s+in\s+(\w+)")
+
     def __init__(self, context: dict[str, z3.ExprRef] = None):
         self.context = context or {}
+
     def parse(self, text: str) -> Quantifier | None:
         """Parse a quantifier expression."""
         text = text.strip()
@@ -140,6 +161,7 @@ class QuantifierParser:
             body=body,
             original_text=text,
         )
+
     def _parse_bounds(self, range_str: str, var_name: str) -> BoundSpec:
         """Parse range/bounds specification."""
         range_str = range_str.strip()
@@ -157,6 +179,7 @@ class QuantifierParser:
             matched_var, collection = in_match.groups()
             return BoundSpec(in_collection=self.context.get(collection))
         return BoundSpec()
+
     def _parse_expr(self, expr_str: str) -> z3.ExprRef:
         """Parse an expression to Z3."""
         expr_str = expr_str.strip()
@@ -171,6 +194,7 @@ class QuantifierParser:
             if inner in self.context:
                 return z3.Int(f"len_{inner}")
         return z3.Int(expr_str)
+
     def _parse_body(self, body_str: str, local_vars: dict[str, z3.ExprRef]) -> z3.BoolRef:
         """Parse body expression to Z3."""
         body_str = body_str.strip()
@@ -179,6 +203,8 @@ class QuantifierParser:
             return parse_condition_to_z3(body_str, full_context)
         except Exception:
             return z3.Bool(f"body_{body_str[:20]}")
+
+
 def parse_condition_to_z3(
     condition: str,
     context: dict[str, z3.ExprRef],
@@ -197,10 +223,14 @@ def parse_condition_to_z3(
         return ConditionTranslator(context).visit(tree.body)
     except SyntaxError:
         return z3.Bool(f"cond_{hash(condition)}")
+
+
 class ConditionTranslator(ast.NodeVisitor):
     """Translates Python AST to Z3 expressions."""
+
     def __init__(self, context: dict[str, z3.ExprRef]):
         self.context = context
+
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
         """Handle comparisons."""
         left = self.visit(node.left)
@@ -224,6 +254,7 @@ class ConditionTranslator(ast.NodeVisitor):
                 raise ValueError(f"Unsupported comparison: {type(op)}")
             prev = right
         return z3.And(*comparisons) if len(comparisons) > 1 else comparisons[0]
+
     def visit_BoolOp(self, node: ast.BoolOp) -> z3.BoolRef:
         """Handle and/or."""
         values = [self.visit(v) for v in node.values]
@@ -233,6 +264,7 @@ class ConditionTranslator(ast.NodeVisitor):
             return z3.Or(*values)
         else:
             raise ValueError(f"Unsupported bool op: {type(node.op)}")
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> z3.ExprRef:
         """Handle unary operators."""
         operand = self.visit(node.operand)
@@ -244,6 +276,7 @@ class ConditionTranslator(ast.NodeVisitor):
             return operand
         else:
             raise ValueError(f"Unsupported unary op: {type(node.op)}")
+
     def visit_BinOp(self, node: ast.BinOp) -> z3.ExprRef:
         """Handle binary operators."""
         left = self.visit(node.left)
@@ -262,11 +295,13 @@ class ConditionTranslator(ast.NodeVisitor):
             return left**right
         else:
             raise ValueError(f"Unsupported binary op: {type(node.op)}")
+
     def visit_Subscript(self, node: ast.Subscript) -> z3.ExprRef:
         """Handle indexing."""
         value = self.visit(node.value)
         index = self.visit(node.slice)
         return z3.Select(value, index)
+
     def visit_Attribute(self, node: ast.Attribute) -> z3.ExprRef:
         """Handle attribute access."""
         if isinstance(node.value, ast.Name):
@@ -276,12 +311,14 @@ class ConditionTranslator(ast.NodeVisitor):
                 return z3.Int(f"len_{obj_name}")
             return z3.Int(f"{obj_name}_{attr_name}")
         return z3.Int(f"attr_{node.attr}")
+
     def visit_Name(self, node: ast.Name) -> z3.ExprRef:
         """Handle variable names."""
         name = node.id
         if name in self.context:
             return self.context[name]
         return z3.Int(name)
+
     def visit_Constant(self, node: ast.Constant) -> z3.ExprRef:
         """Handle constants."""
         value = node.value
@@ -295,6 +332,7 @@ class ConditionTranslator(ast.NodeVisitor):
             return z3.BoolVal(False)
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
+
     def visit_Call(self, node: ast.Call) -> z3.ExprRef:
         """Handle function calls."""
         if isinstance(node.func, ast.Name):
@@ -313,9 +351,12 @@ class ConditionTranslator(ast.NodeVisitor):
                 a, b = [self.visit(arg) for arg in node.args]
                 return z3.If(a >= b, a, b)
         return z3.Int(f"call_{id(node)}")
+
     def generic_visit(self, node: ast.AST) -> z3.ExprRef:
         """Fallback for unsupported nodes."""
         return z3.Int(f"unknown_{type(node).__name__}")
+
+
 def forall(
     var: str,
     range_spec: tuple[int, int] | str,
@@ -339,6 +380,8 @@ def forall(
         cond_str = str(condition)
     text = f"forall({var}, {range_str}, {cond_str})"
     return parser.parse(text)
+
+
 def exists(
     var: str,
     range_spec: tuple[int, int] | str,
@@ -362,6 +405,8 @@ def exists(
         cond_str = str(condition)
     text = f"exists({var}, {range_str}, {cond_str})"
     return parser.parse(text)
+
+
 def exists_unique(
     var: str,
     range_spec: tuple[int, int] | str,
@@ -384,14 +429,18 @@ def exists_unique(
         cond_str = str(condition)
     text = f"exists!({var}, {range_str}, {cond_str})"
     return parser.parse(text)
+
+
 class QuantifierInstantiator:
     """
     Instantiates quantifiers with concrete values.
     For bounded quantifiers, we can sometimes enumerate all instances.
     For unbounded, we use heuristics (E-matching, triggers).
     """
+
     def __init__(self, max_instantiations: int = 100):
         self.max_instantiations = max_instantiations
+
     def instantiate_bounded(
         self,
         quantifier: Quantifier,
@@ -420,6 +469,7 @@ class QuantifierInstantiator:
                 except Exception:
                     continue
         return instances
+
     def _get_concrete_value(
         self,
         expr: z3.ExprRef,
@@ -439,6 +489,7 @@ class QuantifierInstantiator:
                 return result.as_long()
         solver.pop()
         return None
+
     def add_triggers(
         self,
         quantifier: Quantifier,
@@ -467,12 +518,16 @@ class QuantifierInstantiator:
                 patterns=[z3.MultiPattern(*triggers)],
             )
         return z3_expr
+
+
 class QuantifierVerifier:
     """
     Verifies quantified contracts.
     """
+
     def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
+
     def verify_forall(
         self,
         quantifier: Quantifier,
@@ -499,6 +554,7 @@ class QuantifierVerifier:
             return False, counterexample
         else:
             return None, None
+
     def verify_exists(
         self,
         quantifier: Quantifier,
@@ -525,6 +581,8 @@ class QuantifierVerifier:
             return False, None
         else:
             return None, None
+
+
 def _find_matching_paren(s: str, start: int) -> int:
     """Find the index of the matching closing parenthesis."""
     depth = 0
@@ -536,6 +594,8 @@ def _find_matching_paren(s: str, start: int) -> int:
             if depth == 0:
                 return i
     return -1
+
+
 def extract_quantifiers(contract_string: str) -> list[Quantifier]:
     """
     Extract quantifiers from a contract string.
@@ -567,6 +627,8 @@ def extract_quantifiers(contract_string: str) -> list[Quantifier]:
                 quantifiers.append(q)
             start = paren_end + 1
     return quantifiers
+
+
 def replace_quantifiers_with_z3(
     contract_string: str,
     context: dict[str, z3.ExprRef],
@@ -591,6 +653,8 @@ def replace_quantifiers_with_z3(
         return z3_parts[0]
     else:
         return z3.And(*z3_parts)
+
+
 __all__ = [
     "QuantifierKind",
     "QuantifierVar",

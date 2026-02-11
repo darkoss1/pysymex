@@ -3,24 +3,32 @@ Auto-Tuner for PySpectre Configuration.
 
 Analyzes code complexity to automatically suggest optimal execution parameters.
 """
+
 from __future__ import annotations
 import dis
 import types
 from dataclasses import dataclass
 from pyspectre.execution.executor import ExecutionConfig
+
+
 @dataclass
 class CodeComplexity:
     """Metrics for code complexity."""
+
     instruction_count: int
     branch_count: int
     loop_count: int
     cyclomatic_complexity: int
+
     @property
     def score(self) -> int:
         """Combined complexity score."""
         return self.instruction_count + (self.branch_count * 5) + (self.loop_count * 10)
+
+
 class AutoTuner:
     """Analyzes code and suggests configuration."""
+
     @staticmethod
     def analyze(code: types.CodeType) -> CodeComplexity:
         """Analyze code object for complexity metrics."""
@@ -41,6 +49,7 @@ class AutoTuner:
             loop_count=loops,
             cyclomatic_complexity=cc,
         )
+
     @staticmethod
     def tune(code: types.CodeType, base_config: ExecutionConfig = None) -> ExecutionConfig:
         """Return an optimized configuration based on code complexity."""

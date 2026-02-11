@@ -24,6 +24,7 @@ NEW (v2.0):
 - Cross-function analysis (call graphs, effects)
 - Value range analysis
 """
+
 from pyspectre.analysis.abstract_domains import (
     AbstractInterpreter,
     AbstractState,
@@ -236,6 +237,27 @@ from pyspectre.analysis.type_constraints import (
 )
 from pyspectre.analysis.type_inference import TypeAnalyzer
 from pyspectre.analysis.type_stubs import StubRepository
+from pyspectre.analysis.fp_filter import (
+    AssertionContext,
+    Confidence,
+    FilterResult,
+    calculate_confidence,
+    deduplicate_issues,
+    detect_assertion_context,
+    filter_issue,
+    filter_issues,
+    is_type_checking_block_issue,
+    is_typing_false_positive,
+)
+from pyspectre.analysis.assertion_context import (
+    AssertionAnalysis,
+    ContextType,
+    analyze_assertion,
+    analyze_function_name,
+    analyze_source_context,
+    is_intentional_assertion,
+)
+
 __all__ = [
     "Issue",
     "IssueKind",
@@ -410,4 +432,20 @@ __all__ = [
     "StringAnalyzer",
     "EnhancedScanner",
     "ScannerConfig",
+    "Confidence",
+    "AssertionContext",
+    "FilterResult",
+    "is_typing_false_positive",
+    "is_type_checking_block_issue",
+    "filter_issue",
+    "filter_issues",
+    "deduplicate_issues",
+    "calculate_confidence",
+    "detect_assertion_context",
+    "ContextType",
+    "AssertionAnalysis",
+    "analyze_assertion",
+    "analyze_function_name",
+    "analyze_source_context",
+    "is_intentional_assertion",
 ]

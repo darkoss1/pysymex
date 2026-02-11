@@ -89,7 +89,10 @@ dmypy.json
 Thumbs.db
 
 # Project specific
-*.json
-!examples/*.json
+*.sarif
 scan_log_*.json
 report.html
+test_output.txt
+
+# Tool artifacts
+tmpclaude-*-cwd/

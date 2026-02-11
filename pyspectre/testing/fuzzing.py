@@ -3,6 +3,7 @@ Provides strategies for generating symbolic values, bytecode operations,
 and complex test scenarios. Enables thorough testing through automated
 exploration of edge cases.
 """
+
 from __future__ import annotations
 import dis
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from pyspectre.core.types import SymbolicValue
+
+
 def symbolic_integers(
     min_value: int = -(2**31),
     max_value: int = 2**31 - 1,
@@ -20,15 +23,21 @@ def symbolic_integers(
     return st.integers(min_value=min_value, max_value=max_value).map(
         lambda x: SymbolicValue.from_const(x)
     )
+
+
 def symbolic_booleans() -> st.SearchStrategy:
     """Strategy for generating symbolic booleans."""
     return st.booleans().map(lambda x: SymbolicValue.from_const(x))
+
+
 def symbolic_strings(
     min_size: int = 0,
     max_size: int = 100,
 ) -> st.SearchStrategy:
     """Strategy for generating symbolic strings."""
     return st.text(min_size=min_size, max_size=max_size).map(lambda x: SymbolicValue.from_const(x))
+
+
 def symbolic_floats(
     allow_nan: bool = False,
     allow_infinity: bool = False,
@@ -38,9 +47,13 @@ def symbolic_floats(
         allow_nan=allow_nan,
         allow_infinity=allow_infinity,
     ).map(lambda x: SymbolicValue.from_const(x))
+
+
 def symbolic_none() -> st.SearchStrategy:
     """Strategy for generating symbolic None."""
     return st.just(SymbolicValue.from_const(None))
+
+
 def symbolic_values() -> st.SearchStrategy:
     """Strategy for any symbolic value."""
     return st.one_of(
@@ -50,6 +63,8 @@ def symbolic_values() -> st.SearchStrategy:
         symbolic_floats(),
         symbolic_none(),
     )
+
+
 def symbolic_lists(
     elements: st.SearchStrategy = None,
     min_size: int = 0,
@@ -61,6 +76,8 @@ def symbolic_lists(
     return st.lists(elements, min_size=min_size, max_size=max_size).map(
         lambda xs: SymbolicValue.from_const(xs)
     )
+
+
 def symbolic_dicts(
     keys: st.SearchStrategy = None,
     values: st.SearchStrategy = None,
@@ -75,6 +92,8 @@ def symbolic_dicts(
     return st.dictionaries(keys, values, min_size=min_size, max_size=max_size).map(
         lambda d: SymbolicValue.from_const(d)
     )
+
+
 def symbolic_sets(
     elements: st.SearchStrategy = None,
     min_size: int = 0,
@@ -86,6 +105,8 @@ def symbolic_sets(
     return st.frozensets(elements, min_size=min_size, max_size=max_size).map(
         lambda s: SymbolicValue.from_const(set(s))
     )
+
+
 def symbolic_tuples(
     *element_strategies: st.SearchStrategy,
 ) -> st.SearchStrategy:
@@ -93,15 +114,23 @@ def symbolic_tuples(
     if not element_strategies:
         element_strategies = (st.integers(), st.integers())
     return st.tuples(*element_strategies).map(lambda t: SymbolicValue.from_const(t))
+
+
 def z3_int_vars(prefix: str = "x") -> st.SearchStrategy:
     """Strategy for generating Z3 integer variables."""
     return st.integers(min_value=0, max_value=99).map(lambda i: z3.Int(f"{prefix}{i}"))
+
+
 def z3_bool_vars(prefix: str = "b") -> st.SearchStrategy:
     """Strategy for generating Z3 boolean variables."""
     return st.integers(min_value=0, max_value=99).map(lambda i: z3.Bool(f"{prefix}{i}"))
+
+
 def z3_int_constants() -> st.SearchStrategy:
     """Strategy for Z3 integer constants."""
     return st.integers(min_value=-1000, max_value=1000).map(lambda x: z3.IntVal(x))
+
+
 @st.composite
 def z3_arithmetic_exprs(
     draw,
@@ -133,6 +162,8 @@ def z3_arithmetic_exprs(
     else:
         inner = draw(z3_arithmetic_exprs(depth - 1, vars))
         return -inner
+
+
 @st.composite
 def z3_bool_exprs(
     draw,
@@ -196,6 +227,8 @@ def z3_bool_exprs(
             return left > right
         else:
             return left >= right
+
+
 ARITHMETIC_OPCODES = [
     "BINARY_OP",
 ]
@@ -214,23 +247,33 @@ LOAD_STORE_OPCODES = [
     "LOAD_GLOBAL",
     "STORE_GLOBAL",
 ]
+
+
 @dataclass
 class MockInstruction:
     """Mock bytecode instruction for testing."""
+
     opname: str
     arg: int = 0
     argval: Any = None
     offset: int = 0
+
     @property
     def opcode(self) -> int:
         """Get opcode number."""
         return dis.opmap.get(self.opname, 0)
+
+
 def arithmetic_ops() -> st.SearchStrategy:
     """Strategy for arithmetic operations."""
     return st.sampled_from([0, 10, 5, 11, 2])
+
+
 def comparison_ops() -> st.SearchStrategy:
     """Strategy for comparison operations."""
     return st.sampled_from([0, 1, 2, 3, 4, 5])
+
+
 @st.composite
 def mock_instructions(draw, opnames: list[str] | None = None) -> MockInstruction:
     """Strategy for generating mock instructions."""
@@ -258,6 +301,8 @@ def mock_instructions(draw, opnames: list[str] | None = None) -> MockInstruction
         return MockInstruction(opname, arg=arg)
     else:
         return MockInstruction(opname)
+
+
 @st.composite
 def preconditions(draw, var_names: list[str] = None) -> str:
     """Strategy for generating precondition strings."""
@@ -267,6 +312,8 @@ def preconditions(draw, var_names: list[str] = None) -> str:
     op = draw(st.sampled_from([">", ">=", "<", "<=", "==", "!="]))
     val = draw(st.integers(-100, 100))
     return f"{var} {op} {val}"
+
+
 @st.composite
 def postconditions(draw, var_names: list[str] = None) -> str:
     """Strategy for generating postcondition strings."""
@@ -287,6 +334,8 @@ def postconditions(draw, var_names: list[str] = None) -> str:
         var2 = draw(st.sampled_from([v for v in var_names if v != var1] or var_names))
         op = draw(st.sampled_from([">", ">=", "<", "<=", "=="]))
         return f"{var1} {op} {var2}"
+
+
 @st.composite
 def invariants(draw, var_name: str = "i", bound_var: str = "n") -> str:
     """Strategy for generating loop invariant strings."""
@@ -298,6 +347,8 @@ def invariants(draw, var_name: str = "i", bound_var: str = "n") -> str:
         return f"{var_name} >= 0"
     else:
         return f"{var_name} >= 0"
+
+
 class SymbolicStateMachine(RuleBasedStateMachine):
     """Stateful test for symbolic execution state consistency.
     Uses Hypothesis stateful testing to verify that:
@@ -305,31 +356,38 @@ class SymbolicStateMachine(RuleBasedStateMachine):
     2. Variable stores/loads are correct
     3. Constraints are properly tracked
     """
+
     def __init__(self):
         super().__init__()
         self.stack: list[Any] = []
         self.locals: dict[str, Any] = {}
         self.constraints: list[Any] = []
+
     values = Bundle("values")
+
     @rule(target=values, v=st.integers(-100, 100))
     def push_int(self, v):
         """Push an integer onto the stack."""
         self.stack.append(v)
         return v
+
     @rule(target=values, v=st.booleans())
     def push_bool(self, v):
         """Push a boolean onto the stack."""
         self.stack.append(v)
         return v
+
     @rule(v=values)
     def pop(self, v):
         """Pop a value from the stack."""
         assume(len(self.stack) > 0)
         popped = self.stack.pop()
+
     @rule(v=values, name=st.sampled_from(["x", "y", "z"]))
     def store_local(self, v, name):
         """Store a value in a local variable."""
         self.locals[name] = v
+
     @rule(target=values, name=st.sampled_from(["x", "y", "z"]))
     def load_local(self, name):
         """Load a value from a local variable."""
@@ -337,6 +395,7 @@ class SymbolicStateMachine(RuleBasedStateMachine):
         v = self.locals[name]
         self.stack.append(v)
         return v
+
     @rule()
     def binary_add(self):
         """Perform binary addition."""
@@ -345,6 +404,7 @@ class SymbolicStateMachine(RuleBasedStateMachine):
         b = self.stack.pop()
         a = self.stack.pop()
         self.stack.append(a + b)
+
     @rule()
     def binary_sub(self):
         """Perform binary subtraction."""
@@ -353,51 +413,65 @@ class SymbolicStateMachine(RuleBasedStateMachine):
         b = self.stack.pop()
         a = self.stack.pop()
         self.stack.append(a - b)
+
     @rule()
     def dup_top(self):
         """Duplicate the top of stack."""
         assume(len(self.stack) >= 1)
         self.stack.append(self.stack[-1])
+
     @invariant()
     def stack_is_list(self):
         """Stack should always be a list."""
         assert isinstance(self.stack, list)
+
     @invariant()
     def locals_is_dict(self):
         """Locals should always be a dict."""
         assert isinstance(self.locals, dict)
+
+
 TestSymbolicState = SymbolicStateMachine.TestCase
+
+
 class PropertyTests:
     """Collection of property-based tests."""
+
     @given(st.integers(), st.integers())
     def test_addition_commutative(self, a: int, b: int):
         """Addition should be commutative."""
         assert a + b == b + a
+
     @given(st.integers(), st.integers(), st.integers())
     def test_addition_associative(self, a: int, b: int, c: int):
         """Addition should be associative."""
         assert (a + b) + c == a + (b + c)
+
     @given(st.lists(st.integers(), min_size=1))
     def test_list_len_positive(self, xs: list[int]):
         """List length should be non-negative."""
         assert len(xs) >= 0
+
     @given(st.lists(st.integers()), st.integers())
     def test_append_increases_len(self, xs: list[int], x: int):
         """Appending should increase length by 1."""
         original_len = len(xs)
         xs.append(x)
         assert len(xs) == original_len + 1
+
     @given(st.dictionaries(st.text(min_size=1, max_size=5), st.integers()))
     def test_dict_get_after_set(self, d: dict[str, int]):
         """Getting after setting should return the value."""
         for k, v in d.items():
             assert d[k] == v
+
     @given(z3_arithmetic_exprs(depth=2))
     @settings(max_examples=50)
     def test_z3_expr_simplify(self, expr):
         """Z3 expressions should simplify without error."""
         simplified = z3.simplify(expr)
         assert simplified is not None
+
     @given(z3_bool_exprs(depth=2))
     @settings(max_examples=50)
     def test_z3_bool_satisfiable_or_unsat(self, expr):
@@ -406,21 +480,28 @@ class PropertyTests:
         solver.add(expr)
         result = solver.check()
         assert result in (z3.sat, z3.unsat)
+
+
 @dataclass
 class ConformanceTest:
     """A conformance test case."""
+
     name: str
     code: str
     expected_result: Any
     expected_exception: type[Exception] | None = None
     description: str = ""
+
+
 class ConformanceGenerator:
     """Generates conformance tests from Python expressions.
     Creates test cases that verify PySpectre produces the same
     results as CPython for various expressions and operations.
     """
+
     def __init__(self):
         self.tests: list[ConformanceTest] = []
+
     def add_expression_test(
         self,
         name: str,
@@ -448,6 +529,7 @@ class ConformanceGenerator:
                     description=description,
                 )
             )
+
     def add_statement_test(
         self,
         name: str,
@@ -478,6 +560,7 @@ class ConformanceGenerator:
                     description=description,
                 )
             )
+
     def generate_arithmetic_tests(self) -> None:
         """Generate arithmetic conformance tests."""
         ops = ["+", "-", "*", "/", "//", "%", "**"]
@@ -495,6 +578,7 @@ class ConformanceGenerator:
                         expr=expr,
                         description=f"Arithmetic: {expr}",
                     )
+
     def generate_comparison_tests(self) -> None:
         """Generate comparison conformance tests."""
         ops = ["<", "<=", "==", "!=", ">=", ">"]
@@ -512,6 +596,7 @@ class ConformanceGenerator:
                         expr=expr,
                         description=f"Comparison: {expr}",
                     )
+
     def generate_boolean_tests(self) -> None:
         """Generate boolean logic conformance tests."""
         exprs = [
@@ -535,6 +620,7 @@ class ConformanceGenerator:
                 expr=expr,
                 description=f"Boolean: {expr}",
             )
+
     def generate_list_tests(self) -> None:
         """Generate list operation conformance tests."""
         tests = [
@@ -553,6 +639,7 @@ class ConformanceGenerator:
         ]
         for name, expr, desc in tests:
             self.add_expression_test(name, expr, desc)
+
     def generate_dict_tests(self) -> None:
         """Generate dict operation conformance tests."""
         tests = [
@@ -566,6 +653,7 @@ class ConformanceGenerator:
         ]
         for name, expr, desc in tests:
             self.add_expression_test(name, expr, desc)
+
     def generate_all(self) -> list[ConformanceTest]:
         """Generate all conformance tests."""
         self.generate_arithmetic_tests()
@@ -574,6 +662,7 @@ class ConformanceGenerator:
         self.generate_list_tests()
         self.generate_dict_tests()
         return self.tests
+
     def to_pytest_code(self) -> str:
         """Generate pytest code for conformance tests."""
         lines = [
@@ -598,6 +687,8 @@ class ConformanceGenerator:
                 lines.append(f"        assert result == {repr(test.expected_result)}")
             lines.append("")
         return "\n".join(lines)
+
+
 __all__ = [
     "symbolic_integers",
     "symbolic_booleans",

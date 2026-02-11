@@ -23,7 +23,9 @@ Bug Types:
 - Tainted data flows
 Version: 2.0.0
 """
+
 from __future__ import annotations
+
 __version__ = "2.0.0"
 __author__ = "PySpectre Team"
 import dis
@@ -34,14 +36,19 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
+
 try:
     import z3
+
     Z3_AVAILABLE = True
 except ImportError:
     Z3_AVAILABLE = False
     z3 = None
+
+
 class BugType(Enum):
     """Types of bugs we can prove/disprove."""
+
     DIVISION_BY_ZERO = "division_by_zero"
     MODULO_BY_ZERO = "modulo_by_zero"
     INDEX_OUT_OF_BOUNDS = "index_out_of_bounds"
@@ -54,23 +61,32 @@ class BugType(Enum):
     UNREACHABLE_CODE = "unreachable_code"
     TAINTED_SINK = "tainted_data_to_sink"
     OVERFLOW = "integer_overflow"
+
+
 class Severity(Enum):
     """Bug severity levels."""
+
     CRITICAL = 1
     HIGH = 2
     MEDIUM = 3
     LOW = 4
     INFO = 5
+
+
 class TaintSource(Enum):
     """Sources of untrusted data."""
+
     USER_INPUT = "user_input"
     FILE_READ = "file_read"
     NETWORK = "network"
     ENVIRONMENT = "environment"
     DATABASE = "database"
     UNKNOWN = "unknown"
+
+
 class SymType(Enum):
     """Type classification for symbolic values."""
+
     INT = auto()
     REAL = auto()
     BOOL = auto()
@@ -83,12 +99,16 @@ class SymType(Enum):
     CALLABLE = auto()
     OBJECT = auto()
     UNKNOWN = auto()
+
+
 @dataclass
 class TaintInfo:
     """Tracks taint information for a value."""
+
     is_tainted: bool = False
     sources: set[TaintSource] = field(default_factory=set)
     propagation_path: list[str] = field(default_factory=list)
+
     def propagate(self, operation: str) -> TaintInfo:
         """Create new taint info propagated through an operation."""
         if not self.is_tainted:
@@ -98,11 +118,14 @@ class TaintInfo:
             sources=self.sources.copy(),
             propagation_path=self.propagation_path + [operation],
         )
+
+
 @dataclass
 class SymValue:
     """
     Enhanced symbolic value with rich metadata.
     """
+
     expr: Any
     name: str = ""
     sym_type: SymType = SymType.UNKNOWN
@@ -112,9 +135,11 @@ class SymValue:
     taint: TaintInfo = field(default_factory=TaintInfo)
     origin: str = ""
     constraints: list[Any] = field(default_factory=list)
+
     @property
     def is_tainted(self) -> bool:
         return self.taint.is_tainted
+
     def with_taint(self, source: TaintSource, path: str = "") -> SymValue:
         """Create a tainted copy of this value."""
         new_taint = TaintInfo(
@@ -131,9 +156,12 @@ class SymValue:
             self.origin,
             self.constraints.copy(),
         )
+
+
 @dataclass
 class CrashCondition:
     """A condition that causes a crash."""
+
     bug_type: BugType
     condition: Any
     path_constraints: list[Any]
@@ -145,9 +173,12 @@ class CrashCondition:
     call_stack: list[str] = field(default_factory=list)
     taint_info: TaintInfo | None = None
     file_path: str = ""
+
+
 @dataclass
 class VerificationResult:
     """Result of formal verification."""
+
     crash: CrashCondition
     can_crash: bool
     proven_safe: bool
@@ -155,12 +186,15 @@ class VerificationResult:
     z3_status: str = ""
     verification_time_ms: float = 0.0
     path_explored: int = 0
+
+
 @dataclass
 class FunctionSummary:
     """
     Summary of a function's behavior for interprocedural analysis.
     Allows efficient re-use without re-analyzing.
     """
+
     name: str
     code_hash: str
     parameters: list[str]
@@ -175,17 +209,23 @@ class FunctionSummary:
     analyzed_at: float = 0.0
     verified: bool = False
     has_bugs: bool = False
+
+
 @dataclass
 class CallSite:
     """Information about a function call site."""
+
     caller: str
     callee: str
     line: int
     arguments: list[str]
     file_path: str = ""
+
+
 @dataclass
 class BasicBlock:
     """Basic block in control flow graph."""
+
     id: int
     instructions: list[Any] = field(default_factory=list)
     successors: list[tuple[int, str]] = field(default_factory=list)
@@ -193,30 +233,38 @@ class BasicBlock:
     dominators: set[int] = field(default_factory=set)
     loop_header: bool = False
     reachable: bool = True
+
+
 class CallGraph:
     """
     Builds and maintains call graph for interprocedural analysis.
     """
+
     def __init__(self):
         self.calls: dict[str, set[str]] = defaultdict(set)
         self.callers: dict[str, set[str]] = defaultdict(set)
         self.call_sites: dict[str, list[CallSite]] = defaultdict(list)
         self.entry_points: set[str] = set()
         self.recursive: set[str] = set()
+
     def add_call(self, site: CallSite):
         """Add a call relationship."""
         self.calls[site.caller].add(site.callee)
         self.callers[site.callee].add(site.caller)
         self.call_sites[site.caller].append(site)
+
     def get_callees(self, func: str) -> set[str]:
         """Get all functions called by func."""
         return self.calls.get(func, set())
+
     def get_callers(self, func: str) -> set[str]:
         """Get all functions that call func."""
         return self.callers.get(func, set())
+
     def find_recursive(self) -> set[str]:
         """Find all recursive functions (direct or indirect)."""
         recursive = set()
+
         def dfs(start: str, current: str, visited: set[str]):
             if current in visited:
                 if current == start:
@@ -225,10 +273,12 @@ class CallGraph:
             visited.add(current)
             for callee in self.calls.get(current, set()):
                 dfs(start, callee, visited.copy())
+
         for func in self.calls:
             dfs(func, func, set())
         self.recursive = recursive
         return recursive
+
     def topological_order(self) -> list[str]:
         """Get functions in dependency order (leaves first)."""
         in_degree = defaultdict(int)
@@ -245,6 +295,7 @@ class CallGraph:
                 if in_degree[callee] == 0:
                     queue.append(callee)
         return result
+
     def get_all_affected(self, func: str) -> set[str]:
         """Get all functions that might be affected by changes to func."""
         affected = set()
@@ -256,8 +307,11 @@ class CallGraph:
             affected.add(current)
             queue.extend(self.callers.get(current, set()))
         return affected
+
+
 class CFGBuilder:
     """Enhanced control flow graph builder with dominance analysis."""
+
     BRANCH_OPS = frozenset(
         {
             "JUMP_FORWARD",
@@ -278,6 +332,7 @@ class CFGBuilder:
         }
     )
     TERMINAL_OPS = frozenset({"RETURN_VALUE", "RETURN_CONST", "RAISE_VARARGS", "RERAISE"})
+
     def build(self, code: Any) -> dict[int, BasicBlock]:
         """Build CFG with dominance info."""
         instrs = list(dis.get_instructions(code))
@@ -300,6 +355,7 @@ class CFGBuilder:
         self._compute_dominators(blocks)
         self._detect_loops(blocks)
         return blocks
+
     def _build_edges(self, blocks: dict[int, BasicBlock], off_to_idx: dict[int, int]):
         """Build edges between basic blocks."""
         sorted_ids = sorted(blocks.keys())
@@ -335,6 +391,7 @@ class CFGBuilder:
                     succ_id = sorted_ids[idx + 1]
                     block.successors.append((succ_id, "uncond"))
                     blocks[succ_id].predecessors.append(bid)
+
     def _compute_dominators(self, blocks: dict[int, BasicBlock]):
         """Compute dominator sets for each block."""
         if not blocks:
@@ -360,16 +417,20 @@ class CFGBuilder:
                 if new_dom != block.dominators:
                     block.dominators = new_dom
                     changed = True
+
     def _detect_loops(self, blocks: dict[int, BasicBlock]):
         """Detect loop headers using back edges."""
         for bid, block in blocks.items():
             for succ_id, _ in block.successors:
                 if succ_id in block.dominators:
                     blocks[succ_id].loop_header = True
+
+
 class SymbolicState:
     """
     Manages symbolic execution state with rich tracking.
     """
+
     def __init__(self, parent: SymbolicState | None = None):
         self.parent = parent
         self.variables: dict[str, SymValue] = {}
@@ -384,38 +445,49 @@ class SymbolicState:
             self.path_constraints = parent.path_constraints.copy()
             self.call_stack = parent.call_stack.copy()
             self._counter = parent._counter
+
     def fork(self) -> SymbolicState:
         """Create a copy for path exploration."""
         return SymbolicState(self)
+
     def fresh_name(self, prefix: str = "v") -> str:
         """Generate a fresh unique name."""
         self._counter += 1
         return f"{prefix}_{self._counter}"
+
     def add_constraint(self, constraint: Any):
         """Add a path constraint."""
         if constraint is not None:
             self.path_constraints.append(constraint)
+
     def get_var(self, name: str) -> SymValue | None:
         """Get variable by name."""
         return self.variables.get(name)
+
     def set_var(self, name: str, value: SymValue):
         """Set variable value."""
         self.variables[name] = value
+
     def push(self, value: SymValue):
         """Push value onto stack."""
         self.stack.append(value)
+
     def pop(self) -> SymValue | None:
         """Pop value from stack."""
         return self.stack.pop() if self.stack else None
+
     def peek(self, n: int = 1) -> SymValue | None:
         """Peek at stack without popping."""
         if len(self.stack) >= n:
             return self.stack[-n]
         return None
+
+
 class FunctionAnalyzer:
     """
     Analyzes individual functions and creates summaries.
     """
+
     BINARY_OPS = {
         0: "+",
         1: "&",
@@ -464,12 +536,14 @@ class FunctionAnalyzer:
         "sqlite3.execute",
         "cursor.execute",
     }
+
     def __init__(self, engine: Z3Engine):
         self.engine = engine
         self.cfg_builder = CFGBuilder()
         self.current_function = ""
         self.current_line = 0
         self.current_file = ""
+
     def analyze(
         self,
         code: Any,
@@ -497,9 +571,11 @@ class FunctionAnalyzer:
         self._explore_paths(cfg, 0, state, crashes, call_sites, visited=set(), depth=0)
         summary = self._build_summary(code, params, crashes, call_sites)
         return crashes, summary
+
     def _make_symbolic_param(self, name: str) -> SymValue:
         """Create symbolic value for a parameter."""
         return SymValue(expr=z3.Int(name), name=name, sym_type=SymType.INT, origin=f"param:{name}")
+
     def _explore_paths(
         self,
         cfg: dict[int, BasicBlock],
@@ -539,12 +615,14 @@ class FunctionAnalyzer:
                 self._explore_paths(
                     cfg, succ_id, new_state, crashes, call_sites, visited, priority_depth
                 )
+
     def _update_line(self, instr):
         """Update current line number from instruction."""
         if hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
             self.current_line = instr.positions.lineno
         elif instr.starts_line and isinstance(instr.starts_line, int):
             self.current_line = instr.starts_line
+
     def _get_branch_constraint(self, opname: str, edge_type: str, cond: SymValue) -> Any | None:
         """Get constraint for branch edge."""
         try:
@@ -566,9 +644,10 @@ class FunctionAnalyzer:
                     return cond.expr == 0
                 elif opname == "POP_JUMP_IF_NOT_NONE":
                     return cond.expr != 0
-        except:
+        except Exception:
             pass
         return None
+
     def _is_path_feasible(self, constraints: list[Any]) -> bool:
         """Quick check if path is feasible."""
         if not constraints:
@@ -578,9 +657,10 @@ class FunctionAnalyzer:
         for c in constraints:
             try:
                 solver.add(c)
-            except:
+            except Exception:
                 pass
         return solver.check() != z3.unsat
+
     def _execute_instruction(
         self,
         instr: Any,
@@ -596,9 +676,11 @@ class FunctionAnalyzer:
             return handler(arg, state, crashes, call_sites)
         else:
             return self._op_unknown(op, arg, state, crashes, call_sites)
+
     def _op_LOAD_CONST(self, arg, state, crashes, call_sites):
         state.push(self._make_const(arg, state))
         return None
+
     def _op_LOAD_FAST(self, arg, state, crashes, call_sites):
         name = str(arg)
         val = state.get_var(name)
@@ -607,11 +689,13 @@ class FunctionAnalyzer:
             state.set_var(name, val)
         state.push(val)
         return None
+
     def _op_LOAD_FAST_LOAD_FAST(self, arg, state, crashes, call_sites):
         if isinstance(arg, tuple):
             for name in arg:
                 self._op_LOAD_FAST(name, state, crashes, call_sites)
         return None
+
     def _op_LOAD_GLOBAL(self, arg, state, crashes, call_sites):
         name = str(arg)
         val = SymValue(
@@ -619,8 +703,10 @@ class FunctionAnalyzer:
         )
         state.push(val)
         return None
+
     def _op_LOAD_NAME(self, arg, state, crashes, call_sites):
         return self._op_LOAD_GLOBAL(arg, state, crashes, call_sites)
+
     def _op_LOAD_ATTR(self, arg, state, crashes, call_sites):
         obj = state.pop()
         if obj and obj.is_none:
@@ -640,25 +726,31 @@ class FunctionAnalyzer:
         )
         state.push(val)
         return None
+
     def _op_LOAD_DEREF(self, arg, state, crashes, call_sites):
         return self._op_LOAD_GLOBAL(arg, state, crashes, call_sites)
+
     def _op_STORE_FAST(self, arg, state, crashes, call_sites):
         if state.stack:
             state.set_var(str(arg), state.pop())
         return None
+
     def _op_STORE_NAME(self, arg, state, crashes, call_sites):
         return self._op_STORE_FAST(arg, state, crashes, call_sites)
+
     def _op_STORE_FAST_STORE_FAST(self, arg, state, crashes, call_sites):
         if isinstance(arg, tuple):
             for name in reversed(arg):
                 if state.stack:
                     state.set_var(str(name), state.pop())
         return None
+
     def _op_STORE_GLOBAL(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         state.globals_modified.add(str(arg))
         return None
+
     def _op_STORE_ATTR(self, arg, state, crashes, call_sites):
         if len(state.stack) >= 2:
             state.pop()
@@ -673,6 +765,7 @@ class FunctionAnalyzer:
                     {},
                 )
         return None
+
     def _op_STORE_SUBSCR(self, arg, state, crashes, call_sites):
         if len(state.stack) >= 3:
             state.pop()
@@ -681,10 +774,12 @@ class FunctionAnalyzer:
             if container and container.is_list and container.length is not None:
                 self._check_index_bounds(index, container, state, crashes)
         return None
+
     def _op_STORE_DEREF(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_BINARY_OP(self, arg, state, crashes, call_sites):
         if len(state.stack) < 2:
             return None
@@ -701,6 +796,7 @@ class FunctionAnalyzer:
         result = self._do_binary_op(left, right, base_op, state)
         state.push(result)
         return None
+
     def _do_binary_op(
         self, left: SymValue, right: SymValue, op: str, state: SymbolicState
     ) -> SymValue:
@@ -740,8 +836,9 @@ class FunctionAnalyzer:
             else:
                 expr = z3.Int(state.fresh_name("binop"))
             return SymValue(expr, f"({left.name}{op}{right.name})", SymType.INT, taint=taint)
-        except:
+        except Exception:
             return SymValue(z3.Int(state.fresh_name("binop")), "", SymType.INT, taint=taint)
+
     def _op_BINARY_SUBSCR(self, arg, state, crashes, call_sites):
         if len(state.stack) < 2:
             return None
@@ -757,6 +854,7 @@ class FunctionAnalyzer:
         )
         state.push(result)
         return None
+
     def _op_COMPARE_OP(self, arg, state, crashes, call_sites):
         if len(state.stack) < 2:
             return None
@@ -773,10 +871,11 @@ class FunctionAnalyzer:
                 result = SymValue(op_func(left.expr, right.expr), sym_type=SymType.BOOL)
             else:
                 result = SymValue(z3.Bool(state.fresh_name("cmp")), sym_type=SymType.BOOL)
-        except:
+        except Exception:
             result = SymValue(z3.Bool(state.fresh_name("cmp")), sym_type=SymType.BOOL)
         state.push(result)
         return result
+
     def _op_IS_OP(self, arg, state, crashes, call_sites):
         if len(state.stack) < 2:
             return None
@@ -790,10 +889,11 @@ class FunctionAnalyzer:
                     result = SymValue(left.expr == 0, sym_type=SymType.BOOL)
             else:
                 result = SymValue(left.expr == right.expr, sym_type=SymType.BOOL)
-        except:
+        except Exception:
             result = SymValue(z3.Bool(state.fresh_name("is")), sym_type=SymType.BOOL)
         state.push(result)
         return result
+
     def _op_CONTAINS_OP(self, arg, state, crashes, call_sites):
         if len(state.stack) >= 2:
             state.pop()
@@ -801,6 +901,7 @@ class FunctionAnalyzer:
         result = SymValue(z3.Bool(state.fresh_name("in")), sym_type=SymType.BOOL)
         state.push(result)
         return result
+
     def _op_TO_BOOL(self, arg, state, crashes, call_sites):
         if not state.stack:
             return None
@@ -811,27 +912,33 @@ class FunctionAnalyzer:
             else:
                 result = SymValue(val.expr != 0, val.name, SymType.BOOL, taint=val.taint)
                 state.push(result)
-        except:
+        except Exception:
             state.push(SymValue(z3.Bool(state.fresh_name("bool")), sym_type=SymType.BOOL))
         return None
+
     def _op_POP_JUMP_IF_FALSE(self, arg, state, crashes, call_sites):
         if state.stack:
             return state.pop()
         return None
+
     def _op_POP_JUMP_IF_TRUE(self, arg, state, crashes, call_sites):
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
+
     def _op_POP_JUMP_IF_NONE(self, arg, state, crashes, call_sites):
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
+
     def _op_POP_JUMP_IF_NOT_NONE(self, arg, state, crashes, call_sites):
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
+
     def _op_UNARY_NEGATIVE(self, arg, state, crashes, call_sites):
         if state.stack:
             val = state.pop()
             try:
                 state.push(SymValue(-val.expr, f"-{val.name}", SymType.INT, taint=val.taint))
-            except:
+            except Exception:
                 state.push(SymValue(z3.Int(state.fresh_name("neg")), sym_type=SymType.INT))
         return None
+
     def _op_UNARY_NOT(self, arg, state, crashes, call_sites):
         if state.stack:
             val = state.pop()
@@ -840,17 +947,19 @@ class FunctionAnalyzer:
                     state.push(SymValue(z3.Not(val.expr), sym_type=SymType.BOOL))
                 else:
                     state.push(SymValue(val.expr == 0, sym_type=SymType.BOOL))
-            except:
+            except Exception:
                 state.push(SymValue(z3.Bool(state.fresh_name("not")), sym_type=SymType.BOOL))
         return None
+
     def _op_UNARY_INVERT(self, arg, state, crashes, call_sites):
         if state.stack:
             val = state.pop()
             try:
                 state.push(SymValue(~val.expr, f"~{val.name}", SymType.INT, taint=val.taint))
-            except:
+            except Exception:
                 state.push(SymValue(z3.Int(state.fresh_name("inv")), sym_type=SymType.INT))
         return None
+
     def _op_CALL(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         args = []
@@ -888,6 +997,7 @@ class FunctionAnalyzer:
         )
         state.push(result)
         return None
+
     def _op_CALL_FUNCTION_EX(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
@@ -895,9 +1005,11 @@ class FunctionAnalyzer:
             state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("call")), sym_type=SymType.UNKNOWN))
         return None
+
     def _op_PUSH_NULL(self, arg, state, crashes, call_sites):
         state.push(SymValue(z3.IntVal(0), "NULL", SymType.NONE, is_none=True))
         return None
+
     def _op_BUILD_LIST(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
@@ -912,6 +1024,7 @@ class FunctionAnalyzer:
         )
         state.push(result)
         return None
+
     def _op_BUILD_TUPLE(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
@@ -921,6 +1034,7 @@ class FunctionAnalyzer:
             SymValue(z3.Int(state.fresh_name("tuple")), sym_type=SymType.TUPLE, length=z3.IntVal(n))
         )
         return None
+
     def _op_BUILD_SET(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
@@ -928,6 +1042,7 @@ class FunctionAnalyzer:
                 state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("set")), sym_type=SymType.SET))
         return None
+
     def _op_BUILD_MAP(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n * 2):
@@ -935,6 +1050,7 @@ class FunctionAnalyzer:
                 state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("dict")), sym_type=SymType.DICT))
         return None
+
     def _op_BUILD_CONST_KEY_MAP(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n + 1):
@@ -942,6 +1058,7 @@ class FunctionAnalyzer:
                 state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("dict")), sym_type=SymType.DICT))
         return None
+
     def _op_BUILD_STRING(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
@@ -949,44 +1066,54 @@ class FunctionAnalyzer:
                 state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("str")), sym_type=SymType.STRING))
         return None
+
     def _op_LIST_EXTEND(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_SET_UPDATE(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_DICT_UPDATE(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_DICT_MERGE(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_POP_TOP(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_COPY(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 1
         if state.stack and len(state.stack) >= n:
             state.push(state.stack[-n])
         return None
+
     def _op_SWAP(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 2
         if len(state.stack) >= n:
             state.stack[-1], state.stack[-n] = state.stack[-n], state.stack[-1]
         return None
+
     def _op_DUP_TOP(self, arg, state, crashes, call_sites):
         if state.stack:
             state.push(state.stack[-1])
         return None
+
     def _op_ROT_TWO(self, arg, state, crashes, call_sites):
         if len(state.stack) >= 2:
             state.stack[-1], state.stack[-2] = state.stack[-2], state.stack[-1]
         return None
+
     def _op_ROT_THREE(self, arg, state, crashes, call_sites):
         if len(state.stack) >= 3:
             state.stack[-1], state.stack[-2], state.stack[-3] = (
@@ -995,6 +1122,7 @@ class FunctionAnalyzer:
                 state.stack[-1],
             )
         return None
+
     def _op_GET_ITER(self, arg, state, crashes, call_sites):
         container = state.pop() if state.stack else None
         state.push(
@@ -1005,37 +1133,48 @@ class FunctionAnalyzer:
             )
         )
         return None
+
     def _op_FOR_ITER(self, arg, state, crashes, call_sites):
         state.push(SymValue(z3.Int(state.fresh_name("item")), sym_type=SymType.UNKNOWN))
         return None
+
     def _op_END_FOR(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_RETURN_VALUE(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         return None
+
     def _op_RETURN_CONST(self, arg, state, crashes, call_sites):
         return None
+
     def _op_YIELD_VALUE(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("sent")), sym_type=SymType.UNKNOWN))
         return None
+
     def _op_RESUME(self, arg, state, crashes, call_sites):
         return None
+
     def _op_NOP(self, arg, state, crashes, call_sites):
         return None
+
     def _op_PRECALL(self, arg, state, crashes, call_sites):
         return None
+
     def _op_KW_NAMES(self, arg, state, crashes, call_sites):
         return None
+
     def _op_MAKE_FUNCTION(self, arg, state, crashes, call_sites):
         if state.stack:
             state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("func")), sym_type=SymType.CALLABLE))
         return None
+
     def _op_FORMAT_VALUE(self, arg, state, crashes, call_sites):
         if state.stack:
             val = state.pop()
@@ -1047,6 +1186,7 @@ class FunctionAnalyzer:
                 )
             )
         return None
+
     def _op_UNPACK_SEQUENCE(self, arg, state, crashes, call_sites):
         seq = state.pop() if state.stack else None
         n = arg if isinstance(arg, int) else 1
@@ -1059,22 +1199,27 @@ class FunctionAnalyzer:
                 )
             )
         return None
+
     def _op_DELETE_FAST(self, arg, state, crashes, call_sites):
         name = str(arg)
         if name in state.variables:
             del state.variables[name]
         return None
+
     def _op_RAISE_VARARGS(self, arg, state, crashes, call_sites):
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
                 state.pop()
         return None
+
     def _op_RERAISE(self, arg, state, crashes, call_sites):
         return None
+
     def _op_unknown(self, op, arg, state, crashes, call_sites):
         """Handle unknown opcodes gracefully."""
         return None
+
     def _check_division(
         self, divisor: SymValue, op: str, state: SymbolicState, crashes: list[CrashCondition]
     ):
@@ -1088,6 +1233,7 @@ class FunctionAnalyzer:
             {divisor.name or "divisor": divisor.expr},
             Severity.CRITICAL,
         )
+
     def _check_modulo(self, divisor: SymValue, state: SymbolicState, crashes: list[CrashCondition]):
         """Check for modulo by zero."""
         self._add_crash(
@@ -1099,6 +1245,7 @@ class FunctionAnalyzer:
             {divisor.name or "divisor": divisor.expr},
             Severity.CRITICAL,
         )
+
     def _check_shift(
         self, amount: SymValue, op: str, state: SymbolicState, crashes: list[CrashCondition]
     ):
@@ -1112,6 +1259,7 @@ class FunctionAnalyzer:
             {amount.name or "amount": amount.expr},
             Severity.CRITICAL,
         )
+
     def _check_index_bounds(
         self,
         index: SymValue,
@@ -1132,6 +1280,7 @@ class FunctionAnalyzer:
             {index.name or "index": index.expr, "length": container.length},
             Severity.CRITICAL,
         )
+
     def _add_crash(
         self,
         bug_type: BugType,
@@ -1159,6 +1308,7 @@ class FunctionAnalyzer:
                 file_path=self.current_file,
             )
         )
+
     def _make_const(self, value: Any, state: SymbolicState) -> SymValue:
         """Create symbolic constant."""
         if isinstance(value, bool):
@@ -1172,6 +1322,7 @@ class FunctionAnalyzer:
         elif isinstance(value, str):
             return SymValue(z3.IntVal(len(value)), repr(value)[:20], SymType.STRING)
         return SymValue(z3.Int(state.fresh_name("const")), "", SymType.UNKNOWN)
+
     def _empty_summary(self, code: Any) -> FunctionSummary:
         """Create empty summary for functions that can't be analyzed."""
         return FunctionSummary(
@@ -1190,6 +1341,7 @@ class FunctionAnalyzer:
             verified=True,
             has_bugs=False,
         )
+
     def _build_summary(
         self,
         code: Any,
@@ -1200,7 +1352,7 @@ class FunctionAnalyzer:
         """Build function summary from analysis results."""
         return FunctionSummary(
             name=code.co_name,
-            code_hash=hashlib.md5(code.co_code).hexdigest(),
+            code_hash=hashlib.sha256(code.co_code).hexdigest()[:32],
             parameters=list(params),
             return_constraints=[],
             crash_conditions=crashes,
@@ -1214,6 +1366,8 @@ class FunctionAnalyzer:
             verified=True,
             has_bugs=len(crashes) > 0,
         )
+
+
 class Z3Engine:
     """
     Intelligent interprocedural verification engine.
@@ -1224,6 +1378,7 @@ class Z3Engine:
     - Taint tracking
     - Cross-function verification
     """
+
     def __init__(
         self,
         timeout_ms: int = 5000,
@@ -1242,9 +1397,11 @@ class Z3Engine:
         self.summaries = self.function_summaries
         self.analyzer = FunctionAnalyzer(self)
         self.verified_crashes: dict[str, VerificationResult] = {}
+
     def verify_function(self, func: Callable) -> list[VerificationResult]:
         """Verify a single function."""
         return self.verify_code(func.__code__)
+
     def verify_code(self, code: Any) -> list[VerificationResult]:
         """Verify a code object."""
         crashes, summary = self.analyzer.analyze(code)
@@ -1254,6 +1411,7 @@ class Z3Engine:
             )
         self.summaries[code.co_name] = summary
         return self._verify_crashes(crashes)
+
     def verify_file(self, path: str) -> dict[str, list[VerificationResult]]:
         """
         Verify all functions in a file with interprocedural analysis.
@@ -1264,11 +1422,13 @@ class Z3Engine:
         self.analyzer.current_file = path
         results: dict[str, list[VerificationResult]] = {}
         all_codes: list[Any] = []
+
         def collect_codes(code_obj):
             all_codes.append(code_obj)
             for const in code_obj.co_consts:
                 if hasattr(const, "co_code"):
                     collect_codes(const)
+
         collect_codes(code)
         for code_obj in all_codes:
             crashes, summary = self.analyzer.analyze(code_obj)
@@ -1290,9 +1450,11 @@ class Z3Engine:
                 if actual_crashes:
                     results[func_name] = actual_crashes
         return results
+
     def verify_directory(self, path: str) -> dict[str, dict[str, list[VerificationResult]]]:
         """Verify all Python files in a directory."""
         import os
+
         all_results: dict[str, dict[str, list[VerificationResult]]] = {}
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
@@ -1306,9 +1468,11 @@ class Z3Engine:
                     except Exception:
                         pass
         return all_results
+
     def _build_context_from_callees(self, func_name: str) -> dict[str, SymValue] | None:
         """Build context from function summaries of callees."""
         return None
+
     def _verify_crashes(self, crashes: list[CrashCondition]) -> list[VerificationResult]:
         """Verify crash conditions with Z3."""
         results = []
@@ -1321,6 +1485,7 @@ class Z3Engine:
             result = self._verify_single_crash(crash)
             results.append(result)
         return results
+
     def _verify_single_crash(self, crash: CrashCondition) -> VerificationResult:
         """Verify a single crash condition."""
         start = time.time()
@@ -1329,11 +1494,11 @@ class Z3Engine:
         for constraint in crash.path_constraints:
             try:
                 solver.add(constraint)
-            except:
+            except Exception:
                 pass
         try:
             solver.add(crash.condition)
-        except:
+        except Exception:
             elapsed = (time.time() - start) * 1000
             return VerificationResult(crash, True, False, None, "error", elapsed)
         result = solver.check()
@@ -1345,7 +1510,7 @@ class Z3Engine:
                 try:
                     val = model.eval(expr, model_completion=True)
                     counterexample[name] = str(val)
-                except:
+                except Exception:
                     counterexample[name] = "?"
             return VerificationResult(
                 crash=crash,
@@ -1371,6 +1536,7 @@ class Z3Engine:
                 z3_status="unknown",
                 verification_time_ms=elapsed,
             )
+
     def get_call_graph_info(self) -> dict[str, Any]:
         """Get information about the call graph."""
         return {
@@ -1379,27 +1545,36 @@ class Z3Engine:
             "recursive_functions": list(self.call_graph.recursive),
             "entry_points": list(self.call_graph.entry_points),
         }
+
     def get_function_summary(self, name: str) -> FunctionSummary | None:
         """Get cached summary for a function."""
         return self.summaries.get(name)
+
+
 def verify_function(func: Callable) -> list[VerificationResult]:
     """Verify a Python function."""
     if not Z3_AVAILABLE:
         return []
     engine = Z3Engine()
     return engine.verify_function(func)
+
+
 def verify_code(code: Any) -> list[VerificationResult]:
     """Verify a code object."""
     if not Z3_AVAILABLE:
         return []
     engine = Z3Engine()
     return engine.verify_code(code)
+
+
 def verify_file(path: str, timeout_ms: int = 5000) -> dict[str, list[VerificationResult]]:
     """Verify all functions in a file."""
     if not Z3_AVAILABLE:
         return {}
     engine = Z3Engine(timeout_ms=timeout_ms)
     return engine.verify_file(path)
+
+
 def verify_directory(
     path: str, timeout_ms: int = 5000
 ) -> dict[str, dict[str, list[VerificationResult]]]:
@@ -1408,7 +1583,11 @@ def verify_directory(
         return {}
     engine = Z3Engine(timeout_ms=timeout_ms)
     return engine.verify_directory(path)
+
+
 def is_z3_available() -> bool:
     """Check if Z3 is available."""
     return Z3_AVAILABLE
+
+
 Z3Prover = Z3Engine

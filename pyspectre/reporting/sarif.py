@@ -8,6 +8,7 @@ Supports:
 - Visual Studio Code SARIF Viewer
 - GitLab SAST
 """
+
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field
@@ -15,13 +16,17 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
+
+
 class Severity(Enum):
     """Issue severity levels."""
+
     CRITICAL = auto()
     HIGH = auto()
     MEDIUM = auto()
     LOW = auto()
     INFO = auto()
+
     def to_sarif_level(self) -> str:
         """Convert to SARIF result level."""
         mapping = {
@@ -32,15 +37,20 @@ class Severity(Enum):
             Severity.INFO: "note",
         }
         return mapping.get(self, "warning")
+
+
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 )
+
+
 @dataclass
 class VulnerabilityReport:
     """Simple vulnerability report for SARIF output.
     This is a lightweight data class for reporting issues in SARIF format.
     """
+
     vuln_type: str
     message: str
     severity: Severity = Severity.MEDIUM
@@ -53,14 +63,18 @@ class VulnerabilityReport:
     owasp_category: str | None = None
     cwe_id: int | None = None
     triggering_input: dict[str, Any] | None = None
+
+
 @dataclass
 class PhysicalLocation:
     """Physical location in a file."""
+
     file_path: str
     start_line: int = 1
     start_column: int = 1
     end_line: int | None = None
     end_column: int | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         region: dict[str, Any] = {
@@ -80,12 +94,16 @@ class PhysicalLocation:
                 "region": region,
             }
         }
+
+
 @dataclass
 class LogicalLocation:
     """Logical location (function, class, etc.)."""
+
     name: str
     kind: str = "function"
     fully_qualified_name: str | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         result: dict[str, Any] = {
@@ -95,11 +113,15 @@ class LogicalLocation:
         if self.fully_qualified_name:
             result["fullyQualifiedName"] = self.fully_qualified_name
         return result
+
+
 @dataclass
 class CodeFlow:
     """Code flow showing taint propagation."""
+
     locations: list[PhysicalLocation] = field(default_factory=list)
     message: str = ""
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         thread_flow_locations = []
@@ -119,9 +141,12 @@ class CodeFlow:
             ],
             "message": {"text": self.message} if self.message else None,
         }
+
+
 @dataclass
 class SARIFResult:
     """A single SARIF result (finding)."""
+
     rule_id: str
     message: str
     level: str
@@ -131,6 +156,7 @@ class SARIFResult:
     fixes: list[dict[str, Any]] = field(default_factory=list)
     fingerprints: dict[str, str] = field(default_factory=dict)
     properties: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         result: dict[str, Any] = {
@@ -151,9 +177,12 @@ class SARIFResult:
         if self.properties:
             result["properties"] = self.properties
         return result
+
+
 @dataclass
 class ReportingDescriptor:
     """A rule descriptor for SARIF."""
+
     id: str
     name: str
     short_description: str
@@ -161,6 +190,7 @@ class ReportingDescriptor:
     help_uri: str = ""
     default_level: str = "warning"
     properties: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         result: dict[str, Any] = {
@@ -176,13 +206,17 @@ class ReportingDescriptor:
         if self.properties:
             result["properties"] = self.properties
         return result
+
+
 @dataclass
 class ToolDriver:
     """The analysis tool driver."""
+
     name: str = "PySpectre"
-    version: str = "1.0.0"
-    information_uri: str = "https://github.com/pyspectre/pyspectre"
+    version: str = "0.3.0a0"
+    information_uri: str = "https://github.com/darkoss1/pyspecter"
     rules: list[ReportingDescriptor] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         return {
@@ -191,13 +225,17 @@ class ToolDriver:
             "informationUri": self.information_uri,
             "rules": [r.to_dict() for r in self.rules],
         }
+
+
 @dataclass
 class Run:
     """A single analysis run."""
+
     tool: ToolDriver
     results: list[SARIFResult] = field(default_factory=list)
     invocations: list[dict[str, Any]] = field(default_factory=list)
     artifacts: list[dict[str, Any]] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         return {
@@ -211,12 +249,16 @@ class Run:
             ],
             "artifacts": self.artifacts,
         }
+
+
 @dataclass
 class SARIFLog:
     """The top-level SARIF log object."""
+
     version: str = SARIF_VERSION
     schema: str = SARIF_SCHEMA
     runs: list[Run] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to SARIF format."""
         return {
@@ -224,13 +266,17 @@ class SARIFLog:
             "version": self.version,
             "runs": [r.to_dict() for r in self.runs],
         }
+
     def to_json(self, indent: int = 2) -> str:
         """Convert to JSON string."""
         return json.dumps(self.to_dict(), indent=indent)
+
     def save(self, path: str | Path) -> None:
         """Save to a file."""
         path = Path(path)
         path.write_text(self.to_json(), encoding="utf-8")
+
+
 def severity_to_level(severity: Severity) -> str:
     """Convert PySpectre severity to SARIF level."""
     mapping = {
@@ -241,6 +287,8 @@ def severity_to_level(severity: Severity) -> str:
         Severity.INFO: "none",
     }
     return mapping.get(severity, "warning")
+
+
 def severity_to_security_severity(severity: Severity) -> str:
     """Convert to GitHub security severity."""
     mapping = {
@@ -251,6 +299,8 @@ def severity_to_security_severity(severity: Severity) -> str:
         Severity.INFO: "low",
     }
     return mapping.get(severity, "medium")
+
+
 SECURITY_RULES: dict[str, ReportingDescriptor] = {
     "SVM001": ReportingDescriptor(
         id="SVM001",
@@ -419,26 +469,53 @@ SECURITY_RULES: dict[str, ReportingDescriptor] = {
             "tags": ["reliability", "cwe-129"],
         },
     ),
+    "SVM013": ReportingDescriptor(
+        id="SVM013",
+        name="UnusedVariable",
+        short_description="Unused variable detected",
+        full_description="A variable is assigned a value but never used.",
+        default_level="note",
+        properties={
+            "tags": ["maintainability"],
+        },
+    ),
+    "SVM014": ReportingDescriptor(
+        id="SVM014",
+        name="KeyError",
+        short_description="Potential KeyError",
+        full_description="A dictionary access may fail due to a missing key.",
+        default_level="warning",
+        properties={
+            "tags": ["reliability"],
+        },
+    ),
 }
+
+
 def vuln_type_to_rule_id(vuln_type: str) -> str:
     """Map vulnerability type to SARIF rule ID."""
+    v = str(vuln_type).lower().replace(" ", "_")
     mapping = {
-        "Command Injection": "SVM001",
-        "SQL Injection": "SVM002",
-        "Path Traversal": "SVM003",
-        "Potential Path Traversal": "SVM003",
-        "Server-Side Request Forgery (SSRF)": "SVM004",
-        "Insecure Deserialization": "SVM005",
-        "Potentially Unsafe Deserialization": "SVM005",
-        "Server-Side Template Injection": "SVM006",
-        "Hardcoded Secret": "SVM007",
-        "Weak Cryptography": "SVM008",
-        "Code Injection": "SVM009",
+        "command_injection": "SVM001",
+        "sql_injection": "SVM002",
+        "path_traversal": "SVM003",
+        "potential_path_traversal": "SVM003",
+        "server_side_request_forgery_(ssrf)": "SVM004",
+        "insecure_deserialization": "SVM005",
+        "potentially_unsafe_deserialization": "SVM005",
+        "server_side_template_injection": "SVM006",
+        "hardcoded_secret": "SVM007",
+        "weak_cryptography": "SVM008",
+        "code_injection": "SVM009",
         "division_by_zero": "SVM010",
         "assertion_error": "SVM011",
         "index_error": "SVM012",
+        "unused_variable": "SVM013",
+        "key_error": "SVM014",
     }
-    return mapping.get(vuln_type, "SVM999")
+    return mapping.get(v, "SVM999")
+
+
 def vulnerability_to_sarif_result(vuln: VulnerabilityReport) -> SARIFResult:
     """Convert a VulnerabilityReport to a SARIF result."""
     rule_id = vuln_type_to_rule_id(vuln.vuln_type)
@@ -497,19 +574,31 @@ def vulnerability_to_sarif_result(vuln: VulnerabilityReport) -> SARIFResult:
         code_flows=code_flows,
         properties=properties,
     )
+
+
 def issue_to_sarif_result(issue: dict[str, Any]) -> SARIFResult:
     """Convert an issue dictionary to a SARIF result."""
-    issue_type = issue.get("type", "unknown")
+    issue_type = issue.get("type") or issue.get("kind") or "unknown"
     rule_id = vuln_type_to_rule_id(issue_type)
     level = "warning"
     if "error" in issue_type.lower():
         level = "error"
     locations = []
     if "line" in issue:
+        line = issue.get("line")
+        try:
+            if isinstance(line, bool):
+                line = 1
+            line_int = int(line) if line is not None else 1
+            if line_int < 1:
+                line_int = 1
+        except (ValueError, TypeError):
+            line_int = 1
+
         locations.append(
             PhysicalLocation(
                 file_path=issue.get("file", "unknown"),
-                start_line=issue.get("line", 1),
+                start_line=line_int,
             )
         )
     message = issue.get("message", issue.get("description", f"Issue: {issue_type}"))
@@ -523,8 +612,11 @@ def issue_to_sarif_result(issue: dict[str, Any]) -> SARIFResult:
         locations=locations,
         properties=properties,
     )
+
+
 class SARIFGenerator:
     """Generates SARIF reports from PySpectre analysis results."""
+
     def __init__(
         self,
         tool_name: str = "PySpectre",
@@ -532,6 +624,7 @@ class SARIFGenerator:
     ):
         self.tool_name = tool_name
         self.tool_version = tool_version
+
     def generate(
         self,
         vulnerabilities: list[VulnerabilityReport] | None = None,
@@ -591,6 +684,7 @@ class SARIFGenerator:
             artifacts=artifacts,
         )
         return SARIFLog(runs=[run])
+
     def generate_from_result(self, analysis_result: Any) -> SARIFLog:
         """Generate SARIF from an AnalysisResult object."""
         issues = []
@@ -604,6 +698,8 @@ class SARIFGenerator:
         elif hasattr(analysis_result, "analyzed_files"):
             files = [str(f) for f in analysis_result.analyzed_files]
         return self.generate(issues=issues, analyzed_files=files)
+
+
 def generate_sarif(
     vulnerabilities: list[VulnerabilityReport] | None = None,
     issues: list[dict[str, Any]] | None = None,
@@ -628,6 +724,8 @@ def generate_sarif(
     if output_path:
         sarif_log.save(output_path)
     return sarif_log
+
+
 __all__ = [
     "SARIF_VERSION",
     "SARIF_SCHEMA",

@@ -6,6 +6,7 @@ A call graph represents:
 - Edges: Calls between functions
 - Properties: Direct, indirect, recursive calls
 """
+
 from __future__ import annotations
 import dis
 from collections import deque
@@ -14,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import (
     Any,
 )
+
+
 @dataclass
 class CallGraphNode:
     """
@@ -26,6 +29,7 @@ class CallGraphNode:
         is_method: Whether this is a method
         class_name: Containing class (for methods)
     """
+
     name: str
     qualname: str = ""
     module: str = ""
@@ -34,35 +38,45 @@ class CallGraphNode:
     class_name: str | None = None
     _callers: set[str] = field(default_factory=set)
     _callees: set[str] = field(default_factory=set)
+
     def __post_init__(self):
         if not self.qualname:
             self.qualname = self.name
+
     @property
     def full_name(self) -> str:
         """Get full qualified name."""
         if self.module:
             return f"{self.module}.{self.qualname}"
         return self.qualname
+
     @property
     def callers(self) -> set[str]:
         """Functions that call this function."""
         return self._callers
+
     @property
     def callees(self) -> set[str]:
         """Functions this function calls."""
         return self._callees
+
     def add_caller(self, caller: str) -> None:
         """Add a caller."""
         self._callers.add(caller)
+
     def add_callee(self, callee: str) -> None:
         """Add a callee."""
         self._callees.add(callee)
+
     def __hash__(self) -> int:
         return hash(self.full_name)
+
     def __eq__(self, other: object) -> bool:
         if isinstance(other, CallGraphNode):
             return self.full_name == other.full_name
         return False
+
+
 @dataclass
 class CallGraphEdge:
     """
@@ -75,20 +89,25 @@ class CallGraphEdge:
         is_conditional: Whether call is conditional
         is_in_loop: Whether call is inside a loop
     """
+
     caller: str
     callee: str
     call_sites: list[int] = field(default_factory=list)
     is_method_call: bool = False
     is_conditional: bool = False
     is_in_loop: bool = False
+
     def add_call_site(self, pc: int) -> None:
         """Add a call site."""
         if pc not in self.call_sites:
             self.call_sites.append(pc)
+
     @property
     def call_count(self) -> int:
         """Number of call sites."""
         return len(self.call_sites)
+
+
 class CallGraph:
     """
     Complete call graph for a module or program.
@@ -99,25 +118,32 @@ class CallGraph:
     - Topological ordering
     - Reachability analysis
     """
+
     def __init__(self, name: str = ""):
         self.name = name
         self._nodes: dict[str, CallGraphNode] = {}
         self._edges: dict[tuple[str, str], CallGraphEdge] = {}
+
     def add_node(self, node: CallGraphNode) -> None:
         """Add a node to the graph."""
         self._nodes[node.full_name] = node
+
     def get_node(self, name: str) -> CallGraphNode | None:
         """Get a node by name."""
         return self._nodes.get(name)
+
     def has_node(self, name: str) -> bool:
         """Check if node exists."""
         return name in self._nodes
+
     def nodes(self) -> list[CallGraphNode]:
         """Get all nodes."""
         return list(self._nodes.values())
+
     def node_names(self) -> set[str]:
         """Get all node names."""
         return set(self._nodes.keys())
+
     def add_edge(
         self,
         caller: str,
@@ -143,27 +169,33 @@ class CallGraph:
             if callee in self._nodes:
                 self._nodes[callee].add_caller(caller)
         return edge
+
     def get_edge(self, caller: str, callee: str) -> CallGraphEdge | None:
         """Get edge between two nodes."""
         return self._edges.get((caller, callee))
+
     def has_edge(self, caller: str, callee: str) -> bool:
         """Check if edge exists."""
         return (caller, callee) in self._edges
+
     def edges(self) -> list[CallGraphEdge]:
         """Get all edges."""
         return list(self._edges.values())
+
     def get_callers(self, name: str) -> set[str]:
         """Get all callers of a function."""
         node = self.get_node(name)
         if node:
             return node.callers
         return set()
+
     def get_callees(self, name: str) -> set[str]:
         """Get all callees of a function."""
         node = self.get_node(name)
         if node:
             return node.callees
         return set()
+
     def get_transitive_callers(self, name: str) -> set[str]:
         """Get all transitive callers (functions that lead to this one)."""
         result = set()
@@ -178,6 +210,7 @@ class CallGraph:
                     result.add(caller)
                     queue.append(caller)
         return result
+
     def get_transitive_callees(self, name: str) -> set[str]:
         """Get all transitive callees (functions reachable from this one)."""
         result = set()
@@ -192,14 +225,17 @@ class CallGraph:
                     result.add(callee)
                     queue.append(callee)
         return result
+
     def is_reachable(self, source: str, target: str) -> bool:
         """Check if target is reachable from source."""
         return target in self.get_transitive_callees(source)
+
     def find_cycles(self) -> list[list[str]]:
         """Find all cycles in the call graph (recursive call chains)."""
         cycles = []
         visited = set()
         rec_stack = []
+
         def dfs(node: str, path: list[str]) -> None:
             visited.add(node)
             rec_stack.append(node)
@@ -212,19 +248,24 @@ class CallGraph:
                     cycle = path[cycle_start:] + [callee]
                     cycles.append(cycle)
             rec_stack.pop()
+
         for node_name in self._nodes:
             if node_name not in visited:
                 dfs(node_name, [])
         return cycles
+
     def is_recursive(self, name: str) -> bool:
         """Check if function is directly or indirectly recursive."""
         return name in self.get_transitive_callees(name)
+
     def is_directly_recursive(self, name: str) -> bool:
         """Check if function is directly recursive (calls itself)."""
         return name in self.get_callees(name)
+
     def get_recursive_functions(self) -> set[str]:
         """Get all recursive functions."""
         return {name for name in self._nodes if self.is_recursive(name)}
+
     def topological_order(self) -> list[str]:
         """
         Get topological ordering of functions.
@@ -249,11 +290,13 @@ class CallGraph:
         if len(result) != len(self._nodes):
             return []
         return result
+
     def reverse_topological_order(self) -> list[str]:
         """Get reverse topological order (callers before callees)."""
         order = self.topological_order()
         order.reverse()
         return order
+
     def strongly_connected_components(self) -> list[set[str]]:
         """
         Find strongly connected components using Tarjan's algorithm.
@@ -265,6 +308,7 @@ class CallGraph:
         index = {}
         on_stack = {}
         sccs = []
+
         def strongconnect(node: str) -> None:
             index[node] = index_counter[0]
             lowlinks[node] = index_counter[0]
@@ -286,16 +330,20 @@ class CallGraph:
                     if w == node:
                         break
                 sccs.append(scc)
+
         for node in self._nodes:
             if node not in index:
                 strongconnect(node)
         return sccs
+
     def entry_points(self) -> set[str]:
         """Get entry points (functions not called by others)."""
         return {n for n in self._nodes if not self.get_callers(n)}
+
     def leaf_functions(self) -> set[str]:
         """Get leaf functions (functions that don't call others)."""
         return {n for n in self._nodes if not self.get_callees(n)}
+
     def call_depth(self, name: str) -> int:
         """
         Get maximum call depth from a function.
@@ -304,6 +352,7 @@ class CallGraph:
         if self.is_recursive(name):
             return -1
         visited = set()
+
         def dfs(node: str, depth: int) -> int:
             if node in visited:
                 return depth - 1
@@ -314,7 +363,9 @@ class CallGraph:
                 max_depth = max(max_depth, callee_depth)
             visited.remove(node)
             return max_depth
+
         return dfs(name, 0)
+
     def merge(self, other: CallGraph) -> None:
         """Merge another call graph into this one."""
         for node in other.nodes():
@@ -328,6 +379,7 @@ class CallGraph:
             )
             for pc in edge.call_sites:
                 self._edges[(edge.caller, edge.callee)].add_call_site(pc)
+
     def subgraph(self, nodes: set[str]) -> CallGraph:
         """Create a subgraph containing only specified nodes."""
         result = CallGraph(name=f"{self.name}_subgraph")
@@ -342,16 +394,22 @@ class CallGraph:
                     is_method_call=edge.is_method_call,
                 )
         return result
+
     def __str__(self) -> str:
         return f"CallGraph({self.name}, {len(self._nodes)} nodes, {len(self._edges)} edges)"
+
     def __repr__(self) -> str:
         return self.__str__()
+
+
 class CallGraphBuilder:
     """
     Builds call graphs from bytecode.
     """
+
     def __init__(self):
         self.graph = CallGraph()
+
     def add_function(
         self,
         func: Callable,
@@ -373,6 +431,7 @@ class CallGraphBuilder:
                 node.class_name = parts[0]
         self.graph.add_node(node)
         return node
+
     def analyze_function(self, func: Callable) -> list[str]:
         """
         Analyze a function's bytecode to find call sites.
@@ -391,6 +450,7 @@ class CallGraphBuilder:
                 if instr.argval:
                     callees.append(str(instr.argval))
         return callees
+
     def build_from_functions(
         self,
         functions: list[Callable],
@@ -410,9 +470,12 @@ class CallGraphBuilder:
                 if callee_name in func_map:
                     self.graph.add_edge(caller, callee_name)
         return self.graph
+
     def build(self) -> CallGraph:
         """Return the built graph."""
         return self.graph
+
+
 def get_analysis_order(graph: CallGraph) -> list[str]:
     """
     Get optimal order for analyzing functions.
@@ -440,6 +503,8 @@ def get_analysis_order(graph: CallGraph) -> list[str]:
         scc_idx = int(scc_name.split("_")[1])
         result.extend(sorted(sccs[scc_idx]))
     return result
+
+
 def find_mutual_recursion(graph: CallGraph) -> list[set[str]]:
     """
     Find groups of mutually recursive functions.
@@ -447,6 +512,8 @@ def find_mutual_recursion(graph: CallGraph) -> list[set[str]]:
     """
     sccs = graph.strongly_connected_components()
     return [scc for scc in sccs if len(scc) > 1]
+
+
 def compute_dominators(graph: CallGraph, entry: str) -> dict[str, set[str]]:
     """
     Compute dominators for each node.

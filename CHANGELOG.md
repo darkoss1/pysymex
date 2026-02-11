@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-alpha] - 2026-02-11
+
+### Added
+- **Intelligent False Positive Filter**: Integrated `fp_filter.py` to reduce noise from type annotations and intentional assertions.
+- **Enhanced Type Inference**: `PyType` now tracks `length`, `known_keys`, and `value_constraints` for higher precision.
+- **SARIF 2.1.0 Support**: Full support for static analysis results in SARIF format for CI/CD integration.
+- **Static Analysis Mode**: New `static` mode for `scan` command, providing fast and reliable multi-phase analysis.
+- **Confidence Scoring**: Issues now include a confidence score (high/medium/low) based on analysis depth.
+- **New Analysis Modules**: Specialized analyzers for Resource Leaks, String Safety, and Exception Flow.
+
+### Changed
+- Default `scan` mode changed from `symbolic` to `static` for improved performance.
+- Refactored CLI for better maintainability and reduced complexity.
+
+### Fixed
+- Line number extraction bug (boolean `starts_line` issue in Python 3.11+).
+- Numerous linting warnings and technical debt items across the core engine.
+
 ## [0.2.0-alpha] - 2026-01-30
 
 ### Added

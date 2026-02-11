@@ -9,21 +9,26 @@ A function summary captures:
 - Called functions (call graph edges)
 - Raised exceptions
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import (
     Any,
 )
 import z3
+
+
 @dataclass
 class ParameterInfo:
     """Information about a function parameter."""
+
     name: str
     index: int
     type_hint: str | None = None
     default_value: Any = None
     is_symbolic: bool = True
     z3_var: z3.ExprRef | None = None
+
     def to_z3(self, prefix: str = "") -> z3.ExprRef:
         """Create or get Z3 variable for this parameter."""
         if self.z3_var is not None:
@@ -37,36 +42,50 @@ class ParameterInfo:
             return z3.Real(name)
         else:
             return z3.Int(name)
+
+
 @dataclass
 class ModifiedVariable:
     """Information about a modified variable."""
+
     name: str
     scope: str = "local"
     object_path: str | None = None
     old_value: z3.ExprRef | None = None
     new_value: z3.ExprRef | None = None
+
+
 @dataclass
 class ReadVariable:
     """Information about a read variable."""
+
     name: str
     scope: str = "local"
     object_path: str | None = None
     value: z3.ExprRef | None = None
+
+
 @dataclass
 class CallSite:
     """Information about a function call site."""
+
     callee: str
     args: list[Any] = field(default_factory=list)
     kwargs: dict[str, Any] = field(default_factory=dict)
     pc: int = 0
     is_method: bool = False
     receiver: str | None = None
+
+
 @dataclass
 class ExceptionInfo:
     """Information about an exception that may be raised."""
+
     exc_type: str
     condition: z3.BoolRef | None = None
     message: str | None = None
+
+
 @dataclass
 class FunctionSummary:
     """
@@ -74,6 +93,7 @@ class FunctionSummary:
     Captures everything needed to reason about calls to this function
     without re-analyzing its body.
     """
+
     name: str
     qualname: str = ""
     module: str = ""
@@ -91,57 +111,71 @@ class FunctionSummary:
     complexity: str = "unknown"
     return_constraint: z3.BoolRef | None = None
     return_var: z3.ExprRef | None = None
+
     def __post_init__(self):
         if not self.qualname:
             self.qualname = self.name
         if self.return_var is None:
             self.return_var = z3.Int(f"{self.name}_result")
+
     def get_parameter(self, name: str) -> ParameterInfo | None:
         """Get parameter by name."""
         for param in self.parameters:
             if param.name == name:
                 return param
         return None
+
     def get_parameter_z3(self, name: str, prefix: str = "") -> z3.ExprRef | None:
         """Get Z3 variable for parameter."""
         param = self.get_parameter(name)
         if param:
             return param.to_z3(prefix)
         return None
+
     def add_precondition(self, cond: z3.BoolRef) -> None:
         """Add a precondition."""
         self.preconditions.append(cond)
+
     def add_postcondition(self, cond: z3.BoolRef) -> None:
         """Add a postcondition."""
         self.postconditions.append(cond)
+
     def add_modified(self, var: ModifiedVariable) -> None:
         """Add a modified variable."""
         self.modified.append(var)
+
     def add_reads(self, var: ReadVariable) -> None:
         """Add a read variable."""
         self.reads.append(var)
+
     def add_call(self, call: CallSite) -> None:
         """Add a call site."""
         self.calls.append(call)
+
     def add_exception(self, exc: ExceptionInfo) -> None:
         """Add a potential exception."""
         self.may_raise.append(exc)
+
     def modifies_globals(self) -> bool:
         """Check if function modifies global variables."""
         return any(v.scope == "global" for v in self.modified)
+
     def reads_globals(self) -> bool:
         """Check if function reads global variables."""
         return any(v.scope == "global" for v in self.reads)
+
     def get_all_preconditions(self) -> z3.BoolRef:
         """Get conjunction of all preconditions."""
         if not self.preconditions:
             return z3.BoolVal(True)
         return z3.And(*self.preconditions)
+
     def get_all_postconditions(self) -> z3.BoolRef:
         """Get conjunction of all postconditions."""
         if not self.postconditions:
             return z3.BoolVal(True)
         return z3.And(*self.postconditions)
+
     def clone(self) -> FunctionSummary:
         """Create a copy of this summary."""
         return FunctionSummary(
@@ -163,21 +197,27 @@ class FunctionSummary:
             return_constraint=self.return_constraint,
             return_var=self.return_var,
         )
+
+
 class SummaryBuilder:
     """
     Builds function summaries from analysis results.
     """
+
     def __init__(self, name: str):
         self.summary = FunctionSummary(name=name)
         self._param_index = 0
+
     def set_qualname(self, qualname: str) -> SummaryBuilder:
         """Set qualified name."""
         self.summary.qualname = qualname
         return self
+
     def set_module(self, module: str) -> SummaryBuilder:
         """Set module name."""
         self.summary.module = module
         return self
+
     def add_parameter(
         self,
         name: str,
@@ -194,18 +234,22 @@ class SummaryBuilder:
         self.summary.parameters.append(param)
         self._param_index += 1
         return self
+
     def set_return_type(self, type_hint: str) -> SummaryBuilder:
         """Set return type."""
         self.summary.return_type = type_hint
         return self
+
     def require(self, condition: z3.BoolRef) -> SummaryBuilder:
         """Add a precondition."""
         self.summary.add_precondition(condition)
         return self
+
     def ensure(self, condition: z3.BoolRef) -> SummaryBuilder:
         """Add a postcondition."""
         self.summary.add_postcondition(condition)
         return self
+
     def modifies(
         self,
         name: str,
@@ -215,6 +259,7 @@ class SummaryBuilder:
         """Add a modified variable."""
         self.summary.add_modified(ModifiedVariable(name, scope, object_path))
         return self
+
     def reads_var(
         self,
         name: str,
@@ -224,6 +269,7 @@ class SummaryBuilder:
         """Add a read variable."""
         self.summary.add_reads(ReadVariable(name, scope, object_path))
         return self
+
     def calls_function(
         self,
         callee: str,
@@ -241,6 +287,7 @@ class SummaryBuilder:
             )
         )
         return self
+
     def may_raise_exception(
         self,
         exc_type: str,
@@ -249,33 +296,42 @@ class SummaryBuilder:
         """Add a potential exception."""
         self.summary.add_exception(ExceptionInfo(exc_type, condition))
         return self
+
     def mark_pure(self) -> SummaryBuilder:
         """Mark as pure function."""
         self.summary.is_pure = True
         return self
+
     def mark_recursive(self) -> SummaryBuilder:
         """Mark as recursive."""
         self.summary.is_recursive = True
         return self
+
     def set_complexity(self, complexity: str) -> SummaryBuilder:
         """Set complexity class."""
         self.summary.complexity = complexity
         return self
+
     def set_return_constraint(self, constraint: z3.BoolRef) -> SummaryBuilder:
         """Set return value constraint."""
         self.summary.return_constraint = constraint
         return self
+
     def build(self) -> FunctionSummary:
         """Build the summary."""
         return self.summary
+
+
 class SummaryRegistry:
     """
     Registry of function summaries.
     Stores and retrieves summaries by function name/qualname.
     """
+
     def __init__(self):
         self._summaries: dict[str, FunctionSummary] = {}
         self._by_module: dict[str, list[str]] = {}
+
     def register(self, summary: FunctionSummary) -> None:
         """Register a function summary."""
         key = summary.qualname or summary.name
@@ -284,30 +340,43 @@ class SummaryRegistry:
             if summary.module not in self._by_module:
                 self._by_module[summary.module] = []
             self._by_module[summary.module].append(key)
+
     def get(self, name: str) -> FunctionSummary | None:
         """Get summary by name."""
         return self._summaries.get(name)
+
     def get_for_module(self, module: str) -> list[FunctionSummary]:
         """Get all summaries for a module."""
         names = self._by_module.get(module, [])
         return [self._summaries[n] for n in names if n in self._summaries]
+
     def has(self, name: str) -> bool:
         """Check if summary exists."""
         return name in self._summaries
+
     def all_summaries(self) -> list[FunctionSummary]:
         """Get all registered summaries."""
         return list(self._summaries.values())
+
     def clear(self) -> None:
         """Clear all summaries."""
         self._summaries.clear()
         self._by_module.clear()
+
+
 SUMMARY_REGISTRY = SummaryRegistry()
+
+
 def get_summary(name: str) -> FunctionSummary | None:
     """Get summary from global registry."""
     return SUMMARY_REGISTRY.get(name)
+
+
 def register_summary(summary: FunctionSummary) -> None:
     """Register summary in global registry."""
     SUMMARY_REGISTRY.register(summary)
+
+
 def compose_summaries(
     outer: FunctionSummary,
     call_site: CallSite,
@@ -329,6 +398,8 @@ def compose_summaries(
     if not inner.is_deterministic:
         result.is_deterministic = False
     return result
+
+
 def instantiate_summary(
     summary: FunctionSummary,
     args: list[z3.ExprRef],
@@ -360,6 +431,8 @@ def instantiate_summary(
     if summary.return_constraint:
         pass
     return precondition, postcondition, return_val
+
+
 def create_builtin_summaries() -> list[FunctionSummary]:
     """Create summaries for built-in functions."""
     summaries = []
@@ -436,34 +509,43 @@ def create_builtin_summaries() -> list[FunctionSummary]:
     input_summary.is_deterministic = False
     summaries.append(input_summary)
     return summaries
+
+
 def register_builtin_summaries() -> None:
     """Register built-in function summaries."""
     for summary in create_builtin_summaries():
         register_summary(summary)
+
+
 class SummaryAnalyzer:
     """
     Analyzes function summaries for various properties.
     """
+
     def __init__(self, registry: SummaryRegistry = None):
         self.registry = registry or SUMMARY_REGISTRY
+
     def is_pure(self, name: str) -> bool:
         """Check if function is pure."""
         summary = self.registry.get(name)
         if summary:
             return summary.is_pure
         return False
+
     def may_modify_globals(self, name: str) -> bool:
         """Check if function may modify global state."""
         summary = self.registry.get(name)
         if summary:
             return summary.modifies_globals()
         return True
+
     def get_called_functions(self, name: str) -> set[str]:
         """Get all functions called by this function."""
         summary = self.registry.get(name)
         if summary:
             return {call.callee for call in summary.calls}
         return set()
+
     def get_transitive_calls(self, name: str, visited: set[str] = None) -> set[str]:
         """Get all functions transitively called."""
         if visited is None:
@@ -477,6 +559,7 @@ class SummaryAnalyzer:
         for callee in direct_calls:
             result.update(self.get_transitive_calls(callee, visited))
         return result
+
     def check_preconditions(
         self,
         name: str,

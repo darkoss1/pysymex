@@ -41,8 +41,8 @@ python auto_scanner.py --dir ./src
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/pyspectre.git
-cd pyspectre
+git clone https://github.com/darkoss1/pyspecter.git
+cd pyspecter
 
 # Create virtual environment
 python -m venv .venv

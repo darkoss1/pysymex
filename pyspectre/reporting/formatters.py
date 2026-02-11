@@ -1,26 +1,36 @@
 """Output formatters for PySpectre results."""
+
 from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+
 if TYPE_CHECKING:
     from pyspectre.analysis.detectors import Issue
     from pyspectre.execution.executor import ExecutionResult
+
+
 class Formatter(ABC):
     """Base class for output formatters."""
+
     name: str = "base"
     extension: str = ".txt"
+
     @abstractmethod
     def format(self, result: ExecutionResult) -> str:
         """Format the execution result."""
+
     def save(self, result: ExecutionResult, filepath: str) -> None:
         """Save formatted result to file."""
         content = self.format(result)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
+
+
 class TextFormatter(Formatter):
     """Plain text formatter with enhanced readability."""
+
     name = "text"
     extension = ".txt"
     SEVERITY_ICONS = {
@@ -34,9 +44,11 @@ class TextFormatter(Formatter):
         "UNREACHABLE": "🔵 INFO",
         "INVALID_ARGUMENT": "🔵 INFO",
     }
+
     def __init__(self, color: bool = True, verbose: bool = False):
         self.color = color
         self.verbose = verbose
+
     def format(self, result: ExecutionResult) -> str:
         lines = []
         lines.append("")
@@ -95,16 +107,21 @@ class TextFormatter(Formatter):
             lines.append("└" + "─" * 58 + "┘")
             lines.append("")
         lines.append("─" * 60)
-        lines.append("  PySpectre v1.0.0 | https://github.com/pyspectre")
+        lines.append("  PySpectre v0.3.0a0 | https://github.com/darkoss1/pyspecter")
         lines.append("")
         return "\n".join(lines)
+
+
 class JSONFormatter(Formatter):
     """JSON formatter for machine-readable output."""
+
     name = "json"
     extension = ".json"
+
     def __init__(self, indent: int = 2, include_constraints: bool = False):
         self.indent = indent
         self.include_constraints = include_constraints
+
     def format(self, result: ExecutionResult) -> str:
         data = {
             "meta": {
@@ -135,6 +152,7 @@ class JSONFormatter(Formatter):
             },
         }
         return json.dumps(data, indent=self.indent, default=str)
+
     def _format_issue(self, issue: Issue) -> dict[str, Any]:
         data = {
             "kind": issue.kind.name,
@@ -147,10 +165,14 @@ class JSONFormatter(Formatter):
         if self.include_constraints:
             data["constraints"] = [str(c) for c in issue.constraints]
         return data
+
+
 class HTMLFormatter(Formatter):
     """HTML formatter for web display."""
+
     name = "html"
     extension = ".html"
+
     def format(self, result: ExecutionResult) -> str:
         issues_html = self._format_issues(result.issues)
         style = """
@@ -349,6 +371,7 @@ class HTMLFormatter(Formatter):
 </body>
 </html>"""
         return html
+
     def _format_issues(self, issues: list[Issue]) -> str:
         if not issues:
             return """
@@ -392,10 +415,14 @@ class HTMLFormatter(Formatter):
             </div>
             """)
         return "\n".join(html_parts)
+
+
 class MarkdownFormatter(Formatter):
     """Markdown formatter."""
+
     name = "markdown"
     extension = ".md"
+
     def format(self, result: ExecutionResult) -> str:
         lines = [
             "# PySpectre - Symbolic Execution Report",
@@ -439,6 +466,8 @@ class MarkdownFormatter(Formatter):
             lines.append("")
             lines.append("The symbolic execution did not detect any potential issues.")
         return "\n".join(lines)
+
+
 def format_result(
     result: ExecutionResult,
     format_type: str = "text",
@@ -467,8 +496,9 @@ def format_result(
         "md": MarkdownFormatter,
     }
     if format_type.lower() == "sarif":
-        from pyspectre.reporting.sarif import generate_sarif
-        return generate_sarif(result, **kwargs)
+        if hasattr(result, "to_sarif"):
+            return json.dumps(result.to_sarif(), indent=2)
+        return "{}"
     formatter_class = formatters.get(format_type.lower(), TextFormatter)
     formatter = formatter_class(**kwargs)
     return formatter.format(result)

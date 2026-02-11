@@ -5,6 +5,7 @@ This module provides:
 - Lazy symbolic value evaluation
 - Memory-efficient state representation
 """
+
 from __future__ import annotations
 import time
 import weakref
@@ -15,41 +16,52 @@ from typing import (
     Any,
 )
 import z3
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 @dataclass
 class CacheStats:
     """Statistics for constraint cache performance."""
+
     hits: int = 0
     misses: int = 0
     evictions: int = 0
     total_time_saved_ms: float = 0.0
+
     @property
     def hit_rate(self) -> float:
         """Return cache hit rate as a percentage."""
         total = self.hits + self.misses
         return (self.hits / total * 100) if total > 0 else 0.0
+
     def __str__(self) -> str:
         return (
             f"CacheStats(hits={self.hits}, misses={self.misses}, "
             f"hit_rate={self.hit_rate:.1f}%, time_saved={self.total_time_saved_ms:.1f}ms)"
         )
+
+
 class ConstraintCache:
     """LRU cache for constraint satisfiability results.
     Caches the results of Z3 satisfiability checks to avoid
     redundant solver invocations. Uses constraint normalization
     and hashing for efficient lookup.
     """
+
     def __init__(self, max_size: int = 10000):
         self.max_size = max_size
         self._cache: dict[int, tuple[bool, z3.ModelRef | None, float]] = {}
         self._access_order: list[int] = []
         self.stats = CacheStats()
+
     def _hash_constraints(self, constraints: list[z3.ExprRef]) -> int:
         """Generate a hash for a list of constraints."""
         sorted_strs = sorted(str(c) for c in constraints)
         combined = ";;".join(sorted_strs)
         return hash(combined)
+
     def get(
         self,
         constraints: list[z3.ExprRef],
@@ -65,6 +77,7 @@ class ConstraintCache:
             return (sat, model)
         self.stats.misses += 1
         return None
+
     def put(
         self,
         constraints: list[z3.ExprRef],
@@ -80,19 +93,27 @@ class ConstraintCache:
             self.stats.evictions += 1
         self._cache[key] = (satisfiable, model, time_taken_ms)
         self._access_order.append(key)
+
     def clear(self) -> None:
         """Clear the cache."""
         self._cache.clear()
         self._access_order.clear()
+
     def __len__(self) -> int:
         return len(self._cache)
+
+
 _global_cache: ConstraintCache | None = None
+
+
 def get_constraint_cache(max_size: int = 10000) -> ConstraintCache:
     """Get the global constraint cache, creating if needed."""
     global _global_cache
     if _global_cache is None:
         _global_cache = ConstraintCache(max_size)
     return _global_cache
+
+
 def cached_is_satisfiable(
     constraints: list[z3.ExprRef],
     cache: ConstraintCache | None = None,
@@ -111,17 +132,23 @@ def cached_is_satisfiable(
     elapsed_ms = (time.perf_counter() - start_time) * 1000
     cache.put(constraints, result, model, elapsed_ms)
     return result
+
+
 @dataclass
 class MergeStats:
     """Statistics for state merging."""
+
     merges_attempted: int = 0
     merges_successful: int = 0
     states_reduced: int = 0
+
+
 class StateMerger:
     """Merges similar VM states to reduce path explosion.
     Uses abstract interpretation techniques to identify and merge
     states that are "similar enough" to be combined.
     """
+
     def __init__(
         self,
         similarity_threshold: float = 0.8,
@@ -130,6 +157,7 @@ class StateMerger:
         self.similarity_threshold = similarity_threshold
         self.max_pending_states = max_pending_states
         self.stats = MergeStats()
+
     def compute_state_signature(self, state: VMState) -> tuple:
         """Compute a signature for state similarity comparison."""
         return (
@@ -138,6 +166,7 @@ class StateMerger:
             tuple(sorted(state.locals.keys())),
             len(state.path_constraints),
         )
+
     def states_are_similar(
         self,
         state1: VMState,
@@ -154,6 +183,7 @@ class StateMerger:
             return True
         overlap = len(vars1 & vars2) / len(vars1 | vars2)
         return overlap >= self.similarity_threshold
+
     def merge_states(
         self,
         state1: VMState,
@@ -173,10 +203,12 @@ class StateMerger:
                 merged.locals[name] = value2
             elif str(merged.locals[name]) != str(value2):
                 from pyspectre.core.types import SymbolicValue
+
                 merged.locals[name] = SymbolicValue(f"merged_{name}")
         self.stats.merges_successful += 1
         self.stats.states_reduced += 1
         return merged
+
     def reduce_state_set(
         self,
         states: list[VMState],
@@ -204,11 +236,14 @@ class StateMerger:
                         result.append(state)
                 result.append(merged)
         return result
+
+
 class LazySymbolicValue:
     """A symbolic value that delays constraint generation.
     Useful for reducing solver overhead when values may not
     actually be used.
     """
+
     def __init__(
         self,
         name: str,
@@ -218,6 +253,7 @@ class LazySymbolicValue:
         self._factory = value_factory
         self._value: Any | None = None
         self._evaluated = False
+
     @property
     def value(self) -> Any:
         """Get the actual value, evaluating lazily if needed."""
@@ -225,15 +261,20 @@ class LazySymbolicValue:
             self._value = self._factory()
             self._evaluated = True
         return self._value
+
     def is_evaluated(self) -> bool:
         """Check if the value has been evaluated."""
         return self._evaluated
+
+
 class CompactState:
     """Memory-efficient representation of VM state.
     Uses structural sharing and immutable data structures
     to reduce memory overhead when storing many states.
     """
+
     __slots__ = ("_pc", "_stack", "_locals", "_constraints", "_parent", "__weakref__")
+
     def __init__(
         self,
         pc: int = 0,
@@ -247,18 +288,23 @@ class CompactState:
         self._locals = locals_ or frozenset()
         self._constraints = constraints or ()
         self._parent = weakref.ref(parent) if parent else None
+
     @property
     def pc(self) -> int:
         return self._pc
+
     @property
     def stack(self) -> tuple:
         return self._stack
+
     @property
     def locals(self) -> dict[str, Any]:
         return dict(self._locals)
+
     @property
     def constraints(self) -> tuple:
         return self._constraints
+
     def with_pc(self, pc: int) -> CompactState:
         """Return new state with updated PC."""
         return CompactState(
@@ -268,6 +314,7 @@ class CompactState:
             constraints=self._constraints,
             parent=self,
         )
+
     def with_push(self, value: Any) -> CompactState:
         """Return new state with value pushed to stack."""
         return CompactState(
@@ -277,6 +324,7 @@ class CompactState:
             constraints=self._constraints,
             parent=self,
         )
+
     def with_pop(self) -> tuple[CompactState, Any]:
         """Return new state with top popped and the popped value."""
         if not self._stack:
@@ -290,6 +338,7 @@ class CompactState:
             parent=self,
         )
         return new_state, value
+
     def with_local(self, name: str, value: Any) -> CompactState:
         """Return new state with local variable set."""
         new_locals = frozenset((n, v) for n, v in self._locals if n != name) | {(name, value)}
@@ -300,6 +349,7 @@ class CompactState:
             constraints=self._constraints,
             parent=self,
         )
+
     def with_constraint(self, constraint: z3.ExprRef) -> CompactState:
         """Return new state with added constraint."""
         return CompactState(
@@ -309,9 +359,12 @@ class CompactState:
             constraints=self._constraints + (constraint,),
             parent=self,
         )
+
+
 @dataclass
 class ProfileData:
     """Profiling data for symbolic execution."""
+
     total_time_seconds: float = 0.0
     solver_time_seconds: float = 0.0
     opcode_times: dict[str, float] = field(default_factory=dict)
@@ -321,6 +374,7 @@ class ProfileData:
     paths_explored: int = 0
     max_stack_depth: int = 0
     max_constraint_count: int = 0
+
     def format_report(self) -> str:
         """Format profiling data as a report."""
         lines = [
@@ -349,24 +403,31 @@ class ProfileData:
             lines.append(f"  {opcode:30} {time_taken:.4f}s ({count:5} calls, {avg_time:.3f}ms avg)")
         lines.append("=" * 60)
         return "\n".join(lines)
+
+
 class ExecutionProfiler:
     """Profiler for symbolic execution."""
+
     def __init__(self):
         self.data = ProfileData()
         self._start_time: float | None = None
         self._opcode_start: float | None = None
         self._current_opcode: str | None = None
+
     def start(self) -> None:
         """Start profiling."""
         self._start_time = time.perf_counter()
+
     def stop(self) -> None:
         """Stop profiling and calculate total time."""
         if self._start_time is not None:
             self.data.total_time_seconds = time.perf_counter() - self._start_time
+
     def start_opcode(self, opcode: str) -> None:
         """Start timing an opcode."""
         self._current_opcode = opcode
         self._opcode_start = time.perf_counter()
+
     def stop_opcode(self) -> None:
         """Stop timing current opcode."""
         if self._opcode_start is not None and self._current_opcode is not None:
@@ -374,9 +435,11 @@ class ExecutionProfiler:
             opcode = self._current_opcode
             self.data.opcode_times[opcode] = self.data.opcode_times.get(opcode, 0) + elapsed
             self.data.opcode_counts[opcode] = self.data.opcode_counts.get(opcode, 0) + 1
+
     def record_solver_time(self, seconds: float) -> None:
         """Record time spent in solver."""
         self.data.solver_time_seconds += seconds
+
     def record_state(self, state: VMState) -> None:
         """Record state metrics."""
         self.data.states_created += 1
@@ -385,9 +448,12 @@ class ExecutionProfiler:
             self.data.max_constraint_count,
             len(state.path_constraints),
         )
+
     def get_report(self) -> str:
         """Get formatted profiling report."""
         return self.data.format_report()
+
+
 __all__ = [
     "CacheStats",
     "ConstraintCache",

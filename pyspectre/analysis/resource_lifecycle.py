@@ -10,14 +10,18 @@ for mathematical proofs of resource safety. Covers:
 - Context manager verification
 - State machine proofs for resource management
 """
+
 from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 import z3
+
+
 class ResourceKind(Enum):
     """Types of resources tracked."""
+
     FILE = auto()
     LOCK = auto()
     MUTEX = auto()
@@ -31,8 +35,11 @@ class ResourceKind(Enum):
     PROCESS = auto()
     TEMPORARY_FILE = auto()
     CONTEXT_MANAGER = auto()
+
+
 class ResourceState(Enum):
     """Possible states of a resource."""
+
     UNINITIALIZED = auto()
     INITIALIZED = auto()
     OPEN = auto()
@@ -59,8 +66,11 @@ class ResourceState(Enum):
     TRANSACTION_ROLLED_BACK = auto()
     ERROR = auto()
     LEAKED = auto()
+
+
 class ResourceIssueKind(Enum):
     """Types of resource lifecycle issues."""
+
     RESOURCE_LEAK = auto()
     POTENTIAL_LEAK = auto()
     USE_AFTER_CLOSE = auto()
@@ -78,9 +88,12 @@ class ResourceIssueKind(Enum):
     OPERATION_OUTSIDE_TRANSACTION = auto()
     MISSING_CONTEXT_MANAGER = auto()
     CONTEXT_MANAGER_MISUSE = auto()
+
+
 @dataclass
 class ResourceIssue:
     """Represents a detected resource lifecycle issue."""
+
     kind: ResourceIssueKind
     message: str
     resource_kind: ResourceKind | None = None
@@ -92,26 +105,33 @@ class ResourceIssue:
     constraints: list[Any] = field(default_factory=list)
     counterexample: dict[str, Any] = field(default_factory=dict)
     severity: str = "error"
+
     def format(self) -> str:
         """Format issue for display."""
         loc = f" at line {self.line_number}" if self.line_number else ""
         res = f" ({self.resource_name})" if self.resource_name else ""
         state = f" [state: {self.current_state.name}]" if self.current_state else ""
         return f"[{self.kind.name}]{loc}{res}{state}: {self.message}"
+
+
 @dataclass
 class StateTransition:
     """Represents a valid state transition."""
+
     from_state: ResourceState
     to_state: ResourceState
     action: str
     preconditions: list[str] = field(default_factory=list)
     postconditions: list[str] = field(default_factory=list)
+
+
 class ResourceStateMachine:
     """
     State machine model for resource lifecycle.
 
     Defines valid transitions and checks invariants.
     """
+
     def __init__(self, resource_kind: ResourceKind):
         self.resource_kind = resource_kind
         self._transitions: dict[tuple[ResourceState, str], StateTransition] = {}
@@ -119,6 +139,7 @@ class ResourceStateMachine:
         self._initial_state = ResourceState.UNINITIALIZED
         self._final_states: set[ResourceState] = set()
         self._setup_transitions()
+
     def _setup_transitions(self) -> None:
         """Set up transitions based on resource kind."""
         if self.resource_kind == ResourceKind.FILE:
@@ -135,6 +156,7 @@ class ResourceStateMachine:
             self._setup_socket_transitions()
         else:
             self._setup_generic_transitions()
+
     def _setup_file_transitions(self) -> None:
         """Set up file state machine."""
         self._initial_state = ResourceState.UNINITIALIZED
@@ -170,6 +192,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_lock_transitions(self) -> None:
         """Set up lock state machine."""
         self._initial_state = ResourceState.LOCK_UNLOCKED
@@ -184,6 +207,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_memory_transitions(self) -> None:
         """Set up memory state machine."""
         self._initial_state = ResourceState.UNINITIALIZED
@@ -196,6 +220,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_db_connection_transitions(self) -> None:
         """Set up database connection state machine."""
         self._initial_state = ResourceState.DISCONNECTED
@@ -209,6 +234,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_db_transaction_transitions(self) -> None:
         """Set up database transaction state machine."""
         self._initial_state = ResourceState.TRANSACTION_NONE
@@ -233,6 +259,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_socket_transitions(self) -> None:
         """Set up socket state machine."""
         self._initial_state = ResourceState.UNINITIALIZED
@@ -248,6 +275,7 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def _setup_generic_transitions(self) -> None:
         """Set up generic resource state machine."""
         self._initial_state = ResourceState.UNINITIALIZED
@@ -262,21 +290,28 @@ class ResourceStateMachine:
         ]
         for t in transitions:
             self._transitions[(t.from_state, t.action)] = t
+
     def can_transition(self, from_state: ResourceState, action: str) -> bool:
         """Check if transition is valid."""
         return (from_state, action) in self._transitions
+
     def get_transition(self, from_state: ResourceState, action: str) -> StateTransition | None:
         """Get transition if valid."""
         return self._transitions.get((from_state, action))
+
     def is_final_state(self, state: ResourceState) -> bool:
         """Check if state is a valid final state."""
         return state in self._final_states
+
     @property
     def initial_state(self) -> ResourceState:
         return self._initial_state
+
+
 @dataclass
 class TrackedResource:
     """Tracks a single resource instance."""
+
     name: str
     kind: ResourceKind
     state: ResourceState
@@ -285,11 +320,14 @@ class TrackedResource:
     last_action_at: int | None = None
     history: list[tuple[str, ResourceState, int | None]] = field(default_factory=list)
     z3_state: z3.ExprRef | None = None
+
     def record_action(self, action: str, new_state: ResourceState, line: int | None = None) -> None:
         """Record an action taken on this resource."""
         self.history.append((action, new_state, line))
         self.state = new_state
         self.last_action_at = line
+
+
 class ResourceLifecycleChecker:
     """
     Comprehensive resource lifecycle checker using Z3.
@@ -297,6 +335,7 @@ class ResourceLifecycleChecker:
     Tracks resources through state machines and proves
     safety properties via SMT solving.
     """
+
     def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
@@ -306,15 +345,18 @@ class ResourceLifecycleChecker:
         self.StateSort = z3.DeclareSort("ResourceState")
         self._state_consts: dict[ResourceState, z3.ExprRef] = {}
         self._setup_state_encoding()
+
     def _setup_state_encoding(self) -> None:
         """Set up Z3 encoding for states."""
         for state in ResourceState:
             self._state_consts[state] = z3.Const(f"state_{state.name}", self.StateSort)
+
     def reset(self) -> None:
         """Reset checker state."""
         self._solver.reset()
         self._resources.clear()
         self._issues.clear()
+
     def create_resource(
         self,
         name: str,
@@ -333,9 +375,11 @@ class ResourceLifecycleChecker:
         )
         self._resources[name] = resource
         return resource
+
     def get_resource(self, name: str) -> TrackedResource | None:
         """Get a tracked resource by name."""
         return self._resources.get(name)
+
     def check_action(
         self,
         resource_name: str,
@@ -375,6 +419,7 @@ class ResourceLifecycleChecker:
             )
         resource.record_action(action, transition.to_state, line_number)
         return None
+
     def perform_action(
         self,
         resource_name: str,
@@ -389,6 +434,7 @@ class ResourceLifecycleChecker:
             return (None, issue)
         resource = self._resources[resource_name]
         return (resource.state, None)
+
     def check_leaks(
         self,
         path_constraints: list[z3.BoolRef] | None = None,
@@ -414,6 +460,7 @@ class ResourceLifecycleChecker:
                     )
                 )
         return issues
+
     def check_potential_leak(
         self,
         resource_name: str,
@@ -439,6 +486,7 @@ class ResourceLifecycleChecker:
                 severity="warning",
             )
         return None
+
     def check_use_after(
         self,
         resource_name: str,
@@ -474,6 +522,7 @@ class ResourceLifecycleChecker:
                 line_number=line_number,
             )
         return None
+
     def check_double_operation(
         self,
         resource_name: str,
@@ -523,6 +572,7 @@ class ResourceLifecycleChecker:
                     line_number=line_number,
                 )
         return None
+
     def check_lock_ordering(
         self,
         locks: list[str],
@@ -557,6 +607,7 @@ class ResourceLifecycleChecker:
                             line_number=line_number,
                         )
         return None
+
     def check_potential_deadlock(
         self,
         lock_dependencies: dict[str, set[str]],
@@ -570,6 +621,7 @@ class ResourceLifecycleChecker:
         """
         visited = set()
         rec_stack = set()
+
         def has_cycle(lock: str) -> bool:
             visited.add(lock)
             rec_stack.add(lock)
@@ -581,6 +633,7 @@ class ResourceLifecycleChecker:
                     return True
             rec_stack.remove(lock)
             return False
+
         for lock in lock_dependencies:
             if lock not in visited:
                 if has_cycle(lock):
@@ -590,6 +643,7 @@ class ResourceLifecycleChecker:
                         resource_name=lock,
                     )
         return None
+
     def check_transaction_state(
         self,
         resource_name: str,
@@ -613,6 +667,7 @@ class ResourceLifecycleChecker:
                 line_number=line_number,
             )
         return None
+
     def suggest_context_manager(
         self,
         resource_name: str,
@@ -641,6 +696,7 @@ class ResourceLifecycleChecker:
                     severity="info",
                 )
         return None
+
     def prove_resource_safety(
         self,
         resource_name: str,
@@ -668,6 +724,7 @@ class ResourceLifecycleChecker:
             return (True, None)
         else:
             return (False, "Resource may not be properly closed/released")
+
     def get_all_issues(self) -> list[ResourceIssue]:
         """Get all detected issues including leak checks."""
         all_issues = list(self._issues)
@@ -678,6 +735,7 @@ class ResourceLifecycleChecker:
                 if issue:
                     all_issues.append(issue)
         return all_issues
+
     def get_resource_summary(self) -> dict[str, Any]:
         """Get summary of all tracked resources."""
         return {
@@ -690,8 +748,11 @@ class ResourceLifecycleChecker:
             }
             for name, res in self._resources.items()
         }
+
+
 class FileResourceChecker(ResourceLifecycleChecker):
     """Specialized checker for file resources."""
+
     def open_file(
         self,
         name: str,
@@ -710,6 +771,7 @@ class FileResourceChecker(ResourceLifecycleChecker):
             action = "open_read"
         issue = self.check_action(name, action, line_number)
         return (resource, issue)
+
     def read_file(
         self,
         name: str,
@@ -720,6 +782,7 @@ class FileResourceChecker(ResourceLifecycleChecker):
         if issue:
             return issue
         return self.check_action(name, "read", line_number)
+
     def write_file(
         self,
         name: str,
@@ -730,6 +793,7 @@ class FileResourceChecker(ResourceLifecycleChecker):
         if issue:
             return issue
         return self.check_action(name, "write", line_number)
+
     def close_file(
         self,
         name: str,
@@ -740,12 +804,16 @@ class FileResourceChecker(ResourceLifecycleChecker):
         if issue:
             return issue
         return self.check_action(name, "close", line_number)
+
+
 class LockResourceChecker(ResourceLifecycleChecker):
     """Specialized checker for lock resources."""
+
     def __init__(self, timeout_ms: int = 5000):
         super().__init__(timeout_ms)
         self._lock_order: list[str] = []
         self._held_locks: set[str] = set()
+
     def create_lock(
         self,
         name: str,
@@ -753,6 +821,7 @@ class LockResourceChecker(ResourceLifecycleChecker):
     ) -> TrackedResource:
         """Create a new lock."""
         return self.create_resource(name, ResourceKind.LOCK, line_number)
+
     def acquire_lock(
         self,
         name: str,
@@ -770,6 +839,7 @@ class LockResourceChecker(ResourceLifecycleChecker):
         if issue is None:
             self._held_locks.add(name)
         return issue
+
     def release_lock(
         self,
         name: str,
@@ -787,9 +857,11 @@ class LockResourceChecker(ResourceLifecycleChecker):
         if issue is None:
             self._held_locks.discard(name)
         return issue
+
     def set_lock_order(self, order: list[str]) -> None:
         """Set expected lock acquisition order."""
         self._lock_order = order
+
     def check_current_lock_order(
         self,
         line_number: int | None = None,
@@ -802,6 +874,8 @@ class LockResourceChecker(ResourceLifecycleChecker):
             self._lock_order,
             line_number,
         )
+
+
 __all__ = [
     "ResourceKind",
     "ResourceState",

@@ -8,18 +8,24 @@ Key improvements over basic models:
 - Index bounds: find(), index() constrained to valid ranges
 - Split semantics: split() maintains length >= 1 and element relationships
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import z3
 from pyspectre.core.types import SymbolicList, SymbolicString, SymbolicValue
 from pyspectre.models.builtins import FunctionModel, ModelResult
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 def _get_symbolic_string(arg: Any) -> SymbolicString | None:
     """Extract SymbolicString from argument, handling method calls (self is first arg)."""
     if isinstance(arg, SymbolicString):
         return arg
     return None
+
+
 def _get_concrete_string(arg: Any) -> str | None:
     """Extract concrete string value if available."""
     if isinstance(arg, str):
@@ -27,12 +33,16 @@ def _get_concrete_string(arg: Any) -> str | None:
     if isinstance(arg, SymbolicString) and hasattr(arg, "_concrete"):
         return arg._concrete
     return None
+
+
 class StrLowerModel(FunctionModel):
     """Model for str.lower() - preserves string length.
     Relationship: len(s.lower()) == len(s)
     """
+
     name = "lower"
     qualname = "str.lower"
+
     def apply(
         self,
         args: list[Any],
@@ -46,12 +56,16 @@ class StrLowerModel(FunctionModel):
             constraints.append(result.z3_len == original.z3_len)
             constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrUpperModel(FunctionModel):
     """Model for str.upper() - preserves string length.
     Relationship: len(s.upper()) == len(s)
     """
+
     name = "upper"
     qualname = "str.upper"
+
     def apply(
         self,
         args: list[Any],
@@ -64,10 +78,14 @@ class StrUpperModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrCapitalizeModel(FunctionModel):
     """Model for str.capitalize() - preserves string length."""
+
     name = "capitalize"
     qualname = "str.capitalize"
+
     def apply(
         self,
         args: list[Any],
@@ -80,10 +98,14 @@ class StrCapitalizeModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrTitleModel(FunctionModel):
     """Model for str.title() - preserves string length."""
+
     name = "title"
     qualname = "str.title"
+
     def apply(
         self,
         args: list[Any],
@@ -96,10 +118,14 @@ class StrTitleModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrSwapcaseModel(FunctionModel):
     """Model for str.swapcase() - preserves string length."""
+
     name = "swapcase"
     qualname = "str.swapcase"
+
     def apply(
         self,
         args: list[Any],
@@ -112,12 +138,16 @@ class StrSwapcaseModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrStripModel(FunctionModel):
     """Model for str.strip() - result length <= original length.
     Relationship: len(s.strip()) <= len(s)
     """
+
     name = "strip"
     qualname = "str.strip"
+
     def apply(
         self,
         args: list[Any],
@@ -131,10 +161,14 @@ class StrStripModel(FunctionModel):
             constraints.append(result.z3_len <= original.z3_len)
             constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrLstripModel(FunctionModel):
     """Model for str.lstrip() - result length <= original length."""
+
     name = "lstrip"
     qualname = "str.lstrip"
+
     def apply(
         self,
         args: list[Any],
@@ -149,10 +183,14 @@ class StrLstripModel(FunctionModel):
             constraints.append(result.z3_len >= 0)
             constraints.append(z3.SuffixOf(result.z3_str, original.z3_str))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrRstripModel(FunctionModel):
     """Model for str.rstrip() - result length <= original length."""
+
     name = "rstrip"
     qualname = "str.rstrip"
+
     def apply(
         self,
         args: list[Any],
@@ -167,6 +205,8 @@ class StrRstripModel(FunctionModel):
             constraints.append(result.z3_len >= 0)
             constraints.append(z3.PrefixOf(result.z3_str, original.z3_str))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrSplitModel(FunctionModel):
     """Model for str.split() - relationship between parts and original.
     Relationships:
@@ -174,8 +214,10 @@ class StrSplitModel(FunctionModel):
     - If separator not found: len(s.split()) == 1
     - Each element length <= original length
     """
+
     name = "split"
     qualname = "str.split"
+
     def apply(
         self,
         args: list[Any],
@@ -194,14 +236,18 @@ class StrSplitModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len + 1)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrJoinModel(FunctionModel):
     """Model for str.join() - result length based on separator and parts.
     Relationship: If joining N parts with separator S:
     - len(result) >= sum of part lengths
     - len(result) includes (N-1) * len(S) for separators
     """
+
     name = "join"
     qualname = "str.join"
+
     def apply(
         self,
         args: list[Any],
@@ -213,6 +259,8 @@ class StrJoinModel(FunctionModel):
         constraints = [base_constraint]
         constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrReplaceModel(FunctionModel):
     """Model for str.replace() - result length relationship.
     Relationships:
@@ -220,8 +268,10 @@ class StrReplaceModel(FunctionModel):
     - If old is longer: result length <= original length
     - If new is longer: result length >= original length
     """
+
     name = "replace"
     qualname = "str.replace"
+
     def apply(
         self,
         args: list[Any],
@@ -239,10 +289,14 @@ class StrReplaceModel(FunctionModel):
                 old_not_found = z3.Not(z3.Contains(original.z3_str, old_str.z3_str))
                 constraints.append(z3.Implies(old_not_found, result.z3_len == original.z3_len))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrStartswithModel(FunctionModel):
     """Model for str.startswith() - uses Z3 PrefixOf."""
+
     name = "startswith"
     qualname = "str.startswith"
+
     def apply(
         self,
         args: list[Any],
@@ -266,10 +320,14 @@ class StrStartswithModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_bool],
         )
+
+
 class StrEndswithModel(FunctionModel):
     """Model for str.endswith() - uses Z3 SuffixOf."""
+
     name = "endswith"
     qualname = "str.endswith"
+
     def apply(
         self,
         args: list[Any],
@@ -293,6 +351,8 @@ class StrEndswithModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_bool],
         )
+
+
 class StrFindModel(FunctionModel):
     """Model for str.find() - uses Z3 IndexOf with proper bounds.
     Relationships:
@@ -300,8 +360,10 @@ class StrFindModel(FunctionModel):
     - Returns index >= 0 and < len(s) if found
     - Index + len(sub) <= len(s)
     """
+
     name = "find"
     qualname = "str.find"
+
     def apply(
         self,
         args: list[Any],
@@ -329,12 +391,16 @@ class StrFindModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= -1],
         )
+
+
 class StrIndexModel(FunctionModel):
     """Model for str.index() - like find but raises ValueError if not found.
     Bug detection: Can find cases where substring might not exist.
     """
+
     name = "index"
     qualname = "str.index"
+
     def apply(
         self,
         args: list[Any],
@@ -374,14 +440,18 @@ class StrIndexModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
         )
+
+
 class StrCountModel(FunctionModel):
     """Model for str.count() - count bounded by string length.
     Relationships:
     - count >= 0
     - count <= len(s) (can't have more occurrences than characters)
     """
+
     name = "count"
     qualname = "str.count"
+
     def apply(
         self,
         args: list[Any],
@@ -397,12 +467,16 @@ class StrCountModel(FunctionModel):
             if substring is not None:
                 pass
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrFormatModel(FunctionModel):
     """Model for str.format() - result length relationship.
     Result length >= format string length - placeholder lengths
     """
+
     name = "format"
     qualname = "str.format"
+
     def apply(
         self,
         args: list[Any],
@@ -412,10 +486,14 @@ class StrFormatModel(FunctionModel):
         result, constraint = SymbolicString.symbolic(f"format_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrIsdigitModel(FunctionModel):
     """Model for str.isdigit() - true only if non-empty and all digits."""
+
     name = "isdigit"
     qualname = "str.isdigit"
+
     def apply(
         self,
         args: list[Any],
@@ -428,10 +506,14 @@ class StrIsdigitModel(FunctionModel):
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrIsalphaModel(FunctionModel):
     """Model for str.isalpha() - true only if non-empty and all alphabetic."""
+
     name = "isalpha"
     qualname = "str.isalpha"
+
     def apply(
         self,
         args: list[Any],
@@ -444,10 +526,14 @@ class StrIsalphaModel(FunctionModel):
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrIsalnumModel(FunctionModel):
     """Model for str.isalnum() - true only if non-empty and all alphanumeric."""
+
     name = "isalnum"
     qualname = "str.isalnum"
+
     def apply(
         self,
         args: list[Any],
@@ -460,10 +546,14 @@ class StrIsalnumModel(FunctionModel):
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrIsspaceModel(FunctionModel):
     """Model for str.isspace() - true only if non-empty and all whitespace."""
+
     name = "isspace"
     qualname = "str.isspace"
+
     def apply(
         self,
         args: list[Any],
@@ -476,10 +566,14 @@ class StrIsspaceModel(FunctionModel):
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrIslowerModel(FunctionModel):
     """Model for str.islower()."""
+
     name = "islower"
     qualname = "str.islower"
+
     def apply(
         self,
         args: list[Any],
@@ -488,10 +582,14 @@ class StrIslowerModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"islower_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class StrIsupperModel(FunctionModel):
     """Model for str.isupper()."""
+
     name = "isupper"
     qualname = "str.isupper"
+
     def apply(
         self,
         args: list[Any],
@@ -500,12 +598,16 @@ class StrIsupperModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"isupper_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class StrCenterModel(FunctionModel):
     """Model for str.center(width) - pads string to width.
     Relationship: len(result) == max(width, len(original))
     """
+
     name = "center"
     qualname = "str.center"
+
     def apply(
         self,
         args: list[Any],
@@ -527,10 +629,14 @@ class StrCenterModel(FunctionModel):
                     z3.Or(result.z3_len == width.z3_int, result.z3_len == original.z3_len)
                 )
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrLjustModel(FunctionModel):
     """Model for str.ljust(width) - left justify."""
+
     name = "ljust"
     qualname = "str.ljust"
+
     def apply(
         self,
         args: list[Any],
@@ -544,10 +650,14 @@ class StrLjustModel(FunctionModel):
             constraints.append(result.z3_len >= original.z3_len)
             constraints.append(z3.PrefixOf(original.z3_str, result.z3_str))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrRjustModel(FunctionModel):
     """Model for str.rjust(width) - right justify."""
+
     name = "rjust"
     qualname = "str.rjust"
+
     def apply(
         self,
         args: list[Any],
@@ -561,10 +671,14 @@ class StrRjustModel(FunctionModel):
             constraints.append(result.z3_len >= original.z3_len)
             constraints.append(z3.SuffixOf(original.z3_str, result.z3_str))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrZfillModel(FunctionModel):
     """Model for str.zfill(width) - zero-pad on left."""
+
     name = "zfill"
     qualname = "str.zfill"
+
     def apply(
         self,
         args: list[Any],
@@ -577,10 +691,14 @@ class StrZfillModel(FunctionModel):
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrRemovePrefixModel(FunctionModel):
     """Model for str.removeprefix()."""
+
     name = "removeprefix"
     qualname = "str.removeprefix"
+
     def apply(self, args: list[Any], kwargs: dict[str, Any], state: VMState) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         prefix = _get_symbolic_string(args[1]) if len(args) > 1 else None
@@ -595,10 +713,14 @@ class StrRemovePrefixModel(FunctionModel):
                 )
                 constraints.append(z3.Implies(z3.Not(is_prefix), result.z3_len == original.z3_len))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrRemoveSuffixModel(FunctionModel):
     """Model for str.removesuffix()."""
+
     name = "removesuffix"
     qualname = "str.removesuffix"
+
     def apply(self, args: list[Any], kwargs: dict[str, Any], state: VMState) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         suffix = _get_symbolic_string(args[1]) if len(args) > 1 else None
@@ -613,10 +735,14 @@ class StrRemoveSuffixModel(FunctionModel):
                 )
                 constraints.append(z3.Implies(z3.Not(is_suffix), result.z3_len == original.z3_len))
         return ModelResult(value=result, constraints=constraints)
+
+
 class StrContainsModel(FunctionModel):
     """Model for 'in' operator on strings - uses Z3 Contains."""
+
     name = "__contains__"
     qualname = "str.__contains__"
+
     def apply(
         self,
         args: list[Any],
@@ -637,6 +763,8 @@ class StrContainsModel(FunctionModel):
             return ModelResult(value=result, constraints=[])
         result, constraint = SymbolicValue.symbolic(f"contains_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 STRING_MODELS = [
     StrLowerModel(),
     StrUpperModel(),

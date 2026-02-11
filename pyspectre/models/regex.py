@@ -13,6 +13,7 @@ Limitations:
 - Backreferences not supported by Z3
 - Some flags (IGNORECASE, MULTILINE) have limited support
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import z3
@@ -22,20 +23,26 @@ from pyspectre.core.types import (
     SymbolicValue,
 )
 from pyspectre.models.builtins import FunctionModel, ModelResult
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 class PatternCompiler:
     """Compiles Python regex patterns to Z3 regex expressions.
     Supports a subset of Python regex syntax that maps to Z3's regex theory.
     """
+
     CHAR_CLASSES = {
         r"\d": ("0", "9"),
         r"\w": None,
         r"\s": None,
     }
+
     def __init__(self):
         self.pos = 0
         self.pattern = ""
+
     def compile(self, pattern: str) -> z3.ReRef:
         """Compile a Python regex pattern to Z3 regex.
         Args:
@@ -48,6 +55,7 @@ class PatternCompiler:
         if not pattern:
             return z3.Re("")
         return self._parse_union()
+
     def _parse_union(self) -> z3.ReRef:
         """Parse alternation (|)."""
         left = self._parse_concat()
@@ -56,6 +64,7 @@ class PatternCompiler:
             right = self._parse_concat()
             left = z3.Union(left, right)
         return left
+
     def _parse_concat(self) -> z3.ReRef:
         """Parse concatenation."""
         parts = []
@@ -74,6 +83,7 @@ class PatternCompiler:
         for part in parts[1:]:
             result = z3.Concat(result, part)
         return result
+
     def _parse_quantified(self) -> z3.ReRef | None:
         """Parse an atom with optional quantifier."""
         atom = self._parse_atom()
@@ -93,6 +103,7 @@ class PatternCompiler:
             elif char == "{":
                 return self._parse_repeat(atom)
         return atom
+
     def _parse_repeat(self, atom: z3.ReRef) -> z3.ReRef:
         """Parse {n}, {n,}, {n,m} quantifiers."""
         self.pos += 1
@@ -126,6 +137,7 @@ class PatternCompiler:
                     self.pos += 1
                     return z3.Loop(atom, n, m)
         return atom
+
     def _parse_atom(self) -> z3.ReRef | None:
         """Parse a single atom (char, class, group, etc.)."""
         if self.pos >= len(self.pattern):
@@ -150,6 +162,7 @@ class PatternCompiler:
             self.pos += 1
             return z3.Re(char)
         return None
+
     def _parse_char_class(self) -> z3.ReRef:
         """Parse character class [...]."""
         self.pos += 1
@@ -190,6 +203,7 @@ class PatternCompiler:
         if negated:
             result = z3.Complement(result)
         return result
+
     def _parse_group(self) -> z3.ReRef:
         """Parse group (...)."""
         self.pos += 1
@@ -203,6 +217,7 @@ class PatternCompiler:
         if self.pos < len(self.pattern) and self.pattern[self.pos] == ")":
             self.pos += 1
         return content
+
     def _parse_escape(self) -> z3.ReRef:
         """Parse escape sequence."""
         self.pos += 1
@@ -232,27 +247,37 @@ class PatternCompiler:
             return z3.Re(char)
         else:
             return z3.Re(char)
+
     def _word_class(self) -> z3.ReRef:
         r"""Create \w character class: [a-zA-Z0-9_]."""
         return z3.Union(
             z3.Range("a", "z"),
             z3.Union(z3.Range("A", "Z"), z3.Union(z3.Range("0", "9"), z3.Re("_"))),
         )
+
     def _whitespace_class(self) -> z3.ReRef:
         r"""Create \s character class: [ \t\n\r\f\v]."""
         return z3.Union(
             z3.Re(" "),
             z3.Union(z3.Re("\t"), z3.Union(z3.Re("\n"), z3.Union(z3.Re("\r"), z3.Re("\f")))),
         )
+
+
 _compiler = PatternCompiler()
+
+
 def compile_pattern(pattern: str) -> z3.ReRef:
     """Compile a Python regex pattern to Z3 regex."""
     return _compiler.compile(pattern)
+
+
 def _get_symbolic_string(arg: Any) -> SymbolicString | None:
     """Extract symbolic string from argument."""
     if isinstance(arg, SymbolicString):
         return arg
     return None
+
+
 def _get_pattern_string(arg: Any) -> str | None:
     """Extract pattern string from argument (concrete or compiled)."""
     if isinstance(arg, str):
@@ -262,6 +287,8 @@ def _get_pattern_string(arg: Any) -> str | None:
     if isinstance(arg, SymbolicString):
         return None
     return None
+
+
 class ReMatchModel(FunctionModel):
     """Model for re.match() - match at beginning of string.
     Returns:
@@ -270,8 +297,10 @@ class ReMatchModel(FunctionModel):
     Constraints:
     - If match succeeds, string starts with a substring matching pattern
     """
+
     name = "match"
     qualname = "re.match"
+
     def apply(
         self,
         args: list[Any],
@@ -315,6 +344,8 @@ class ReMatchModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects if side_effects else None,
         )
+
+
 class ReSearchModel(FunctionModel):
     """Model for re.search() - search anywhere in string.
     Returns:
@@ -323,8 +354,10 @@ class ReSearchModel(FunctionModel):
     Constraints:
     - If match succeeds, string contains a substring matching pattern
     """
+
     name = "search"
     qualname = "re.search"
+
     def apply(
         self,
         args: list[Any],
@@ -357,13 +390,17 @@ class ReSearchModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects if side_effects else None,
         )
+
+
 class ReFullmatchModel(FunctionModel):
     """Model for re.fullmatch() - match entire string.
     Constraints:
     - String must match pattern completely
     """
+
     name = "fullmatch"
     qualname = "re.fullmatch"
+
     def apply(
         self,
         args: list[Any],
@@ -385,6 +422,8 @@ class ReFullmatchModel(FunctionModel):
             value=result,
             constraints=constraints,
         )
+
+
 class ReFindallModel(FunctionModel):
     """Model for re.findall() - find all matches.
     Returns:
@@ -393,8 +432,10 @@ class ReFindallModel(FunctionModel):
     - Result list length >= 0
     - If string matches pattern, result length >= 1
     """
+
     name = "findall"
     qualname = "re.findall"
+
     def apply(
         self,
         args: list[Any],
@@ -421,6 +462,8 @@ class ReFindallModel(FunctionModel):
             value=result,
             constraints=constraints,
         )
+
+
 class ReSubModel(FunctionModel):
     """Model for re.sub() - substitute matches.
     Returns:
@@ -429,8 +472,10 @@ class ReSubModel(FunctionModel):
     - If no matches, result == original
     - Result length relationship depends on replacement length
     """
+
     name = "sub"
     qualname = "re.sub"
+
     def apply(
         self,
         args: list[Any],
@@ -459,6 +504,8 @@ class ReSubModel(FunctionModel):
             value=result,
             constraints=constraints,
         )
+
+
 class ReSplitModel(FunctionModel):
     """Model for re.split() - split by pattern.
     Returns:
@@ -467,8 +514,10 @@ class ReSplitModel(FunctionModel):
     - Result length >= 1 (always at least one element)
     - If no matches, result length == 1
     """
+
     name = "split"
     qualname = "re.split"
+
     def apply(
         self,
         args: list[Any],
@@ -495,12 +544,16 @@ class ReSplitModel(FunctionModel):
             value=result,
             constraints=constraints,
         )
+
+
 class ReCompileModel(FunctionModel):
     """Model for re.compile() - compile pattern.
     Returns a compiled pattern object (modeled symbolically).
     """
+
     name = "compile"
     qualname = "re.compile"
+
     def apply(
         self,
         args: list[Any],
@@ -515,12 +568,16 @@ class ReCompileModel(FunctionModel):
             value=result,
             constraints=[constraint],
         )
+
+
 class ReEscapeModel(FunctionModel):
     """Model for re.escape() - escape special chars.
     Result length >= original length (only adds chars).
     """
+
     name = "escape"
     qualname = "re.escape"
+
     def apply(
         self,
         args: list[Any],
@@ -536,6 +593,8 @@ class ReEscapeModel(FunctionModel):
             value=result,
             constraints=constraints,
         )
+
+
 REGEX_MODELS: dict[str, FunctionModel] = {
     "re.match": ReMatchModel(),
     "re.search": ReSearchModel(),

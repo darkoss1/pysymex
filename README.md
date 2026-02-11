@@ -27,9 +27,11 @@
 - **Function Summaries**: Caches analysis results for efficiency
 - **Taint Tracking**: Follows untrusted data through your code
 - **Mathematical Proofs**: Uses Z3 SMT solver for formal verification
-- **12 Bug Types Detected**: Division by zero, null dereference, index out of bounds, and more
-- **Full Symbolic Execution Engine**: Complete bytecode-level analysis
-- **HTML/SARIF Reports**: Export results in multiple formats
+- **12+ Bug Types Detected**: Division by zero, null dereference, index/key errors, command injection, etc.
+- **Full Symbolic Execution Engine**: Complete bytecode-level analysis with precision-guided exception handling
+- **Loop Detection & Widening**: Handles loops without path explosion
+- **Type Inference**: Pre-analysis step to infer types for better precision
+- **HTML/SARIF Reports**: Export results for GitHub Security and VS Code integration
 
 ## 📦 Installation
 
@@ -38,8 +40,8 @@
 pip install z3-solver
 
 # Clone and install
-git clone https://github.com/yourusername/pyspectre.git
-cd pyspectre
+git clone https://github.com/darkoss1/pyspecter.git
+cd pyspecter
 pip install -e .
 ```
 
@@ -48,20 +50,20 @@ pip install -e .
 ### Command Line
 
 ```bash
-# Scan a file
-python pyspectre_verify.py mycode.py
+# Scan a file (auto-detects all functions)
+python -m pyspectre scan mycode.py
 
-# Scan a directory
-python pyspectre_verify.py src/
+# Scan a directory recursively
+python -m pyspectre scan src/ -r
 
-# Show call graph relationships
-python pyspectre_verify.py . --call-graph
+# Generate SARIF report for CI/CD
+python -m pyspectre scan src/ --format sarif -o report.sarif
 
-# Export JSON report
-python pyspectre_verify.py src/ --json report.json
+# Provide type hints for specific variables
+python -m pyspectre analyze mycode.py -f risky_func --args x:int y:str
 
-# Verbose output with timing
-python pyspectre_verify.py . --verbose
+# Watch mode for development
+python -m pyspectre scan . --watch
 ```
 
 ### Python API
@@ -171,7 +173,7 @@ pyspectre/
 ## 🧪 Running Tests
 
 ```bash
-# Run all tests (1655 tests)
+# Run all tests
 pytest tests/ -v
 
 # Run specific test modules
@@ -185,24 +187,30 @@ pytest --cov=pyspectre tests/ -v
 ## 📋 CLI Options
 
 ```
-usage: pyspectre_verify.py [-h] [--json JSON] [--verbose] [--timeout TIMEOUT]
-                           [--quiet] [--call-graph] [--no-interprocedural]
-                           [--no-taint] path
+usage: pyspectre scan [-h] [-r] [--format {text,json,sarif}] [-o OUTPUT]
+                      [--max-paths MAX_PATHS] [--timeout TIMEOUT] [-v]
+                      [--workers WORKERS] [--auto] [--watch]
+                      path
 
-Formally verify Python code won't crash using Z3
+Scan file(s) for bugs (auto-discovers all functions)
 
 positional arguments:
-  path                  File or directory to scan
+  path                  Python file or directory to scan
 
 options:
   -h, --help            show help message
-  --json, -j            Output JSON report to file
-  --verbose, -v         Show proven safe items and timing
-  --timeout, -t         Z3 timeout in ms (default: 5000)
-  --quiet, -q           Only show crashes, no progress
-  --call-graph, -g      Show call graph relationships
-  --no-interprocedural  Disable interprocedural analysis
-  --no-taint            Disable taint tracking
+  -r, --recursive       Recursively scan directories
+  --format {text,json,sarif}
+                        Output format (default: text)
+  -o OUTPUT, --output OUTPUT
+                        Output file path (default: stdout)
+  --max-paths MAX_PATHS
+                        Max paths per function (default: 1000)
+  --timeout TIMEOUT     Timeout per function in seconds (default: 60)
+  -v, --verbose         Verbose output
+  --workers WORKERS     Number of worker processes (default: CPU count)
+  --auto                Automatically tune configuration based on complexity
+  --watch               Watch for file changes and re-scan automatically
 ```
 
 ## 📄 License

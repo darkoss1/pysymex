@@ -11,8 +11,8 @@ Development Setup
 
    .. code-block:: bash
 
-      git clone https://github.com/darkoss1/pyspectre.git
-      cd pyspectre
+      git clone https://github.com/darkoss1/pyspecter.git
+      cd pyspecter
 
 2. Create a virtual environment:
 
@@ -123,5 +123,5 @@ When reporting bugs, please include:
 Contact
 -------
 
-- GitHub Issues: https://github.com/darkoss1/pyspectre/issues
-- Discussions: https://github.com/darkoss1/pyspectre/discussions
+- GitHub Issues: https://github.com/darkoss1/pyspecter/issues
+- Discussions: https://github.com/darkoss1/pyspecter/discussions

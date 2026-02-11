@@ -2,6 +2,7 @@
 Provides an extensible plugin architecture for custom detectors,
 handlers, reporters, and analysis passes.
 """
+
 from pyspectre.plugins.base import (
     HOOKS,
     DetectorPlugin,
@@ -18,6 +19,7 @@ from pyspectre.plugins.base import (
     PluginRegistry,
     PluginType,
 )
+
 __all__ = [
     "PluginType",
     "PluginPriority",

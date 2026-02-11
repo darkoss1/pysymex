@@ -2,6 +2,7 @@
 Provides performance benchmarks, regression testing, and profiling
 tools for symbolic execution performance analysis.
 """
+
 from __future__ import annotations
 import gc
 import json
@@ -16,17 +17,23 @@ from typing import (
     Any,
     TypeVar,
 )
+
+
 class BenchmarkCategory(Enum):
     """Categories of benchmarks."""
+
     OPCODES = auto()
     PATHS = auto()
     SOLVING = auto()
     ANALYSIS = auto()
     END_TO_END = auto()
     MEMORY = auto()
+
+
 @dataclass
 class BenchmarkResult:
     """Result of a single benchmark run."""
+
     name: str
     category: BenchmarkCategory
     elapsed_seconds: float
@@ -44,18 +51,21 @@ class BenchmarkResult:
     timestamp: str = ""
     python_version: str = ""
     platform: str = ""
+
     @property
     def throughput(self) -> float:
         """Instructions per second."""
         if self.elapsed_seconds > 0:
             return self.instructions_executed / self.elapsed_seconds
         return 0.0
+
     @property
     def paths_per_second(self) -> float:
         """Paths explored per second."""
         if self.elapsed_seconds > 0:
             return self.paths_explored / self.elapsed_seconds
         return 0.0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -78,17 +88,22 @@ class BenchmarkResult:
             "python_version": self.python_version,
             "platform": self.platform,
         }
+
+
 @dataclass
 class BenchmarkSuite:
     """Collection of related benchmarks."""
+
     name: str
     description: str = ""
     benchmarks: list[Benchmark] = field(default_factory=list)
     setup: Callable | None = None
     teardown: Callable | None = None
+
     def add(self, benchmark: Benchmark) -> None:
         """Add a benchmark to the suite."""
         self.benchmarks.append(benchmark)
+
     def run_all(
         self,
         iterations: int = 5,
@@ -106,12 +121,17 @@ class BenchmarkSuite:
             if self.teardown:
                 self.teardown()
         return results
+
+
 F = TypeVar("F", bound=Callable)
+
+
 class Benchmark:
     """A single benchmark test.
     Measures execution time, memory usage, and other metrics
     for a symbolic execution workload.
     """
+
     def __init__(
         self,
         name: str,
@@ -123,6 +143,7 @@ class Benchmark:
         self.func = func
         self.category = category
         self.description = description
+
     def run(
         self,
         iterations: int = 5,
@@ -131,6 +152,7 @@ class Benchmark:
         """Run the benchmark and collect metrics."""
         import platform
         from datetime import datetime
+
         times: list[float] = []
         peak_memory = 0.0
         total_allocated = 0.0
@@ -178,11 +200,14 @@ class Benchmark:
             python_version=platform.python_version(),
             platform=platform.platform(),
         )
+
+
 def benchmark(
     name: str | None = None,
     category: BenchmarkCategory = BenchmarkCategory.END_TO_END,
 ) -> Callable[[F], F]:
     """Decorator to create a benchmark from a function."""
+
     def decorator(func: F) -> F:
         bench_name = name or func.__name__
         func._benchmark = Benchmark(
@@ -192,9 +217,13 @@ def benchmark(
             description=func.__doc__ or "",
         )
         return func
+
     return decorator
+
+
 class BenchmarkReporter:
     """Reports benchmark results in various formats."""
+
     @staticmethod
     def to_console(results: list[BenchmarkResult]) -> None:
         """Print results to console."""
@@ -214,6 +243,7 @@ class BenchmarkReporter:
             if result.paths_explored > 0:
                 print(f"  Paths/sec:     {result.paths_per_second:.2f}")
         print("\n" + "=" * 70)
+
     @staticmethod
     def to_json(results: list[BenchmarkResult]) -> str:
         """Convert results to JSON."""
@@ -221,10 +251,12 @@ class BenchmarkReporter:
             [r.to_dict() for r in results],
             indent=2,
         )
+
     @staticmethod
     def to_json_file(results: list[BenchmarkResult], path: Path) -> None:
         """Write results to JSON file."""
         path.write_text(BenchmarkReporter.to_json(results))
+
     @staticmethod
     def to_markdown(results: list[BenchmarkResult]) -> str:
         """Convert results to Markdown table."""
@@ -239,28 +271,36 @@ class BenchmarkReporter:
                 f"{r.peak_memory_mb:.2f} | {r.throughput:.0f} instr/s |"
             )
         return "\n".join(lines)
+
+
 @dataclass
 class RegressionResult:
     """Result of comparing benchmarks for regressions."""
+
     benchmark_name: str
     baseline_mean: float
     current_mean: float
     change_percent: float
     is_regression: bool
     threshold_percent: float
+
     @property
     def change_description(self) -> str:
         """Human-readable change description."""
         direction = "slower" if self.change_percent > 0 else "faster"
         return f"{abs(self.change_percent):.1f}% {direction}"
+
+
 class BenchmarkComparator:
     """Compare benchmark results for regression detection."""
+
     def __init__(self, threshold_percent: float = 10.0):
         """
         Args:
             threshold_percent: Percent change that triggers regression.
         """
         self.threshold_percent = threshold_percent
+
     def compare(
         self,
         baseline: list[BenchmarkResult],
@@ -289,6 +329,7 @@ class BenchmarkComparator:
                 )
             )
         return results
+
     def report_regressions(self, regressions: list[RegressionResult]) -> str:
         """Generate regression report."""
         lines = ["# Benchmark Comparison Report\n"]
@@ -306,6 +347,8 @@ class BenchmarkComparator:
             status = "🔴" if r.is_regression else "🟢"
             lines.append(f"{status} {r.benchmark_name}: {r.change_description}")
         return "\n".join(lines)
+
+
 def create_builtin_benchmarks() -> BenchmarkSuite:
     """Create the built-in benchmark suite."""
     suite = BenchmarkSuite(
@@ -337,21 +380,32 @@ def create_builtin_benchmarks() -> BenchmarkSuite:
         )
     )
     return suite
+
+
 def _bench_simple_arithmetic() -> dict[str, int]:
     """Benchmark simple arithmetic."""
     import time
+
     time.sleep(0.001)
     return {"instructions": 100, "paths": 1}
+
+
 def _bench_branching() -> dict[str, int]:
     """Benchmark branching."""
     import time
+
     time.sleep(0.002)
     return {"instructions": 200, "paths": 4}
+
+
 def _bench_loop_unrolling() -> dict[str, int]:
     """Benchmark loop unrolling."""
     import time
+
     time.sleep(0.003)
     return {"instructions": 500, "paths": 10}
+
+
 def run_benchmarks(
     output_path: Path | None = None,
     baseline_path: Path | None = None,
@@ -390,6 +444,8 @@ def run_benchmarks(
         if any(r.is_regression for r in regressions):
             return 1
     return 0
+
+
 __all__ = [
     "BenchmarkCategory",
     "BenchmarkResult",

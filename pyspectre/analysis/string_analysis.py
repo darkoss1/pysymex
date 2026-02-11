@@ -7,6 +7,7 @@ This module analyzes string operations including:
 - SQL injection detection in string building
 - Path traversal in string concatenation
 """
+
 from __future__ import annotations
 import ast
 import dis
@@ -16,8 +17,11 @@ from enum import Enum, auto
 from typing import (
     Any,
 )
+
+
 class StringWarningKind(Enum):
     """Types of string-related warnings."""
+
     FORMAT_STRING_MISMATCH = auto()
     MISSING_FORMAT_ARG = auto()
     EXTRA_FORMAT_ARG = auto()
@@ -28,19 +32,25 @@ class StringWarningKind(Enum):
     PATH_TRAVERSAL = auto()
     ENCODING_ERROR = auto()
     STRING_MULTIPLICATION = auto()
+
+
 @dataclass
 class StringWarning:
     """Warning about string operations."""
+
     kind: StringWarningKind
     file: str
     line: int
     message: str
     code_snippet: str = ""
     severity: str = "warning"
+
+
 class PrintfFormatAnalyzer:
     """
     Analyzes printf-style format strings (% operator).
     """
+
     FORMAT_SPEC = re.compile(
         r"%"
         r"(?:\((?P<key>\w+)\))?"
@@ -50,6 +60,7 @@ class PrintfFormatAnalyzer:
         r"(?P<length>[hlL])?"
         r"(?P<type>[diouxXeEfFgGcrsab%])"
     )
+
     def analyze(
         self,
         format_string: str,
@@ -109,13 +120,17 @@ class PrintfFormatAnalyzer:
                         )
                     )
         return warnings
+
+
 class StrFormatAnalyzer:
     """
     Analyzes str.format() calls.
     """
+
     FORMAT_FIELD = re.compile(
         r"\{" r"(?P<field>[^{}:!]*)" r"(?:!(?P<conversion>[rsab]))?" r"(?::(?P<spec>[^{}]*))?" r"\}"
     )
+
     def analyze(
         self,
         format_string: str,
@@ -186,11 +201,14 @@ class StrFormatAnalyzer:
                     )
                 )
         return warnings
+
+
 class FStringAnalyzer:
     """
     Analyzes f-string usage.
     Note: f-strings are compiled differently, so we analyze at AST level.
     """
+
     def analyze_source(
         self,
         source: str,
@@ -202,6 +220,7 @@ class FStringAnalyzer:
             tree = ast.parse(source)
         except SyntaxError:
             return warnings
+
         class FStringVisitor(ast.NodeVisitor):
             def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
                 for value in node.values:
@@ -211,19 +230,24 @@ class FStringAnalyzer:
                                 if isinstance(part, ast.FormattedValue):
                                     pass
                 self.generic_visit(node)
+
         visitor = FStringVisitor()
         visitor.visit(tree)
         return warnings
+
+
 class RegexAnalyzer:
     """
     Analyzes regex patterns for validity and performance.
     """
+
     REDOS_PATTERNS = [
         r"(\w+)+",
         r"(a+)+$",
         r"(a|a)+",
         r".*.*",
     ]
+
     def analyze(
         self,
         pattern: str,
@@ -269,10 +293,13 @@ class RegexAnalyzer:
                     )
                 )
         return warnings
+
+
 class SQLInjectionAnalyzer:
     """
     Detects potential SQL injection in string operations.
     """
+
     SQL_KEYWORDS = {
         "SELECT",
         "INSERT",
@@ -286,6 +313,7 @@ class SQLInjectionAnalyzer:
         "EXECUTE",
         "UNION",
     }
+
     def analyze_source(
         self,
         source: str,
@@ -297,9 +325,11 @@ class SQLInjectionAnalyzer:
             tree = ast.parse(source)
         except SyntaxError:
             return warnings
+
         class SQLVisitor(ast.NodeVisitor):
             def __init__(self) -> None:
                 self.warnings = warnings
+
             def visit_BinOp(self, node: ast.BinOp) -> None:
                 if isinstance(node.op, (ast.Add, ast.Mod)):
                     sql_string = self._extract_sql_string(node.left)
@@ -316,6 +346,7 @@ class SQLInjectionAnalyzer:
                                 )
                             )
                 self.generic_visit(node)
+
             def visit_Call(self, node: ast.Call) -> None:
                 if isinstance(node.func, ast.Attribute):
                     if node.func.attr == "execute":
@@ -345,6 +376,7 @@ class SQLInjectionAnalyzer:
                                     )
                                 )
                 self.generic_visit(node)
+
             def _extract_sql_string(self, node: ast.AST) -> str | None:
                 """Extract SQL string from node."""
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -353,13 +385,17 @@ class SQLInjectionAnalyzer:
                         if keyword in value:
                             return node.value
                 return None
+
         visitor = SQLVisitor()
         visitor.visit(tree)
         return warnings
+
+
 class PathTraversalAnalyzer:
     """
     Detects potential path traversal vulnerabilities.
     """
+
     PATH_FUNCTIONS = {
         "open",
         "os.path.join",
@@ -371,6 +407,7 @@ class PathTraversalAnalyzer:
         "os.makedirs",
         "os.listdir",
     }
+
     def analyze_source(
         self,
         source: str,
@@ -382,9 +419,11 @@ class PathTraversalAnalyzer:
             tree = ast.parse(source)
         except SyntaxError:
             return warnings
+
         class PathVisitor(ast.NodeVisitor):
             def __init__(self) -> None:
                 self.warnings = warnings
+
             def visit_Call(self, node: ast.Call) -> None:
                 func_name = self._get_func_name(node.func)
                 if func_name in {"open", "Path"}:
@@ -415,6 +454,7 @@ class PathTraversalAnalyzer:
                                     )
                                     break
                 self.generic_visit(node)
+
             def _get_func_name(self, node: ast.AST) -> str:
                 """Get function name from call."""
                 if isinstance(node, ast.Name):
@@ -422,6 +462,7 @@ class PathTraversalAnalyzer:
                 elif isinstance(node, ast.Attribute):
                     return node.attr
                 return ""
+
             def _contains_user_input(self, node: ast.AST) -> bool:
                 """Check if node might contain user input."""
                 for child in ast.walk(node):
@@ -434,13 +475,17 @@ class PathTraversalAnalyzer:
                             if child.func.id == "input":
                                 return True
                 return False
+
         visitor = PathVisitor()
         visitor.visit(tree)
         return warnings
+
+
 class StringMultiplicationAnalyzer:
     """
     Analyzes string multiplication operations.
     """
+
     def analyze(
         self,
         code: Any,
@@ -472,10 +517,13 @@ class StringMultiplicationAnalyzer:
             else:
                 last_const = None
         return warnings
+
+
 class StringAnalyzer:
     """
     High-level interface for string analysis.
     """
+
     def __init__(self) -> None:
         self.printf_analyzer = PrintfFormatAnalyzer()
         self.format_analyzer = StrFormatAnalyzer()
@@ -484,6 +532,7 @@ class StringAnalyzer:
         self.sql_analyzer = SQLInjectionAnalyzer()
         self.path_analyzer = PathTraversalAnalyzer()
         self.mult_analyzer = StringMultiplicationAnalyzer()
+
     def analyze_source(
         self,
         source: str,
@@ -495,6 +544,7 @@ class StringAnalyzer:
         warnings.extend(self.sql_analyzer.analyze_source(source, file_path))
         warnings.extend(self.path_analyzer.analyze_source(source, file_path))
         return warnings
+
     def analyze_function(
         self,
         code: Any,
@@ -504,6 +554,7 @@ class StringAnalyzer:
         warnings: list[StringWarning] = []
         warnings.extend(self.mult_analyzer.analyze(code, file_path))
         return warnings
+
     def analyze_file(self, file_path: str) -> list[StringWarning]:
         """Analyze file for string issues."""
         try:
@@ -516,6 +567,7 @@ class StringAnalyzer:
             return warnings
         except Exception:
             return []
+
     def _analyze_nested(
         self,
         code: Any,

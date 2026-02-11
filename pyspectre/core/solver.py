@@ -2,26 +2,36 @@
 This module provides a high-level interface to the Z3 theorem prover,
 with caching, incremental solving, and model extraction utilities.
 """
+
 from __future__ import annotations
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 import z3
+
+
 @dataclass
 class SolverResult:
     """Result of a satisfiability check."""
+
     is_sat: bool
     is_unsat: bool
     is_unknown: bool
     model: z3.ModelRef | None = None
+
     @staticmethod
     def sat(model: z3.ModelRef) -> SolverResult:
         return SolverResult(is_sat=True, is_unsat=False, is_unknown=False, model=model)
+
     @staticmethod
     def unsat() -> SolverResult:
         return SolverResult(is_sat=False, is_unsat=True, is_unknown=False)
+
     @staticmethod
     def unknown() -> SolverResult:
         return SolverResult(is_sat=False, is_unsat=False, is_unknown=True)
+
+
 class ShadowSolver:
     """High-level Z3 solver wrapper with caching and utilities.
     This class provides:
@@ -30,6 +40,7 @@ class ShadowSolver:
     - Model extraction and formatting
     - Timeout handling
     """
+
     def __init__(self, timeout_ms: int = 10000) -> None:
         """Initialize the solver.
         Args:
@@ -40,19 +51,24 @@ class ShadowSolver:
         self._cache: dict[int, SolverResult] = {}
         self._query_count = 0
         self._cache_hits = 0
+
     def reset(self) -> None:
         """Reset the solver state."""
         self._solver.reset()
         self._cache.clear()
+
     def push(self) -> None:
         """Push a new constraint scope."""
         self._solver.push()
+
     def pop(self) -> None:
         """Pop the current constraint scope."""
         self._solver.pop()
+
     def add(self, *constraints: z3.BoolRef) -> None:
         """Add constraints to the solver."""
         self._solver.add(*constraints)
+
     def check(self, *assumptions: z3.BoolRef) -> SolverResult:
         """Check satisfiability.
         Args:
@@ -68,6 +84,7 @@ class ShadowSolver:
             return SolverResult.unsat()
         else:
             return SolverResult.unknown()
+
     def is_sat(self, constraints: list[z3.BoolRef]) -> bool:
         """Check if constraints are satisfiable.
         Args:
@@ -89,6 +106,7 @@ class ShadowSolver:
         else:
             self._cache[cache_key] = SolverResult.unsat()
         return is_sat
+
     def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
         """Get a satisfying model for the constraints.
         Args:
@@ -104,6 +122,7 @@ class ShadowSolver:
             model = self._solver.model()
         self._solver.pop()
         return model
+
     def get_model_string(self, constraints: list[z3.BoolRef]) -> str | None:
         """Get a string representation of a satisfying model.
         Args:
@@ -115,6 +134,7 @@ class ShadowSolver:
         if model is not None:
             return str(model)
         return None
+
     def extract_counterexample(
         self,
         constraints: list[z3.BoolRef],
@@ -170,6 +190,7 @@ class ShadowSolver:
             else:
                 formatted[var] = {"type": "unknown", "value": info}
         return formatted
+
     def implies(self, antecedent: z3.BoolRef, consequent: z3.BoolRef) -> bool:
         """Check if antecedent implies consequent.
         Args:
@@ -181,9 +202,11 @@ class ShadowSolver:
         solver = z3.Solver()
         solver.add(antecedent, z3.Not(consequent))
         return solver.check() == z3.unsat
+
     def simplify(self, expr: z3.ExprRef) -> z3.ExprRef:
         """Simplify a Z3 expression."""
         return z3.simplify(expr)
+
     def get_stats(self) -> dict[str, int]:
         """Get solver statistics."""
         return {
@@ -191,24 +214,50 @@ class ShadowSolver:
             "cache_hits": self._cache_hits,
             "cache_size": len(self._cache),
         }
+
     def __repr__(self) -> str:
         return f"ShadowSolver(queries={self._query_count}, cache_hits={self._cache_hits})"
-def is_satisfiable(constraints: list[z3.BoolRef]) -> bool:
+
+
+def is_satisfiable(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> bool:
     """Check if a list of constraints is satisfiable."""
+    if isinstance(constraints, list):
+        constraints = tuple(constraints)
+    return _is_satisfiable_cached(constraints)
+
+
+@lru_cache(maxsize=128)
+def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
+    """Cached implementation of satisfiability check."""
     solver = z3.Solver()
     solver.add(constraints)
     return solver.check() == z3.sat
-def get_model(constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
+
+
+def get_model(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> z3.ModelRef | None:
     """Get a Z3 model for satisfiable constraints."""
+    if isinstance(constraints, list):
+        constraints = tuple(constraints)
+    return _get_model_cached(constraints)
+
+
+@lru_cache(maxsize=128)
+def _get_model_cached(constraints: tuple[z3.BoolRef, ...]) -> z3.ModelRef | None:
+    """Cached implementation of get_model."""
     solver = z3.Solver()
     solver.add(constraints)
     if solver.check() == z3.sat:
         return solver.model()
     return None
+
+
 def get_model_string(constraints: list[z3.BoolRef]) -> str | None:
     """Get a model string for satisfiable constraints."""
     model = get_model(constraints)
     return str(model) if model else None
+
+
+@lru_cache(maxsize=128)
 def prove(claim: z3.BoolRef) -> bool:
     """Prove that a claim is always true."""
     solver = z3.Solver()

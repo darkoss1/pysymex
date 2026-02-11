@@ -1,4 +1,5 @@
 """Public API for PySpectre."""
+
 from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
@@ -10,6 +11,13 @@ from pyspectre.execution.executor import (
     SymbolicExecutor,
 )
 from pyspectre.reporting.formatters import format_result
+from pyspectre.analysis.enhanced_scanner import (
+    EnhancedScanner,
+    ScannerConfig,
+    EnhancedIssue,
+)
+
+
 def analyze(
     func: Callable,
     symbolic_args: dict[str, str] | None = None,
@@ -73,6 +81,8 @@ def analyze(
     )
     executor = SymbolicExecutor(config)
     return executor.execute_function(func, symbolic_args or {})
+
+
 def analyze_code(
     code: str,
     symbolic_vars: dict[str, str] | None = None,
@@ -97,6 +107,8 @@ def analyze_code(
     config = ExecutionConfig(**kwargs)
     executor = SymbolicExecutor(config)
     return executor.execute_code(compiled, symbolic_vars or {})
+
+
 def analyze_file(
     filepath: str | Path,
     function_name: str,
@@ -114,37 +126,76 @@ def analyze_file(
         ExecutionResult with issues found
     Example:
         >>> result = analyze_file("mymodule.py", "process_data", {"data": "list"})
+
+    Security:
+        - Path is validated against traversal attacks
+        - Function name is sanitized
+        - Configuration parameters are bounds-checked
+        - Code is executed in a sandboxed namespace
     """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {filepath}")
-    source = filepath.read_text(encoding="utf-8")
-    compiled = compile(source, str(filepath), "exec")
-    namespace: dict[str, Any] = {}
-    exec(compiled, namespace)
-    if function_name not in namespace:
-        raise ValueError(f"Function '{function_name}' not found in {filepath}")
-    func = namespace[function_name]
+    from pyspectre.security import (
+        validate_path,
+        validate_config,
+        sanitize_function_name,
+        create_sandbox_namespace,
+        PathTraversalError,
+        SecurityError,
+    )
+
+    try:
+        validated_path = validate_path(
+            filepath,
+            must_exist=True,
+            must_be_file=True,
+            allowed_extensions=[".py", ".pyw"],
+        )
+    except PathTraversalError as e:
+        raise ValueError(f"Security error: {e}") from e
+
+    try:
+        safe_name = sanitize_function_name(function_name)
+    except ValueError as e:
+        raise ValueError(f"Invalid function name: {e}") from e
+
+    config_params = validate_config(
+        max_paths=kwargs.get("max_paths", 1000),
+        max_depth=kwargs.get("max_depth", 100),
+        max_iterations=kwargs.get("max_iterations", 10000),
+        timeout=kwargs.get("timeout", 60.0),
+    )
+
+    source = validated_path.read_text(encoding="utf-8")
+    compiled = compile(source, str(validated_path), "exec")
+
+    namespace = create_sandbox_namespace(allow_builtins=True)
+    exec(compiled, namespace)  # nosec B102 - sandboxed namespace
+
+    if safe_name not in namespace:
+        raise ValueError(f"Function '{safe_name}' not found in {validated_path}")
+    func = namespace[safe_name]
     if not callable(func):
-        raise ValueError(f"'{function_name}' is not a callable")
+        raise ValueError(f"'{safe_name}' is not a callable")
+
     analyze_kwargs = {
-        k: v
-        for k, v in kwargs.items()
-        if k
-        in [
-            "max_paths",
-            "max_depth",
-            "max_iterations",
-            "timeout",
-            "verbose",
-            "detect_division_by_zero",
-            "detect_assertion_errors",
-            "detect_index_errors",
-            "detect_type_errors",
-            "detect_overflow",
-        ]
+        "max_paths": config_params["max_paths"],
+        "max_depth": config_params["max_depth"],
+        "max_iterations": config_params["max_iterations"],
+        "timeout": config_params["timeout"],
     }
+    for key in [
+        "verbose",
+        "detect_division_by_zero",
+        "detect_assertion_errors",
+        "detect_index_errors",
+        "detect_type_errors",
+        "detect_overflow",
+    ]:
+        if key in kwargs:
+            analyze_kwargs[key] = kwargs[key]
+
     return analyze(func, symbolic_args, **analyze_kwargs)
+
+
 def quick_check(func: Callable) -> list[Issue]:
     """
     Quick check a function for common issues.
@@ -161,6 +212,8 @@ def quick_check(func: Callable) -> list[Issue]:
     """
     result = analyze(func, max_paths=100, max_iterations=500)
     return result.issues
+
+
 def check_division_by_zero(func: Callable) -> list[Issue]:
     """
     Check specifically for division by zero issues.
@@ -177,6 +230,8 @@ def check_division_by_zero(func: Callable) -> list[Issue]:
         detect_type_errors=False,
     )
     return result.get_issues_by_kind(IssueKind.DIVISION_BY_ZERO)
+
+
 def check_assertions(func: Callable) -> list[Issue]:
     """
     Check specifically for assertion errors.
@@ -193,6 +248,8 @@ def check_assertions(func: Callable) -> list[Issue]:
         detect_type_errors=False,
     )
     return result.get_issues_by_kind(IssueKind.ASSERTION_ERROR)
+
+
 def check_index_errors(func: Callable) -> list[Issue]:
     """
     Check specifically for index out of bounds errors.
@@ -209,6 +266,8 @@ def check_index_errors(func: Callable) -> list[Issue]:
         detect_type_errors=False,
     )
     return result.get_issues_by_kind(IssueKind.INDEX_ERROR)
+
+
 def format_issues(
     issues: list[Issue],
     format_type: str = "text",
@@ -225,10 +284,13 @@ def format_issues(
     for i, issue in enumerate(issues, 1):
         if format_type == "json":
             import json
+
             lines.append(json.dumps(issue.to_dict(), indent=2))
         else:
             lines.append(f"[{i}] {issue.format()}")
     return "\n\n".join(lines)
+
+
 check = analyze
 scan = analyze_file
 __all__ = [
@@ -247,4 +309,42 @@ __all__ = [
     "IssueKind",
     "check",
     "scan",
+    "scan_static",
 ]
+
+
+def scan_static(
+    path: str | Path,
+    recursive: bool = False,
+    verbose: bool = False,
+    min_confidence: float = 0.7,
+    show_suppressed: bool = False,
+) -> list[EnhancedIssue]:
+    """
+    Perform static analysis scanning using the Enhanced Scanner.
+
+    Args:
+        path: File or directory path to scan
+        recursive: Whether to scan directories recursively
+        verbose: Print verbose output
+        min_confidence: Minimum confidence threshold (0.0-1.0)
+        show_suppressed: Whether to include suppressed issues in the result
+
+    Returns:
+        List of EnhancedIssue objects found
+    """
+    config = ScannerConfig(
+        verbose=verbose,
+        min_confidence=min_confidence,
+        show_suppressed=show_suppressed,
+    )
+    scanner = EnhancedScanner(config)
+
+    path_obj = Path(path)
+    if path_obj.is_file():
+        return scanner.scan_file(str(path_obj))
+    elif path_obj.is_dir():
+        pattern = "**/*.py" if recursive else "*.py"
+        return scanner.scan_directory(str(path_obj), pattern)
+    else:
+        raise ValueError(f"Path not found: {path}")

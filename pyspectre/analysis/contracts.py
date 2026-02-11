@@ -6,6 +6,7 @@ This module provides formal verification through contracts:
 - Loop invariants: Conditions preserved across loop iterations
 Uses Z3 theorem prover to mathematically verify contract satisfaction.
 """
+
 from __future__ import annotations
 import ast
 import functools
@@ -18,31 +19,42 @@ from typing import (
     Any,
 )
 import z3
+
 if TYPE_CHECKING:
     pass
+
+
 class ContractKind(Enum):
     """Types of contracts."""
+
     REQUIRES = auto()
     ENSURES = auto()
     INVARIANT = auto()
     LOOP_INVARIANT = auto()
     ASSERT = auto()
     ASSUME = auto()
+
+
 class VerificationResult(Enum):
     """Result of contract verification."""
+
     VERIFIED = auto()
     VIOLATED = auto()
     UNKNOWN = auto()
     UNREACHABLE = auto()
+
+
 @dataclass
 class ContractViolation:
     """Represents a contract violation."""
+
     kind: ContractKind
     condition: str
     message: str
     line_number: int | None = None
     function_name: str | None = None
     counterexample: dict[str, Any] = field(default_factory=dict)
+
     def format(self) -> str:
         """Format violation for display."""
         location = f" at line {self.line_number}" if self.line_number else ""
@@ -54,14 +66,18 @@ class ContractViolation:
             for var, val in self.counterexample.items():
                 result += f"    {var} = {val}\n"
         return result
+
+
 @dataclass
 class Contract:
     """A single contract specification."""
+
     kind: ContractKind
     condition: str
     z3_expr: z3.BoolRef | None = None
     message: str | None = None
     line_number: int | None = None
+
     def compile(self, symbols: dict[str, z3.ExprRef]) -> z3.BoolRef:
         """Compile condition string to Z3 expression."""
         if self.z3_expr is not None:
@@ -69,15 +85,19 @@ class Contract:
         expr = ContractCompiler.compile_expression(self.condition, symbols)
         self.z3_expr = expr
         return expr
+
+
 @dataclass
 class FunctionContract:
     """Complete contract specification for a function."""
+
     function_name: str
     preconditions: list[Contract] = field(default_factory=list)
     postconditions: list[Contract] = field(default_factory=list)
     loop_invariants: dict[int, list[Contract]] = field(default_factory=dict)
     old_values: dict[str, str] = field(default_factory=dict)
     result_var: str = "__result__"
+
     def add_precondition(self, condition: str, message: str = None, line: int = None) -> None:
         """Add a precondition."""
         self.preconditions.append(
@@ -88,6 +108,7 @@ class FunctionContract:
                 line_number=line,
             )
         )
+
     def add_postcondition(self, condition: str, message: str = None, line: int = None) -> None:
         """Add a postcondition."""
         self.postconditions.append(
@@ -98,6 +119,7 @@ class FunctionContract:
                 line_number=line,
             )
         )
+
     def add_loop_invariant(
         self, pc: int, condition: str, message: str = None, line: int = None
     ) -> None:
@@ -112,11 +134,15 @@ class FunctionContract:
                 line_number=line,
             )
         )
+
+
 class ContractCompiler(ast.NodeVisitor):
     """Compiles Python expressions to Z3 constraints."""
+
     def __init__(self, symbols: dict[str, z3.ExprRef]):
         self.symbols = symbols
         self._old_prefix = "old_"
+
     @classmethod
     def compile_expression(cls, expr_str: str, symbols: dict[str, z3.ExprRef]) -> z3.BoolRef:
         """Compile a Python expression string to Z3."""
@@ -126,6 +152,7 @@ class ContractCompiler(ast.NodeVisitor):
             return compiler.visit(tree.body)
         except Exception:
             return z3.Bool(f"contract_{hash(expr_str)}")
+
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
         """Handle comparison operators."""
         left = self.visit(node.left)
@@ -153,6 +180,7 @@ class ContractCompiler(ast.NodeVisitor):
                 result = z3.And(result, cmp)
             current = right
         return result
+
     def visit_BoolOp(self, node: ast.BoolOp) -> z3.BoolRef:
         """Handle and/or operators."""
         values = [self.visit(v) for v in node.values]
@@ -162,6 +190,7 @@ class ContractCompiler(ast.NodeVisitor):
             return z3.Or(*values)
         else:
             return z3.Bool(f"boolop_{id(node)}")
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> z3.ExprRef:
         """Handle unary operators."""
         operand = self.visit(node.operand)
@@ -173,6 +202,7 @@ class ContractCompiler(ast.NodeVisitor):
             return operand
         else:
             return operand
+
     def visit_BinOp(self, node: ast.BinOp) -> z3.ExprRef:
         """Handle binary operators."""
         left = self.visit(node.left)
@@ -204,6 +234,7 @@ class ContractCompiler(ast.NodeVisitor):
             return left ^ right
         else:
             return z3.Int(f"binop_{id(node)}")
+
     def visit_Name(self, node: ast.Name) -> z3.ExprRef:
         """Handle variable references."""
         name = node.id
@@ -219,6 +250,7 @@ class ContractCompiler(ast.NodeVisitor):
         if name in self.symbols:
             return self.symbols[name]
         return z3.Int(name)
+
     def visit_Constant(self, node: ast.Constant) -> z3.ExprRef:
         """Handle literals."""
         value = node.value
@@ -230,6 +262,7 @@ class ContractCompiler(ast.NodeVisitor):
             return z3.RealVal(value)
         else:
             return z3.Int(f"const_{id(node)}")
+
     def visit_Call(self, node: ast.Call) -> z3.ExprRef:
         """Handle function calls in contracts."""
         if isinstance(node.func, ast.Name):
@@ -258,12 +291,14 @@ class ContractCompiler(ast.NodeVisitor):
                 if isinstance(node.args[0], ast.Name):
                     return z3.Int(f"len_{node.args[0].id}")
         return z3.Int(f"call_{id(node)}")
+
     def visit_IfExp(self, node: ast.IfExp) -> z3.ExprRef:
         """Handle ternary if expressions."""
         test = self.visit(node.test)
         body = self.visit(node.body)
         orelse = self.visit(node.orelse)
         return z3.If(test, body, orelse)
+
     def visit_Subscript(self, node: ast.Subscript) -> z3.ExprRef:
         """Handle array subscript."""
         if isinstance(node.value, ast.Name):
@@ -273,9 +308,12 @@ class ContractCompiler(ast.NodeVisitor):
             elif isinstance(node.slice, ast.Name):
                 return z3.Int(f"{base_name}_{node.slice.id}")
         return z3.Int(f"subscript_{id(node)}")
+
     def generic_visit(self, node: ast.AST) -> z3.ExprRef:
         """Default handler for unknown nodes."""
         return z3.Int(f"unknown_{id(node)}")
+
+
 class ContractVerifier:
     """Verifies function contracts using symbolic execution.
     Uses Z3 to prove:
@@ -283,10 +321,12 @@ class ContractVerifier:
     2. Postconditions hold given preconditions (function is correct)
     3. Loop invariants are preserved
     """
+
     def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
+
     def verify_precondition(
         self,
         contract: Contract,
@@ -310,6 +350,7 @@ class ContractVerifier:
             return VerificationResult.UNREACHABLE, None
         else:
             return VerificationResult.UNKNOWN, None
+
     def verify_postcondition(
         self,
         contract: Contract,
@@ -337,6 +378,7 @@ class ContractVerifier:
             return VerificationResult.VIOLATED, counterexample
         else:
             return VerificationResult.UNKNOWN, None
+
     def verify_loop_invariant(
         self,
         invariant: Contract,
@@ -375,6 +417,7 @@ class ContractVerifier:
             return VerificationResult.VERIFIED, None
         else:
             return VerificationResult.UNKNOWN, None
+
     def verify_assertion(
         self,
         condition: z3.BoolRef,
@@ -395,6 +438,7 @@ class ContractVerifier:
             return VerificationResult.VIOLATED, counterexample
         else:
             return VerificationResult.UNKNOWN, None
+
     def _extract_counterexample(
         self,
         model: z3.ModelRef,
@@ -420,11 +464,17 @@ class ContractVerifier:
             except Exception:
                 pass
         return counterexample
+
+
 _function_contracts: dict[str, FunctionContract] = {}
+
+
 def get_function_contract(func: Callable) -> FunctionContract | None:
     """Get the contract for a function."""
     key = f"{func.__module__}.{func.__qualname__}"
     return _function_contracts.get(key)
+
+
 def requires(condition: str, message: str = None):
     """Decorator to add a precondition to a function.
     Example:
@@ -433,6 +483,7 @@ def requires(condition: str, message: str = None):
         def divide(x, y):
             return x / y
     """
+
     def decorator(func: Callable) -> Callable:
         key = f"{func.__module__}.{func.__qualname__}"
         if key not in _function_contracts:
@@ -444,12 +495,17 @@ def requires(condition: str, message: str = None):
         except Exception:
             line_num = None
         contract.add_precondition(condition, message, line_num)
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
+
         wrapper.__contract__ = contract
         return wrapper
+
     return decorator
+
+
 def ensures(condition: str, message: str = None):
     """Decorator to add a postcondition to a function.
     Use 'result()' to refer to the return value.
@@ -460,6 +516,7 @@ def ensures(condition: str, message: str = None):
         def add(x, y):
             return x + y
     """
+
     def decorator(func: Callable) -> Callable:
         key = f"{func.__module__}.{func.__qualname__}"
         if key not in _function_contracts:
@@ -471,12 +528,17 @@ def ensures(condition: str, message: str = None):
         except Exception:
             line_num = None
         contract.add_postcondition(condition, message, line_num)
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
+
         wrapper.__contract__ = contract
         return wrapper
+
     return decorator
+
+
 def invariant(condition: str, message: str = None):
     """Decorator to add a class invariant.
     The invariant must hold after __init__ and after every public method.
@@ -486,6 +548,7 @@ def invariant(condition: str, message: str = None):
             def __init__(self, initial):
                 self.balance = initial
     """
+
     def decorator(cls: type) -> type:
         if not hasattr(cls, "__invariants__"):
             cls.__invariants__ = []
@@ -497,7 +560,10 @@ def invariant(condition: str, message: str = None):
             )
         )
         return cls
+
     return decorator
+
+
 def loop_invariant(condition: str, message: str = None):
     """Marker for loop invariants (used in comments or type hints).
     Example:
@@ -515,23 +581,29 @@ def loop_invariant(condition: str, message: str = None):
         condition=condition,
         message=message or f"Loop invariant: {condition}",
     )
+
+
 @dataclass
 class VerificationReport:
     """Report of contract verification results."""
+
     function_name: str
     total_contracts: int = 0
     verified: int = 0
     violated: int = 0
     unknown: int = 0
     violations: list[ContractViolation] = field(default_factory=list)
+
     @property
     def is_verified(self) -> bool:
         """Check if all contracts were verified."""
         return self.violated == 0 and self.unknown == 0
+
     @property
     def has_violations(self) -> bool:
         """Check if any violations were found."""
         return self.violated > 0
+
     def add_result(
         self,
         contract: Contract,
@@ -557,6 +629,7 @@ class VerificationReport:
             )
         else:
             self.unknown += 1
+
     def format(self) -> str:
         """Format report for display."""
         lines = [
@@ -575,14 +648,18 @@ class VerificationReport:
                 lines.append("")
                 lines.append(v.format())
         return "\n".join(lines)
+
+
 class ContractAnalyzer:
     """Analyzes functions with contracts using symbolic execution.
     Integrates with PySpectre's symbolic execution engine to verify
     that contracts hold for all possible inputs.
     """
+
     def __init__(self, verifier: ContractVerifier | None = None):
         self.verifier = verifier or ContractVerifier()
         self._reports: dict[str, VerificationReport] = {}
+
     def analyze_function(
         self,
         func: Callable,
@@ -622,6 +699,7 @@ class ContractAnalyzer:
             report.add_result(post, result, counter, func.__name__)
         self._reports[func.__name__] = report
         return report
+
     def _build_symbols(
         self,
         func: Callable,
@@ -644,12 +722,16 @@ class ContractAnalyzer:
         except Exception:
             pass
         return symbols
+
     def get_report(self, func_name: str) -> VerificationReport | None:
         """Get the verification report for a function."""
         return self._reports.get(func_name)
+
     def get_all_reports(self) -> list[VerificationReport]:
         """Get all verification reports."""
         return list(self._reports.values())
+
+
 __all__ = [
     "ContractKind",
     "VerificationResult",

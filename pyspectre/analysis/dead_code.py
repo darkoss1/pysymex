@@ -8,6 +8,7 @@ This module identifies unreachable and unused code including:
 - Unreachable branches (conditions always true/false)
 - Dead exception handlers
 """
+
 from __future__ import annotations
 import ast
 import dis
@@ -22,8 +23,11 @@ from .flow_sensitive import (
     CFGBuilder,
     LiveVariables,
 )
+
+
 class DeadCodeKind(Enum):
     """Types of dead code."""
+
     UNREACHABLE_CODE = auto()
     UNREACHABLE_BRANCH = auto()
     UNUSED_VARIABLE = auto()
@@ -34,9 +38,12 @@ class DeadCodeKind(Enum):
     DEAD_STORE = auto()
     UNREACHABLE_HANDLER = auto()
     REDUNDANT_CONDITION = auto()
+
+
 @dataclass
 class DeadCode:
     """Represents a piece of dead code."""
+
     kind: DeadCodeKind
     file: str
     line: int
@@ -45,16 +52,20 @@ class DeadCode:
     message: str = ""
     confidence: float = 1.0
     pc: int | None = None
+
     def format(self) -> str:
         """Format for display."""
         location = f"{self.file}:{self.line}"
         if self.end_line and self.end_line != self.line:
             location += f"-{self.end_line}"
         return f"[{self.kind.name}] {location}: {self.message}"
+
+
 class UnreachableCodeDetector:
     """
     Detects unreachable code after control flow terminators.
     """
+
     def detect(
         self,
         code: Any,
@@ -73,8 +84,12 @@ class UnreachableCodeDetector:
         unreachable_start: int | None = None
         current_line = code.co_firstlineno
         for i, instr in enumerate(instructions):
-            if instr.starts_line:
-                current_line = instr.starts_line
+            is_start = instr.starts_line
+            if is_start:
+                if type(is_start) is int:
+                    current_line = is_start
+                elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
+                    current_line = instr.positions.lineno
             if instr.offset in jump_targets:
                 if unreachable and unreachable_start:
                     dead_code.append(
@@ -95,8 +110,18 @@ class UnreachableCodeDetector:
                     next_instr = instructions[i + 1]
                     if next_instr.offset not in jump_targets:
                         unreachable = True
-                        if next_instr.starts_line:
-                            unreachable_start = next_instr.starts_line
+                        is_next_start = next_instr.starts_line
+                        if is_next_start:
+                            if isinstance(is_next_start, int):
+                                unreachable_start = is_next_start
+                            elif (
+                                hasattr(next_instr, "positions")
+                                and next_instr.positions
+                                and next_instr.positions.lineno
+                            ):
+                                unreachable_start = next_instr.positions.lineno
+                            else:
+                                unreachable_start = current_line
                         else:
                             unreachable_start = current_line
         if unreachable and unreachable_start:
@@ -109,15 +134,19 @@ class UnreachableCodeDetector:
                 )
             )
         return dead_code
+
+
 class UnusedVariableDetector:
     """
     Detects variables that are assigned but never used.
     """
+
     IGNORED_NAMES: set[str] = {
         "_",
         "__",
         "___",
     }
+
     def detect(
         self,
         code: Any,
@@ -130,8 +159,12 @@ class UnusedVariableDetector:
         instructions = list(dis.get_instructions(code))
         current_line = code.co_firstlineno
         for instr in instructions:
-            if instr.starts_line:
-                current_line = instr.starts_line
+            is_start = instr.starts_line
+            if is_start:
+                if type(is_start) is int:
+                    current_line = is_start
+                elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
+                    current_line = instr.positions.lineno
             opname = instr.opname
             arg = instr.argval
             if opname in {"STORE_FAST", "STORE_NAME", "STORE_DEREF"}:
@@ -160,10 +193,13 @@ class UnusedVariableDetector:
                         )
                     )
         return dead_code
+
+
 class DeadStoreDetector:
     """
     Detects stores that are immediately overwritten without being read.
     """
+
     def detect(
         self,
         code: Any,
@@ -179,8 +215,12 @@ class DeadStoreDetector:
         current_line = code.co_firstlineno
         last_store: dict[str, tuple[int, int]] = {}
         for instr in instructions:
-            if instr.starts_line:
-                current_line = instr.starts_line
+            is_start = instr.starts_line
+            if is_start:
+                if type(is_start) is int:
+                    current_line = is_start
+                elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
+                    current_line = instr.positions.lineno
             opname = instr.opname
             arg = instr.argval
             if opname in {"STORE_FAST", "STORE_NAME"}:
@@ -204,10 +244,13 @@ class DeadStoreDetector:
                 if name in last_store:
                     del last_store[name]
         return dead_code
+
+
 class UnusedFunctionDetector:
     """
     Detects functions that are defined but never called.
     """
+
     EXEMPT_PATTERNS: set[str] = {
         "__init__",
         "__new__",
@@ -246,6 +289,7 @@ class UnusedFunctionDetector:
         "setUpClass",
         "tearDownClass",
     }
+
     def detect(
         self,
         call_graph: CallGraph,
@@ -272,11 +316,15 @@ class UnusedFunctionDetector:
                     )
                 )
         return dead_code
+
+
 class UnusedParameterDetector:
     """
     Detects function parameters that are never used.
     """
+
     IGNORED_NAMES: set[str] = {"self", "cls", "_", "*args", "**kwargs"}
+
     def detect(
         self,
         code: Any,
@@ -306,11 +354,14 @@ class UnusedParameterDetector:
                     )
                 )
         return dead_code
+
+
 class UnusedImportDetector:
     """
     Detects imports that are never used.
     This requires source code analysis, not just bytecode.
     """
+
     def detect_from_source(
         self,
         source: str,
@@ -335,14 +386,17 @@ class UnusedImportDetector:
                     name = alias.asname or alias.name
                     imports[name] = node.lineno
         used: set[str] = set()
+
         class NameCollector(ast.NodeVisitor):
             def visit_Name(self, node: ast.Name) -> None:
                 used.add(node.id)
                 self.generic_visit(node)
+
             def visit_Attribute(self, node: ast.Attribute) -> None:
                 if isinstance(node.value, ast.Name):
                     used.add(node.value.id)
                 self.generic_visit(node)
+
         collector = NameCollector()
         collector.visit(tree)
         for name, line in imports.items():
@@ -359,10 +413,13 @@ class UnusedImportDetector:
                     )
                 )
         return dead_code
+
+
 class RedundantConditionDetector:
     """
     Detects conditions that always evaluate to the same value.
     """
+
     def detect(
         self,
         code: Any,
@@ -374,8 +431,12 @@ class RedundantConditionDetector:
         current_line = code.co_firstlineno
         stack: list[bool | None] = []
         for instr in instructions:
-            if instr.starts_line:
-                current_line = instr.starts_line
+            is_start = instr.starts_line
+            if is_start:
+                if isinstance(is_start, int):
+                    current_line = is_start
+                elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
+                    current_line = instr.positions.lineno
             opname = instr.opname
             arg = instr.argval
             if opname == "LOAD_CONST":
@@ -418,10 +479,13 @@ class RedundantConditionDetector:
                     stack.pop()
                 stack.append(None)
         return dead_code
+
+
 class DeadCodeAnalyzer:
     """
     High-level interface for dead code detection.
     """
+
     def __init__(self) -> None:
         self.unreachable_detector = UnreachableCodeDetector()
         self.unused_var_detector = UnusedVariableDetector()
@@ -430,6 +494,7 @@ class DeadCodeAnalyzer:
         self.unused_param_detector = UnusedParameterDetector()
         self.unused_import_detector = UnusedImportDetector()
         self.redundant_cond_detector = RedundantConditionDetector()
+
     def analyze_function(
         self,
         code: Any,
@@ -443,6 +508,7 @@ class DeadCodeAnalyzer:
         results.extend(self.unused_param_detector.detect(code, file_path))
         results.extend(self.redundant_cond_detector.detect(code, file_path))
         return results
+
     def analyze_module(
         self,
         module_code: Any,
@@ -458,6 +524,7 @@ class DeadCodeAnalyzer:
         results.extend(self.unused_func_detector.detect(call_graph, file_path))
         self._analyze_nested_functions(module_code, file_path, results)
         return results
+
     def _analyze_nested_functions(
         self,
         code: Any,
@@ -469,6 +536,7 @@ class DeadCodeAnalyzer:
             if hasattr(const, "co_code"):
                 results.extend(self.analyze_function(const, file_path))
                 self._analyze_nested_functions(const, file_path, results)
+
     def analyze_file(self, file_path: str) -> list[DeadCode]:
         """Analyze a file for dead code."""
         try:

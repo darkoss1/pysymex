@@ -2,6 +2,7 @@
 This module provides an extensible plugin architecture that allows users
 to add custom detectors, opcode handlers, reporters, and analysis passes.
 """
+
 from __future__ import annotations
 import importlib
 import importlib.util
@@ -15,27 +16,37 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+
 if TYPE_CHECKING:
     from pyspectre.analysis.detectors import Detector
     from pyspectre.core.engine import SymbolicEngine
+
+
 class PluginType(Enum):
     """Types of plugins supported by PySpectre."""
+
     DETECTOR = auto()
     HANDLER = auto()
     REPORTER = auto()
     ANALYZER = auto()
     TRANSFORMER = auto()
     HOOK = auto()
+
+
 class PluginPriority(Enum):
     """Plugin execution priority."""
+
     HIGHEST = 0
     HIGH = 25
     NORMAL = 50
     LOW = 75
     LOWEST = 100
+
+
 @dataclass
 class PluginMetadata:
     """Metadata describing a plugin."""
+
     name: str
     version: str
     description: str = ""
@@ -45,54 +56,73 @@ class PluginMetadata:
     dependencies: list[str] = field(default_factory=list)
     conflicts: list[str] = field(default_factory=list)
     tags: set[str] = field(default_factory=set)
+
     @property
     def qualified_name(self) -> str:
         """Get fully qualified plugin name."""
         return f"{self.name}@{self.version}"
+
+
 class Plugin(ABC):
     """Base class for all PySpectre plugins.
     Plugins extend PySpectre functionality by providing custom
     detectors, handlers, reporters, or analysis passes.
     """
+
     metadata: PluginMetadata
+
     def __init__(self):
         self._enabled: bool = True
         self._config: dict[str, Any] = {}
+
     @property
     def enabled(self) -> bool:
         """Check if plugin is enabled."""
         return self._enabled
+
     def enable(self) -> None:
         """Enable the plugin."""
         self._enabled = True
+
     def disable(self) -> None:
         """Disable the plugin."""
         self._enabled = False
+
     def configure(self, **options) -> None:
         """Configure plugin options."""
         self._config.update(options)
+
     def get_option(self, key: str, default: Any = None) -> Any:
         """Get a configuration option."""
         return self._config.get(key, default)
+
     @abstractmethod
     def activate(self, engine: SymbolicEngine) -> None:
         """Called when plugin is activated.
         Use this to register handlers, detectors, etc. with the engine.
         """
+
     def deactivate(self, engine: SymbolicEngine) -> None:
         """Called when plugin is deactivated."""
+
+
 class DetectorPlugin(Plugin):
     """Plugin that provides a custom detector."""
+
     @abstractmethod
     def get_detector(self) -> Detector:
         """Get the detector instance."""
+
     def activate(self, engine: SymbolicEngine) -> None:
         """Register detector with engine."""
         detector = self.get_detector()
         if hasattr(engine, "add_detector"):
             engine.add_detector(detector)
+
+
 class HandlerPlugin(Plugin):
     """Plugin that provides custom opcode handlers."""
+
     @abstractmethod
     def get_handlers(self) -> dict[str, Callable]:
         """Get opcode handlers.
@@ -100,17 +130,23 @@ class HandlerPlugin(Plugin):
             Dict mapping opcode names to handler functions.
             Handler signature: (engine, state, instruction) -> None
         """
+
     def activate(self, engine: SymbolicEngine) -> None:
         """Register handlers with engine."""
         handlers = self.get_handlers()
         for opcode, handler in handlers.items():
             if hasattr(engine, "register_handler"):
                 engine.register_handler(opcode, handler)
+
+
 @dataclass
 class HookPoint:
     """Defines a hook point in the execution flow."""
+
     name: str
     description: str = ""
+
+
 HOOKS = {
     "pre_execute": HookPoint("pre_execute", "Before executing an instruction"),
     "post_execute": HookPoint("post_execute", "After executing an instruction"),
@@ -123,29 +159,37 @@ HOOKS = {
     "state_fork": HookPoint("state_fork", "When state is forked"),
     "state_merge": HookPoint("state_merge", "When states are merged"),
 }
+
+
 class HookPlugin(Plugin):
     """Plugin that hooks into execution points."""
+
     @abstractmethod
     def get_hooks(self) -> dict[str, Callable]:
         """Get hook handlers.
         Returns:
             Dict mapping hook names to handler functions.
         """
+
     def activate(self, engine: SymbolicEngine) -> None:
         """Register hooks with engine."""
         hooks = self.get_hooks()
         for hook_name, handler in hooks.items():
             if hasattr(engine, "register_hook"):
                 engine.register_hook(hook_name, handler)
+
+
 class PluginRegistry:
     """Central registry for all plugins.
     Manages plugin discovery, loading, and lifecycle.
     """
+
     def __init__(self):
         self._plugins: dict[str, Plugin] = {}
         self._plugin_types: dict[PluginType, list[Plugin]] = {pt: [] for pt in PluginType}
         self._hooks: dict[str, list[Callable]] = {name: [] for name in HOOKS}
         self._load_order: list[str] = []
+
     def register(self, plugin: Plugin) -> None:
         """Register a plugin.
         Args:
@@ -165,6 +209,7 @@ class PluginRegistry:
         self._plugins[name] = plugin
         self._plugin_types[plugin.metadata.plugin_type].append(plugin)
         self._load_order.append(name)
+
     def unregister(self, name: str) -> bool:
         """Unregister a plugin by name."""
         if name not in self._plugins:
@@ -173,30 +218,38 @@ class PluginRegistry:
         self._plugin_types[plugin.metadata.plugin_type].remove(plugin)
         self._load_order.remove(name)
         return True
+
     def get(self, name: str) -> Plugin | None:
         """Get a plugin by name."""
         return self._plugins.get(name)
+
     def get_by_type(self, plugin_type: PluginType) -> list[Plugin]:
         """Get all plugins of a specific type."""
         return list(self._plugin_types[plugin_type])
+
     def get_all(self) -> list[Plugin]:
         """Get all registered plugins in load order."""
         return [self._plugins[name] for name in self._load_order]
+
     def get_enabled(self) -> list[Plugin]:
         """Get all enabled plugins."""
         return [p for p in self.get_all() if p.enabled]
+
     def activate_all(self, engine: SymbolicEngine) -> None:
         """Activate all enabled plugins."""
         for plugin in self.get_enabled():
             plugin.activate(engine)
+
     def deactivate_all(self, engine: SymbolicEngine) -> None:
         """Deactivate all plugins."""
         for plugin in reversed(self.get_enabled()):
             plugin.deactivate(engine)
+
     def register_hook(self, hook_name: str, handler: Callable) -> None:
         """Register a hook handler."""
         if hook_name in self._hooks:
             self._hooks[hook_name].append(handler)
+
     def trigger_hook(self, hook_name: str, *args, **kwargs) -> list[Any]:
         """Trigger all handlers for a hook."""
         if hook_name not in self._hooks:
@@ -209,15 +262,20 @@ class PluginRegistry:
             except Exception as e:
                 results.append(e)
         return results
+
+
 class PluginLoader:
     """Loads plugins from various sources."""
+
     def __init__(self, registry: PluginRegistry):
         self.registry = registry
         self._search_paths: list[Path] = []
+
     def add_search_path(self, path: Path) -> None:
         """Add a directory to search for plugins."""
         if path not in self._search_paths:
             self._search_paths.append(path)
+
     def load_from_module(self, module_name: str) -> Plugin | None:
         """Load a plugin from a Python module."""
         try:
@@ -237,6 +295,7 @@ class PluginLoader:
         except Exception as e:
             print(f"Failed to load plugin from {module_name}: {e}")
             return None
+
     def load_from_file(self, path: Path) -> Plugin | None:
         """Load a plugin from a Python file."""
         try:
@@ -264,6 +323,7 @@ class PluginLoader:
         except Exception as e:
             print(f"Failed to load plugin from {path}: {e}")
             return None
+
     def discover_plugins(self) -> list[Plugin]:
         """Discover and load all plugins from search paths."""
         discovered = []
@@ -277,28 +337,38 @@ class PluginLoader:
                 if plugin:
                     discovered.append(plugin)
         return discovered
+
+
 @dataclass
 class PluginConfig:
     """Configuration for a single plugin."""
+
     name: str
     enabled: bool = True
     options: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class PluginManagerConfig:
     """Configuration for the plugin manager."""
+
     search_paths: list[str] = field(default_factory=list)
     plugins: list[PluginConfig] = field(default_factory=list)
     auto_discover: bool = True
+
+
 class PluginManager:
     """High-level plugin management interface.
     Provides a unified API for working with plugins.
     """
+
     def __init__(self, config: PluginManagerConfig | None = None):
         self.config = config or PluginManagerConfig()
         self.registry = PluginRegistry()
         self.loader = PluginLoader(self.registry)
         for path_str in self.config.search_paths:
             self.loader.add_search_path(Path(path_str))
+
     def initialize(self) -> None:
         """Initialize the plugin system."""
         if self.config.auto_discover:
@@ -309,15 +379,18 @@ class PluginManager:
                 if not plugin_config.enabled:
                     plugin.disable()
                 plugin.configure(**plugin_config.options)
+
     def load(self, name: str) -> Plugin | None:
         """Load a plugin by module name or file path."""
         path = Path(name)
         if path.exists() and path.suffix == ".py":
             return self.loader.load_from_file(path)
         return self.loader.load_from_module(name)
+
     def get(self, name: str) -> Plugin | None:
         """Get a plugin by name."""
         return self.registry.get(name)
+
     def enable(self, name: str) -> bool:
         """Enable a plugin by name."""
         plugin = self.registry.get(name)
@@ -325,6 +398,7 @@ class PluginManager:
             plugin.enable()
             return True
         return False
+
     def disable(self, name: str) -> bool:
         """Disable a plugin by name."""
         plugin = self.registry.get(name)
@@ -332,15 +406,20 @@ class PluginManager:
             plugin.disable()
             return True
         return False
+
     def list_plugins(self) -> list[PluginMetadata]:
         """List all registered plugins."""
         return [p.metadata for p in self.registry.get_all()]
+
     def activate(self, engine: SymbolicEngine) -> None:
         """Activate all enabled plugins on an engine."""
         self.registry.activate_all(engine)
+
     def deactivate(self, engine: SymbolicEngine) -> None:
         """Deactivate all plugins from an engine."""
         self.registry.deactivate_all(engine)
+
+
 __all__ = [
     "PluginType",
     "PluginPriority",

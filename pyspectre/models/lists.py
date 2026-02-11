@@ -9,30 +9,40 @@ Key improvements:
 - Side effects track potential exceptions
 - Copy preserves list properties
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import z3
 from pyspectre.core.types import SymbolicList, SymbolicNone, SymbolicValue
 from pyspectre.models.builtins import FunctionModel, ModelResult
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 def _get_symbolic_list(arg: Any) -> SymbolicList | None:
     """Extract SymbolicList from argument."""
     if isinstance(arg, SymbolicList):
         return arg
     return None
+
+
 def _get_symbolic_value(arg: Any) -> SymbolicValue | None:
     """Extract SymbolicValue from argument."""
     if isinstance(arg, SymbolicValue):
         return arg
     return None
+
+
 class ListAppendModel(FunctionModel):
     """Model for list.append(x) - increases list length by 1.
     Relationship: After append, len(list) == old_len + 1
     Side effect: Updates the list's symbolic length constraint.
     """
+
     name = "append"
     qualname = "list.append"
+
     def apply(
         self,
         args: list[Any],
@@ -58,12 +68,16 @@ class ListAppendModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class ListExtendModel(FunctionModel):
     """Model for list.extend(iterable) - increases length by len(iterable).
     Relationship: len(list) >= old_len (extends by >= 0 elements)
     """
+
     name = "extend"
     qualname = "list.extend"
+
     def apply(
         self,
         args: list[Any],
@@ -90,13 +104,17 @@ class ListExtendModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class ListInsertModel(FunctionModel):
     """Model for list.insert(i, x) - increases list length by 1.
     Relationship: After insert, len(list) == old_len + 1
     Note: Index i can be any value (negative, > len are valid)
     """
+
     name = "insert"
     qualname = "list.insert"
+
     def apply(
         self,
         args: list[Any],
@@ -118,14 +136,18 @@ class ListInsertModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class ListRemoveModel(FunctionModel):
     """Model for list.remove(x) - decreases length by 1 if element exists.
     Raises: ValueError if x not in list.
     Relationship: After remove (if successful), len(list) == old_len - 1
     Bug detection: Can find cases where element might not exist.
     """
+
     name = "remove"
     qualname = "list.remove"
+
     def apply(
         self,
         args: list[Any],
@@ -155,6 +177,8 @@ class ListRemoveModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class ListPopModel(FunctionModel):
     """Model for list.pop([i]) - removes and returns element.
     Raises: IndexError if list is empty or index out of range.
@@ -163,8 +187,10 @@ class ListPopModel(FunctionModel):
     - Returned element was in the list
     Bug detection: Can find cases where list might be empty.
     """
+
     name = "pop"
     qualname = "list.pop"
+
     def apply(
         self,
         args: list[Any],
@@ -200,12 +226,16 @@ class ListPopModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class ListClearModel(FunctionModel):
     """Model for list.clear() - removes all elements.
     Relationship: After clear, len(list) == 0
     """
+
     name = "clear"
     qualname = "list.clear"
+
     def apply(
         self,
         args: list[Any],
@@ -226,6 +256,8 @@ class ListClearModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class ListIndexModel(FunctionModel):
     """Model for list.index(x) - returns index of first occurrence.
     Raises: ValueError if x not in list.
@@ -234,8 +266,10 @@ class ListIndexModel(FunctionModel):
     - Result < len(list)
     Bug detection: Can find cases where element might not exist.
     """
+
     name = "index"
     qualname = "list.index"
+
     def apply(
         self,
         args: list[Any],
@@ -258,14 +292,18 @@ class ListIndexModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class ListCountModel(FunctionModel):
     """Model for list.count(x) - returns number of occurrences.
     Relationship:
     - Result >= 0
     - Result <= len(list)
     """
+
     name = "count"
     qualname = "list.count"
+
     def apply(
         self,
         args: list[Any],
@@ -278,14 +316,18 @@ class ListCountModel(FunctionModel):
         if lst is not None:
             constraints.append(result.z3_int <= lst.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class ListSortModel(FunctionModel):
     """Model for list.sort() - sorts in place.
     Relationship:
     - Length unchanged
     - Same elements (permutation)
     """
+
     name = "sort"
     qualname = "list.sort"
+
     def apply(
         self,
         args: list[Any],
@@ -306,14 +348,18 @@ class ListSortModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class ListReverseModel(FunctionModel):
     """Model for list.reverse() - reverses in place.
     Relationship:
     - Length unchanged
     - Elements are reversed (permutation)
     """
+
     name = "reverse"
     qualname = "list.reverse"
+
     def apply(
         self,
         args: list[Any],
@@ -334,14 +380,18 @@ class ListReverseModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class ListCopyModel(FunctionModel):
     """Model for list.copy() - returns shallow copy.
     Relationship:
     - New list has same length
     - New list has same elements
     """
+
     name = "copy"
     qualname = "list.copy"
+
     def apply(
         self,
         args: list[Any],
@@ -355,6 +405,8 @@ class ListCopyModel(FunctionModel):
             constraints.append(result.z3_len == lst.z3_len)
             result.element_type = lst.element_type
         return ModelResult(value=result, constraints=constraints)
+
+
 class ListSliceModel(FunctionModel):
     """Model for list[start:end] slicing.
     Relationship:
@@ -362,8 +414,10 @@ class ListSliceModel(FunctionModel):
     - Result length >= 0
     - Result elements are from original list
     """
+
     name = "__getitem__"
     qualname = "list.__getitem__"
+
     def apply(
         self,
         args: list[Any],
@@ -377,14 +431,18 @@ class ListSliceModel(FunctionModel):
             constraints.append(result.z3_len <= lst.z3_len)
             constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
+
+
 class ListContainsModel(FunctionModel):
     """Model for 'x in list' operation.
     Relationship:
     - If list is empty, result is False
     - Otherwise, result is symbolic boolean
     """
+
     name = "__contains__"
     qualname = "list.__contains__"
+
     def apply(
         self,
         args: list[Any],
@@ -397,12 +455,16 @@ class ListContainsModel(FunctionModel):
         if lst is not None:
             constraints.append(z3.Implies(lst.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class ListLenModel(FunctionModel):
     """Model for len(list).
     Relationship: Returns the symbolic length of the list.
     """
+
     name = "__len__"
     qualname = "list.__len__"
+
     def apply(
         self,
         args: list[Any],
@@ -418,6 +480,8 @@ class ListLenModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
         )
+
+
 LIST_MODELS = [
     ListAppendModel(),
     ListExtendModel(),

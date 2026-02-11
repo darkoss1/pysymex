@@ -3,6 +3,7 @@
 This module provides relationship-preserving symbolic models for set methods.
 It tracks set size, membership constraints, and length mutations.
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import z3
@@ -15,17 +16,24 @@ from pyspectre.core.types import (
     SymbolicValue,
 )
 from pyspectre.models.builtins import FunctionModel, ModelResult
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 def _get_symbolic_set(arg: Any) -> SymbolicValue | None:
     """Extract symbolic value treated as set."""
     if isinstance(arg, SymbolicValue):
         return arg
     return None
+
+
 class SetModel(FunctionModel):
     """Model for set constructor."""
+
     name = "set"
     qualname = "builtins.set"
+
     def apply(self, args: list[Any], kwargs: dict[str, Any], state: VMState) -> ModelResult:
         """Apply the set constructor model."""
         result, constraint = SymbolicValue.symbolic(f"set_{state.pc}")
@@ -33,14 +41,18 @@ class SetModel(FunctionModel):
         if not args:
             return ModelResult(value=result, constraints=[constraint, result.z3_int == 0])
         return ModelResult(value=result, constraints=[constraint, result.z3_int >= 0])
+
+
 class SetAddModel(FunctionModel):
     """Model for set.add(elem).
     Relationship:
     - len(set) >= old_len (increases if new)
     - len(set) <= old_len + 1
     """
+
     name = "add"
     qualname = "set.add"
+
     def apply(
         self,
         args: list[Any],
@@ -68,13 +80,17 @@ class SetAddModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class SetRemoveModel(FunctionModel):
     """Model for set.remove(elem).
     Raises: KeyError if elem not in set.
     Relationship: len(set) == old_len - 1
     """
+
     name = "remove"
     qualname = "set.remove"
+
     def apply(
         self,
         args: list[Any],
@@ -108,10 +124,14 @@ class SetRemoveModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class SetDiscardModel(FunctionModel):
     """Model for set.discard(elem)."""
+
     name = "discard"
     qualname = "set.discard"
+
     def apply(
         self,
         args: list[Any],
@@ -133,10 +153,14 @@ class SetDiscardModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class SetPopModel(FunctionModel):
     """Model for set.pop()."""
+
     name = "pop"
     qualname = "set.pop"
+
     def apply(
         self,
         args: list[Any],
@@ -170,10 +194,14 @@ class SetPopModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class SetClearModel(FunctionModel):
     """Model for set.clear()."""
+
     name = "clear"
     qualname = "set.clear"
+
     def apply(
         self,
         args: list[Any],
@@ -195,10 +223,14 @@ class SetClearModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class SetCopyModel(FunctionModel):
     """Model for set.copy()."""
+
     name = "copy"
     qualname = "set.copy"
+
     def apply(
         self,
         args: list[Any],
@@ -215,10 +247,14 @@ class SetCopyModel(FunctionModel):
             if z3_len is not None:
                 constraints.append(result.z3_len == z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class SetUnionModel(FunctionModel):
     """Model for set.union(*others)."""
+
     name = "union"
     qualname = "set.union"
+
     def apply(
         self,
         args: list[Any],
@@ -235,10 +271,14 @@ class SetUnionModel(FunctionModel):
             if z3_len is not None:
                 constraints.append(result.z3_len >= z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class SetIntersectionModel(FunctionModel):
     """Model for set.intersection(*others)."""
+
     name = "intersection"
     qualname = "set.intersection"
+
     def apply(
         self,
         args: list[Any],
@@ -256,10 +296,14 @@ class SetIntersectionModel(FunctionModel):
                 constraints.append(result.z3_len <= z3_len)
                 constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
+
+
 class SetContainsModel(FunctionModel):
     """Model for set.__contains__(elem)."""
+
     name = "__contains__"
     qualname = "set.__contains__"
+
     def apply(
         self,
         args: list[Any],
@@ -275,10 +319,14 @@ class SetContainsModel(FunctionModel):
             if z3_len is not None:
                 constraints.append(z3.Implies(z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
+
+
 class SetLenModel(FunctionModel):
     """Model for set.__len__()."""
+
     name = "__len__"
     qualname = "set.__len__"
+
     def apply(
         self,
         args: list[Any],
@@ -298,6 +346,8 @@ class SetLenModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
         )
+
+
 SET_MODELS = [
     SetModel(),
     SetAddModel(),

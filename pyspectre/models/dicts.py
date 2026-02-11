@@ -7,6 +7,7 @@ Key improvements:
 - Key existence constraints for contains checks
 - Proper side effects for debugging
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import z3
@@ -18,18 +19,25 @@ from pyspectre.core.types import (
     SymbolicValue,
 )
 from pyspectre.models.builtins import FunctionModel, ModelResult
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
+
+
 def _get_symbolic_dict(arg: Any) -> SymbolicDict | None:
     """Extract SymbolicDict from argument."""
     if isinstance(arg, SymbolicDict):
         return arg
     return None
+
+
 def _get_symbolic_string(arg: Any) -> SymbolicString | None:
     """Extract SymbolicString from argument."""
     if isinstance(arg, SymbolicString):
         return arg
     return None
+
+
 class DictGetModel(FunctionModel):
     """Model for dict.get(key, default) - safe key access, never raises.
     Relationships:
@@ -37,8 +45,10 @@ class DictGetModel(FunctionModel):
     - If key doesn't exist: returns default (None if not provided)
     - Never raises KeyError
     """
+
     name = "get"
     qualname = "dict.get"
+
     def apply(
         self,
         args: list[Any],
@@ -53,12 +63,16 @@ class DictGetModel(FunctionModel):
         if d is not None and key is not None:
             key_exists = d.contains_key(key)
         return ModelResult(value=result, constraints=constraints)
+
+
 class DictGetitemModel(FunctionModel):
     """Model for dict[key] - may raise KeyError.
     Bug detection: Can find cases where key might not exist.
     """
+
     name = "__getitem__"
     qualname = "dict.__getitem__"
+
     def apply(
         self,
         args: list[Any],
@@ -81,14 +95,18 @@ class DictGetitemModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class DictSetitemModel(FunctionModel):
     """Model for dict[key] = value - adds or updates key.
     Relationship:
     - If key was new: length increases by 1
     - If key existed: length unchanged
     """
+
     name = "__setitem__"
     qualname = "dict.__setitem__"
+
     def apply(
         self,
         args: list[Any],
@@ -127,14 +145,18 @@ class DictSetitemModel(FunctionModel):
             constraints=constraints if d is not None else [],
             side_effects=side_effects,
         )
+
+
 class DictDelitemModel(FunctionModel):
     """Model for del dict[key] - may raise KeyError.
     Relationship:
     - If key exists: length decreases by 1
     - If key doesn't exist: raises KeyError
     """
+
     name = "__delitem__"
     qualname = "dict.__delitem__"
+
     def apply(
         self,
         args: list[Any],
@@ -166,12 +188,16 @@ class DictDelitemModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class DictKeysModel(FunctionModel):
     """Model for dict.keys() - returns view of keys.
     Relationship: len(keys) == len(dict)
     """
+
     name = "keys"
     qualname = "dict.keys"
+
     def apply(
         self,
         args: list[Any],
@@ -184,12 +210,16 @@ class DictKeysModel(FunctionModel):
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class DictValuesModel(FunctionModel):
     """Model for dict.values() - returns view of values.
     Relationship: len(values) == len(dict)
     """
+
     name = "values"
     qualname = "dict.values"
+
     def apply(
         self,
         args: list[Any],
@@ -202,12 +232,16 @@ class DictValuesModel(FunctionModel):
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class DictItemsModel(FunctionModel):
     """Model for dict.items() - returns view of (key, value) pairs.
     Relationship: len(items) == len(dict)
     """
+
     name = "items"
     qualname = "dict.items"
+
     def apply(
         self,
         args: list[Any],
@@ -220,6 +254,8 @@ class DictItemsModel(FunctionModel):
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class DictPopModel(FunctionModel):
     """Model for dict.pop(key, [default]) - remove and return value.
     Behavior:
@@ -227,8 +263,10 @@ class DictPopModel(FunctionModel):
     - If key doesn't exist and default given: return default
     - If key doesn't exist and no default: raise KeyError
     """
+
     name = "pop"
     qualname = "dict.pop"
+
     def apply(
         self,
         args: list[Any],
@@ -261,13 +299,17 @@ class DictPopModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class DictPopitemModel(FunctionModel):
     """Model for dict.popitem() - remove and return (key, value) pair.
     Raises: KeyError if dict is empty.
     Relationship: After popitem, len(dict) == old_len - 1
     """
+
     name = "popitem"
     qualname = "dict.popitem"
+
     def apply(
         self,
         args: list[Any],
@@ -298,12 +340,16 @@ class DictPopitemModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class DictUpdateModel(FunctionModel):
     """Model for dict.update(other) - merge other into dict.
     Relationship: new_len >= old_len (may add new keys)
     """
+
     name = "update"
     qualname = "dict.update"
+
     def apply(
         self,
         args: list[Any],
@@ -332,12 +378,16 @@ class DictUpdateModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class DictClearModel(FunctionModel):
     """Model for dict.clear() - remove all items.
     Relationship: After clear, len(dict) == 0
     """
+
     name = "clear"
     qualname = "dict.clear"
+
     def apply(
         self,
         args: list[Any],
@@ -358,14 +408,18 @@ class DictClearModel(FunctionModel):
             value=SymbolicNone(),
             side_effects=side_effects,
         )
+
+
 class DictCopyModel(FunctionModel):
     """Model for dict.copy() - shallow copy.
     Relationship:
     - New dict has same length
     - New dict has same keys/values (shallow)
     """
+
     name = "copy"
     qualname = "dict.copy"
+
     def apply(
         self,
         args: list[Any],
@@ -378,6 +432,8 @@ class DictCopyModel(FunctionModel):
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
         return ModelResult(value=result, constraints=constraints)
+
+
 class DictSetdefaultModel(FunctionModel):
     """Model for dict.setdefault(key, default) - get or set key.
     Behavior:
@@ -385,8 +441,10 @@ class DictSetdefaultModel(FunctionModel):
     - If key doesn't exist: dict[key] = default, return default
     Relationship: new_len is either old_len (key existed) or old_len + 1
     """
+
     name = "setdefault"
     qualname = "dict.setdefault"
+
     def apply(
         self,
         args: list[Any],
@@ -409,14 +467,18 @@ class DictSetdefaultModel(FunctionModel):
             constraints=constraints,
             side_effects=side_effects,
         )
+
+
 class DictContainsModel(FunctionModel):
     """Model for 'key in dict' operation.
     Relationship:
     - If dict is empty: result is False
     - Otherwise: symbolic boolean based on key membership
     """
+
     name = "__contains__"
     qualname = "dict.__contains__"
+
     def apply(
         self,
         args: list[Any],
@@ -434,10 +496,14 @@ class DictContainsModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_bool],
         )
+
+
 class DictLenModel(FunctionModel):
     """Model for len(dict)."""
+
     name = "__len__"
     qualname = "dict.__len__"
+
     def apply(
         self,
         args: list[Any],
@@ -459,6 +525,8 @@ class DictLenModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
         )
+
+
 DICT_MODELS = [
     DictGetModel(),
     DictGetitemModel(),

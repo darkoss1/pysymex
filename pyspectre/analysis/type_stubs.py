@@ -11,6 +11,7 @@ to improve type inference accuracy. It supports:
 - PEP 612 ParamSpec
 - PEP 613 TypeAlias
 """
+
 from __future__ import annotations
 import ast
 import sys
@@ -21,6 +22,8 @@ from typing import (
     Any,
 )
 from .type_inference import PyType, TypeKind
+
+
 @dataclass(frozen=True)
 class StubType:
     """
@@ -28,6 +31,7 @@ class StubType:
     This is a more detailed representation than PyType,
     supporting full generic types, unions, etc.
     """
+
     name: str
     module: str = ""
     type_args: tuple[StubType, ...] = ()
@@ -41,48 +45,63 @@ class StubType:
     return_type: StubType | None = None
     literal_values: tuple[Any, ...] = ()
     union_members: tuple[StubType, ...] = ()
+
     @classmethod
     def any_type(cls) -> StubType:
         return cls("Any", "typing")
+
     @classmethod
     def none_type(cls) -> StubType:
         return cls("None", "builtins")
+
     @classmethod
     def int_type(cls) -> StubType:
         return cls("int", "builtins")
+
     @classmethod
     def str_type(cls) -> StubType:
         return cls("str", "builtins")
+
     @classmethod
     def bool_type(cls) -> StubType:
         return cls("bool", "builtins")
+
     @classmethod
     def float_type(cls) -> StubType:
         return cls("float", "builtins")
+
     @classmethod
     def bytes_type(cls) -> StubType:
         return cls("bytes", "builtins")
+
     @classmethod
     def object_type(cls) -> StubType:
         return cls("object", "builtins")
+
     @classmethod
     def list_of(cls, element_type: StubType) -> StubType:
         return cls("list", "builtins", (element_type,))
+
     @classmethod
     def dict_of(cls, key_type: StubType, value_type: StubType) -> StubType:
         return cls("dict", "builtins", (key_type, value_type))
+
     @classmethod
     def set_of(cls, element_type: StubType) -> StubType:
         return cls("set", "builtins", (element_type,))
+
     @classmethod
     def tuple_of(cls, *element_types: StubType) -> StubType:
         return cls("tuple", "builtins", element_types)
+
     @classmethod
     def optional(cls, inner: StubType) -> StubType:
         return cls("Optional", "typing", (inner,), is_optional=True)
+
     @classmethod
     def union(cls, *members: StubType) -> StubType:
         return cls("Union", "typing", members, is_union=True, union_members=members)
+
     @classmethod
     def callable(
         cls,
@@ -96,12 +115,15 @@ class StubType:
             param_types=tuple(param_types),
             return_type=return_type,
         )
+
     @classmethod
     def literal(cls, *values: Any) -> StubType:
         return cls("Literal", "typing", is_literal=True, literal_values=values)
+
     @classmethod
     def typevar(cls, name: str) -> StubType:
         return cls(name, "typing", is_typevar=True)
+
     def to_pytype(self) -> PyType:
         """Convert to the simpler PyType representation."""
         kind_map = {
@@ -130,6 +152,7 @@ class StubType:
             return PyType(kind=TypeKind.OPTIONAL)
         kind = kind_map.get(self.name, TypeKind.OBJECT)
         return PyType(kind=kind, name=self.name)
+
     def __str__(self) -> str:
         if self.is_callable:
             params = ", ".join(str(p) for p in self.param_types)
@@ -143,9 +166,12 @@ class StubType:
             args = ", ".join(str(a) for a in self.type_args)
             return f"{self.name}[{args}]"
         return self.name
+
+
 @dataclass
 class FunctionStub:
     """Stub information for a function."""
+
     name: str
     params: dict[str, StubType] = field(default_factory=dict)
     return_type: StubType | None = None
@@ -156,9 +182,12 @@ class FunctionStub:
     is_abstractmethod: bool = False
     is_overload: bool = False
     type_params: dict[str, StubType] = field(default_factory=dict)
+
+
 @dataclass
 class ClassStub:
     """Stub information for a class."""
+
     name: str
     bases: list[StubType] = field(default_factory=list)
     methods: dict[str, FunctionStub] = field(default_factory=dict)
@@ -170,9 +199,12 @@ class ClassStub:
     is_final: bool = False
     is_dataclass: bool = False
     is_namedtuple: bool = False
+
+
 @dataclass
 class ModuleStub:
     """Stub information for a module."""
+
     name: str
     functions: dict[str, FunctionStub] = field(default_factory=dict)
     classes: dict[str, ClassStub] = field(default_factory=dict)
@@ -180,13 +212,17 @@ class ModuleStub:
     type_aliases: dict[str, StubType] = field(default_factory=dict)
     imports: dict[str, str] = field(default_factory=dict)
     submodules: dict[str, ModuleStub] = field(default_factory=dict)
+
+
 class StubParser:
     """
     Parser for Python stub files (.pyi).
     """
+
     def __init__(self) -> None:
         self._current_module: str = ""
         self._type_aliases: dict[str, StubType] = {}
+
     def parse_file(self, path: str) -> ModuleStub:
         """Parse a stub file and return the module stub."""
         with open(path, encoding="utf-8") as f:
@@ -195,6 +231,7 @@ class StubParser:
         if module_name == "__init__":
             module_name = Path(path).parent.name
         return self.parse_source(source, module_name)
+
     def parse_source(self, source: str, module_name: str) -> ModuleStub:
         """Parse stub source code."""
         self._current_module = module_name
@@ -207,6 +244,7 @@ class StubParser:
         for node in ast.iter_child_nodes(tree):
             self._process_node(node, stub)
         return stub
+
     def _process_node(self, node: ast.AST, stub: ModuleStub) -> None:
         """Process a top-level AST node."""
         if isinstance(node, ast.FunctionDef):
@@ -233,6 +271,7 @@ class StubParser:
                         self._type_aliases[target.id] = stub_type
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             self._process_import(node, stub)
+
     def _parse_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> FunctionStub:
         """Parse a function definition."""
         func = FunctionStub(name=node.name)
@@ -264,6 +303,7 @@ class StubParser:
         if node.returns:
             func.return_type = self._parse_type(node.returns)
         return func
+
     def _parse_class(self, node: ast.ClassDef) -> ClassStub:
         """Parse a class definition."""
         cls = ClassStub(name=node.name)
@@ -289,6 +329,7 @@ class StubParser:
                         attr_type = self._parse_type(item.annotation)
                         cls.attributes[name] = attr_type
         return cls
+
     def _parse_type(self, node: ast.AST) -> StubType:
         """Parse a type annotation AST node."""
         if isinstance(node, ast.Name):
@@ -384,6 +425,7 @@ class StubParser:
                 union_members=tuple(members),
             )
         return StubType.any_type()
+
     def _get_decorator_name(self, node: ast.AST) -> str:
         """Get the name of a decorator."""
         if isinstance(node, ast.Name):
@@ -393,6 +435,7 @@ class StubParser:
         elif isinstance(node, ast.Call):
             return self._get_decorator_name(node.func)
         return ""
+
     def _get_full_name(self, node: ast.AST) -> str:
         """Get full dotted name from an AST node."""
         if isinstance(node, ast.Name):
@@ -400,6 +443,7 @@ class StubParser:
         elif isinstance(node, ast.Attribute):
             return f"{self._get_full_name(node.value)}.{node.attr}"
         return ""
+
     def _process_import(
         self,
         node: ast.Import | ast.ImportFrom,
@@ -416,15 +460,19 @@ class StubParser:
                 name = alias.asname or alias.name
                 full_name = f"{module}.{alias.name}" if module else alias.name
                 stub.imports[name] = full_name
+
+
 class StubRepository:
     """
     Repository for loading and caching type stubs.
     """
+
     def __init__(self) -> None:
         self._cache: dict[str, ModuleStub] = {}
         self._parser = StubParser()
         self._search_paths: list[Path] = []
         self._setup_search_paths()
+
     def _setup_search_paths(self) -> None:
         """Set up default search paths for stubs."""
         possible_paths = [
@@ -434,6 +482,7 @@ class StubRepository:
         ]
         try:
             import mypy
+
             mypy_path = Path(mypy.__file__).parent / "typeshed"
             if mypy_path.exists():
                 possible_paths.append(mypy_path)
@@ -446,11 +495,13 @@ class StubRepository:
             p = Path(site_path)
             if p.exists() and p.is_dir():
                 self._search_paths.append(p)
+
     def add_search_path(self, path: str) -> None:
         """Add a search path for stubs."""
         p = Path(path)
         if p.exists() and p.is_dir():
             self._search_paths.insert(0, p)
+
     def get_stub(self, module_name: str) -> ModuleStub | None:
         """Get stub for a module, loading if necessary."""
         if module_name in self._cache:
@@ -459,6 +510,7 @@ class StubRepository:
         if stub:
             self._cache[module_name] = stub
         return stub
+
     def _load_stub(self, module_name: str) -> ModuleStub | None:
         """Load a stub file for a module."""
         parts = module_name.split(".")
@@ -479,6 +531,7 @@ class StubRepository:
                 if init_stub.exists():
                     return self._parser.parse_file(str(init_stub))
         return None
+
     def get_function_type(
         self,
         module_name: str,
@@ -489,6 +542,7 @@ class StubRepository:
         if not stub:
             return None
         return stub.functions.get(function_name)
+
     def get_class_type(
         self,
         module_name: str,
@@ -499,6 +553,7 @@ class StubRepository:
         if not stub:
             return None
         return stub.classes.get(class_name)
+
     def get_method_type(
         self,
         module_name: str,
@@ -510,12 +565,16 @@ class StubRepository:
         if not class_stub:
             return None
         return class_stub.methods.get(method_name)
+
+
 class StubBasedTypeResolver:
     """
     Resolves types using stub information.
     """
+
     def __init__(self, repository: StubRepository | None = None) -> None:
         self.repository = repository or StubRepository()
+
     def resolve_function_return(
         self,
         module: str,
@@ -530,6 +589,7 @@ class StubBasedTypeResolver:
         if return_type and return_type.is_typevar and arg_types:
             pass
         return return_type
+
     def resolve_method_return(
         self,
         module: str,
@@ -542,6 +602,7 @@ class StubBasedTypeResolver:
         if not method_stub:
             return None
         return method_stub.return_type
+
     def resolve_attribute(
         self,
         module: str,
@@ -561,6 +622,7 @@ class StubBasedTypeResolver:
             if method.is_property:
                 return method.return_type
         return None
+
     def check_assignable(
         self,
         source: StubType,
@@ -602,11 +664,14 @@ class StubBasedTypeResolver:
         if target.name == "object":
             return True
         return False
+
+
 class BuiltinStubs:
     """
     Pre-defined stubs for common built-in types and functions.
     These are always available without loading external stub files.
     """
+
     @staticmethod
     def get_builtin_module() -> ModuleStub:
         """Get stub for builtins module."""
@@ -702,6 +767,7 @@ class BuiltinStubs:
             return_type=StubType.any_type(),
         )
         return stub
+
     @staticmethod
     def get_collections_module() -> ModuleStub:
         """Get stub for collections module."""

@@ -12,6 +12,7 @@ Patterns handled:
 - Attribute access patterns (getattr, hasattr)
 - String patterns (format, join, split)
 """
+
 from __future__ import annotations
 import dis
 from abc import ABC, abstractmethod
@@ -23,8 +24,11 @@ from typing import (
     Any,
 )
 from .type_inference import PyType, TypeEnvironment, TypeKind
+
+
 class PatternKind(Enum):
     """Categories of Python patterns."""
+
     DICT_GET = auto()
     DICT_SETDEFAULT = auto()
     DICT_POP = auto()
@@ -60,9 +64,12 @@ class PatternKind(Enum):
     OPTIONAL_CHAIN = auto()
     NULL_COALESCE = auto()
     TERNARY_NONE = auto()
+
+
 @dataclass
 class PatternMatch:
     """Result of matching a pattern."""
+
     kind: PatternKind
     confidence: float
     start_pc: int
@@ -72,11 +79,15 @@ class PatternMatch:
     type_refinements: dict[str, PyType] = field(default_factory=dict)
     preconditions: list[str] = field(default_factory=list)
     guarantees: list[str] = field(default_factory=list)
+
+
 class PatternHandler(ABC):
     """Base class for pattern handlers."""
+
     @abstractmethod
     def pattern_kinds(self) -> set[PatternKind]:
         """Return the kinds of patterns this handler recognizes."""
+
     @abstractmethod
     def match(
         self,
@@ -88,6 +99,7 @@ class PatternHandler(ABC):
         Try to match a pattern starting at the given instruction index.
         Returns PatternMatch if pattern is recognized, None otherwise.
         """
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         """
         Check if a matched pattern can raise a specific error.
@@ -95,10 +107,14 @@ class PatternHandler(ABC):
         is safe.
         """
         return True
+
+
 class DictGetHandler(PatternHandler):
     """Handles dict.get(key, default) pattern."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.DICT_GET}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -144,10 +160,12 @@ class DictGetHandler(PatternHandler):
                 "returns_default_or_value",
             ],
         )
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "KeyError":
             return False
         return True
+
     def _find_load_attr(
         self,
         instructions: Sequence[dis.Instruction],
@@ -160,6 +178,7 @@ class DictGetHandler(PatternHandler):
             if instr.opname == "LOAD_ATTR" and instr.argval == attr_name:
                 return i
         return -1
+
     def _find_call(
         self,
         instructions: Sequence[dis.Instruction],
@@ -173,13 +192,18 @@ class DictGetHandler(PatternHandler):
                 if instr.argval in arg_counts or instr.arg in arg_counts:
                     return i
         return -1
+
     def _call_arg_count(self, instr: dis.Instruction) -> int:
         """Get argument count from CALL instruction."""
         return instr.argval if instr.argval is not None else instr.arg
+
+
 class DictSetdefaultHandler(PatternHandler):
     """Handles dict.setdefault(key, default) pattern."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.DICT_SETDEFAULT}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -209,14 +233,19 @@ class DictSetdefaultHandler(PatternHandler):
                         ],
                     )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "KeyError":
             return False
         return True
+
+
 class DefaultDictAccessHandler(PatternHandler):
     """Handles defaultdict[key] access pattern."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.DEFAULTDICT_ACCESS}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -248,14 +277,19 @@ class DefaultDictAccessHandler(PatternHandler):
                     ],
                 )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "KeyError":
             return False
         return True
+
+
 class CounterAccessHandler(PatternHandler):
     """Handles Counter[key] access pattern."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.COUNTER_ACCESS}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -290,12 +324,16 @@ class CounterAccessHandler(PatternHandler):
                     ],
                 )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "KeyError":
             return False
         return True
+
+
 class SafeIterationHandler(PatternHandler):
     """Handles safe iteration patterns that can't cause index errors."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {
             PatternKind.ENUMERATE_ITER,
@@ -305,6 +343,7 @@ class SafeIterationHandler(PatternHandler):
             PatternKind.DICT_VALUES_ITER,
             PatternKind.RANGE_ITER,
         }
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -318,6 +357,7 @@ class SafeIterationHandler(PatternHandler):
         if instr.opname == "GET_ITER":
             return self._match_iteration_source(instructions, start_idx, env)
         return None
+
     def _match_iteration_source(
         self,
         instructions: Sequence[dis.Instruction],
@@ -352,6 +392,7 @@ class SafeIterationHandler(PatternHandler):
             if prev_idx < get_iter_idx - 10:
                 break
         return None
+
     def _identify_iterable_call(
         self,
         instructions: Sequence[dis.Instruction],
@@ -402,14 +443,19 @@ class SafeIterationHandler(PatternHandler):
                         ],
                     )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "IndexError" and "safe_iteration" in match.guarantees:
             return False
         return True
+
+
 class IsinstanceHandler(PatternHandler):
     """Handles isinstance(x, T) type guard pattern."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.ISINSTANCE_CHECK}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -468,10 +514,14 @@ class IsinstanceHandler(PatternHandler):
             type_refinements=type_refinements,
             guarantees=["type_narrowing"],
         )
+
+
 class NoneCheckHandler(PatternHandler):
     """Handles None check patterns (is None / is not None)."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.NONE_CHECK}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -519,10 +569,14 @@ class NoneCheckHandler(PatternHandler):
                     guarantees=["none_check", "type_narrowing"],
                 )
         return None
+
+
 class HasattrHandler(PatternHandler):
     """Handles hasattr check patterns."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.HASATTR_CHECK, PatternKind.HASATTR_GETATTR}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -548,10 +602,14 @@ class HasattrHandler(PatternHandler):
                     guarantees=["attribute_check", "safe_before_access"],
                 )
         return None
+
+
 class StringMultiplyHandler(PatternHandler):
     """Handles string multiplication patterns (str * int)."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.STRING_MULTIPLY}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -582,6 +640,7 @@ class StringMultiplyHandler(PatternHandler):
                             guarantees=["valid_string_multiply"],
                         )
         return None
+
     def _get_operand_types(
         self,
         instructions: Sequence[dis.Instruction],
@@ -610,14 +669,19 @@ class StringMultiplyHandler(PatternHandler):
         if len(types) >= 2:
             return (types[1], types[0])
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "TypeError":
             return False
         return True
+
+
 class OptionalChainHandler(PatternHandler):
     """Handles optional chaining patterns (x and x.attr)."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.OPTIONAL_CHAIN}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -653,14 +717,19 @@ class OptionalChainHandler(PatternHandler):
                                     ],
                                 )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         if error_type == "AttributeError":
             return False
         return True
+
+
 class NullCoalesceHandler(PatternHandler):
     """Handles null coalesce patterns (x or default)."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.NULL_COALESCE}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -690,8 +759,11 @@ class NullCoalesceHandler(PatternHandler):
                     ],
                 )
         return None
+
+
 class SafeCollectionHandler(PatternHandler):
     """Handles safe collection operations that don't raise errors."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {
             PatternKind.LIST_APPEND,
@@ -699,6 +771,7 @@ class SafeCollectionHandler(PatternHandler):
             PatternKind.SET_ADD,
             PatternKind.SET_DISCARD,
         }
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -746,6 +819,7 @@ class SafeCollectionHandler(PatternHandler):
                         guarantees=["safe_mutation", "no_key_error"],
                     )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         method = match.variables.get("method")
         if method == "discard" and error_type == "KeyError":
@@ -753,10 +827,14 @@ class SafeCollectionHandler(PatternHandler):
         if method in {"append", "extend", "add"} and error_type in {"IndexError", "KeyError"}:
             return False
         return True
+
+
 class TryExceptHandler(PatternHandler):
     """Handles try/except patterns."""
+
     def pattern_kinds(self) -> set[PatternKind]:
         return {PatternKind.TRY_EXCEPT_PATTERN}
+
     def match(
         self,
         instructions: Sequence[dis.Instruction],
@@ -790,6 +868,7 @@ class TryExceptHandler(PatternHandler):
                 guarantees=["exceptions_handled"],
             )
         return None
+
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         caught = match.variables.get("caught_exceptions", set())
         if error_type in caught:
@@ -797,12 +876,16 @@ class TryExceptHandler(PatternHandler):
         if "Exception" in caught or "BaseException" in caught:
             return False
         return True
+
+
 class PatternRegistry:
     """Registry of all pattern handlers."""
+
     def __init__(self) -> None:
         self.handlers: list[PatternHandler] = []
         self._kind_to_handlers: dict[PatternKind, list[PatternHandler]] = defaultdict(list)
         self._register_default_handlers()
+
     def _register_default_handlers(self) -> None:
         """Register all default pattern handlers."""
         handlers = [
@@ -822,26 +905,32 @@ class PatternRegistry:
         ]
         for handler in handlers:
             self.register(handler)
+
     def register(self, handler: PatternHandler) -> None:
         """Register a pattern handler."""
         self.handlers.append(handler)
         for kind in handler.pattern_kinds():
             self._kind_to_handlers[kind].append(handler)
+
     def get_handlers_for_kind(self, kind: PatternKind) -> list[PatternHandler]:
         """Get handlers for a specific pattern kind."""
         return self._kind_to_handlers.get(kind, [])
+
+
 class PatternMatcher:
     """
     Matches Python patterns in bytecode.
     Scans bytecode looking for recognized patterns that affect
     the analysis (e.g., safe operations, type guards).
     """
+
     def __init__(
         self,
         registry: PatternRegistry | None = None,
     ) -> None:
         self.registry = registry or PatternRegistry()
         self._cache: dict[int, list[PatternMatch]] = {}
+
     def find_patterns(
         self,
         instructions: Sequence[dis.Instruction],
@@ -858,6 +947,7 @@ class PatternMatcher:
                         self._cache[match.start_pc] = []
                     self._cache[match.start_pc].append(match)
         return matches
+
     def get_patterns_at(self, pc: int) -> list[PatternMatch]:
         """Get patterns covering a specific PC."""
         result = []
@@ -866,6 +956,7 @@ class PatternMatcher:
                 if start_pc <= pc <= match.end_pc:
                     result.append(match)
         return result
+
     def can_error_occur(self, pc: int, error_type: str) -> bool:
         """
         Check if an error can occur at a PC given active patterns.
@@ -878,6 +969,7 @@ class PatternMatcher:
                 if not handler.can_raise_error(match, error_type):
                     return False
         return True
+
     def get_type_refinements_at(self, pc: int) -> dict[str, PyType]:
         """Get type refinements from patterns at a PC."""
         patterns = self.get_patterns_at(pc)
@@ -885,16 +977,21 @@ class PatternMatcher:
         for match in patterns:
             refinements.update(match.type_refinements)
         return refinements
+
     def clear_cache(self) -> None:
         """Clear the pattern cache."""
         self._cache.clear()
+
+
 class PatternAnalyzer:
     """
     High-level pattern analyzer for integration with the detector system.
     """
+
     def __init__(self) -> None:
         self.registry = PatternRegistry()
         self.matcher = PatternMatcher(self.registry)
+
     def analyze_function(
         self,
         code: Any,
@@ -908,6 +1005,7 @@ class PatternAnalyzer:
             patterns=patterns,
             matcher=self.matcher,
         )
+
     def should_suppress_error(
         self,
         pc: int,
@@ -915,20 +1013,27 @@ class PatternAnalyzer:
     ) -> bool:
         """Check if an error should be suppressed at a PC."""
         return not self.matcher.can_error_occur(pc, error_type)
+
+
 @dataclass
 class FunctionPatternInfo:
     """Pattern analysis results for a function."""
+
     patterns: list[PatternMatch]
     matcher: PatternMatcher
+
     def get_patterns_by_kind(self, kind: PatternKind) -> list[PatternMatch]:
         """Get patterns of a specific kind."""
         return [p for p in self.patterns if p.kind == kind]
+
     def has_pattern(self, kind: PatternKind) -> bool:
         """Check if a pattern kind exists."""
         return any(p.kind == kind for p in self.patterns)
+
     def can_error_occur(self, pc: int, error_type: str) -> bool:
         """Check if error can occur at PC."""
         return self.matcher.can_error_occur(pc, error_type)
+
     def get_type_refinements(self, pc: int) -> dict[str, PyType]:
         """Get type refinements at PC."""
         return self.matcher.get_type_refinements_at(pc)

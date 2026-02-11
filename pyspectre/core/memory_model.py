@@ -19,18 +19,24 @@ Architecture:
     │  Globals - Module-level variables       │
     └─────────────────────────────────────────┘
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 import z3
 from .symbolic_types import SymbolicInt
+
+
 class MemoryRegion(Enum):
     """Different memory regions with isolation guarantees."""
+
     STACK = auto()
     HEAP = auto()
     GLOBAL = auto()
     CONST = auto()
+
+
 @dataclass
 class SymbolicAddress:
     """
@@ -38,11 +44,13 @@ class SymbolicAddress:
     Uses Z3 bitvectors for precise address arithmetic while maintaining
     region information for isolation analysis.
     """
+
     region: MemoryRegion
     base: z3.BitVecRef
     offset: z3.BitVecRef
     type_tag: str
     ADDR_WIDTH = 64
+
     def __init__(
         self,
         region: MemoryRegion,
@@ -60,10 +68,12 @@ class SymbolicAddress:
             self.offset = z3.BitVecVal(offset, self.ADDR_WIDTH)
         else:
             self.offset = offset
+
     @property
     def effective_address(self) -> z3.BitVecRef:
         """Compute the effective address (base + offset)."""
         return self.base + self.offset
+
     def add_offset(self, delta: int | z3.BitVecRef) -> SymbolicAddress:
         """Create a new address with additional offset."""
         if isinstance(delta, int):
@@ -71,9 +81,11 @@ class SymbolicAddress:
         return SymbolicAddress(
             region=self.region, base=self.base, offset=self.offset + delta, type_tag=self.type_tag
         )
+
     def same_region(self, other: SymbolicAddress) -> bool:
         """Check if two addresses are in the same region."""
         return self.region == other.region
+
     def may_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
         """
         Check if two addresses may refer to the same location.
@@ -86,6 +98,7 @@ class SymbolicAddress:
         result = solver.check() == z3.sat
         solver.pop()
         return result
+
     def must_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
         """
         Check if two addresses must refer to the same location.
@@ -98,8 +111,10 @@ class SymbolicAddress:
         result = solver.check() == z3.unsat
         solver.pop()
         return result
+
     def __repr__(self) -> str:
         return f"SymbolicAddress({self.region.name}, base={self.base}, offset={self.offset})"
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SymbolicAddress):
             return False
@@ -108,53 +123,69 @@ class SymbolicAddress:
             and z3.eq(self.base, other.base)
             and z3.eq(self.offset, other.offset)
         )
+
     def __hash__(self) -> int:
         return hash((self.region, str(self.base), str(self.offset)))
+
+
 @dataclass
 class HeapObject:
     """
     A symbolic object stored on the heap.
     Represents Python objects with their fields/attributes stored symbolically.
     """
+
     address: SymbolicAddress
     type_name: str
     fields: dict[str, Any] = field(default_factory=dict)
     is_mutable: bool = True
     size: int = 1
+
     def get_field(self, name: str) -> Any:
         """Get a field value, returning None if not present."""
         return self.fields.get(name)
+
     def set_field(self, name: str, value: Any) -> None:
         """Set a field value."""
         if not self.is_mutable:
             raise ValueError(f"Cannot modify immutable object of type {self.type_name}")
         self.fields[name] = value
+
     def has_field(self, name: str) -> bool:
         """Check if the object has a field."""
         return name in self.fields
+
+
 @dataclass
 class StackFrame:
     """
     A symbolic stack frame for function calls.
     Tracks local variables and their values within a function scope.
     """
+
     function_name: str
     locals: dict[str, Any] = field(default_factory=dict)
     return_address: int | None = None
     parent_frame: StackFrame | None = None
+
     def get_local(self, name: str) -> Any:
         """Get a local variable value."""
         return self.locals.get(name)
+
     def set_local(self, name: str, value: Any) -> None:
         """Set a local variable value."""
         self.locals[name] = value
+
     def has_local(self, name: str) -> bool:
         """Check if a local variable exists."""
         return name in self.locals
+
     def delete_local(self, name: str) -> None:
         """Delete a local variable."""
         if name in self.locals:
             del self.locals[name]
+
+
 class SymbolicHeap:
     """
     The central memory management system for PySpectre.
@@ -164,6 +195,7 @@ class SymbolicHeap:
     - Reference tracking
     - Garbage collection hints
     """
+
     def __init__(self):
         self._next_address = 1000
         self._heap: dict[int, HeapObject] = {}
@@ -171,6 +203,7 @@ class SymbolicHeap:
         self._references: dict[int, set[str]] = {}
         self._freed: set[int] = set()
         self._solver = z3.Solver()
+
     def allocate(
         self,
         type_name: str,
@@ -196,6 +229,7 @@ class SymbolicHeap:
         self._address_map[addr] = sym_addr
         self._references[addr] = set()
         return sym_addr
+
     def free(self, address: SymbolicAddress) -> None:
         """
         Free an allocated object.
@@ -214,6 +248,7 @@ class SymbolicHeap:
         del self._address_map[addr]
         if addr in self._references:
             del self._references[addr]
+
     def read(self, address: SymbolicAddress, field: str = "__value__") -> Any:
         """
         Read a value from memory.
@@ -232,6 +267,7 @@ class SymbolicHeap:
             return SymbolicInt(z3.Int(f"uninit_{addr}_{field}"))
         obj = self._heap[addr]
         return obj.get_field(field)
+
     def write(self, address: SymbolicAddress, value: Any, field: str = "__value__") -> None:
         """
         Write a value to memory.
@@ -259,34 +295,41 @@ class SymbolicHeap:
             self._heap[addr] = obj
             self._references[addr] = set()
         self._heap[addr].set_field(field, value)
+
     def get_object(self, address: SymbolicAddress) -> HeapObject | None:
         """Get the heap object at an address."""
         addr = self._get_concrete_address(address)
         if addr is None:
             return None
         return self._heap.get(addr)
+
     def add_reference(self, address: SymbolicAddress, var_name: str) -> None:
         """Record that a variable references this address."""
         addr = self._get_concrete_address(address)
         if addr is not None and addr in self._references:
             self._references[addr].add(var_name)
+
     def remove_reference(self, address: SymbolicAddress, var_name: str) -> None:
         """Remove a variable's reference to this address."""
         addr = self._get_concrete_address(address)
         if addr is not None and addr in self._references:
             self._references[addr].discard(var_name)
+
     def get_references(self, address: SymbolicAddress) -> set[str]:
         """Get all variables referencing this address."""
         addr = self._get_concrete_address(address)
         if addr is None:
             return set()
         return self._references.get(addr, set()).copy()
+
     def may_alias(self, addr1: SymbolicAddress, addr2: SymbolicAddress) -> bool:
         """Check if two addresses may refer to the same location."""
         return addr1.may_alias(addr2, self._solver)
+
     def must_alias(self, addr1: SymbolicAddress, addr2: SymbolicAddress) -> bool:
         """Check if two addresses must refer to the same location."""
         return addr1.must_alias(addr2, self._solver)
+
     def _get_concrete_address(self, address: SymbolicAddress) -> int | None:
         """
         Try to get a concrete address value.
@@ -300,9 +343,11 @@ class SymbolicHeap:
         except Exception:
             pass
         return None
+
     def snapshot(self) -> HeapSnapshot:
         """Create a snapshot of the current heap state."""
         return HeapSnapshot(self)
+
     def restore(self, snapshot: HeapSnapshot) -> None:
         """Restore the heap to a previous state."""
         self._heap = {
@@ -317,14 +362,19 @@ class SymbolicHeap:
         }
         self._freed = set(snapshot._freed)
         self._next_address = snapshot._next_address
+
     def __repr__(self) -> str:
         return f"SymbolicHeap({len(self._heap)} objects, next_addr={self._next_address})"
+
+
 @dataclass
 class HeapSnapshot:
     """A snapshot of heap state for backtracking during symbolic execution."""
+
     _heap: dict[int, HeapObject]
     _freed: set[int]
     _next_address: int
+
     def __init__(self, heap: SymbolicHeap):
         self._heap = {
             k: HeapObject(
@@ -338,22 +388,27 @@ class HeapSnapshot:
         }
         self._freed = set(heap._freed)
         self._next_address = heap._next_address
+
+
 class MemoryState:
     """
     Unified memory state combining stack, heap, and globals.
     This is the main interface used by the VM for memory operations.
     """
+
     def __init__(self):
         self.heap = SymbolicHeap()
         self.globals: dict[str, Any] = {}
         self.stack: list[StackFrame] = []
         self._current_frame: StackFrame | None = None
+
     def push_frame(self, function_name: str) -> StackFrame:
         """Push a new stack frame for a function call."""
         frame = StackFrame(function_name=function_name, parent_frame=self._current_frame)
         self.stack.append(frame)
         self._current_frame = frame
         return frame
+
     def pop_frame(self) -> StackFrame | None:
         """Pop the current stack frame after a function returns."""
         if not self.stack:
@@ -361,25 +416,31 @@ class MemoryState:
         frame = self.stack.pop()
         self._current_frame = frame.parent_frame
         return frame
+
     @property
     def current_frame(self) -> StackFrame | None:
         """Get the current (topmost) stack frame."""
         return self._current_frame
+
     def get_local(self, name: str) -> Any:
         """Get a local variable from the current frame."""
         if self._current_frame:
             return self._current_frame.get_local(name)
         return None
+
     def set_local(self, name: str, value: Any) -> None:
         """Set a local variable in the current frame."""
         if self._current_frame:
             self._current_frame.set_local(name, value)
+
     def get_global(self, name: str) -> Any:
         """Get a global variable."""
         return self.globals.get(name)
+
     def set_global(self, name: str, value: Any) -> None:
         """Set a global variable."""
         self.globals[name] = value
+
     def allocate_object(
         self,
         type_name: str,
@@ -394,15 +455,19 @@ class MemoryState:
                 for name, value in initial_fields.items():
                     obj.set_field(name, value)
         return addr
+
     def read_field(self, address: SymbolicAddress, field: str) -> Any:
         """Read a field from an object."""
         return self.heap.read(address, field)
+
     def write_field(self, address: SymbolicAddress, field: str, value: Any) -> None:
         """Write a field to an object."""
         self.heap.write(address, value, field)
+
     def snapshot(self) -> MemorySnapshot:
         """Create a snapshot of the entire memory state."""
         return MemorySnapshot(self)
+
     def restore(self, snapshot: MemorySnapshot) -> None:
         """Restore memory to a previous state."""
         self.heap.restore(snapshot.heap_snapshot)
@@ -419,12 +484,16 @@ class MemoryState:
             self.stack.append(frame)
             prev_frame = frame
         self._current_frame = self.stack[-1] if self.stack else None
+
+
 @dataclass
 class MemorySnapshot:
     """Complete memory state snapshot."""
+
     heap_snapshot: HeapSnapshot
     globals: dict[str, Any]
     stack_copies: list[dict[str, Any]]
+
     def __init__(self, state: MemoryState):
         self.heap_snapshot = state.heap.snapshot()
         self.globals = dict(state.globals)
@@ -437,14 +506,18 @@ class MemorySnapshot:
                     "return_address": frame.return_address,
                 }
             )
+
+
 class AliasingAnalyzer:
     """
     Performs alias analysis on symbolic memory.
     Determines which pointers may or must point to the same memory location.
     """
+
     def __init__(self, heap: SymbolicHeap):
         self.heap = heap
         self._alias_sets: dict[int, set[SymbolicAddress]] = {}
+
     def add_address(self, addr: SymbolicAddress) -> None:
         """Add an address to the analysis."""
         concrete = self.heap._get_concrete_address(addr)
@@ -452,6 +525,7 @@ class AliasingAnalyzer:
             if concrete not in self._alias_sets:
                 self._alias_sets[concrete] = set()
             self._alias_sets[concrete].add(addr)
+
     def get_may_aliases(self, addr: SymbolicAddress) -> set[SymbolicAddress]:
         """Get all addresses that may alias with the given address."""
         result = set()
@@ -460,6 +534,7 @@ class AliasingAnalyzer:
                 if self.heap.may_alias(addr, other):
                     result.add(other)
         return result
+
     def get_must_aliases(self, addr: SymbolicAddress) -> set[SymbolicAddress]:
         """Get all addresses that must alias with the given address."""
         result = set()
@@ -468,9 +543,12 @@ class AliasingAnalyzer:
                 if self.heap.must_alias(addr, other):
                     result.add(other)
         return result
+
     def are_disjoint(self, addr1: SymbolicAddress, addr2: SymbolicAddress) -> bool:
         """Check if two addresses are definitely disjoint (cannot alias)."""
         return not self.heap.may_alias(addr1, addr2)
+
+
 class SymbolicArray:
     """
     A symbolic array using Z3 arrays.
@@ -479,6 +557,7 @@ class SymbolicArray:
     - Symbolic length
     - Element constraints
     """
+
     def __init__(self, name: str, element_sort: z3.SortRef = z3.IntSort()):
         self.name = name
         self.element_sort = element_sort
@@ -486,15 +565,18 @@ class SymbolicArray:
         self._length = z3.Int(f"{name}_len")
         self._constraints: list[z3.BoolRef] = []
         self._constraints.append(self._length >= 0)
+
     @property
     def length(self) -> z3.ArithRef:
         """Get the symbolic length."""
         return self._length
+
     def get(self, index: int | z3.ArithRef) -> z3.ExprRef:
         """Get element at index (symbolic or concrete)."""
         if isinstance(index, int):
             index = z3.IntVal(index)
         return z3.Select(self._array, index)
+
     def set(self, index: int | z3.ArithRef, value: z3.ExprRef) -> SymbolicArray:
         """Set element at index, returning new array (functional update)."""
         if isinstance(index, int):
@@ -504,6 +586,7 @@ class SymbolicArray:
         new_array._length = self._length
         new_array._constraints = list(self._constraints)
         return new_array
+
     def append(self, value: z3.ExprRef) -> SymbolicArray:
         """Append an element, returning new array."""
         new_array = SymbolicArray(f"{self.name}_appended", self.element_sort)
@@ -511,17 +594,22 @@ class SymbolicArray:
         new_array._length = self._length + 1
         new_array._constraints = list(self._constraints)
         return new_array
+
     def get_constraints(self) -> list[z3.BoolRef]:
         """Get all constraints on this array."""
         return list(self._constraints)
+
     def add_constraint(self, constraint: z3.BoolRef) -> None:
         """Add a constraint on this array."""
         self._constraints.append(constraint)
+
     def in_bounds(self, index: int | z3.ArithRef) -> z3.BoolRef:
         """Return a constraint that index is in bounds."""
         if isinstance(index, int):
             index = z3.IntVal(index)
         return z3.And(index >= 0, index < self._length)
+
+
 class SymbolicMap:
     """
     A symbolic map using Z3 arrays.
@@ -530,6 +618,7 @@ class SymbolicMap:
     - Symbolic values
     - Key existence tracking
     """
+
     def __init__(
         self, name: str, key_sort: z3.SortRef = z3.IntSort(), value_sort: z3.SortRef = z3.IntSort()
     ):
@@ -540,6 +629,7 @@ class SymbolicMap:
         self._exists = z3.Array(f"{name}_exists", key_sort, z3.BoolSort())
         self._exists = z3.K(key_sort, False)
         self._constraints: list[z3.BoolRef] = []
+
     def get(self, key: z3.ExprRef, default: z3.ExprRef | None = None) -> z3.ExprRef:
         """Get value for key, with optional default."""
         value = z3.Select(self._data, key)
@@ -547,6 +637,7 @@ class SymbolicMap:
             exists = z3.Select(self._exists, key)
             return z3.If(exists, value, default)
         return value
+
     def set(self, key: z3.ExprRef, value: z3.ExprRef) -> SymbolicMap:
         """Set a key-value pair, returning new map."""
         new_map = SymbolicMap(f"{self.name}_updated", self.key_sort, self.value_sort)
@@ -554,6 +645,7 @@ class SymbolicMap:
         new_map._exists = z3.Store(self._exists, key, True)
         new_map._constraints = list(self._constraints)
         return new_map
+
     def delete(self, key: z3.ExprRef) -> SymbolicMap:
         """Delete a key, returning new map."""
         new_map = SymbolicMap(f"{self.name}_deleted", self.key_sort, self.value_sort)
@@ -561,15 +653,20 @@ class SymbolicMap:
         new_map._exists = z3.Store(self._exists, key, False)
         new_map._constraints = list(self._constraints)
         return new_map
+
     def contains(self, key: z3.ExprRef) -> z3.BoolRef:
         """Check if key exists in map."""
         return z3.Select(self._exists, key)
+
     def get_constraints(self) -> list[z3.BoolRef]:
         """Get all constraints on this map."""
         return list(self._constraints)
+
     def add_constraint(self, constraint: z3.BoolRef) -> None:
         """Add a constraint on this map."""
         self._constraints.append(constraint)
+
+
 __all__ = [
     "MemoryRegion",
     "SymbolicAddress",

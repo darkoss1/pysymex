@@ -5,11 +5,13 @@ This module is responsible for synthesizing executable Python scripts ("Exploits
 that reproduce bugs detected by PySpectre. It bridges the gap between
 abstract symbolic execution results and concrete, runnable code.
 """
+
 import os
 import inspect
 import ast
 from typing import Any
 from pyspectre.analysis.detectors import Issue
+
 TYPE_DEFAULTS = {
     "int": "0",
     "float": "0.0",
@@ -22,10 +24,14 @@ TYPE_DEFAULTS = {
     "bytes": 'b""',
     "NoneType": "None",
 }
+
+
 class ReproductionGenerator:
     """Generates Python scripts to reproduce detected issues."""
+
     def __init__(self, output_dir: str = "."):
         self.output_dir = output_dir
+
     def generate(
         self, issue: Issue, func_name: str, source_file: str, class_name: str = None
     ) -> str | None:
@@ -67,6 +73,7 @@ class ReproductionGenerator:
             return filepath
         except IOError:
             return None
+
     def _resolve_module_name(self, source_file: str) -> str | None:
         """Convert file path to importable module name."""
         try:
@@ -75,6 +82,7 @@ class ReproductionGenerator:
             return name.replace(os.path.sep, ".")
         except ValueError:
             return None
+
     def _get_all_function_args(
         self, source_file: str, func_name: str, class_name: str = None
     ) -> list[tuple[str, str | None]]:
@@ -90,17 +98,20 @@ class ReproductionGenerator:
         except Exception:
             return []
         all_args = []
+
         class FunctionFinder(ast.NodeVisitor):
             def __init__(self, target_func, target_class=None):
                 self.target_func = target_func
                 self.target_class = target_class
                 self.found_args = None
+
             def visit_FunctionDef(self, node):
                 if self.found_args:
                     return
                 if node.name == self.target_func:
                     self.found_args = node.args
                 self.generic_visit(node)
+
             def visit_ClassDef(self, node):
                 if self.target_class and node.name == self.target_class:
                     for item in node.body:
@@ -109,6 +120,7 @@ class ReproductionGenerator:
                             return
                 elif not self.target_class:
                     self.generic_visit(node)
+
         finder = FunctionFinder(
             func_name, class_name if class_name and "." not in class_name else None
         )
@@ -129,6 +141,7 @@ class ReproductionGenerator:
                         type_hint = arg.annotation.s
                 all_args.append((arg.arg, type_hint))
         return all_args
+
     def _build_args_list(
         self,
         counterexample: dict[str, Any],
@@ -194,6 +207,7 @@ class ReproductionGenerator:
                 else:
                     args.append(f"{name}=None")
         return args
+
     def _generate_init_args_code(self, class_name: str) -> str:
         """
         Generate code that inspects __init__ at runtime and builds args.
@@ -236,6 +250,7 @@ def _build_init_args(cls):
     
     return args
 '''
+
     def _create_script_content(
         self,
         module_name: str,
@@ -254,7 +269,7 @@ def _build_init_args(cls):
             import_msg = f"Importing {root_class} from {module_name}..."
             init_helper = self._generate_init_args_code(class_name)
             class_ref = class_name
-            setup_code = f'''
+            setup_code = f"""
     # Build constructor arguments dynamically
     init_args = _build_init_args({class_ref})
     
@@ -271,18 +286,18 @@ def _build_init_args(cls):
     # Method Call
     print(f"[*] Invoking {{target_name}} with payload...")
     instance.{func_name}({args_code})
-'''
+"""
         else:
             import_stmt = f"from {module_name} import {func_name}"
             import_msg = f"Importing {func_name} from {module_name}..."
             init_helper = ""
-            setup_code = f'''
+            setup_code = f"""
     target_name = "{func_name}"
     
     # Function Call
     print(f"[*] Invoking {{target_name}} with payload...")
     {func_name}({args_code})
-'''
+"""
         return f'''"""
 PySpectre Reproduction Script
 Auto-generated proof-of-concept for issue: {issue_kind}

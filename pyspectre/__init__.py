@@ -15,6 +15,8 @@ Example:
     ...     print(issue.format())
 """
 
+from importlib.metadata import version, PackageNotFoundError
+
 from pyspectre.analysis.detectors import Issue, IssueKind
 from pyspectre.analysis.z3_prover import (
     Z3_AVAILABLE,
@@ -72,11 +74,14 @@ from pyspectre.execution.verified_executor import (
 )
 from pyspectre.reporting.formatters import format_result
 
-__version__ = "0.2.0-alpha"
-__author__ = "PySpectre Team"
 from pyspectre.config import PySpectreConfig, load_config
 from pyspectre.logging import LogLevel, configure_logging, get_logger
 from pyspectre.scanner import scan_directory, scan_file
+
+try:
+    __version__ = version("pyspectre")
+except PackageNotFoundError:
+    __version__ = "0.3.0a0"
 
 __all__ = [
     "analyze",

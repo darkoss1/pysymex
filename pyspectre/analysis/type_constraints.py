@@ -8,13 +8,17 @@ for mathematical proofs of type correctness. Covers:
 - Type narrowing proofs
 - Variance checking
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 import z3
+
+
 class TypeKind(Enum):
     """Kinds of types in the type system."""
+
     INT = auto()
     FLOAT = auto()
     BOOL = auto()
@@ -40,53 +44,70 @@ class TypeKind(Enum):
     TYPE_VAR_TUPLE = auto()
     LITERAL = auto()
     PROTOCOL = auto()
+
+
 class Variance(Enum):
     """Variance of type parameters."""
+
     INVARIANT = auto()
     COVARIANT = auto()
     CONTRAVARIANT = auto()
+
+
 @dataclass(frozen=True)
 class SymbolicType:
     """
     Symbolic representation of a type for Z3 analysis.
     Immutable to allow use as dict keys and in sets.
     """
+
     kind: TypeKind
     name: str = ""
     args: tuple[SymbolicType, ...] = ()
     bounds: tuple[SymbolicType, ...] | None = None
     literal_values: frozenset[Any] | None = None
     variance: Variance = Variance.INVARIANT
+
     @classmethod
     def int_type(cls) -> SymbolicType:
         return cls(TypeKind.INT, "int")
+
     @classmethod
     def float_type(cls) -> SymbolicType:
         return cls(TypeKind.FLOAT, "float")
+
     @classmethod
     def bool_type(cls) -> SymbolicType:
         return cls(TypeKind.BOOL, "bool")
+
     @classmethod
     def str_type(cls) -> SymbolicType:
         return cls(TypeKind.STR, "str")
+
     @classmethod
     def none_type(cls) -> SymbolicType:
         return cls(TypeKind.NONE, "None")
+
     @classmethod
     def any_type(cls) -> SymbolicType:
         return cls(TypeKind.ANY, "Any")
+
     @classmethod
     def never_type(cls) -> SymbolicType:
         return cls(TypeKind.NEVER, "Never")
+
     @classmethod
     def list_of(cls, element_type: SymbolicType) -> SymbolicType:
         return cls(TypeKind.LIST, "list", (element_type,))
+
     @classmethod
     def dict_of(cls, key_type: SymbolicType, value_type: SymbolicType) -> SymbolicType:
         return cls(TypeKind.DICT, "dict", (key_type, value_type))
+
     @classmethod
     def tuple_of(cls, *element_types: SymbolicType) -> SymbolicType:
         return cls(TypeKind.TUPLE, "tuple", element_types)
+
     @classmethod
     def union_of(cls, *types: SymbolicType) -> SymbolicType:
         flat_types: set[SymbolicType] = set()
@@ -100,24 +121,30 @@ class SymbolicType:
         if len(flat_types) == 1:
             return flat_types.pop()
         return cls(TypeKind.UNION, "Union", tuple(sorted(flat_types, key=str)))
+
     @classmethod
     def optional_of(cls, inner_type: SymbolicType) -> SymbolicType:
         """Shorthand for Union[T, None]."""
         return cls.union_of(inner_type, cls.none_type())
+
     @classmethod
     def callable_type(cls, params: list[SymbolicType], return_type: SymbolicType) -> SymbolicType:
         return cls(TypeKind.CALLABLE, "Callable", tuple(params) + (return_type,))
+
     @classmethod
     def type_var(
         cls, name: str, *bounds: SymbolicType, variance: Variance = Variance.INVARIANT
     ) -> SymbolicType:
         return cls(TypeKind.TYPE_VAR, name, bounds=bounds if bounds else None, variance=variance)
+
     @classmethod
     def literal(cls, *values: Any) -> SymbolicType:
         return cls(TypeKind.LITERAL, "Literal", literal_values=frozenset(values))
+
     @classmethod
     def class_type(cls, name: str, bases: tuple[SymbolicType, ...] = ()) -> SymbolicType:
         return cls(TypeKind.CLASS, name, bases)
+
     def __str__(self) -> str:
         if self.kind == TypeKind.UNION:
             return " | ".join(str(t) for t in self.args)
@@ -134,8 +161,11 @@ class SymbolicType:
             return f"Literal[{', '.join(repr(v) for v in self.literal_values)}]"
         else:
             return self.name
+
+
 class TypeIssueKind(Enum):
     """Types of type safety issues."""
+
     INCOMPATIBLE_TYPES = auto()
     INCOMPATIBLE_RETURN = auto()
     INCOMPATIBLE_ARGUMENT = auto()
@@ -154,9 +184,12 @@ class TypeIssueKind(Enum):
     PROTOCOL_NOT_SATISFIED = auto()
     UNREACHABLE_CODE = auto()
     REDUNDANT_CHECK = auto()
+
+
 @dataclass
 class TypeIssue:
     """Represents a detected type safety issue."""
+
     kind: TypeIssueKind
     message: str
     expected_type: SymbolicType | None = None
@@ -166,6 +199,7 @@ class TypeIssue:
     constraints: list[Any] = field(default_factory=list)
     counterexample: dict[str, Any] = field(default_factory=dict)
     severity: str = "error"
+
     def format(self) -> str:
         """Format issue for display."""
         loc = f" at line {self.line_number}" if self.line_number else ""
@@ -173,11 +207,14 @@ class TypeIssue:
         if self.expected_type and self.actual_type:
             types = f" (expected {self.expected_type}, got {self.actual_type})"
         return f"[{self.kind.name}]{loc}: {self.message}{types}"
+
+
 class TypeEncoder:
     """
     Encodes types as Z3 expressions for constraint solving.
     Uses an uninterpreted sort for types with axioms for subtyping.
     """
+
     def __init__(self):
         self.TypeSort = z3.DeclareSort("Type")
         self.int_t = z3.Const("int_t", self.TypeSort)
@@ -193,6 +230,7 @@ class TypeEncoder:
         self._type_cache: dict[SymbolicType, z3.ExprRef] = {}
         self._type_counter = 0
         self._base_axioms = self._generate_axioms()
+
     def _generate_axioms(self) -> list[z3.BoolRef]:
         """Generate base axioms for the type system."""
         T = z3.Const("T", self.TypeSort)
@@ -215,6 +253,7 @@ class TypeEncoder:
             z3.ForAll([T1, T2], z3.Implies(self.subtype(T1, T2), self.compatible(T1, T2))),
         ]
         return axioms
+
     def encode(self, typ: SymbolicType) -> z3.ExprRef:
         """Encode a SymbolicType as a Z3 expression."""
         if typ in self._type_cache:
@@ -240,14 +279,18 @@ class TypeEncoder:
             result = z3.Const(f"type_{self._type_counter}", self.TypeSort)
         self._type_cache[typ] = result
         return result
+
     def get_axioms(self) -> list[z3.BoolRef]:
         """Get all axioms including those for cached types."""
         return list(self._base_axioms)
+
+
 class TypeConstraintChecker:
     """
     Comprehensive type constraint checker using Z3.
     Provides mathematically proven type safety verification.
     """
+
     def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
         self.encoder = TypeEncoder()
@@ -256,12 +299,14 @@ class TypeConstraintChecker:
         for axiom in self.encoder.get_axioms():
             self._solver.add(axiom)
         self._issues: list[TypeIssue] = []
+
     def reset(self) -> None:
         """Reset checker state."""
         self._solver.reset()
         for axiom in self.encoder.get_axioms():
             self._solver.add(axiom)
         self._issues.clear()
+
     def is_subtype(
         self,
         sub: SymbolicType,
@@ -320,6 +365,7 @@ class TypeConstraintChecker:
             return (True, None)
         else:
             return (False, f"{sub} is not a subtype of {sup}")
+
     def _check_parameterized_subtype(
         self,
         sub: SymbolicType,
@@ -346,6 +392,7 @@ class TypeConstraintChecker:
                 if not is_sub:
                     return (False, reason)
             return (True, None)
+
     def check_assignment(
         self,
         target_type: SymbolicType,
@@ -362,6 +409,7 @@ class TypeConstraintChecker:
                 actual_type=value_type,
             )
         return None
+
     def check_return(
         self,
         declared_return: SymbolicType,
@@ -378,6 +426,7 @@ class TypeConstraintChecker:
                 actual_type=actual_return,
             )
         return None
+
     def check_argument(
         self,
         param_type: SymbolicType,
@@ -395,6 +444,7 @@ class TypeConstraintChecker:
                 actual_type=arg_type,
             )
         return None
+
     def check_union_access(
         self,
         union_type: SymbolicType,
@@ -418,6 +468,7 @@ class TypeConstraintChecker:
                 actual_type=union_type,
             )
         return None
+
     def _type_has_attribute(self, typ: SymbolicType, attr: str) -> bool:
         """Check if type has a given attribute (simplified)."""
         str_attrs = {
@@ -445,6 +496,7 @@ class TypeConstraintChecker:
         elif typ.kind == TypeKind.ANY:
             return True
         return False
+
     def check_none_safety(
         self,
         value_type: SymbolicType,
@@ -470,6 +522,7 @@ class TypeConstraintChecker:
                     actual_type=value_type,
                 )
         return None
+
     def narrow_type(
         self,
         original_type: SymbolicType,
@@ -502,6 +555,7 @@ class TypeConstraintChecker:
                 remaining = [t for t in original_type.args if t.kind != TypeKind.NONE]
                 return SymbolicType.union_of(*remaining)
         return original_type
+
     def check_exhaustive(
         self,
         union_type: SymbolicType,
@@ -530,6 +584,7 @@ class TypeConstraintChecker:
                 actual_type=union_type,
             )
         return None
+
     def check_generic_constraints(
         self,
         type_var: SymbolicType,
@@ -553,6 +608,7 @@ class TypeConstraintChecker:
                         actual_type=concrete_type,
                     )
         return None
+
     def check_variance(
         self,
         declared_variance: Variance,
@@ -583,6 +639,7 @@ class TypeConstraintChecker:
                     message="Contravariant type parameter used covariantly",
                 )
         return None
+
     def check_callable_application(
         self,
         callable_type: SymbolicType,
@@ -624,6 +681,7 @@ class TypeConstraintChecker:
             if issue:
                 issues.append(issue)
         return (return_type, issues)
+
     def infer_binary_op_type(
         self,
         left_type: SymbolicType,
@@ -668,16 +726,23 @@ class TypeConstraintChecker:
         if operator in {"and", "or"}:
             return (SymbolicType.bool_type(), issues)
         return (SymbolicType.any_type(), issues)
+
+
 @dataclass
 class Protocol:
     """Represents a structural protocol (like typing.Protocol)."""
+
     name: str
     required_methods: dict[str, SymbolicType] = field(default_factory=dict)
     required_attributes: dict[str, SymbolicType] = field(default_factory=dict)
+
+
 class ProtocolChecker:
     """Checks if types satisfy protocols."""
+
     def __init__(self, type_checker: TypeConstraintChecker):
         self.type_checker = type_checker
+
     def check_protocol_satisfaction(
         self,
         concrete_type: SymbolicType,
@@ -730,6 +795,8 @@ class ProtocolChecker:
                         )
                     )
         return issues
+
+
 __all__ = [
     "TypeKind",
     "Variance",

@@ -8,14 +8,18 @@ for mathematical proofs of memory safety. Covers:
 - String index bounds
 - Dynamic array growth bounds
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 import z3
 from pyspectre.core.solver import get_model, is_satisfiable
+
+
 class BoundsIssueKind(Enum):
     """Types of bounds checking issues."""
+
     INDEX_NEGATIVE = auto()
     INDEX_OUT_OF_BOUNDS = auto()
     INDEX_EQUALS_LENGTH = auto()
@@ -36,9 +40,12 @@ class BoundsIssueKind(Enum):
     ENCODING_BOUNDS = auto()
     ALLOCATION_TOO_LARGE = auto()
     NEGATIVE_SIZE = auto()
+
+
 @dataclass
 class BoundsIssue:
     """Represents a detected bounds checking issue."""
+
     kind: BoundsIssueKind
     message: str
     location: str | None = None
@@ -48,6 +55,7 @@ class BoundsIssue:
     severity: str = "error"
     array_name: str | None = None
     index_expr: str | None = None
+
     def format(self) -> str:
         """Format issue for display."""
         loc = f" at line {self.line_number}" if self.line_number else ""
@@ -58,6 +66,8 @@ class BoundsIssue:
                 f"{k}={v}" for k, v in self.counterexample.items()
             )
         return f"[{self.kind.name}]{loc}{arr}: {self.message}{ce}"
+
+
 @dataclass
 class SymbolicArray:
     """
@@ -67,23 +77,28 @@ class SymbolicArray:
     - Multi-dimensional arrays
     - Element type constraints
     """
+
     name: str
     length: z3.ArithRef
     element_sort: z3.SortRef = field(default_factory=lambda: z3.IntSort())
     dimensions: list[z3.ArithRef] = field(default_factory=list)
     _array: z3.ArrayRef | None = None
+
     def __post_init__(self):
         if not self.dimensions:
             self.dimensions = [self.length]
         if self._array is None:
             self._array = z3.Array(self.name, z3.IntSort(), self.element_sort)
+
     @property
     def z3_array(self) -> z3.ArrayRef:
         """Get the underlying Z3 array."""
         return self._array
+
     def select(self, index: z3.ArithRef) -> z3.ExprRef:
         """Read element at index."""
         return z3.Select(self._array, index)
+
     def store(self, index: z3.ArithRef, value: z3.ExprRef) -> SymbolicArray:
         """Write element at index, return new array."""
         new_array = z3.Store(self._array, index, value)
@@ -94,9 +109,11 @@ class SymbolicArray:
             dimensions=self.dimensions,
             _array=new_array,
         )
+
     def is_valid_index(self, index: z3.ArithRef) -> z3.BoolRef:
         """Generate constraint that index is valid."""
         return z3.And(index >= 0, index < self.length)
+
     def total_size(self) -> z3.ArithRef:
         """Get total number of elements (product of dimensions)."""
         if len(self.dimensions) == 1:
@@ -105,27 +122,35 @@ class SymbolicArray:
         for dim in self.dimensions[1:]:
             result = result * dim
         return result
+
+
 @dataclass
 class SymbolicBuffer:
     """
     Symbolic representation of a raw memory buffer.
     For lower-level buffer overflow analysis.
     """
+
     name: str
     size: z3.ArithRef
     base_address: z3.ArithRef = field(default_factory=lambda: z3.Int("base_0"))
+
     def contains_address(self, addr: z3.ArithRef) -> z3.BoolRef:
         """Check if address is within buffer bounds."""
         return z3.And(addr >= self.base_address, addr < self.base_address + self.size)
+
     def offset_valid(self, offset: z3.ArithRef) -> z3.BoolRef:
         """Check if offset from base is valid."""
         return z3.And(offset >= 0, offset < self.size)
+
+
 class BoundsChecker:
     """
     Comprehensive bounds checking analyzer using Z3.
     Provides mathematically proven detection of out-of-bounds access
     for arrays, lists, strings, and raw buffers.
     """
+
     def __init__(
         self,
         timeout_ms: int = 5000,
@@ -138,10 +163,12 @@ class BoundsChecker:
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
         self._issues: list[BoundsIssue] = []
+
     def reset(self) -> None:
         """Reset checker state."""
         self._solver.reset()
         self._issues.clear()
+
     def check_index(
         self,
         index: z3.ArithRef,
@@ -233,6 +260,7 @@ class BoundsChecker:
                     )
                 )
         return issues
+
     def check_slice(
         self,
         start: z3.ArithRef | None,
@@ -321,6 +349,7 @@ class BoundsChecker:
                     )
                 )
         return issues
+
     def check_multidim_index(
         self,
         indices: list[z3.ArithRef],
@@ -353,6 +382,7 @@ class BoundsChecker:
             )
             issues.extend(dim_issues)
         return issues
+
     def compute_linear_index(
         self,
         indices: list[z3.ArithRef],
@@ -376,6 +406,7 @@ class BoundsChecker:
         for idx, s in zip(indices, strides):
             linear = linear + idx * s
         return linear
+
     def check_buffer_access(
         self,
         buffer: SymbolicBuffer,
@@ -422,6 +453,7 @@ class BoundsChecker:
                 )
             )
         return issues
+
     def check_memcpy_bounds(
         self,
         dest: SymbolicBuffer,
@@ -457,6 +489,7 @@ class BoundsChecker:
                 )
             )
         return issues
+
     def check_string_index(
         self,
         index: z3.ArithRef,
@@ -495,6 +528,7 @@ class BoundsChecker:
                 )
             )
         return issues
+
     def check_allocation_size(
         self,
         size: z3.ArithRef,
@@ -532,6 +566,7 @@ class BoundsChecker:
                 )
             )
         return issues
+
     def check_array_access(
         self,
         array: SymbolicArray,
@@ -551,6 +586,7 @@ class BoundsChecker:
         )
         value = array.select(index)
         return (value, issues)
+
     def check_array_store(
         self,
         array: SymbolicArray,
@@ -569,6 +605,7 @@ class BoundsChecker:
         )
         new_array = array.store(index, value)
         return (new_array, issues)
+
     def prove_safe_access(
         self,
         index: z3.ArithRef,
@@ -588,6 +625,7 @@ class BoundsChecker:
             return (False, f"Counterexample: {ce}")
         else:
             return (True, None)
+
     def _extract_model(
         self,
         model: z3.ModelRef | None,
@@ -609,8 +647,11 @@ class BoundsChecker:
             except Exception:
                 pass
         return result
+
+
 class ListBoundsChecker(BoundsChecker):
     """Specialized bounds checker for Python lists."""
+
     def check_append(
         self,
         current_length: z3.ArithRef,
@@ -631,6 +672,7 @@ class ListBoundsChecker(BoundsChecker):
                 )
             ]
         return []
+
     def check_extend(
         self,
         current_length: z3.ArithRef,
@@ -653,8 +695,11 @@ class ListBoundsChecker(BoundsChecker):
                 )
             ]
         return []
+
+
 class NumpyBoundsChecker(BoundsChecker):
     """Specialized bounds checker for NumPy-style arrays."""
+
     def check_reshape(
         self,
         current_shape: list[z3.ArithRef],
@@ -681,6 +726,7 @@ class NumpyBoundsChecker(BoundsChecker):
                 )
             ]
         return []
+
     def check_broadcast(
         self,
         shape1: list[z3.ArithRef],
@@ -711,6 +757,8 @@ class NumpyBoundsChecker(BoundsChecker):
                 )
             result_shape.append(z3.If(d1 > d2, d1, d2))
         return (result_shape, issues)
+
+
 __all__ = [
     "BoundsIssueKind",
     "BoundsIssue",

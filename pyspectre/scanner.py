@@ -9,6 +9,7 @@ Usage as module:
 Usage as CLI:
     python -m pyspectre.scanner [--dir FOLDER] [--log LOG_FILE]
 """
+
 import argparse
 import json
 import sys
@@ -20,15 +21,19 @@ from pyspectre.execution.executor import ExecutionConfig, SymbolicExecutor
 from pyspectre.analysis.autotuner import AutoTuner
 import concurrent.futures
 import os
+
+
 @dataclass
 class ScanResult:
     """Result of scanning a single file."""
+
     file_path: str
     timestamp: str
     issues: list[dict[str, Any]] = field(default_factory=list)
     code_objects: int = 0
     paths_explored: int = 0
-    error: str = None
+    error: str | None = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "file": self.file_path,
@@ -38,19 +43,25 @@ class ScanResult:
             "paths_explored": self.paths_explored,
             "error": self.error,
         }
+
     def __repr__(self) -> str:
         return f"ScanResult({self.file_path}, issues={len(self.issues)}, error={self.error})"
+
+
 class ScanSession:
     """Tracks all scans in a session."""
-    def __init__(self, log_file: Path = None):
+
+    def __init__(self, log_file: Path | None = None):
         self.results: list[ScanResult] = []
         self.start_time = datetime.now()
         self.log_file = log_file or Path(
             f"scan_log_{self.start_time.strftime('%Y%m%d_%H%M%S')}.json"
         )
+
     def add_result(self, result: ScanResult):
         self.results.append(result)
         self._save_log()
+
     def _save_log(self):
         """Save results to log file."""
         log_data = {
@@ -62,6 +73,7 @@ class ScanSession:
         }
         with open(self.log_file, "w", encoding="utf-8") as f:
             json.dump(log_data, f, indent=2)
+
     def get_summary(self) -> dict[str, Any]:
         """Get session summary statistics."""
         total_issues = sum(len(r.issues) for r in self.results)
@@ -78,7 +90,11 @@ class ScanSession:
             "files_clean": sum(1 for r in self.results if not r.issues and not r.error),
             "files_error": sum(1 for r in self.results if r.error),
         }
-session: ScanSession = None
+
+
+session: ScanSession | None = None
+
+
 def get_code_objects_with_context(code, parent_path=None):
     """
     Recursively extract all code objects with their full hierarchical path.
@@ -101,6 +117,8 @@ def get_code_objects_with_context(code, parent_path=None):
         if hasattr(const, "co_code"):
             results.extend(get_code_objects_with_context(const, child_parent))
     return results
+
+
 def analyze_file(file_path: Path) -> ScanResult:
     """Run PySpectre analysis on a single file."""
     global session
@@ -155,6 +173,7 @@ def analyze_file(file_path: Path) -> ScanResult:
             except Exception as e:
                 print(f"DEBUG EXCEPTION in {code.co_name}: {e}")
                 import traceback
+
                 traceback.print_exc()
         result.paths_explored = total_paths
         seen = set()
@@ -195,6 +214,8 @@ def analyze_file(file_path: Path) -> ScanResult:
     if session:
         session.add_result(result)
     return result
+
+
 def scan_file(
     file_path: str | Path,
     verbose: bool = False,
@@ -261,8 +282,7 @@ def scan_file(
                 tune_config.enable_taint_tracking = base_config.enable_taint_tracking
                 executor = SymbolicExecutor(config=tune_config)
             else:
-                if not auto_tune:
-                    executor = SymbolicExecutor(config=config)
+                executor = SymbolicExecutor(config=config)
             symbolic_vars = dict.fromkeys(code.co_varnames[: code.co_argcount], "int")
             try:
                 exec_result = executor.execute_code(
@@ -308,6 +328,8 @@ def scan_file(
     if session:
         session.add_result(result)
     return result
+
+
 def scan_directory(
     dir_path: str | Path,
     pattern: str = "**/*.py",
@@ -365,7 +387,7 @@ def scan_directory(
         return results
     if verbose:
         print(f"Scanning {len(files)} files in {dir_path} using {workers_count} workers...")
-    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers_count) as executor:
         future_to_file = {
             executor.submit(
                 scan_file,
@@ -398,12 +420,17 @@ def scan_directory(
         files_with_issues = sum(1 for r in results if r.issues)
         print(f"\\nSummary: {total_issues} issues in {files_with_issues}/{len(results)} files")
     return results
+
+
 def on_file_event(event):
     """Handle file system events."""
     from pyspectre.core.watch import FileEventType
+
     if event.event_type in (FileEventType.CREATED, FileEventType.MODIFIED):
         if event.path.suffix == ".py":
             analyze_file(event.path)
+
+
 def print_final_summary():
     """Print final session summary."""
     global session
@@ -426,10 +453,13 @@ def print_final_summary():
             print(f"      {kind:<25} {count:>4} {bar}")
     print(f"\\n   📁 Log saved to: {session.log_file}")
     print("=" * 70)
+
+
 def main():
     """CLI entry point for watch mode."""
     global session
     from pyspectre.core.watch import FileWatcher
+
     parser = argparse.ArgumentParser(description="PySpectre Scanner")
     parser.add_argument(
         "--dir",
@@ -488,11 +518,14 @@ def main():
             print("👁️  Watching for file changes...")
             while True:
                 import time
+
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\\n\\nStopping watcher...")
             watcher.stop()
     print_final_summary()
     print("\\nDone.")
+
+
 if __name__ == "__main__":
     main()

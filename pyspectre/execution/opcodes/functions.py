@@ -1,8 +1,9 @@
 """Function call opcodes."""
+
 from __future__ import annotations
 import dis
 import z3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from pyspectre.core.solver import get_model, is_satisfiable
 from pyspectre.core.types import (
     SymbolicDict,
@@ -14,17 +15,159 @@ from pyspectre.core.types import (
 )
 from pyspectre.execution.dispatcher import OpcodeResult, opcode_handler
 from pyspectre.analysis.detectors import Issue, IssueKind
-from pyspectre.core.solver import is_satisfiable, get_model
 from pyspectre.models.builtins import default_model_registry
 from pyspectre.models.stdlib import get_stdlib_model
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
     from pyspectre.execution.dispatcher import OpcodeDispatcher
+
+
 @opcode_handler("PRECALL")
 def handle_precall(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Handle setup before a function call."""
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
+def _check_taint_sinks(state: VMState, call_name: str, args: list[Any]) -> list[Issue]:
+    """Check if tainted data flows to dangerous sinks."""
+    issues = []
+    if not call_name or not hasattr(state, "taint_tracker") or state.taint_tracker is None:
+        return issues
+
+    from pyspectre.analysis.taint import TaintTracker, TaintSink
+
+    sink_type = TaintTracker.SINK_FUNCTIONS.get(call_name)
+    if sink_type is None:
+        return issues
+
+    _SINK_TO_ISSUE = {
+        TaintSink.SQL_QUERY: IssueKind.SQL_INJECTION,
+        TaintSink.COMMAND_EXEC: IssueKind.COMMAND_INJECTION,
+        TaintSink.EVAL: IssueKind.CODE_INJECTION,
+        TaintSink.FILE_PATH: IssueKind.PATH_TRAVERSAL,
+        TaintSink.FILE_WRITE: IssueKind.PATH_TRAVERSAL,
+        TaintSink.NETWORK_SEND: IssueKind.UNHANDLED_EXCEPTION,
+        TaintSink.LOG_OUTPUT: IssueKind.FORMAT_STRING_INJECTION,
+    }
+
+    flows = state.taint_tracker.check_sink(
+        sink_type,
+        *args,
+        location=call_name,
+        line=state.pc,
+    )
+    if flows:
+        issue_kind = _SINK_TO_ISSUE.get(sink_type, IssueKind.UNHANDLED_EXCEPTION)
+        issues.append(
+            Issue(
+                kind=issue_kind,
+                message=f"Tainted data flows to dangerous sink '{call_name}' ({sink_type.name})",
+                constraints=list(state.path_constraints),
+                model=get_model(list(state.path_constraints)),
+                pc=state.pc,
+            )
+        )
+    return issues
+
+
+def _apply_model(
+    state: VMState, func_obj: Any, args: list[Any], kwargs: dict[Any, Any] | None = None
+) -> OpcodeResult | None:
+    """Apply a built-in or stdlib model if available."""
+    kwargs = kwargs or {}
+    model_name = getattr(func_obj, "model_name", None)
+    if not model_name:
+        return None
+
+    model = default_model_registry.get(model_name) or get_stdlib_model(model_name)
+    if not model:
+        return None
+
+    result = model.apply(args, kwargs, state)
+    opcode_res = OpcodeResult.continue_with(state)
+
+    if result.side_effects and "potential_exception" in result.side_effects:
+        exc = result.side_effects["potential_exception"]
+        cond = exc.get("condition")
+        full_cond = list(state.path_constraints)
+        if cond is not None:
+            full_cond.append(cond)
+        if is_satisfiable(full_cond):
+            kind = IssueKind.TYPE_ERROR
+            if exc["type"] == "KeyError":
+                kind = IssueKind.KEY_ERROR
+            elif exc["type"] == "IndexError":
+                kind = IssueKind.INDEX_ERROR
+
+            opcode_res.issues.append(
+                Issue(
+                    kind=kind,
+                    message=exc["message"],
+                    constraints=full_cond,
+                    model=get_model(full_cond),
+                    pc=state.pc,
+                )
+            )
+
+    state.push(result.value)
+    for constraint in result.constraints:
+        state.add_constraint(constraint)
+    state.pc += 1
+    return opcode_res
+
+
+def _perform_interprocedural_call(
+    state: VMState, ctx: OpcodeDispatcher, func_obj: Any, args: list[Any]
+) -> OpcodeResult | None:
+    """Attempt to perform an inter-procedural call to a user-defined function."""
+    MAX_CALL_DEPTH = 10
+
+    func_code = getattr(func_obj, "__code__", None) or getattr(func_obj, "_func_code", None)
+    func_name = getattr(func_obj, "__name__", None) or getattr(func_obj, "_func_name", "anonymous")
+
+    if func_code is None:
+        return None
+
+    try:
+        callee_instructions = list(dis.get_instructions(func_code))
+    except Exception:
+        return None
+
+    if not callee_instructions or state.call_depth() >= MAX_CALL_DEPTH:
+        return None
+
+    from pyspectre.core.state import CallFrame
+
+    frame = CallFrame(
+        function_name=func_name,
+        return_pc=state.pc + 1,
+        local_vars=dict(state.local_vars),
+        stack_depth=len(state.stack),
+        caller_instructions=state.current_instructions,
+    )
+    state.push_call(frame)
+
+    argnames = func_code.co_varnames[: func_code.co_argcount]
+    new_locals = {}
+    for i, name in enumerate(argnames):
+        if i < len(args):
+            new_locals[name] = args[i]
+        else:
+            val, constraint = SymbolicValue.symbolic(f"arg_{name}")
+            new_locals[name] = val
+            state.add_constraint(constraint)
+    state.local_vars = new_locals
+
+    state.current_instructions = callee_instructions
+    ctx.set_instructions(callee_instructions)
+    state.pc = 0
+    state.depth += 1
+
+    return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("CALL", "CALL_FUNCTION", "CALL_FUNCTION_KW", "CALL_FUNCTION_EX")
 def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Handle function calls, applying models if available."""
@@ -33,6 +176,7 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     for _ in range(argc):
         if state.stack:
             args.insert(0, state.pop())
+
     kwargs = {}
     kw_names = getattr(state, "pending_kw_names", None)
     if kw_names is not None:
@@ -42,59 +186,55 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
             for k, v in zip(kw_names, kw_vals):
                 kwargs[k] = v
         state.pending_kw_names = None
+
     if state.stack:
         receiver_or_null = state.pop()
     else:
         receiver_or_null = SymbolicNone()
+
     if state.stack:
         func_obj = state.pop()
     else:
         func_obj = SymbolicNone()
+
     if not isinstance(receiver_or_null, SymbolicNone):
         args.insert(0, receiver_or_null)
-    model_name = getattr(func_obj, "model_name", None)
-    model = None
-    if model_name:
-        model = default_model_registry.get(model_name) or get_stdlib_model(model_name)
-    if model:
-        result = model.apply(args, kwargs, state)
-        opcode_res = OpcodeResult.continue_with(state)
-        if result.side_effects and "potential_exception" in result.side_effects:
-            exc = result.side_effects["potential_exception"]
-            cond = exc.get("condition")
-            full_cond = list(state.path_constraints)
-            if cond is not None:
-                full_cond.append(cond)
-            if is_satisfiable(full_cond):
-                issue = Issue(
-                    kind=(
-                        IssueKind.KEY_ERROR
-                        if exc["type"] == "KeyError"
-                        else (
-                            IssueKind.INDEX_ERROR
-                            if exc["type"] == "IndexError"
-                            else IssueKind.TYPE_ERROR
-                        )
-                    ),
-                    message=exc["message"],
-                    constraints=full_cond,
-                    model=get_model(full_cond),
-                    pc=state.pc,
-                )
-                opcode_res.issues.append(issue)
-        state.push(result.value)
-        for constraint in result.constraints:
-            state.add_constraint(constraint)
-        state.pc += 1
-        return opcode_res
+
+    result = _apply_model(state, func_obj, args, kwargs)
+    if result:
+        return result
+
+    call_name = (
+        getattr(func_obj, "model_name", None)
+        or getattr(func_obj, "__name__", None)
+        or getattr(func_obj, "_func_name", None)
+        or getattr(func_obj, "name", "")
+    )
+    taint_issues = _check_taint_sinks(state, call_name, args)
+    if taint_issues:
+        if not hasattr(state, "_pending_taint_issues"):
+            state._pending_taint_issues = []
+        state._pending_taint_issues.extend(taint_issues)
+
+    result = _perform_interprocedural_call(state, ctx, func_obj, args)
+    if result:
+        if hasattr(state, "_pending_taint_issues"):
+            result.issues.extend(state._pending_taint_issues)
+        return result
+
     ret_val, type_constraint = SymbolicValue.symbolic(f"call_result_{state.pc}")
     state.push(ret_val)
     state.add_constraint(type_constraint)
     state.pc += 1
-    return OpcodeResult.continue_with(state)
+
+    result = OpcodeResult.continue_with(state)
+    if hasattr(state, "_pending_taint_issues"):
+        result.issues.extend(state._pending_taint_issues)
+    return result
+
+
 @opcode_handler("CALL_KW")
 def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Handle function calls with keyword arguments."""
     """Handle function calls with keyword arguments."""
     argc = int(instr.argval) if instr.argval else 0
     args = []
@@ -138,6 +278,8 @@ def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
     state.add_constraint(type_constraint)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("CALL_METHOD")
 def handle_call_method(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -156,6 +298,8 @@ def handle_call_method(
     state.add_constraint(type_constraint)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("LOAD_METHOD", "LOAD_ATTR")
 def handle_load_method(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -251,6 +395,8 @@ def handle_load_method(
     except Exception as e:
         print(f"DEBUG EXCEPTION in handle_load_method: {e}")
         raise e
+
+
 @opcode_handler("STORE_ATTR")
 def handle_store_attr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -280,6 +426,8 @@ def handle_store_attr(
             pass
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("DELETE_ATTR")
 def handle_delete_attr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -289,6 +437,8 @@ def handle_delete_attr(
         state.pop()
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("MAKE_FUNCTION")
 def handle_make_function(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -319,6 +469,8 @@ def handle_make_function(
     state.push(func_val)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("LOAD_BUILD_CLASS")
 def handle_load_build_class(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -334,19 +486,16 @@ def handle_load_build_class(
     state.push(builtin_val)
     state.pc += 1
     return OpcodeResult.continue_with(state)
-@opcode_handler("PUSH_EXC_INFO")
-def handle_push_exc_info_func(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Push exception info for exception handling."""
-    state.pc += 1
-    return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("KW_NAMES")
 def handle_kw_names(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Set up keyword argument names for next CALL (Python 3.11+)."""
     state.pending_kw_names = instr.argval
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("IMPORT_NAME")
 def handle_import_name(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -368,6 +517,8 @@ def handle_import_name(
     state.push(module_val)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("IMPORT_FROM")
 def handle_import_from(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -380,6 +531,8 @@ def handle_import_from(
     state.add_constraint(type_constraint)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("IMPORT_STAR")
 def handle_import_star(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -389,6 +542,8 @@ def handle_import_star(
         state.pop()
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("LOAD_SUPER_ATTR")
 def handle_load_super_attr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -404,6 +559,8 @@ def handle_load_super_attr(
     state.add_constraint(constraint)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("LOAD_SUPER_METHOD", "LOAD_ZERO_SUPER_ATTR", "LOAD_ZERO_SUPER_METHOD")
 def handle_load_super_variants(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -419,6 +576,8 @@ def handle_load_super_variants(
     state.add_constraint(constraint)
     state.pc += 1
     return OpcodeResult.continue_with(state)
+
+
 @opcode_handler("SET_FUNCTION_ATTRIBUTE")
 def handle_set_function_attribute(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher

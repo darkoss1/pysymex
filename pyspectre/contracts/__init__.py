@@ -3,8 +3,10 @@ Provides:
 - Quantifier support (forall, exists) for specifications
 - Z3-based symbolic verification of quantified formulas
 """
+
 from pyspectre.contracts.quantifiers import (
     BoundSpec,
+    ConditionTranslator,
     Quantifier,
     QuantifierInstantiator,
     QuantifierKind,
@@ -16,7 +18,9 @@ from pyspectre.contracts.quantifiers import (
     extract_quantifiers,
     forall,
     parse_condition_to_z3,
+    replace_quantifiers_with_z3,
 )
+
 __all__ = [
     "QuantifierKind",
     "QuantifierVar",
@@ -30,4 +34,6 @@ __all__ = [
     "exists_unique",
     "QuantifierInstantiator",
     "QuantifierVerifier",
+    "ConditionTranslator",
+    "replace_quantifiers_with_z3",
 ]

@@ -10,6 +10,7 @@ Usage:
     python -m pyspectre.analyze --concurrency mycode.py
     python -m pyspectre.analyze --all mycode.py
 """
+
 from __future__ import annotations
 import argparse
 import ast
@@ -42,9 +43,12 @@ from pyspectre.analysis.type_constraints import (
     TypeConstraintChecker,
     TypeIssue,
 )
+
+
 @dataclass
 class AnalysisResult:
     """Result from running analyzers on a file."""
+
     file_path: str
     arithmetic_issues: list[ArithmeticIssue] = field(default_factory=list)
     bounds_issues: list[BoundsIssue] = field(default_factory=list)
@@ -52,6 +56,7 @@ class AnalysisResult:
     resource_issues: list[ResourceIssue] = field(default_factory=list)
     concurrency_issues: list[ConcurrencyIssue] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
     @property
     def total_issues(self) -> int:
         return (
@@ -61,6 +66,7 @@ class AnalysisResult:
             + len(self.resource_issues)
             + len(self.concurrency_issues)
         )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "file": self.file_path,
@@ -72,11 +78,14 @@ class AnalysisResult:
             "concurrency_issues": len(self.concurrency_issues),
             "errors": self.errors,
         }
+
+
 class CodeAnalyzer:
     """
     Analyzes Python source code using Z3-powered modules.
     Extracts patterns from AST and runs appropriate analyses.
     """
+
     def __init__(
         self,
         run_arithmetic: bool = False,
@@ -105,6 +114,7 @@ class CodeAnalyzer:
             self.resource_checker = ResourceLifecycleChecker()
         if run_concurrency:
             self.concurrency_analyzer = ConcurrencyAnalyzer()
+
     def analyze_file(self, filepath: Path) -> AnalysisResult:
         """Analyze a Python source file."""
         result = AnalysisResult(file_path=str(filepath))
@@ -128,9 +138,11 @@ class CodeAnalyzer:
         if self.run_concurrency:
             result.concurrency_issues = self._analyze_concurrency(tree)
         return result
+
     def _analyze_arithmetic(self, tree: ast.AST) -> list[ArithmeticIssue]:
         """Analyze arithmetic operations in the AST."""
         issues = []
+
         def add_issue(result, line):
             """Helper to handle both single issues and lists."""
             if result is None:
@@ -142,6 +154,7 @@ class CodeAnalyzer:
             else:
                 result.line_number = line
                 issues.append(result)
+
         for node in ast.walk(tree):
             if isinstance(node, ast.BinOp):
                 line = getattr(node, "lineno", None)
@@ -162,6 +175,7 @@ class CodeAnalyzer:
                 elif isinstance(node.op, ast.Pow):
                     add_issue(self.arithmetic_analyzer.check_power_safety(a, b), line)
         return issues
+
     def _analyze_bounds(self, tree: ast.AST) -> list[BoundsIssue]:
         """Analyze array/list indexing operations."""
         issues = []
@@ -178,6 +192,7 @@ class CodeAnalyzer:
                     issue.line_number = line
                 issues.extend(node_issues)
         return issues
+
     def _analyze_types(self, tree: ast.AST) -> list[TypeIssue]:
         """Analyze type annotations and assignments."""
         issues = []
@@ -193,6 +208,7 @@ class CodeAnalyzer:
                             issue.line_number = line
                             issues.append(issue)
         return issues
+
     def _annotation_to_type(self, node: ast.AST) -> SymbolicType | None:
         """Convert AST annotation to SymbolicType."""
         if isinstance(node, ast.Name):
@@ -208,6 +224,7 @@ class CodeAnalyzer:
             elif name == "None":
                 return SymbolicType.none_type()
         return None
+
     def _infer_type(self, node: ast.AST) -> SymbolicType | None:
         """Infer type from AST expression."""
         if isinstance(node, ast.Constant):
@@ -227,6 +244,7 @@ class CodeAnalyzer:
         elif isinstance(node, ast.Dict):
             return SymbolicType.dict_of(SymbolicType.any_type(), SymbolicType.any_type())
         return None
+
     def _analyze_resources(self, tree: ast.AST) -> list[ResourceIssue]:
         """Analyze resource lifecycle (files, locks, etc.)."""
         issues = []
@@ -242,6 +260,7 @@ class CodeAnalyzer:
                 pass
         issues.extend(self.resource_checker.check_leaks())
         return issues
+
     def _analyze_concurrency(self, tree: ast.AST) -> list[ConcurrencyIssue]:
         """Analyze concurrency patterns (threads, locks)."""
         issues = []
@@ -272,6 +291,8 @@ class CodeAnalyzer:
                             )
             issues.extend(self.concurrency_analyzer.detect_data_races())
         return issues
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser."""
     parser = argparse.ArgumentParser(
@@ -292,7 +313,7 @@ Examples:
   python -m pyspectre.analyze --all mycode.py --format json
   # Analyze a directory
   python -m pyspectre.analyze --all --dir ./src
-For more information, visit: https://github.com/pyspectre
+For more information, visit: https://github.com/darkoss1/pyspecter
         """,
     )
     parser.add_argument(
@@ -360,9 +381,11 @@ For more information, visit: https://github.com/pyspectre
     output_group.add_argument(
         "--version",
         action="version",
-        version="PySpectre Analyzer 1.2.0",
+        version="PySpectre Analyzer 0.3.0a0",
     )
     return parser
+
+
 def format_results_text(results: list[AnalysisResult]) -> str:
     """Format results as human-readable text."""
     lines = []
@@ -417,6 +440,8 @@ def format_results_text(results: list[AnalysisResult]) -> str:
     lines.append(f"📊 Summary: {len(results)} files analyzed, {total_issues} issues found")
     lines.append("=" * 70)
     return "\n".join(lines)
+
+
 def format_results_json(results: list[AnalysisResult]) -> str:
     """Format results as JSON."""
     data = {
@@ -425,6 +450,8 @@ def format_results_json(results: list[AnalysisResult]) -> str:
         "results": [r.to_dict() for r in results],
     }
     return json.dumps(data, indent=2)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     parser = create_parser()
@@ -499,5 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         print(output)
     total_issues = sum(r.total_issues for r in results)
     return 1 if total_issues > 0 else 0
+
+
 if __name__ == "__main__":
     sys.exit(main())

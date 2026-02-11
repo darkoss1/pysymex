@@ -1,6 +1,7 @@
 """Resource management and limits for PySpectre.
 Provides resource tracking, limits enforcement, and graceful degradation.
 """
+
 from __future__ import annotations
 import signal
 import sys
@@ -11,32 +12,45 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
+
 if sys.platform != "win32":
     import resource as sys_resource
 else:
     sys_resource = None
+
+
 class ResourceType(Enum):
     """Types of resources to track."""
+
     PATHS = auto()
     DEPTH = auto()
     ITERATIONS = auto()
     TIME = auto()
     MEMORY = auto()
     CONSTRAINTS = auto()
+
+
 class LimitExceeded(Exception):
     """Exception raised when a resource limit is exceeded."""
+
     def __init__(self, resource_type: ResourceType, current: Any, limit: Any):
         self.resource_type = resource_type
         self.current = current
         self.limit = limit
         super().__init__(f"{resource_type.name} limit exceeded: {current} >= {limit}")
+
+
 class TimeoutError(LimitExceeded):
     """Exception raised when analysis times out."""
+
     def __init__(self, elapsed: float, limit: float):
         super().__init__(ResourceType.TIME, elapsed, limit)
+
+
 @dataclass
 class ResourceSnapshot:
     """Snapshot of current resource usage."""
+
     paths_explored: int = 0
     current_depth: int = 0
     max_depth_reached: int = 0
@@ -47,6 +61,7 @@ class ResourceSnapshot:
     solver_calls: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -61,9 +76,12 @@ class ResourceSnapshot:
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
         }
+
+
 @dataclass
 class ResourceLimits:
     """Configurable resource limits."""
+
     max_paths: int = 1000
     max_depth: int = 100
     max_iterations: int = 10000
@@ -72,6 +90,7 @@ class ResourceLimits:
     max_constraints: int = 10000
     soft_path_ratio: float = 0.8
     soft_time_ratio: float = 0.9
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -81,7 +100,11 @@ class ResourceLimits:
             "timeout_seconds": self.timeout_seconds,
             "max_memory_mb": self.max_memory_mb,
             "max_constraints": self.max_constraints,
+            "soft_path_ratio": self.soft_path_ratio,
+            "soft_time_ratio": self.soft_time_ratio,
         }
+
+
 class ResourceTracker:
     """Tracks and enforces resource limits during analysis.
     Provides:
@@ -90,6 +113,7 @@ class ResourceTracker:
     - Soft limit warnings
     - Graceful degradation support
     """
+
     def __init__(self, limits: ResourceLimits | None = None):
         self.limits = limits or ResourceLimits()
         self._paths_explored: int = 0
@@ -106,10 +130,12 @@ class ResourceTracker:
         self._degraded: bool = False
         self._degradation_reason: str | None = None
         self._lock = threading.RLock()
+
     def start(self) -> None:
         """Start resource tracking."""
         self._start_time = time.perf_counter()
         self._reset_counters()
+
     def _reset_counters(self) -> None:
         """Reset all counters."""
         self._paths_explored = 0
@@ -123,6 +149,7 @@ class ResourceTracker:
         self._warnings_issued.clear()
         self._degraded = False
         self._degradation_reason = None
+
     def snapshot(self) -> ResourceSnapshot:
         """Get current resource usage snapshot."""
         with self._lock:
@@ -138,12 +165,14 @@ class ResourceTracker:
                 cache_hits=self._cache_hits,
                 cache_misses=self._cache_misses,
             )
+
     @property
     def elapsed_time(self) -> float:
         """Get elapsed time in seconds."""
         if self._start_time is None:
             return 0.0
         return time.perf_counter() - self._start_time
+
     @property
     def memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
@@ -154,22 +183,26 @@ class ResourceTracker:
             else:
                 try:
                     import psutil
+
                     process = psutil.Process()
                     return process.memory_info().rss / (1024 * 1024)
                 except ImportError:
                     return 0.0
         except Exception:
             return 0.0
+
     @property
     def is_degraded(self) -> bool:
         """Check if analysis is in degraded mode."""
         return self._degraded
+
     def add_warning_callback(
         self,
         callback: Callable[[ResourceType, Any, Any], None],
     ) -> None:
         """Add a callback for soft limit warnings."""
         self._warning_callbacks.append(callback)
+
     def _check_soft_limit(
         self,
         resource_type: ResourceType,
@@ -188,6 +221,7 @@ class ResourceTracker:
                     callback(resource_type, current, limit)
                 except Exception:
                     pass
+
     def check_path_limit(self) -> None:
         """Check path count limit."""
         with self._lock:
@@ -203,6 +237,7 @@ class ResourceTracker:
                 self.limits.max_paths,
                 self.limits.soft_path_ratio,
             )
+
     def check_depth_limit(self) -> None:
         """Check depth limit."""
         with self._lock:
@@ -212,6 +247,7 @@ class ResourceTracker:
                     self._current_depth,
                     self.limits.max_depth,
                 )
+
     def check_iteration_limit(self) -> None:
         """Check iteration limit."""
         with self._lock:
@@ -221,6 +257,7 @@ class ResourceTracker:
                     self._iterations,
                     self.limits.max_iterations,
                 )
+
     def check_time_limit(self) -> None:
         """Check time limit."""
         elapsed = self.elapsed_time
@@ -232,6 +269,7 @@ class ResourceTracker:
             self.limits.timeout_seconds,
             self.limits.soft_time_ratio,
         )
+
     def check_memory_limit(self) -> None:
         """Check memory limit."""
         memory_mb = self.memory_usage_mb
@@ -241,6 +279,7 @@ class ResourceTracker:
                 memory_mb,
                 self.limits.max_memory_mb,
             )
+
     def check_all_limits(self) -> None:
         """Check all resource limits."""
         self.check_time_limit()
@@ -248,16 +287,19 @@ class ResourceTracker:
         self.check_depth_limit()
         self.check_iteration_limit()
         self.check_memory_limit()
+
     def record_path(self) -> int:
         """Record a path explored and return the count."""
         with self._lock:
             self._paths_explored += 1
             return self._paths_explored
+
     def record_iteration(self) -> int:
         """Record an iteration and return the count."""
         with self._lock:
             self._iterations += 1
             return self._iterations
+
     def push_depth(self) -> int:
         """Push call depth and return new depth."""
         with self._lock:
@@ -267,15 +309,18 @@ class ResourceTracker:
                 self._current_depth,
             )
             return self._current_depth
+
     def pop_depth(self) -> int:
         """Pop call depth and return new depth."""
         with self._lock:
             self._current_depth = max(0, self._current_depth - 1)
             return self._current_depth
+
     def record_constraint(self, count: int = 1) -> None:
         """Record constraint additions."""
         with self._lock:
             self._constraint_count += count
+
     def record_solver_call(self, cache_hit: bool = False) -> None:
         """Record a solver call."""
         with self._lock:
@@ -284,11 +329,13 @@ class ResourceTracker:
                 self._cache_hits += 1
             else:
                 self._cache_misses += 1
+
     def enter_degraded_mode(self, reason: str) -> None:
         """Enter degraded mode for graceful degradation."""
         with self._lock:
             self._degraded = True
             self._degradation_reason = reason
+
     def get_progress(self) -> dict[str, float]:
         """Get progress indicators as percentages."""
         return {
@@ -311,6 +358,8 @@ class ResourceTracker:
                 else 0
             ),
         }
+
+
 @contextmanager
 def timeout_context(seconds: float, message: str = "Operation timed out"):
     """Context manager that raises TimeoutError after specified seconds.
@@ -320,8 +369,10 @@ def timeout_context(seconds: float, message: str = "Operation timed out"):
     if sys.platform == "win32":
         yield
         return
+
     def handler(signum, frame):
         raise TimeoutError(seconds, seconds)
+
     old_handler = signal.signal(signal.SIGALRM, handler)
     signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
@@ -329,6 +380,8 @@ def timeout_context(seconds: float, message: str = "Operation timed out"):
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, old_handler)
+
+
 class GracefulDegradation:
     """Manages graceful degradation when limits are approached.
     Strategies:
@@ -337,18 +390,22 @@ class GracefulDegradation:
     - Use approximations
     - Return partial results
     """
+
     def __init__(self, tracker: ResourceTracker):
         self.tracker = tracker
         self._strategies: list[str] = []
+
     def should_skip_path(self, path_complexity: int) -> bool:
         """Check if a path should be skipped for degradation."""
         if not self.tracker.is_degraded:
             return False
         return path_complexity > 10
+
     def should_approximate_constraint(self) -> bool:
         """Check if constraints should be approximated."""
         progress = self.tracker.get_progress()
         return progress["time"] > 90 or progress["paths"] > 95
+
     def should_stop_early(self) -> bool:
         """Check if analysis should stop early."""
         try:
@@ -356,16 +413,21 @@ class GracefulDegradation:
             return False
         except LimitExceeded:
             return True
+
     def get_active_strategies(self) -> list[str]:
         """Get list of active degradation strategies."""
         return list(self._strategies)
+
     def activate_strategy(self, strategy: str) -> None:
         """Activate a degradation strategy."""
         if strategy not in self._strategies:
             self._strategies.append(strategy)
+
+
 @dataclass
 class PartialResult:
     """Represents a partial result from interrupted analysis."""
+
     completed: bool = False
     reason: str | None = None
     paths_completed: int = 0
@@ -373,6 +435,7 @@ class PartialResult:
     issues_found: list[Any] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     resource_snapshot: ResourceSnapshot | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -384,6 +447,8 @@ class PartialResult:
             "warnings": self.warnings,
             "resources": self.resource_snapshot.to_dict() if self.resource_snapshot else None,
         }
+
+
 def create_partial_result(
     tracker: ResourceTracker,
     issues: list[Any],
@@ -402,6 +467,8 @@ def create_partial_result(
         else:
             result.reason = str(error)
     return result
+
+
 __all__ = [
     "ResourceType",
     "LimitExceeded",

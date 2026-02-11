@@ -2,6 +2,7 @@
 This module provides support for analyzing function calls symbolically,
 building call graphs, and performing whole-program analysis.
 """
+
 from __future__ import annotations
 import dis
 import inspect
@@ -14,11 +15,15 @@ from typing import (
     Any,
 )
 import z3
+
 if TYPE_CHECKING:
     from pyspectre.core.state import VMState
     from pyspectre.execution.executor import ExecutionResult
+
+
 class CallType(Enum):
     """Types of function calls."""
+
     DIRECT = auto()
     INDIRECT = auto()
     BUILTIN = auto()
@@ -26,9 +31,12 @@ class CallType(Enum):
     CONSTRUCTOR = auto()
     LAMBDA = auto()
     CLOSURE = auto()
+
+
 @dataclass
 class CallSite:
     """Represents a function call site in the code."""
+
     caller: str
     callee: str | None
     call_type: CallType
@@ -38,12 +46,15 @@ class CallSite:
     return_type: str | None = None
     is_recursive: bool = False
     depth: int = 0
+
+
 @dataclass
 class FunctionSummary:
     """Summary of a function's symbolic behavior.
     Function summaries enable modular analysis by capturing
     the essential effects of a function without re-analyzing it.
     """
+
     name: str
     parameters: list[str]
     preconditions: list[z3.BoolRef] = field(default_factory=list)
@@ -54,6 +65,7 @@ class FunctionSummary:
     is_pure: bool = True
     is_total: bool = True
     max_depth_analyzed: int = 0
+
     def apply(
         self,
         args: list[Any],
@@ -74,18 +86,23 @@ class FunctionSummary:
         for pre in self.preconditions:
             constraints.append(z3.substitute(pre, list(subst.items())))
         return result, constraints
+
+
 class CallGraph:
     """Represents the call graph of analyzed functions."""
+
     def __init__(self):
         self._nodes: set[str] = set()
         self._edges: dict[str, set[str]] = {}
         self._call_sites: dict[tuple[str, str], list[CallSite]] = {}
         self._summaries: dict[str, FunctionSummary] = {}
+
     def add_function(self, name: str) -> None:
         """Add a function node to the graph."""
         self._nodes.add(name)
         if name not in self._edges:
             self._edges[name] = set()
+
     def add_call(self, caller: str, callee: str, site: CallSite) -> None:
         """Add a call edge to the graph."""
         self.add_function(caller)
@@ -95,15 +112,19 @@ class CallGraph:
         if key not in self._call_sites:
             self._call_sites[key] = []
         self._call_sites[key].append(site)
+
     def get_callees(self, caller: str) -> set[str]:
         """Get all functions called by the given function."""
         return self._edges.get(caller, set())
+
     def get_callers(self, callee: str) -> set[str]:
         """Get all functions that call the given function."""
         return {caller for caller, callees in self._edges.items() if callee in callees}
+
     def get_call_sites(self, caller: str, callee: str) -> list[CallSite]:
         """Get all call sites between two functions."""
         return self._call_sites.get((caller, callee), [])
+
     def is_recursive(self, func: str) -> bool:
         """Check if a function is directly or indirectly recursive."""
         visited = set()
@@ -118,6 +139,7 @@ class CallGraph:
                     return True
                 stack.append(callee)
         return False
+
     def topological_order(self) -> list[str]:
         """Return functions in topological order (callees before callers).
         Useful for bottom-up analysis where we analyze called functions first.
@@ -139,12 +161,15 @@ class CallGraph:
                         queue.append(caller)
         result.extend(n for n in self._nodes if n not in result)
         return result
+
     def add_summary(self, name: str, summary: FunctionSummary) -> None:
         """Store a function summary."""
         self._summaries[name] = summary
+
     def get_summary(self, name: str) -> FunctionSummary | None:
         """Retrieve a function summary."""
         return self._summaries.get(name)
+
     def to_dot(self) -> str:
         """Export call graph to DOT format for visualization."""
         lines = ["digraph CallGraph {"]
@@ -160,11 +185,14 @@ class CallGraph:
                 lines.append(f'  "{caller}" -> "{callee}";')
         lines.append("}")
         return "\n".join(lines)
+
+
 class InterproceduralAnalyzer:
     """Performs inter-procedural symbolic analysis.
     This analyzer builds call graphs and function summaries
     to analyze programs with multiple functions.
     """
+
     def __init__(
         self,
         max_inline_depth: int = 3,
@@ -177,6 +205,7 @@ class InterproceduralAnalyzer:
         self.call_graph = CallGraph()
         self._function_cache: dict[str, types.FunctionType] = {}
         self._analysis_stack: list[str] = []
+
     def analyze_module(
         self,
         module: types.ModuleType,
@@ -190,6 +219,7 @@ class InterproceduralAnalyzer:
             Dictionary mapping function names to analysis results
         """
         from pyspectre.execution.executor import SymbolicExecutor
+
         functions = {}
         for name, obj in inspect.getmembers(module):
             if inspect.isfunction(obj) and obj.__module__ == module.__name__:
@@ -217,6 +247,7 @@ class InterproceduralAnalyzer:
             finally:
                 self._analysis_stack.pop()
         return results
+
     def _extract_calls(self, func_name: str, func: types.FunctionType) -> None:
         """Extract call sites from a function's bytecode."""
         self.call_graph.add_function(func_name)
@@ -236,6 +267,7 @@ class InterproceduralAnalyzer:
                         line_number=getattr(instr, "starts_line", None),
                     )
                     self.call_graph.add_call(func_name, callee, site)
+
     def _resolve_callee(
         self,
         instructions: list[dis.Instruction],
@@ -251,6 +283,7 @@ class InterproceduralAnalyzer:
             elif instr.opname == "LOAD_FAST":
                 return None
         return None
+
     def _generate_summary(
         self,
         name: str,
@@ -274,6 +307,7 @@ class InterproceduralAnalyzer:
             summary.is_pure = False
         summary.max_depth_analyzed = result.paths_explored
         return summary
+
     def should_inline(self, callee: str, depth: int) -> bool:
         """Determine if a function call should be inlined for analysis."""
         if depth > self.max_inline_depth:
@@ -283,34 +317,45 @@ class InterproceduralAnalyzer:
         if self.use_summaries and self.call_graph.get_summary(callee):
             return False
         return True
+
     def get_call_graph_dot(self) -> str:
         """Get the call graph in DOT format."""
         return self.call_graph.to_dot()
+
+
 @dataclass
 class CallContext:
     """Represents calling context for context-sensitive analysis."""
+
     call_string: tuple[str, ...]
     max_length: int = 3
+
     def extend(self, call_site: str) -> CallContext:
         """Create new context with additional call site."""
         new_string = (*self.call_string, call_site)
         if len(new_string) > self.max_length:
             new_string = new_string[-self.max_length :]
         return CallContext(new_string, self.max_length)
+
     def __hash__(self) -> int:
         return hash(self.call_string)
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CallContext):
             return False
         return self.call_string == other.call_string
+
+
 class ContextSensitiveAnalyzer:
     """Context-sensitive inter-procedural analyzer.
     Uses k-CFA (Control Flow Analysis) style context sensitivity
     where contexts are distinguished by the last k call sites.
     """
+
     def __init__(self, k: int = 2):
         self.k = k
         self._results: dict[tuple[str, CallContext], Any] = {}
+
     def analyze_with_context(
         self,
         func: Callable,
@@ -321,10 +366,13 @@ class ContextSensitiveAnalyzer:
         if key in self._results:
             return self._results[key]
         from pyspectre.execution.executor import SymbolicExecutor
+
         executor = SymbolicExecutor()
         result = executor.execute_function(func)
         self._results[key] = result
         return result
+
+
 __all__ = [
     "CallType",
     "CallSite",

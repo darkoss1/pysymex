@@ -8,6 +8,7 @@ This module analyzes exception handling patterns including:
 - Exception chain analysis
 - Finally block analysis
 """
+
 from __future__ import annotations
 import ast
 import dis
@@ -17,8 +18,11 @@ from enum import Enum, auto
 from typing import (
     Any,
 )
+
+
 class ExceptionWarningKind(Enum):
     """Types of exception warnings."""
+
     UNCAUGHT_EXCEPTION = auto()
     TOO_BROAD_EXCEPT = auto()
     BARE_EXCEPT = auto()
@@ -31,18 +35,24 @@ class ExceptionWarningKind(Enum):
     UNREACHABLE_EXCEPT = auto()
     DUPLICATE_EXCEPT = auto()
     WRONG_EXCEPTION_ORDER = auto()
+
+
 @dataclass
 class ExceptionWarning:
     """Warning about exception handling."""
+
     kind: ExceptionWarningKind
     file: str
     line: int
     message: str
     exception_type: str | None = None
     severity: str = "warning"
+
+
 @dataclass
 class ExceptionHandler:
     """Represents an exception handler."""
+
     line: int
     exception_types: list[str]
     is_bare: bool = False
@@ -50,9 +60,12 @@ class ExceptionHandler:
     has_reraise: bool = False
     has_pass: bool = False
     has_logging: bool = False
+
+
 @dataclass
 class TryBlock:
     """Represents a try-except-finally block."""
+
     start_line: int
     end_line: int
     handlers: list[ExceptionHandler] = field(default_factory=list)
@@ -61,28 +74,34 @@ class TryBlock:
     raises_in_try: list[str] = field(default_factory=list)
     raises_in_finally: bool = False
     returns_in_finally: bool = False
+
+
 class ExceptionASTAnalyzer(ast.NodeVisitor):
     """
     AST-based exception analysis.
     """
+
     def __init__(self, file_path: str) -> None:
         self.file_path = file_path
         self.warnings: list[ExceptionWarning] = []
         self.try_blocks: list[TryBlock] = []
         self.current_function: str | None = None
         self.function_raises: dict[str, set[str]] = defaultdict(set)
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Visit function definition."""
         old_function = self.current_function
         self.current_function = node.name
         self.generic_visit(node)
         self.current_function = old_function
+
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Visit async function definition."""
         old_function = self.current_function
         self.current_function = node.name
         self.generic_visit(node)
         self.current_function = old_function
+
     def visit_Try(self, node: ast.Try) -> None:
         """Analyze try-except-finally block."""
         try_block = TryBlock(
@@ -132,6 +151,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                         )
         self.try_blocks.append(try_block)
         self.generic_visit(node)
+
     def _analyze_handler(self, handler: ast.ExceptHandler) -> ExceptionHandler:
         """Analyze a single exception handler."""
         exc_handler = ExceptionHandler(line=handler.lineno, exception_types=[])
@@ -223,6 +243,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                 )
             )
         return exc_handler
+
     def _check_handler_issues(
         self,
         handlers: list[ast.ExceptHandler],
@@ -275,6 +296,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                 seen_types.add(exc_type)
                 if exc_type in EXCEPTION_HIERARCHY:
                     broad_handlers_seen.add(exc_type)
+
     def visit_Raise(self, node: ast.Raise) -> None:
         """Track raised exceptions."""
         if self.current_function and node.exc:
@@ -284,6 +306,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
             elif isinstance(node.exc, ast.Name):
                 self.function_raises[self.current_function].add(node.exc.id)
         self.generic_visit(node)
+
     def analyze(self, source: str) -> list[ExceptionWarning]:
         """Analyze source code for exception issues."""
         try:
@@ -292,10 +315,13 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
         except SyntaxError:
             pass
         return self.warnings
+
+
 class ExceptionBytecodeAnalyzer:
     """
     Bytecode-based exception flow analysis.
     """
+
     def analyze(
         self,
         code: Any,
@@ -336,10 +362,13 @@ class ExceptionBytecodeAnalyzer:
                 if instr.arg == 1:
                     pass
         return warnings
+
+
 class UncaughtExceptionAnalyzer:
     """
     Analyzes which exceptions might propagate out of functions.
     """
+
     OPERATION_EXCEPTIONS: dict[str, list[str]] = {
         "BINARY_SUBSCR": ["KeyError", "IndexError", "TypeError"],
         "BINARY_TRUE_DIVIDE": ["ZeroDivisionError"],
@@ -353,6 +382,7 @@ class UncaughtExceptionAnalyzer:
         "IMPORT_NAME": ["ImportError", "ModuleNotFoundError"],
         "IMPORT_FROM": ["ImportError"],
     }
+
     def analyze(
         self,
         code: Any,
@@ -385,10 +415,13 @@ class UncaughtExceptionAnalyzer:
             if opname == "RAISE_VARARGS":
                 pass
         return dict(potential_exceptions)
+
+
 class ExceptionChainAnalyzer:
     """
     Analyzes exception chaining patterns (raise from).
     """
+
     def analyze_source(
         self,
         source: str,
@@ -400,22 +433,28 @@ class ExceptionChainAnalyzer:
             tree = ast.parse(source)
         except SyntaxError:
             return warnings
+
         class ChainVisitor(ast.NodeVisitor):
             def visit_Raise(self, node: ast.Raise) -> None:
                 if node.exc and not node.cause:
                     pass
                 self.generic_visit(node)
+
         visitor = ChainVisitor()
         visitor.visit(tree)
         return warnings
+
+
 class ExceptionAnalyzer:
     """
     High-level interface for exception analysis.
     """
+
     def __init__(self) -> None:
         self.bytecode_analyzer = ExceptionBytecodeAnalyzer()
         self.uncaught_analyzer = UncaughtExceptionAnalyzer()
         self.chain_analyzer = ExceptionChainAnalyzer()
+
     def analyze_source(
         self,
         source: str,
@@ -426,6 +465,7 @@ class ExceptionAnalyzer:
         warnings = ast_analyzer.analyze(source)
         warnings.extend(self.chain_analyzer.analyze_source(source, file_path))
         return warnings
+
     def analyze_function(
         self,
         code: Any,
@@ -433,6 +473,7 @@ class ExceptionAnalyzer:
     ) -> list[ExceptionWarning]:
         """Analyze function bytecode for exception issues."""
         return self.bytecode_analyzer.analyze(code, file_path)
+
     def analyze_file(self, file_path: str) -> list[ExceptionWarning]:
         """Analyze file for exception issues."""
         try:
@@ -454,6 +495,7 @@ class ExceptionAnalyzer:
             ]
         except Exception:
             return []
+
     def _analyze_nested(
         self,
         code: Any,
@@ -465,6 +507,7 @@ class ExceptionAnalyzer:
             if hasattr(const, "co_code"):
                 warnings.extend(self.analyze_function(const, file_path))
                 self._analyze_nested(const, file_path, warnings)
+
     def get_potential_exceptions(
         self,
         code: Any,

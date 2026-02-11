@@ -12,6 +12,7 @@ Features:
 - Available expressions
 - Type state tracking through branches
 """
+
 from __future__ import annotations
 import dis
 from abc import ABC, abstractmethod
@@ -25,8 +26,11 @@ from typing import (
     TypeVar,
 )
 from .type_inference import PyType, TypeAnalyzer, TypeEnvironment, TypeState
+
+
 class EdgeKind(Enum):
     """Types of CFG edges."""
+
     SEQUENTIAL = auto()
     BRANCH_TRUE = auto()
     BRANCH_FALSE = auto()
@@ -38,6 +42,8 @@ class EdgeKind(Enum):
     RAISE = auto()
     LOOP_BACK = auto()
     LOOP_EXIT = auto()
+
+
 @dataclass
 class BasicBlock:
     """
@@ -47,6 +53,7 @@ class BasicBlock:
     - One exit point (last instruction)
     - No internal branches or targets
     """
+
     id: int
     start_pc: int
     end_pc: int
@@ -63,23 +70,28 @@ class BasicBlock:
     exit_state: TypeState | None = None
     immediate_dominator: int | None = None
     dominated_blocks: set[int] = field(default_factory=set)
+
     def __hash__(self) -> int:
         return hash(self.id)
+
     def add_instruction(self, instr: dis.Instruction) -> None:
         """Add an instruction to this block."""
         self.instructions.append(instr)
         if instr.starts_line:
             self.line_numbers.add(instr.starts_line)
         self.end_pc = instr.offset
+
     def add_successor(self, block_id: int, edge_kind: EdgeKind) -> None:
         """Add a successor block."""
         self.successors.add(block_id)
         self.successor_edges[block_id] = edge_kind
+
     def get_terminator(self) -> dis.Instruction | None:
         """Get the terminating instruction of this block."""
         if self.instructions:
             return self.instructions[-1]
         return None
+
     def is_conditional(self) -> bool:
         """Check if this block ends with a conditional branch."""
         term = self.get_terminator()
@@ -95,8 +107,11 @@ class BasicBlock:
                 "SEND",
             }
         return False
+
     def __repr__(self) -> str:
         return f"BasicBlock({self.id}, pc={self.start_pc}-{self.end_pc})"
+
+
 @dataclass
 class ControlFlowGraph:
     """
@@ -107,6 +122,7 @@ class ControlFlowGraph:
     - Loop detection
     - Dominator computation
     """
+
     blocks: dict[int, BasicBlock] = field(default_factory=dict)
     entry_block_id: int = 0
     exit_block_ids: set[int] = field(default_factory=set)
@@ -116,55 +132,67 @@ class ControlFlowGraph:
     natural_loops: dict[int, set[int]] = field(default_factory=dict)
     dominators: dict[int, set[int]] = field(default_factory=dict)
     post_dominators: dict[int, set[int]] = field(default_factory=dict)
+
     def add_block(self, block: BasicBlock) -> None:
         """Add a basic block."""
         self.blocks[block.id] = block
         for pc in range(block.start_pc, block.end_pc + 1):
             self.pc_to_block[pc] = block.id
+
     def get_block(self, block_id: int) -> BasicBlock | None:
         """Get a block by ID."""
         return self.blocks.get(block_id)
+
     def get_block_at_pc(self, pc: int) -> BasicBlock | None:
         """Get the block containing a given PC."""
         block_id = self.pc_to_block.get(pc)
         if block_id is not None:
             return self.blocks.get(block_id)
         return None
+
     def get_predecessors(self, block_id: int) -> set[int]:
         """Get predecessor block IDs."""
         block = self.blocks.get(block_id)
         if block:
             return block.predecessors
         return set()
+
     def get_successors(self, block_id: int) -> set[int]:
         """Get successor block IDs."""
         block = self.blocks.get(block_id)
         if block:
             return block.successors
         return set()
+
     def is_reachable(self, block_id: int) -> bool:
         """Check if a block is reachable from entry."""
         return block_id in self.dominators
+
     def dominates(self, dominator_id: int, dominated_id: int) -> bool:
         """Check if dominator dominates dominated."""
         dom_set = self.dominators.get(dominated_id, set())
         return dominator_id in dom_set
+
     def get_immediate_dominator(self, block_id: int) -> int | None:
         """Get the immediate dominator of a block."""
         block = self.blocks.get(block_id)
         if block:
             return block.immediate_dominator
         return None
+
     def is_loop_header(self, block_id: int) -> bool:
         """Check if a block is a loop header."""
         return block_id in self.loop_headers
+
     def get_loop_body(self, header_id: int) -> set[int]:
         """Get blocks in a loop's body."""
         return self.natural_loops.get(header_id, set())
+
     def iter_blocks_forward(self) -> Iterable[BasicBlock]:
         """Iterate blocks in forward order (entry to exit)."""
         visited: set[int] = set()
         result: list[BasicBlock] = []
+
         def visit(block_id: int) -> None:
             if block_id in visited:
                 return
@@ -179,13 +207,18 @@ class ControlFlowGraph:
             result.append(block)
             for succ_id in block.successors:
                 visit(succ_id)
+
         visit(self.entry_block_id)
         return result
+
     def iter_blocks_reverse(self) -> Iterable[BasicBlock]:
         """Iterate blocks in reverse order (exit to entry)."""
         return reversed(list(self.iter_blocks_forward()))
+
+
 class CFGBuilder:
     """Builds a control flow graph from bytecode."""
+
     JUMP_OPS = {
         "JUMP_FORWARD",
         "JUMP_BACKWARD",
@@ -223,6 +256,7 @@ class CFGBuilder:
         "CHECK_EXC_MATCH",
         "CLEANUP_THROW",
     }
+
     def build(self, code: Any) -> ControlFlowGraph:
         """Build CFG from a code object."""
         instructions = list(dis.get_instructions(code))
@@ -234,6 +268,7 @@ class CFGBuilder:
         self._compute_dominators(cfg)
         self._identify_loops(cfg)
         return cfg
+
     def _find_leaders(self, instructions: list[dis.Instruction]) -> set[int]:
         """Find leader instructions that start basic blocks."""
         leaders: set[int] = set()
@@ -254,6 +289,7 @@ class CFGBuilder:
                 if i + 1 < len(instructions):
                     leaders.add(instructions[i + 1].offset)
         return leaders
+
     def _create_blocks(
         self,
         instructions: list[dis.Instruction],
@@ -289,6 +325,7 @@ class CFGBuilder:
                     block.is_exit = True
                     cfg.exit_block_ids.add(block.id)
         return cfg
+
     def _add_edges(
         self,
         cfg: ControlFlowGraph,
@@ -351,6 +388,7 @@ class CFGBuilder:
                     if next_block and next_block.id != block.id:
                         block.add_successor(next_block.id, EdgeKind.SEQUENTIAL)
                         next_block.predecessors.add(block.id)
+
     def _compute_dominators(self, cfg: ControlFlowGraph) -> None:
         """Compute dominator sets for all blocks."""
         if not cfg.blocks:
@@ -391,6 +429,7 @@ class CFGBuilder:
                 if is_immediate:
                     block.immediate_dominator = d
                     break
+
     def _identify_loops(self, cfg: ControlFlowGraph) -> None:
         """Identify natural loops in the CFG."""
         for block in cfg.blocks.values():
@@ -405,6 +444,7 @@ class CFGBuilder:
             block = cfg.blocks.get(header_id)
             if block:
                 block.is_loop_header = True
+
     def _find_natural_loop(
         self,
         cfg: ControlFlowGraph,
@@ -424,7 +464,11 @@ class CFGBuilder:
                     loop_body.add(pred_id)
                     worklist.append(pred_id)
         return loop_body
+
+
 T = TypeVar("T")
+
+
 class DataFlowAnalysis(ABC, Generic[T]):
     """
     Abstract base class for data flow analyses.
@@ -433,25 +477,32 @@ class DataFlowAnalysis(ABC, Generic[T]):
     - Must/may analysis
     - Fixed-point iteration
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         self.cfg = cfg
         self.in_facts: dict[int, T] = {}
         self.out_facts: dict[int, T] = {}
+
     @abstractmethod
     def initial_value(self) -> T:
         """Return the initial value for analysis."""
+
     @abstractmethod
     def boundary_value(self) -> T:
         """Return the boundary value (entry/exit)."""
+
     @abstractmethod
     def transfer(self, block: BasicBlock, in_fact: T) -> T:
         """Transfer function: compute output from input."""
+
     @abstractmethod
     def meet(self, facts: list[T]) -> T:
         """Meet operation: combine facts from multiple paths."""
+
     def is_forward(self) -> bool:
         """Return True for forward analysis, False for backward."""
         return True
+
     def analyze(self) -> None:
         """Run the data flow analysis to fixed point."""
         for block_id in self.cfg.blocks:
@@ -512,21 +563,29 @@ class DataFlowAnalysis(ABC, Generic[T]):
                     if new_in != self.in_facts.get(block.id):
                         self.in_facts[block.id] = new_in
                         changed = True
+
     def get_in(self, block_id: int) -> T:
         """Get input facts for a block."""
         return self.in_facts.get(block_id, self.initial_value())
+
     def get_out(self, block_id: int) -> T:
         """Get output facts for a block."""
         return self.out_facts.get(block_id, self.initial_value())
+
+
 @dataclass(frozen=True)
 class Definition:
     """Represents a variable definition."""
+
     var_name: str
     block_id: int
     pc: int
     line: int | None = None
+
     def __repr__(self) -> str:
         return f"Def({self.var_name}@{self.pc})"
+
+
 class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
     """
     Reaching definitions analysis.
@@ -536,11 +595,13 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
     - Detecting undefined variables
     - Detecting dead stores
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         super().__init__(cfg)
         self.all_defs: set[Definition] = set()
         self.defs_by_var: dict[str, set[Definition]] = defaultdict(set)
         self._collect_definitions()
+
     def _collect_definitions(self) -> None:
         """Collect all definitions in the CFG."""
         for block in self.cfg.blocks.values():
@@ -555,10 +616,13 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                     )
                     self.all_defs.add(defn)
                     self.defs_by_var[var_name].add(defn)
+
     def initial_value(self) -> frozenset[Definition]:
         return frozenset()
+
     def boundary_value(self) -> frozenset[Definition]:
         return frozenset()
+
     def transfer(
         self,
         block: BasicBlock,
@@ -579,6 +643,7 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                 )
                 result.add(defn)
         return frozenset(result)
+
     def meet(self, facts: list[frozenset[Definition]]) -> frozenset[Definition]:
         """Union: a definition reaches if it reaches on any path."""
         if not facts:
@@ -587,6 +652,7 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
         for f in facts:
             result |= f
         return frozenset(result)
+
     def get_reaching_defs_at(self, pc: int) -> frozenset[Definition]:
         """Get definitions reaching a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -608,6 +674,8 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                 )
                 result.add(defn)
         return frozenset(result)
+
+
 class LiveVariables(DataFlowAnalysis[frozenset[str]]):
     """
     Live variable analysis (backward).
@@ -617,14 +685,19 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
     - Register allocation
     - Detecting unused assignments
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         super().__init__(cfg)
+
     def is_forward(self) -> bool:
         return False
+
     def initial_value(self) -> frozenset[str]:
         return frozenset()
+
     def boundary_value(self) -> frozenset[str]:
         return frozenset()
+
     def transfer(
         self,
         block: BasicBlock,
@@ -641,6 +714,7 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
                 if var_name:
                     result.add(var_name)
         return frozenset(result)
+
     def meet(self, facts: list[frozenset[str]]) -> frozenset[str]:
         """Union: variable is live if live on any successor path."""
         if not facts:
@@ -649,6 +723,7 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
         for f in facts:
             result |= f
         return frozenset(result)
+
     def is_live_at(self, var_name: str, pc: int) -> bool:
         """Check if a variable is live at a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -666,15 +741,21 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
                 if var:
                     live.add(var)
         return var_name in live
+
+
 @dataclass
 class Use:
     """Represents a variable use."""
+
     var_name: str
     block_id: int
     pc: int
     line: int | None = None
+
     def __repr__(self) -> str:
         return f"Use({self.var_name}@{self.pc})"
+
+
 @dataclass
 class DefUseChain:
     """
@@ -684,26 +765,33 @@ class DefUseChain:
     - Taint analysis
     - Dead store detection
     """
+
     definition: Definition
     uses: set[Use] = field(default_factory=set)
+
     def add_use(self, use: Use) -> None:
         """Add a use of this definition."""
         self.uses.add(use)
+
     def is_dead(self) -> bool:
         """Check if this definition has no uses."""
         return len(self.uses) == 0
+
+
 class DefUseAnalysis:
     """
     Builds def-use chains for a function.
     Combines reaching definitions with use information
     to create precise data flow information.
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         self.cfg = cfg
         self.reaching_defs = ReachingDefinitions(cfg)
         self.chains: dict[Definition, DefUseChain] = {}
         self.reaching_defs.analyze()
         self._build_chains()
+
     def _build_chains(self) -> None:
         """Build def-use chains."""
         for defn in self.reaching_defs.all_defs:
@@ -734,13 +822,16 @@ class DefUseAnalysis:
                         if defn.var_name == var_name:
                             if defn in self.chains:
                                 self.chains[defn].add_use(use)
+
     def get_chain(self, definition: Definition) -> DefUseChain | None:
         """Get the def-use chain for a definition."""
         return self.chains.get(definition)
+
     def get_definitions_for_use(self, use: Use) -> set[Definition]:
         """Get all definitions that may reach a use."""
         reaching = self.reaching_defs.get_reaching_defs_at(use.pc)
         return {d for d in reaching if d.var_name == use.var_name}
+
     def find_dead_stores(self) -> list[Definition]:
         """Find definitions that are never used."""
         dead = []
@@ -748,15 +839,21 @@ class DefUseAnalysis:
             if chain.is_dead():
                 dead.append(defn)
         return dead
+
+
 @dataclass(frozen=True)
 class Expression:
     """Represents an expression."""
+
     operator: str
     operands: tuple[str, ...]
+
     def __repr__(self) -> str:
         if len(self.operands) == 1:
             return f"{self.operator}({self.operands[0]})"
         return f"({self.operands[0]} {self.operator} {self.operands[1]})"
+
+
 class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
     """
     Available expressions analysis.
@@ -766,10 +863,12 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
     - Common subexpression elimination
     - Optimization
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         super().__init__(cfg)
         self.all_expressions: set[Expression] = set()
         self._collect_expressions()
+
     def _collect_expressions(self) -> None:
         """Collect all expressions in the CFG."""
         for block in self.cfg.blocks.values():
@@ -801,10 +900,13 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                 elif instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
                     if stack:
                         stack.pop()
+
     def initial_value(self) -> frozenset[Expression]:
         return frozenset(self.all_expressions)
+
     def boundary_value(self) -> frozenset[Expression]:
         return frozenset()
+
     def transfer(
         self,
         block: BasicBlock,
@@ -835,6 +937,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                     result.add(expr)
                     stack.append(f"({left}{instr.argrepr}{right})")
         return frozenset(result)
+
     def meet(self, facts: list[frozenset[Expression]]) -> frozenset[Expression]:
         """Intersection: expression available only if available on all paths."""
         if not facts:
@@ -843,6 +946,8 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
         for f in facts[1:]:
             result &= f
         return frozenset(result)
+
+
 class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
     """
     Flow-sensitive type analysis.
@@ -851,6 +956,7 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
     - Type widening at merge points
     - Type refinement from isinstance/type guards
     """
+
     def __init__(
         self,
         cfg: ControlFlowGraph,
@@ -861,10 +967,13 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         self.type_analyzer = type_analyzer
         self.initial_env = initial_env or TypeEnvironment()
         self.branch_conditions: dict[int, tuple[str, PyType, bool]] = {}
+
     def initial_value(self) -> TypeEnvironment:
         return TypeEnvironment()
+
     def boundary_value(self) -> TypeEnvironment:
         return self.initial_env.copy()
+
     def transfer(
         self,
         block: BasicBlock,
@@ -875,6 +984,7 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         for instr in block.instructions:
             self._process_instruction(env, instr)
         return env
+
     def _process_instruction(
         self,
         env: TypeEnvironment,
@@ -884,6 +994,7 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
             var_name = instr.argval
             env.set_type(var_name, PyType.unknown())
+
     def meet(self, facts: list[TypeEnvironment]) -> TypeEnvironment:
         """Join environments at merge points."""
         if not facts:
@@ -892,6 +1003,7 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         for env in facts[1:]:
             result = result.join(env)
         return result
+
     def get_type_at(self, pc: int, var_name: str) -> PyType:
         """Get type of a variable at a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -903,22 +1015,32 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
                 break
             self._process_instruction(env, instr)
         return env.get_type(var_name)
+
+
 class NullState(Enum):
     """Possible null states for a variable."""
+
     DEFINITELY_NULL = auto()
     DEFINITELY_NOT_NULL = auto()
     MAYBE_NULL = auto()
     UNKNOWN = auto()
+
+
 @dataclass
 class NullInfo:
     """Null information for variables."""
+
     states: dict[str, NullState] = field(default_factory=dict)
+
     def copy(self) -> NullInfo:
         return NullInfo(states=dict(self.states))
+
     def get_state(self, var_name: str) -> NullState:
         return self.states.get(var_name, NullState.UNKNOWN)
+
     def set_state(self, var_name: str, state: NullState) -> None:
         self.states[var_name] = state
+
     def join(self, other: NullInfo) -> NullInfo:
         """Join two null infos."""
         result = NullInfo()
@@ -939,25 +1061,33 @@ class NullInfo:
             else:
                 result.states[var] = NullState.MAYBE_NULL
         return result
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, NullInfo):
             return False
         return self.states == other.states
+
     def __hash__(self) -> int:
         return hash(tuple(sorted(self.states.items())))
+
+
 class NullAnalysis(DataFlowAnalysis[NullInfo]):
     """
     Null/None pointer analysis.
     Tracks whether variables can be None at each program point.
     Handles narrowing from None checks.
     """
+
     def __init__(self, cfg: ControlFlowGraph) -> None:
         super().__init__(cfg)
         self.narrowing_conditions: dict[int, dict[str, NullState]] = {}
+
     def initial_value(self) -> NullInfo:
         return NullInfo()
+
     def boundary_value(self) -> NullInfo:
         return NullInfo()
+
     def transfer(self, block: BasicBlock, in_fact: NullInfo) -> NullInfo:
         """Transfer function for null analysis."""
         info = in_fact.copy()
@@ -971,6 +1101,7 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
         for var_name, state in narrowing.items():
             info.set_state(var_name, state)
         return info
+
     def meet(self, facts: list[NullInfo]) -> NullInfo:
         """Join null infos."""
         if not facts:
@@ -979,6 +1110,7 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
         for info in facts[1:]:
             result = result.join(info)
         return result
+
     def is_definitely_null(self, var_name: str, pc: int) -> bool:
         """Check if variable is definitely null at PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -986,6 +1118,7 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
             return False
         info = self.get_in(block.id)
         return info.get_state(var_name) == NullState.DEFINITELY_NULL
+
     def is_definitely_not_null(self, var_name: str, pc: int) -> bool:
         """Check if variable is definitely not null at PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -993,6 +1126,7 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
             return False
         info = self.get_in(block.id)
         return info.get_state(var_name) == NullState.DEFINITELY_NOT_NULL
+
     def may_be_null(self, var_name: str, pc: int) -> bool:
         """Check if variable may be null at PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -1005,6 +1139,8 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
             NullState.MAYBE_NULL,
             NullState.UNKNOWN,
         }
+
+
 class FlowSensitiveAnalyzer:
     """
     Combined flow-sensitive analyzer.
@@ -1016,6 +1152,7 @@ class FlowSensitiveAnalyzer:
     - Type flow
     - Null analysis
     """
+
     def __init__(self, code: Any) -> None:
         builder = CFGBuilder()
         self.cfg = builder.build(code)
@@ -1026,22 +1163,27 @@ class FlowSensitiveAnalyzer:
         self.def_use = DefUseAnalysis(self.cfg)
         self.null_analysis = NullAnalysis(self.cfg)
         self.null_analysis.analyze()
+
     def get_definitions_reaching(self, pc: int, var_name: str) -> set[Definition]:
         """Get definitions of a variable reaching a PC."""
         defs = self.reaching_defs.get_reaching_defs_at(pc)
         return {d for d in defs if d.var_name == var_name}
+
     def is_variable_live(self, pc: int, var_name: str) -> bool:
         """Check if a variable is live at a PC."""
         return self.live_vars.is_live_at(var_name, pc)
+
     def is_dead_store(self, definition: Definition) -> bool:
         """Check if a definition is a dead store."""
         chain = self.def_use.get_chain(definition)
         if chain:
             return chain.is_dead()
         return False
+
     def may_be_null(self, pc: int, var_name: str) -> bool:
         """Check if a variable may be null at a PC."""
         return self.null_analysis.may_be_null(var_name, pc)
+
     def is_in_loop(self, pc: int) -> bool:
         """Check if a PC is inside a loop."""
         block = self.cfg.get_block_at_pc(pc)
@@ -1051,6 +1193,7 @@ class FlowSensitiveAnalyzer:
             if block.id in body_blocks:
                 return True
         return False
+
     def get_loop_header(self, pc: int) -> int | None:
         """Get the loop header for a PC if inside a loop."""
         block = self.cfg.get_block_at_pc(pc)
@@ -1060,23 +1203,28 @@ class FlowSensitiveAnalyzer:
             if block.id in body_blocks:
                 return header_id
         return None
+
     def get_dominator(self, pc: int) -> int | None:
         """Get the immediate dominator block for a PC."""
         block = self.cfg.get_block_at_pc(pc)
         if block:
             return block.immediate_dominator
         return None
+
     def is_reachable(self, pc: int) -> bool:
         """Check if a PC is reachable from entry."""
         block = self.cfg.get_block_at_pc(pc)
         if not block:
             return False
         return self.cfg.is_reachable(block.id)
+
+
 @dataclass
 class FlowContext:
     """
     Context provided to detectors for flow-sensitive analysis.
     """
+
     cfg: ControlFlowGraph
     analyzer: FlowSensitiveAnalyzer
     pc: int
@@ -1084,6 +1232,7 @@ class FlowContext:
     reaching_defs: set[Definition]
     live_vars: set[str]
     null_info: NullInfo
+
     @classmethod
     def create(
         cls,
@@ -1109,12 +1258,15 @@ class FlowContext:
             live_vars=live,
             null_info=null_info,
         )
+
     def is_variable_defined(self, var_name: str) -> bool:
         """Check if a variable has any reaching definition."""
         return any(d.var_name == var_name for d in self.reaching_defs)
+
     def is_variable_live(self, var_name: str) -> bool:
         """Check if a variable is live."""
         return var_name in self.live_vars
+
     def may_be_null(self, var_name: str) -> bool:
         """Check if a variable may be null."""
         return self.null_info.get_state(var_name) in {
@@ -1122,9 +1274,11 @@ class FlowContext:
             NullState.MAYBE_NULL,
             NullState.UNKNOWN,
         }
+
     def is_definitely_null(self, var_name: str) -> bool:
         """Check if a variable is definitely null."""
         return self.null_info.get_state(var_name) == NullState.DEFINITELY_NULL
+
     def is_in_loop(self) -> bool:
         """Check if current location is in a loop."""
         return self.analyzer.is_in_loop(self.pc)

@@ -1,4 +1,5 @@
 """Execution module for PySpectre."""
+
 from pyspectre.execution.dispatcher import (
     OpcodeDispatcher,
     OpcodeResult,
@@ -28,6 +29,7 @@ from pyspectre.execution.verified_executor import (
     prove_termination,
     verify,
 )
+
 __all__ = [
     "OpcodeDispatcher",
     "OpcodeResult",

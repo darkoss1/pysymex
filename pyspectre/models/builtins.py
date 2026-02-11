@@ -3,6 +3,7 @@
 This module provides symbolic handlers for core Python builtins like len,
 int, str, etc. It integrates with Z3 to track constraints and side effects.
 """
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -16,21 +17,29 @@ from pyspectre.core.types import (
     SymbolicString,
     SymbolicValue,
 )
+
+
 @dataclass
 class ModelResult:
     """Result of a model application."""
+
     value: Any
     constraints: list[z3.ExprRef] = None
     side_effects: dict[str, Any] = None
+
     def __post_init__(self):
         if self.constraints is None:
             self.constraints = []
         if self.side_effects is None:
             self.side_effects = {}
+
+
 class FunctionModel(ABC):
     """Base class for function models."""
+
     name: str = "unknown"
     qualname: str = "unknown"
+
     @abstractmethod
     def apply(
         self,
@@ -47,15 +56,20 @@ class FunctionModel(ABC):
         Returns:
             ModelResult with symbolic result and any constraints
         """
+
     def matches(self, func: Any) -> bool:
         """Check if this model matches a given function."""
         if hasattr(func, "__name__"):
             return func.__name__ == self.name
         return str(func) == self.name
+
+
 class LenModel(FunctionModel):
     """Model for len()."""
+
     name = "len"
     qualname = "builtins.len"
+
     def apply(
         self,
         args: list[Any],
@@ -105,10 +119,14 @@ class LenModel(FunctionModel):
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
         )
+
+
 class RangeModel(FunctionModel):
     """Model for range()."""
+
     name = "range"
     qualname = "builtins.range"
+
     def apply(
         self,
         args: list[Any],
@@ -134,10 +152,14 @@ class RangeModel(FunctionModel):
                     == z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
                 )
         return ModelResult(value=result, constraints=constraints)
+
+
 class AbsModel(FunctionModel):
     """Model for abs()."""
+
     name = "abs"
     qualname = "builtins.abs"
+
     def apply(
         self,
         args: list[Any],
@@ -162,10 +184,14 @@ class AbsModel(FunctionModel):
             return ModelResult(value=abs(x))
         except Exception:
             return ModelResult(value=SymbolicValue.symbolic(f"abs_{state.pc}")[0])
+
+
 class MinModel(FunctionModel):
     """Model for min()."""
+
     name = "min"
     qualname = "builtins.min"
+
     def apply(
         self,
         args: list[Any],
@@ -192,10 +218,14 @@ class MinModel(FunctionModel):
                 )
         result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class MaxModel(FunctionModel):
     """Model for max()."""
+
     name = "max"
     qualname = "builtins.max"
+
     def apply(
         self,
         args: list[Any],
@@ -219,10 +249,14 @@ class MaxModel(FunctionModel):
                 )
         result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class IntModel(FunctionModel):
     """Model for int()."""
+
     name = "int"
     qualname = "builtins.int"
+
     def apply(
         self,
         args: list[Any],
@@ -247,10 +281,14 @@ class IntModel(FunctionModel):
         except Exception:
             result, constraint = SymbolicValue.symbolic(f"int_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
+
+
 class StrModel(FunctionModel):
     """Model for str()."""
+
     name = "str"
     qualname = "builtins.str"
+
     def apply(
         self,
         args: list[Any],
@@ -269,10 +307,14 @@ class StrModel(FunctionModel):
         except Exception:
             result, constraint = SymbolicString.symbolic(f"str_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
+
+
 class BoolModel(FunctionModel):
     """Model for bool()."""
+
     name = "bool"
     qualname = "builtins.bool"
+
     def apply(
         self,
         args: list[Any],
@@ -303,10 +345,14 @@ class BoolModel(FunctionModel):
         except Exception:
             result, constraint = SymbolicValue.symbolic(f"bool_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
+
+
 class PrintModel(FunctionModel):
     """Model for print() - side effect only."""
+
     name = "print"
     qualname = "builtins.print"
+
     def apply(
         self,
         args: list[Any],
@@ -314,10 +360,14 @@ class PrintModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         return ModelResult(value=SymbolicNone())
+
+
 class TypeModel(FunctionModel):
     """Model for type()."""
+
     name = "type"
     qualname = "builtins.type"
+
     def apply(
         self,
         args: list[Any],
@@ -328,10 +378,14 @@ class TypeModel(FunctionModel):
             return ModelResult(value=type)
         result, constraint = SymbolicValue.symbolic(f"type_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class IsinstanceModel(FunctionModel):
     """Model for isinstance()."""
+
     name = "isinstance"
     qualname = "builtins.isinstance"
+
     def apply(
         self,
         args: list[Any],
@@ -360,10 +414,14 @@ class IsinstanceModel(FunctionModel):
             return ModelResult(value=True)
         result, constraint = SymbolicValue.symbolic(f"isinstance_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class SortedModel(FunctionModel):
     """Model for sorted()."""
+
     name = "sorted"
     qualname = "builtins.sorted"
+
     def apply(
         self,
         args: list[Any],
@@ -382,10 +440,14 @@ class SortedModel(FunctionModel):
             )
         result, constraint = SymbolicList.symbolic(f"sorted_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class SumModel(FunctionModel):
     """Model for sum()."""
+
     name = "sum"
     qualname = "builtins.sum"
+
     def apply(
         self,
         args: list[Any],
@@ -394,10 +456,14 @@ class SumModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"sum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
+
+
 class EnumerateModel(FunctionModel):
     """Model for enumerate()."""
+
     name = "enumerate"
     qualname = "builtins.enumerate"
+
     def apply(
         self,
         args: list[Any],
@@ -406,10 +472,14 @@ class EnumerateModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"enumerate_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class ZipModel(FunctionModel):
     """Model for zip()."""
+
     name = "zip"
     qualname = "builtins.zip"
+
     def apply(
         self,
         args: list[Any],
@@ -418,10 +488,14 @@ class ZipModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"zip_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class MapModel(FunctionModel):
     """Model for map()."""
+
     name = "map"
     qualname = "builtins.map"
+
     def apply(
         self,
         args: list[Any],
@@ -430,10 +504,14 @@ class MapModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"map_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class FilterModel(FunctionModel):
     """Model for filter()."""
+
     name = "filter"
     qualname = "builtins.filter"
+
     def apply(
         self,
         args: list[Any],
@@ -442,10 +520,14 @@ class FilterModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"filter_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class FloatModel(FunctionModel):
     """Model for float()."""
+
     name = "float"
     qualname = "builtins.float"
+
     def apply(
         self,
         args: list[Any],
@@ -472,10 +554,14 @@ class FloatModel(FunctionModel):
             return ModelResult(value=SymbolicValue.from_const(float(val)))
         result, constraint = SymbolicValue.symbolic(f"float_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_float])
+
+
 class ListModel(FunctionModel):
     """Model for list()."""
+
     name = "list"
     qualname = "builtins.list"
+
     def apply(
         self,
         args: list[Any],
@@ -494,10 +580,14 @@ class ListModel(FunctionModel):
             return ModelResult(value=result, constraints=[constraint])
         result, constraint = SymbolicList.symbolic(f"list_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class TupleModel(FunctionModel):
     """Model for tuple()."""
+
     name = "tuple"
     qualname = "builtins.tuple"
+
     def apply(
         self,
         args: list[Any],
@@ -516,10 +606,14 @@ class TupleModel(FunctionModel):
             return ModelResult(value=result, constraints=[constraint])
         result, constraint = SymbolicList.symbolic(f"tuple_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class NoneModel(FunctionModel):
     """Model for NoneType/None."""
+
     name = "NoneType"
     qualname = "builtins.NoneType"
+
     def apply(
         self,
         args: list[Any],
@@ -527,10 +621,14 @@ class NoneModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         return ModelResult(value=SymbolicNone.instance())
+
+
 class IterModel(FunctionModel):
     """Model for iter()."""
+
     name = "iter"
     qualname = "builtins.iter"
+
     def apply(
         self,
         args: list[Any],
@@ -545,10 +643,14 @@ class IterModel(FunctionModel):
             return ModelResult(value=val)
         result, constraint = SymbolicValue.symbolic(f"iter_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class NextModel(FunctionModel):
     """Model for next()."""
+
     name = "next"
     qualname = "builtins.next"
+
     def apply(
         self,
         args: list[Any],
@@ -557,10 +659,14 @@ class NextModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"next_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class SuperModel(FunctionModel):
     """Model for super()."""
+
     name = "super"
     qualname = "builtins.super"
+
     def apply(
         self,
         args: list[Any],
@@ -569,10 +675,14 @@ class SuperModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"super_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class IssubclassModel(FunctionModel):
     """Model for issubclass()."""
+
     name = "issubclass"
     qualname = "builtins.issubclass"
+
     def apply(
         self,
         args: list[Any],
@@ -581,10 +691,14 @@ class IssubclassModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"issubclass_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class GlobalsModel(FunctionModel):
     """Model for globals()."""
+
     name = "globals"
     qualname = "builtins.globals"
+
     def apply(
         self,
         args: list[Any],
@@ -593,10 +707,14 @@ class GlobalsModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"globals_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class LocalsModel(FunctionModel):
     """Model for locals()."""
+
     name = "locals"
     qualname = "builtins.locals"
+
     def apply(
         self,
         args: list[Any],
@@ -605,10 +723,14 @@ class LocalsModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"locals_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class DictModel(FunctionModel):
     """Model for dict()."""
+
     name = "dict"
     qualname = "builtins.dict"
+
     def apply(
         self,
         args: list[Any],
@@ -623,10 +745,14 @@ class DictModel(FunctionModel):
             return ModelResult(value=result, constraints=[constraint])
         result, constraint = SymbolicDict.symbolic(f"dict_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class SetModel(FunctionModel):
     """Model for set()."""
+
     name = "set"
     qualname = "builtins.set"
+
     def apply(
         self,
         args: list[Any],
@@ -644,10 +770,14 @@ class SetModel(FunctionModel):
             )
         result, constraint = SymbolicValue.symbolic(f"set_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class ReversedModel(FunctionModel):
     """Model for reversed()."""
+
     name = "reversed"
     qualname = "builtins.reversed"
+
     def apply(
         self,
         args: list[Any],
@@ -665,10 +795,14 @@ class ReversedModel(FunctionModel):
             return ModelResult(value=list(reversed(val)))
         result, constraint = SymbolicList.symbolic(f"reversed_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class AllModel(FunctionModel):
     """Model for all()."""
+
     name = "all"
     qualname = "builtins.all"
+
     def apply(
         self,
         args: list[Any],
@@ -691,10 +825,14 @@ class AllModel(FunctionModel):
             return ModelResult(value=SymbolicValue.from_const(all(val)))
         result, constraint = SymbolicValue.symbolic(f"all_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class AnyModel(FunctionModel):
     """Model for any()."""
+
     name = "any"
     qualname = "builtins.any"
+
     def apply(
         self,
         args: list[Any],
@@ -717,10 +855,14 @@ class AnyModel(FunctionModel):
             return ModelResult(value=SymbolicValue.from_const(any(val)))
         result, constraint = SymbolicValue.symbolic(f"any_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class OrdModel(FunctionModel):
     """Model for ord()."""
+
     name = "ord"
     qualname = "builtins.ord"
+
     def apply(
         self,
         args: list[Any],
@@ -746,10 +888,14 @@ class OrdModel(FunctionModel):
             )
         result, constraint = SymbolicValue.symbolic(f"ord_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
+
+
 class ChrModel(FunctionModel):
     """Model for chr()."""
+
     name = "chr"
     qualname = "builtins.chr"
+
     def apply(
         self,
         args: list[Any],
@@ -775,10 +921,14 @@ class ChrModel(FunctionModel):
             )
         result, constraint = SymbolicString.symbolic(f"chr_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len == 1])
+
+
 class PowModel(FunctionModel):
     """Model for pow()."""
+
     name = "pow"
     qualname = "builtins.pow"
+
     def apply(
         self,
         args: list[Any],
@@ -796,10 +946,14 @@ class PowModel(FunctionModel):
             return ModelResult(value=SymbolicValue.from_const(pow(base, exp)))
         result, constraint = SymbolicValue.symbolic(f"pow_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class RoundModel(FunctionModel):
     """Model for round()."""
+
     name = "round"
     qualname = "builtins.round"
+
     def apply(
         self,
         args: list[Any],
@@ -816,10 +970,14 @@ class RoundModel(FunctionModel):
             return ModelResult(value=result)
         result, constraint = SymbolicValue.symbolic(f"round_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class DivmodModel(FunctionModel):
     """Model for divmod()."""
+
     name = "divmod"
     qualname = "builtins.divmod"
+
     def apply(
         self,
         args: list[Any],
@@ -851,10 +1009,14 @@ class DivmodModel(FunctionModel):
         quotient, c1 = SymbolicValue.symbolic(f"divmod_q_{state.pc}")
         remainder, c2 = SymbolicValue.symbolic(f"divmod_r_{state.pc}")
         return ModelResult(value=(quotient, remainder), constraints=[c1, c2])
+
+
 class HasattrModel(FunctionModel):
     """Model for hasattr()."""
+
     name = "hasattr"
     qualname = "builtins.hasattr"
+
     def apply(
         self,
         args: list[Any],
@@ -869,10 +1031,14 @@ class HasattrModel(FunctionModel):
             return ModelResult(value=SymbolicValue.from_const(hasattr(obj, name)))
         result, constraint = SymbolicValue.symbolic(f"hasattr_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class GetattrModel(FunctionModel):
     """Model for getattr()."""
+
     name = "getattr"
     qualname = "builtins.getattr"
+
     def apply(
         self,
         args: list[Any],
@@ -892,10 +1058,14 @@ class GetattrModel(FunctionModel):
                     return ModelResult(value=default)
         result, constraint = SymbolicValue.symbolic(f"getattr_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class SetattrModel(FunctionModel):
     """Model for setattr()."""
+
     name = "setattr"
     qualname = "builtins.setattr"
+
     def apply(
         self,
         args: list[Any],
@@ -903,10 +1073,14 @@ class SetattrModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         return ModelResult(value=SymbolicNone.instance(), side_effects={"mutates_arg": 0})
+
+
 class IdModel(FunctionModel):
     """Model for id()."""
+
     name = "id"
     qualname = "builtins.id"
+
     def apply(
         self,
         args: list[Any],
@@ -920,10 +1094,14 @@ class IdModel(FunctionModel):
             )
         result, constraint = SymbolicValue.symbolic(f"id_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
+
+
 class HashModel(FunctionModel):
     """Model for hash()."""
+
     name = "hash"
     qualname = "builtins.hash"
+
     def apply(
         self,
         args: list[Any],
@@ -936,10 +1114,14 @@ class HashModel(FunctionModel):
                 return ModelResult(value=SymbolicValue.from_const(hash(obj)))
         result, constraint = SymbolicValue.symbolic(f"hash_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
+
+
 class CallableModel(FunctionModel):
     """Model for callable()."""
+
     name = "callable"
     qualname = "builtins.callable"
+
     def apply(
         self,
         args: list[Any],
@@ -952,10 +1134,14 @@ class CallableModel(FunctionModel):
                 return ModelResult(value=SymbolicValue.from_const(callable(obj)))
         result, constraint = SymbolicValue.symbolic(f"callable_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+
 class ReprModel(FunctionModel):
     """Model for repr()."""
+
     name = "repr"
     qualname = "builtins.repr"
+
     def apply(
         self,
         args: list[Any],
@@ -968,10 +1154,14 @@ class ReprModel(FunctionModel):
                 return ModelResult(value=SymbolicString.from_const(repr(obj)))
         result, constraint = SymbolicString.symbolic(f"repr_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class FormatModel(FunctionModel):
     """Model for format()."""
+
     name = "format"
     qualname = "builtins.format"
+
     def apply(
         self,
         args: list[Any],
@@ -985,10 +1175,14 @@ class FormatModel(FunctionModel):
                 return ModelResult(value=SymbolicString.from_const(format(obj, spec)))
         result, constraint = SymbolicString.symbolic(f"format_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
+
+
 class InputModel(FunctionModel):
     """Model for input()."""
+
     name = "input"
     qualname = "builtins.input"
+
     def apply(
         self,
         args: list[Any],
@@ -997,10 +1191,14 @@ class InputModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"input_{state.pc}")
         return ModelResult(value=result, constraints=[constraint], side_effects={"io": True})
+
+
 class OpenModel(FunctionModel):
     """Model for open()."""
+
     name = "open"
     qualname = "builtins.open"
+
     def apply(
         self,
         args: list[Any],
@@ -1009,11 +1207,15 @@ class OpenModel(FunctionModel):
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"file_{state.pc}")
         return ModelResult(value=result, constraints=[constraint], side_effects={"io": True})
+
+
 class ModelRegistry:
     """Registry for function models."""
+
     def __init__(self):
         self._models: dict[str, FunctionModel] = {}
         self._register_defaults()
+
     def _register_defaults(self):
         """Register default builtin models and standard library models."""
         from pyspectre.models.dicts import DICT_MODELS
@@ -1031,6 +1233,7 @@ class ModelRegistry:
             re_models,
         )
         from pyspectre.models.strings import STRING_MODELS
+
         all_models = (
             [
                 IntModel(),
@@ -1097,14 +1300,17 @@ class ModelRegistry:
         )
         for model in all_models:
             self.register(model)
+
     def register(self, model: FunctionModel) -> None:
         """Register a function model."""
         self._models[model.name] = model
         if model.qualname != model.name:
             self._models[model.qualname] = model
+
     def get(self, name: str) -> FunctionModel | None:
         """Get a model by name."""
         return self._models.get(name)
+
     def apply(
         self,
         func: Any,
@@ -1121,12 +1327,16 @@ class ModelRegistry:
         if model:
             return model.apply(args, kwargs, state)
         return None
+
     def has_model(self, func: Any) -> bool:
         """Check if a model exists for a function."""
         if hasattr(func, "__name__"):
             return func.__name__ in self._models
         return str(func) in self._models
+
     def list_models(self) -> list[str]:
         """List all registered model names."""
         return list(set(m.name for m in self._models.values()))
+
+
 default_model_registry = ModelRegistry()

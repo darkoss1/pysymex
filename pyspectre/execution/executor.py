@@ -1,33 +1,42 @@
 """Main symbolic executor for PySpectre."""
+
 from __future__ import annotations
+
 import dis
 import inspect
 import types
-import z3
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-)
+from typing import Any
+
+import z3
+
+from pyspectre.analysis.cache import LRUCache, hash_function
+from pyspectre.analysis.abstract_interpreter import AbstractAnalyzer
+from pyspectre.analysis.cross_function import CrossFunctionAnalyzer
 from pyspectre.analysis.detectors import DetectorRegistry, Issue, IssueKind, default_registry
+from pyspectre.analysis.fp_filter import deduplicate_issues, filter_issues
+from pyspectre.analysis.loops import LoopDetector, LoopWidening
 from pyspectre.analysis.path_manager import (
     ExplorationStrategy,
     PathManager,
     create_path_manager,
 )
-from pyspectre.core.solver import ShadowSolver, is_satisfiable
+from pyspectre.analysis.state_merger import MergePolicy, StateMerger
+from pyspectre.analysis.taint import TaintTracker
+from pyspectre.analysis.type_inference import TypeAnalyzer
+from pyspectre.core.solver import ShadowSolver
 from pyspectre.core.state import VMState
 from pyspectre.core.types import SymbolicList, SymbolicString, SymbolicValue
 from pyspectre.execution.dispatcher import OpcodeDispatcher
-from pyspectre.analysis.loops import LoopDetector, LoopWidening
-from pyspectre.analysis.taint import TaintTracker
-from pyspectre.analysis.cache import LRUCache, hash_function
-from pyspectre.analysis.state_merger import StateMerger, MergePolicy
-from pyspectre.resources import ResourceTracker, ResourceLimits, LimitExceeded
-import pyspectre.execution.opcodes
+from pyspectre.resources import LimitExceeded, ResourceLimits, ResourceTracker
+import pyspectre.execution.opcodes  # noqa: F401 — side-effect import for handler registration
+
+
 @dataclass
 class ExecutionConfig:
     """Configuration for symbolic execution."""
+
     max_paths: int = 10000
     max_depth: int = 1000
     max_iterations: int = 100000
@@ -51,10 +60,17 @@ class ExecutionConfig:
     use_type_hints: bool = True
     enable_state_merging: bool = True
     merge_policy: str = "moderate"
+    enable_fp_filtering: bool = True
+    enable_cross_function: bool = True
+    enable_type_inference: bool = True
+    enable_abstract_interpretation: bool = True
     symbolic_args: dict[str, str] = field(default_factory=dict)
+
+
 @dataclass
 class ExecutionResult:
     """Result of symbolic execution."""
+
     issues: list[Issue] = field(default_factory=list)
     paths_explored: int = 0
     paths_completed: int = 0
@@ -66,12 +82,15 @@ class ExecutionResult:
     source_file: str = ""
     final_globals: dict[str, Any] = field(default_factory=dict)
     final_locals: dict[str, Any] = field(default_factory=dict)
+
     def has_issues(self) -> bool:
         """Check if any issues were found."""
         return len(self.issues) > 0
+
     def get_issues_by_kind(self, kind: IssueKind) -> list[Issue]:
         """Get issues of a specific kind."""
         return [i for i in self.issues if i.kind == kind]
+
     def format_summary(self) -> str:
         """Format a summary of results."""
         lines = [
@@ -91,6 +110,7 @@ class ExecutionResult:
         else:
             lines.append("No issues found!")
         return "\n".join(lines)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -103,8 +123,66 @@ class ExecutionResult:
             "total_time_seconds": self.total_time_seconds,
             "issues": [i.to_dict() for i in self.issues],
         }
+
+    def to_sarif(self, output_path: str | None = None) -> dict[str, Any]:
+        """Convert to SARIF v2.1.0 format for IDE/CI integration.
+
+        Uses the existing SARIFGenerator from pyspectre.reporting.sarif.
+
+        Args:
+            output_path: If provided, write the SARIF JSON to this file.
+
+        Returns:
+            SARIF log as a dictionary.
+        """
+        from pyspectre.reporting.sarif import SARIFGenerator
+
+        generator = SARIFGenerator(
+            tool_name="PySpectre",
+            tool_version="0.3.0-alpha",
+        )
+        issue_dicts = []
+        for issue in self.issues:
+            issue_dict = {
+                "type": issue.kind.name.lower(),
+                "message": issue.message,
+                "line": issue.line_number or 0,
+                "file": issue.filename or self.source_file or "",
+            }
+            counterexample = issue.get_counterexample()
+            if counterexample:
+                issue_dict["triggering_input"] = counterexample
+            issue_dicts.append(issue_dict)
+
+        sarif_log = generator.generate(
+            issues=issue_dicts,
+            analyzed_files=[self.source_file] if self.source_file else [],
+        )
+        sarif_dict = sarif_log.to_dict()
+
+        if sarif_dict.get("runs"):
+            run = sarif_dict["runs"][0]
+            if run.get("invocations"):
+                run["invocations"][0]["properties"] = {
+                    "pathsExplored": self.paths_explored,
+                    "pathsCompleted": self.paths_completed,
+                    "pathsPruned": self.paths_pruned,
+                    "coverageInstructions": len(self.coverage),
+                    "totalTimeSeconds": round(self.total_time_seconds, 3),
+                }
+
+        if output_path:
+            import json
+
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(sarif_dict, f, indent=2, default=str)
+
+        return sarif_dict
+
+
 class SymbolicExecutor:
     """Main symbolic execution engine."""
+
     def __init__(
         self,
         config: ExecutionConfig | None = None,
@@ -118,7 +196,7 @@ class SymbolicExecutor:
         self.solver = ShadowSolver(timeout_ms=self.config.solver_timeout_ms)
         self._instructions: list[dis.Instruction] = []
         self._pc_to_line: dict[int, int] = {}
-        self._worklist: PathManager = None
+        self._worklist: PathManager | None = None
         self._issues: list[Issue] = []
         self._coverage: set[int] = set()
         self._visited_states: set[int] = set()
@@ -133,6 +211,10 @@ class SymbolicExecutor:
         self._result_cache: LRUCache | None = None
         self._state_merger: StateMerger | None = None
         self._resource_tracker: ResourceTracker | None = None
+        self._cross_function: CrossFunctionAnalyzer | None = None
+        self._type_analyzer: TypeAnalyzer | None = None
+        self._abstract_analyzer: AbstractAnalyzer | None = None
+        self._effect_summaries: dict[str, Any] = {}
         if self.config.enable_taint_tracking:
             self._taint_tracker = TaintTracker()
         if self.config.enable_caching:
@@ -146,6 +228,23 @@ class SymbolicExecutor:
             self._state_merger = StateMerger(
                 policy=policy_map.get(self.config.merge_policy, MergePolicy.MODERATE)
             )
+        if self.config.enable_cross_function:
+            try:
+                self._cross_function = CrossFunctionAnalyzer()
+            except Exception:
+                pass
+
+        if self.config.enable_type_inference:
+            try:
+                self._type_analyzer = TypeAnalyzer()
+            except Exception:
+                pass
+
+        if self.config.enable_abstract_interpretation:
+            try:
+                self._abstract_analyzer = AbstractAnalyzer()
+            except Exception:
+                pass
         limits = ResourceLimits(
             max_paths=self.config.max_paths,
             max_depth=self.config.max_depth,
@@ -153,6 +252,7 @@ class SymbolicExecutor:
             timeout_seconds=self.config.timeout_seconds,
         )
         self._resource_tracker = ResourceTracker(limits=limits)
+
     def execute_function(
         self,
         func: Callable,
@@ -160,6 +260,7 @@ class SymbolicExecutor:
     ) -> ExecutionResult:
         """Symbolically execute a Python function."""
         import time
+
         cache_key = None
         if self.config.enable_caching and self._result_cache is not None:
             code = func.__code__
@@ -171,6 +272,7 @@ class SymbolicExecutor:
         self._reset()
         code = func.__code__
         self._instructions = list(dis.get_instructions(code))
+        self.dispatcher.set_instructions(self._instructions)
         self._build_line_mapping(code)
         initial_state = self._create_initial_state(func, symbolic_args or {})
         if self._taint_tracker is not None:
@@ -183,10 +285,33 @@ class SymbolicExecutor:
             self._loop_widening = LoopWidening(widening_threshold=self.config.max_loop_iterations)
         if self._state_merger is not None:
             self._state_merger.detect_join_points(self._instructions)
+
+        if self._abstract_analyzer is not None:
+            self._run_abstract_interpretation(code)
+
+        if self._cross_function is not None:
+            try:
+                self._cross_function.analyze(code)
+                self._effect_summaries = getattr(self._cross_function, "effect_summaries", {})
+            except Exception:
+                self._cross_function = None
+        if self.config.enable_type_inference:
+            try:
+                self._type_analyzer = TypeAnalyzer()
+                self._type_analyzer.analyze(code)
+            except Exception:
+                self._type_analyzer = None
         self._execute_loop()
         end_time = time.time()
+        final_issues = self._issues
+        if self.config.enable_fp_filtering:
+            try:
+                final_issues = filter_issues(final_issues)
+                final_issues = deduplicate_issues(final_issues)
+            except Exception:
+                final_issues = self._issues
         result = ExecutionResult(
-            issues=self._issues,
+            issues=final_issues,
             paths_explored=self._paths_explored,
             paths_completed=self._paths_completed,
             paths_pruned=self._paths_pruned,
@@ -198,6 +323,7 @@ class SymbolicExecutor:
         if cache_key is not None and self._result_cache is not None:
             self._result_cache.put(cache_key, result)
         return result
+
     def execute_code(
         self,
         code: types.CodeType,
@@ -213,9 +339,11 @@ class SymbolicExecutor:
             ExecutionResult with issues and statistics
         """
         import time
+
         start_time = time.time()
         self._reset()
         self._instructions = list(dis.get_instructions(code))
+        self.dispatcher.set_instructions(self._instructions)
         self._build_line_mapping(code)
         initial_state = VMState()
         if initial_globals:
@@ -235,12 +363,23 @@ class SymbolicExecutor:
         if self._state_merger is not None:
             try:
                 self._state_merger.detect_join_points(self._instructions)
-            except Exception as e:
-                print(f"DEBUG: Error in detect_join_points: {e}")
+            except Exception:
+                pass
+
+        if self._abstract_analyzer is not None:
+            self._run_abstract_interpretation(code)
+
         self._execute_loop()
         end_time = time.time()
+        final_issues = self._issues
+        if self.config.enable_fp_filtering:
+            try:
+                final_issues = filter_issues(final_issues)
+                final_issues = deduplicate_issues(final_issues)
+            except Exception:
+                final_issues = self._issues
         return ExecutionResult(
-            issues=self._issues,
+            issues=final_issues,
             paths_explored=self._paths_explored,
             paths_completed=self._paths_completed,
             paths_pruned=self._paths_pruned,
@@ -251,6 +390,7 @@ class SymbolicExecutor:
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
         )
+
     def _reset(self) -> None:
         """Reset execution state."""
         self._instructions = []
@@ -269,6 +409,7 @@ class SymbolicExecutor:
             self._taint_tracker.clear()
         if self._state_merger is not None:
             self._state_merger.reset()
+
     def _build_line_mapping(self, code: types.CodeType) -> None:
         """Build mapping from PC to source line numbers."""
         last_line = None
@@ -285,6 +426,30 @@ class SymbolicExecutor:
                 last_line = instr.starts_line
             elif last_line:
                 self._pc_to_line[i] = last_line
+
+    def _run_abstract_interpretation(self, code: Any) -> None:
+        """Run fast abstract interpretation pass."""
+        try:
+            warnings = self._abstract_analyzer.analyze_function(code)
+            for warning in warnings:
+                confidence = getattr(warning, "confidence", "possible")
+                if confidence == "definite":
+                    line = getattr(warning, "line", 0)
+                    pc = getattr(warning, "pc", 0)
+                    msg = getattr(warning, "message", str(warning))
+
+                    issue = Issue(
+                        kind=IssueKind.DIVISION_BY_ZERO,
+                        message=f"[Abstract Interpreter] {msg}",
+                        line_number=line,
+                        pc=pc,
+                        function_name=code.co_name,
+                    )
+                    self._issues.append(issue)
+                    self._issues.append(issue)
+        except Exception:
+            pass
+
     def _create_initial_state(
         self,
         func: Callable,
@@ -301,6 +466,7 @@ class SymbolicExecutor:
         if self.config and self.config.use_type_hints:
             try:
                 from typing import get_type_hints
+
                 hints = get_type_hints(func)
                 for param, hint in hints.items():
                     if param in params:
@@ -313,6 +479,7 @@ class SymbolicExecutor:
             state.local_vars[param] = sym_val
             state.add_constraint(constraint)
         return state
+
     def _hint_to_type_str(self, hint) -> str:
         """Convert a type hint to a type string for symbolic creation."""
         hint_str = str(hint).lower()
@@ -327,6 +494,7 @@ class SymbolicExecutor:
         elif "path" in hint_str:
             return "path"
         return "int"
+
     def _create_symbolic_for_type(self, name: str, type_hint: str) -> tuple[Any, z3.BoolRef]:
         """Create a symbolic value and its type constraint."""
         type_hint = type_hint.lower()
@@ -342,6 +510,7 @@ class SymbolicExecutor:
             return SymbolicValue.symbolic_path(name)
         else:
             return SymbolicValue.symbolic(name)
+
     def _execute_loop(self) -> None:
         """Main execution loop."""
         if self._worklist is None:
@@ -359,19 +528,110 @@ class SymbolicExecutor:
             if state is None:
                 break
             self._execute_step(state)
+
+    def _check_resource_limits(self, state: VMState) -> bool:
+        """Check if resource limits are exceeded."""
+        try:
+            if self._resource_tracker is not None:
+                self._resource_tracker.check_depth_limit()
+            return True
+        except LimitExceeded:
+            self._paths_pruned += 1
+            return False
+
+    def _fetch_instruction(
+        self, state: VMState
+    ) -> tuple[dis.Instruction | None, list[dis.Instruction]]:
+        """Determine active instruction list and fetch current instruction."""
+        active_instructions = state.current_instructions or self._instructions
+        if state.pc >= len(active_instructions):
+            return None, active_instructions
+        return active_instructions[state.pc], active_instructions
+
+    def _check_path_feasibility(self, state: VMState) -> bool:
+        """Check if the current path is feasible with Z3."""
+        if not self.solver.is_sat(list(state.path_constraints)):
+            self._paths_pruned += 1
+            return False
+        return True
+
+    def _handle_loop_logic(
+        self, state: VMState, active_instructions: list[dis.Instruction]
+    ) -> bool:
+        """
+        Handle loop detection, widening, and iteration limiting.
+        Returns True if execution should continue on this path, False otherwise.
+        """
+        if self._loop_detector is None or state.pc >= len(active_instructions):
+            return True
+
+        instr_offset = active_instructions[state.pc].offset
+        loop = self._loop_detector.get_loop_at(instr_offset)
+
+        if loop is None or not loop.is_header(instr_offset):
+            return True
+
+        pc_key = loop.header_pc
+        self._loop_iterations[pc_key] = self._loop_iterations.get(pc_key, 0) + 1
+
+        if self._loop_iterations[pc_key] > self.config.max_loop_iterations:
+            if self._loop_widening is not None:
+                self._loop_widening.record_iteration(loop)
+                if self._loop_widening.should_widen(loop):
+                    prev_state = getattr(self, "_prev_loop_states", {}).get(pc_key)
+                    if prev_state is not None:
+                        widened = self._loop_widening.widen_state(prev_state, state, loop)
+                        if loop.exit_pcs:
+                            widened.pc = min(loop.exit_pcs)
+                            if self._worklist:
+                                self._worklist.add_state(widened)
+                            self._paths_explored += 1
+                            if self.config.verbose:
+                                print(f"Loop at PC {pc_key}: widened and jumped to exit")
+                            return False
+
+            if self.config.verbose:
+                print(f"Loop at PC {pc_key} exceeded max iterations")
+            self._paths_pruned += 1
+            return False
+
+        if not hasattr(self, "_prev_loop_states"):
+            self._prev_loop_states = {}
+        self._prev_loop_states[pc_key] = state.fork()
+        return True
+
+    def _process_execution_result(self, result: Any, state: VMState) -> None:
+        """Process the result of an opcode execution."""
+        if result.issues:
+            for issue in result.issues:
+                issue.line_number = self._pc_to_line.get(state.pc)
+                self._issues.append(issue)
+
+        if result.terminal:
+            self._paths_completed += 1
+            return
+
+        for new_state in result.new_states:
+            new_state.depth = state.depth + 1
+            if self._worklist:
+                self._worklist.add_state(new_state)
+            if self._resource_tracker is not None:
+                self._resource_tracker.record_path()
+            self._paths_explored += 1
+
     def _execute_step(self, state: VMState) -> None:
         """Execute a single step (one instruction)."""
-        if state.pc >= len(self._instructions):
+        instr, active_instructions = self._fetch_instruction(state)
+
+        if instr is None:
             self._paths_completed += 1
             self._last_globals = state.global_vars
             self._last_locals = state.local_vars
             return
-        try:
-            if self._resource_tracker is not None:
-                self._resource_tracker.check_depth_limit()
-        except LimitExceeded:
-            self._paths_pruned += 1
+
+        if not self._check_resource_limits(state):
             return
+
         if self._state_merger is not None and self._state_merger.should_merge(state):
             merged = self._state_merger.add_state_for_merge(state)
             if merged is None:
@@ -379,50 +639,34 @@ class SymbolicExecutor:
                 return
             if merged is not state:
                 state = merged
-        if self._loop_detector is not None and state.pc < len(self._instructions):
-            instr_offset = self._instructions[state.pc].offset
-            loop = self._loop_detector.get_loop_at(instr_offset)
-            if loop is not None and loop.is_header(instr_offset):
-                pc_key = loop.header_pc
-                self._loop_iterations[pc_key] = self._loop_iterations.get(pc_key, 0) + 1
-                if self._loop_iterations[pc_key] > self.config.max_loop_iterations:
-                    if self.config.verbose:
-                        print(f"Loop at PC {pc_key} exceeded max iterations")
-                    self._paths_pruned += 1
-                    return
+
+        if not self._handle_loop_logic(state, active_instructions):
+            return
+
         state_hash = self._hash_state(state)
         if state_hash in self._visited_states:
             self._paths_pruned += 1
             return
         else:
             self._visited_states.add(state_hash)
-        instr = self._instructions[state.pc]
+
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)
-        if not self.solver.is_sat(list(state.path_constraints)):
-            self._paths_pruned += 1
+
+        if not self._check_path_feasibility(state):
             return
+
         self._run_detectors(state, instr)
+
         try:
             result = self.dispatcher.dispatch(instr, state)
+            self._process_execution_result(result, state)
         except Exception as e:
             if self.config.verbose:
                 print(f"Execution error at PC {state.pc}: {e}")
             self._paths_pruned += 1
             return
-        if result.issues:
-            for issue in result.issues:
-                issue.line_number = self._pc_to_line.get(state.pc)
-                self._issues.append(issue)
-        if result.terminal:
-            self._paths_completed += 1
-            return
-        for new_state in result.new_states:
-            new_state.depth = state.depth + 1
-            self._worklist.add_state(new_state)
-            if self._resource_tracker is not None:
-                self._resource_tracker.record_path()
-            self._paths_explored += 1
+
     def _run_detectors(self, state: VMState, instr: dis.Instruction) -> None:
         """Run enabled detectors on current state."""
         if self.detector_registry is None:
@@ -446,6 +690,7 @@ class SymbolicExecutor:
             if issue:
                 issue.line_number = self._pc_to_line.get(state.pc)
                 self._issues.append(issue)
+
     def _hash_state(self, state: VMState) -> int:
         """Create a hash of the state to detect truly redundant paths.
         For soundness, this must include all variables and the stack.
@@ -458,8 +703,11 @@ class SymbolicExecutor:
                 len(state.path_constraints),
                 stack_vals,
                 local_vals,
+                state.call_depth(),
             )
         )
+
+
 def analyze(
     func: Callable,
     symbolic_args: dict[str, str] | None = None,
@@ -482,6 +730,8 @@ def analyze(
     config = ExecutionConfig(**config_kwargs)
     executor = SymbolicExecutor(config)
     return executor.execute_function(func, symbolic_args)
+
+
 def analyze_code(
     code: str | types.CodeType,
     symbolic_vars: dict[str, str] | None = None,
@@ -502,6 +752,8 @@ def analyze_code(
     config = ExecutionConfig(**config_kwargs)
     executor = SymbolicExecutor(config)
     return executor.execute_code(code, symbolic_vars)
+
+
 def quick_check(func: Callable) -> list[Issue]:
     """
     Quick check a function for common issues.
