@@ -96,3 +96,8 @@ test_output.txt
 
 # Tool artifacts
 tmpclaude-*-cwd/
+
+# Test and example directories
+tests/
+examples/
+AUDIT_REPORT.md
