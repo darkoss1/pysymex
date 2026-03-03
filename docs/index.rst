@@ -23,7 +23,6 @@ to mathematically prove whether a bug can occur.
    userguide
    api
    advanced
-   contributing
 
 
 Quick Example
