@@ -1,0 +1,108 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pysymex"
+version = "0.1.0a0"
+description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "PySyMex Team"}
+]
+keywords = [
+    "symbolic-execution",
+    "static-analysis",
+    "bytecode",
+    "z3",
+    "educational",
+    "research-prototype",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    "z3-solver>=4.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+pysymex = "pysymex.cli:main"
+pysymex-verify = "pysymex.verify_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/darkoss1/pysymex"
+Documentation = "https://github.com/darkoss1/pysymex#readme"
+Repository = "https://github.com/darkoss1/pysymex"
+Issues = "https://github.com/darkoss1/pysymex/issues"
+
+[tool.setuptools.packages.find]
+include = ["pysymex*"]
+
+[tool.setuptools.package-data]
+pysymex = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "fast: marks tests as fast",
+    "integration: marks tests as integration tests",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py311', 'py312', 'py313']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.pyright]
+stubPath = "typings"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportUnusedImport = "warning"
+exclude = [
+    "build",
+    "_*.py",
+    "scripts",
+    "examples",
+    "benchmarks",
+    "tests",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true

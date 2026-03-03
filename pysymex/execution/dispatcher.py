@@ -1,0 +1,225 @@
+"""Opcode dispatcher with registration system.
+This module provides a decorator-based system for registering opcode handlers,
+allowing modular organization of bytecode interpretation.
+"""
+
+from __future__ import annotations
+
+
+import dis
+
+from collections.abc import Callable
+
+from dataclasses import dataclass
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pysymex.analysis.detectors import Issue
+
+    from pysymex.core.state import VMState
+
+
+@dataclass
+class OpcodeResult:
+    """Result of executing an opcode.
+    Attributes:
+        new_states: List of new VM states to explore.
+        issues: List of issues detected during execution.
+        terminal: Whether this opcode terminates execution.
+    """
+
+    new_states: list[VMState]
+
+    issues: list[Issue]
+
+    terminal: bool = False
+
+    @staticmethod
+    def continue_with(state: VMState) -> OpcodeResult:
+        """Continue execution with a single state."""
+
+        return OpcodeResult(new_states=[state], issues=[])
+
+    @staticmethod
+    def branch(states: list[VMState]) -> OpcodeResult:
+        """Branch into multiple states."""
+
+        return OpcodeResult(new_states=states, issues=[])
+
+    @staticmethod
+    def terminate() -> OpcodeResult:
+        """Terminate this execution path."""
+
+        return OpcodeResult(new_states=[], issues=[], terminal=True)
+
+    @staticmethod
+    def with_issue(state: VMState, issue: Issue) -> OpcodeResult:
+        """Continue with an issue detected."""
+
+        return OpcodeResult(new_states=[state], issues=[issue])
+
+    @staticmethod
+    def error(issue: Issue) -> OpcodeResult:
+        """Terminate with an error."""
+
+        return OpcodeResult(new_states=[], issues=[issue], terminal=True)
+
+
+OpcodeHandler = Callable[[dis.Instruction, "VMState", "OpcodeDispatcher"], OpcodeResult]
+
+
+class OpcodeDispatcher:
+    """Dispatches bytecode instructions to registered handlers.
+    This class manages a registry of opcode handlers and provides
+    the execution context for instruction interpretation.
+    Example:
+        dispatcher = OpcodeDispatcher()
+        @dispatcher.register("LOAD_FAST")
+        def handle_load_fast(instr, state, ctx):
+            ...
+    """
+
+    _global_handlers: dict[str, OpcodeHandler] = {}
+
+    def __init__(self) -> None:
+        """Initialize the dispatcher."""
+
+        self._handlers: dict[str, OpcodeHandler] = {}
+
+        self._instructions: list[dis.Instruction] = []
+
+        self._offset_to_index: dict[int, int] = {}
+
+        self._fallback_handler: OpcodeHandler | None = None
+
+        self.cross_function: Any | None = None
+
+    def register(self, *opcodes: str) -> Callable[[OpcodeHandler], OpcodeHandler]:
+        """Decorator to register a handler for one or more opcodes.
+        Args:
+            opcodes: One or more opcode names (e.g., "LOAD_FAST", "STORE_FAST").
+        Returns:
+            Decorator function.
+        Example:
+            @dispatcher.register("LOAD_FAST", "LOAD_FAST_CHECK")
+            def handle_load(instr, state, ctx):
+                ...
+        """
+
+        def decorator(handler: OpcodeHandler) -> OpcodeHandler:
+            for opcode in opcodes:
+                self._handlers[opcode] = handler
+
+            return handler
+
+        return decorator
+
+    def set_fallback(self, handler: OpcodeHandler) -> None:
+        """Set a fallback handler for unregistered opcodes."""
+
+        self._fallback_handler = handler
+
+    def set_instructions(self, instructions: list[dis.Instruction]) -> None:
+        """Set the instruction list for the current function.
+        Args:
+            instructions: List of disassembled instructions.
+        """
+
+        self._instructions = instructions
+
+        self._offset_to_index = {instr.offset: idx for idx, instr in enumerate(instructions)}
+
+    def get_instruction(self, index: int) -> dis.Instruction | None:
+        """Get instruction by index."""
+
+        if 0 <= index < len(self._instructions):
+            return self._instructions[index]
+
+        return None
+
+    def offset_to_index(self, offset: int) -> int | None:
+        """Convert bytecode offset to instruction index."""
+
+        return self._offset_to_index.get(offset)
+
+    def dispatch(self, instr: dis.Instruction, state: VMState) -> OpcodeResult:
+        """Dispatch an instruction to its handler.
+        Args:
+            instr: The bytecode instruction to execute.
+            state: The current VM state.
+        Returns:
+            OpcodeResult containing new states and any issues.
+        Raises:
+            NotImplementedError: If no handler is registered and no fallback exists.
+        """
+
+        handler = self._handlers.get(instr.opname)
+
+        if handler is None:
+            handler = OpcodeDispatcher._global_handlers.get(instr.opname)
+
+        if handler is None:
+            if self._fallback_handler is not None:
+                return self._fallback_handler(instr, state, self)
+
+            raise NotImplementedError(f"Opcode not supported: {instr.opname}")
+
+        return handler(instr, state, self)
+
+    def has_handler(self, opcode: str) -> bool:
+        """Check if a handler is registered for an opcode."""
+
+        return opcode in self._handlers or opcode in OpcodeDispatcher._global_handlers
+
+    def registered_opcodes(self) -> set[str]:
+        """Get the set of registered opcode names."""
+
+        return set(self._handlers.keys()) | set(OpcodeDispatcher._global_handlers.keys())
+
+    @classmethod
+    def register_global(cls, opcode: str, handler: OpcodeHandler) -> None:
+        """Register a handler globally for all dispatcher instances."""
+
+        cls._global_handlers[opcode] = handler
+
+    def instruction_count(self) -> int:
+        """Get the number of instructions."""
+
+        return len(self._instructions)
+
+    def __repr__(self) -> str:
+        return f"OpcodeDispatcher({len(self._handlers)} handlers)"
+
+
+_global_dispatcher: OpcodeDispatcher | None = None
+
+
+def get_global_dispatcher() -> OpcodeDispatcher:
+    """Get or create the global opcode dispatcher."""
+
+    global _global_dispatcher
+
+    if _global_dispatcher is None:
+        _global_dispatcher = OpcodeDispatcher()
+
+    return _global_dispatcher
+
+
+def opcode_handler(*opcodes: str) -> Callable[[OpcodeHandler], OpcodeHandler]:
+    """Decorator to register an opcode handler globally.
+    Handlers registered with this decorator are available to all
+    OpcodeDispatcher instances.
+    Example:
+        @opcode_handler("LOAD_FAST")
+        def handle_load_fast(instr, state, ctx):
+            ...
+    """
+
+    def decorator(handler: OpcodeHandler) -> OpcodeHandler:
+        for opcode in opcodes:
+            OpcodeDispatcher.register_global(opcode, handler)
+
+        return handler
+
+    return decorator

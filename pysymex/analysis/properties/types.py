@@ -1,0 +1,161 @@
+"""Property types for PySyMex property-based verification.
+
+Defines the core data types: PropertyKind, ProofStatus, PropertySpec, PropertyProof.
+"""
+
+from __future__ import annotations
+
+
+import builtins
+
+from dataclasses import dataclass, field
+
+from enum import Enum, auto
+
+from typing import Any
+
+
+import z3
+
+
+class PropertyKind(Enum):
+    """Categories of mathematical properties."""
+
+    COMMUTATIVITY = auto()
+
+    ASSOCIATIVITY = auto()
+
+    DISTRIBUTIVITY = auto()
+
+    IDENTITY = auto()
+
+    INVERSE = auto()
+
+    IDEMPOTENCE = auto()
+
+    ABSORPTION = auto()
+
+    MONOTONIC_INC = auto()
+
+    MONOTONIC_DEC = auto()
+
+    STRICT_MONOTONIC_INC = auto()
+
+    STRICT_MONOTONIC_DEC = auto()
+
+    LOWER_BOUND = auto()
+
+    UPPER_BOUND = auto()
+
+    BOUNDED = auto()
+
+    NON_NEGATIVE = auto()
+
+    POSITIVE = auto()
+
+    PRESERVES_SIGN = auto()
+
+    EVEN_FUNCTION = auto()
+
+    ODD_FUNCTION = auto()
+
+    EQUIVALENCE = auto()
+
+    REFINEMENT = auto()
+
+    TERMINATION = auto()
+
+    DETERMINISTIC = auto()
+
+    INJECTIVE = auto()
+
+    SURJECTIVE = auto()
+
+    BIJECTIVE = auto()
+
+
+class ProofStatus(Enum):
+    """Status of a property proof."""
+
+    PROVEN = auto()
+
+    DISPROVEN = auto()
+
+    UNKNOWN = auto()
+
+    TIMEOUT = auto()
+
+    CONDITIONAL = auto()
+
+
+@dataclass
+class PropertySpec:
+    """Specification of a property to verify."""
+
+    kind: PropertyKind
+
+    name: str
+
+    description: str = ""
+
+    constraints: list[z3.BoolRef] = field(default_factory=list[z3.BoolRef])
+
+    lower_bound: z3.ExprRef | None = None
+
+    upper_bound: z3.ExprRef | None = None
+
+    equivalent_expr: z3.ExprRef | None = None
+
+
+@dataclass
+class PropertyProof:
+    """Result of attempting to prove a property."""
+
+    property: PropertySpec
+
+    status: ProofStatus
+
+    counterexample: dict[str, Any] | None = None
+
+    witness: dict[str, Any] | None = None
+
+    conditions: list[z3.BoolRef] = field(default_factory=list[z3.BoolRef])
+
+    time_seconds: float = 0.0
+
+    @builtins.property
+    def is_proven(self) -> bool:
+        return self.status == ProofStatus.PROVEN
+
+    @builtins.property
+    def is_disproven(self) -> bool:
+        return self.status == ProofStatus.DISPROVEN
+
+    def format(self) -> str:
+        """Format proof result for display."""
+
+        status_symbol = {
+            ProofStatus.PROVEN: "✓",
+            ProofStatus.DISPROVEN: "✗",
+            ProofStatus.UNKNOWN: "?",
+            ProofStatus.TIMEOUT: "⏱",
+            ProofStatus.CONDITIONAL: "⚠",
+        }
+
+        result = f"{status_symbol.get(self.status, '?')} {self.property.name}: {self.status.name}"
+
+        if self.counterexample:
+            result += f"\n  Counterexample: {self.counterexample}"
+
+        if self.conditions:
+            result += f"\n  Conditions: {len(self.conditions)} additional constraints"
+
+        return result
+
+
+__all__ = [
+    "PropertyKind",
+    "ProofStatus",
+    "PropertySpec",
+    "PropertyProof",
+]
