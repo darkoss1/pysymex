@@ -123,30 +123,44 @@ def analyze_source_context(
     Returns:
         Tuple of (ContextType, confidence)
     """
+    def check_content(content: str) -> tuple[ContextType, float] | None:
+        for pattern in PRODUCTION_PATTERNS:
+            if pattern.search(content):
+                return ContextType.PRODUCTION_CHECK, 0.85
+
+        for pattern in CONFIG_PATTERNS:
+            if pattern.search(content):
+                return ContextType.CONFIG_GUARD, 0.8
+
+        if "isinstance(" in content:
+            return ContextType.TYPE_GUARD, 0.8
+
+        if " is None" in content or " is not None" in content:
+            return ContextType.NULL_GUARD, 0.85
+
+        for exc_name, context_type in RAISE_PATTERNS.items():
+            if f"raise {exc_name}" in content:
+                # If we raise a specific error, increase confidence if it matches the context
+                return context_type, 0.75
+        return None
+
     if line_number is not None:
         source_lines = source_code.splitlines()
         if 1 <= line_number <= len(source_lines):
+            # First check the target line itself with high confidence
+            target_line = source_lines[line_number - 1]
+            result = check_content(target_line)
+            if result:
+                return result
+
+            # Otherwise check nearby lines
             start = max(0, line_number - 2)
             end = min(len(source_lines), line_number + 1)
             source_code = "\n".join(source_lines[start:end])
 
-    for pattern in PRODUCTION_PATTERNS:
-        if pattern.search(source_code):
-            return ContextType.PRODUCTION_CHECK, 0.85
-
-    for pattern in CONFIG_PATTERNS:
-        if pattern.search(source_code):
-            return ContextType.CONFIG_GUARD, 0.8
-
-    for exc_name, context_type in RAISE_PATTERNS.items():
-        if f"raise {exc_name}" in source_code:
-            return context_type, 0.75
-
-    if "isinstance(" in source_code:
-        return ContextType.TYPE_GUARD, 0.7
-
-    if " is None" in source_code or " is not None" in source_code:
-        return ContextType.NULL_GUARD, 0.7
+    result = check_content(source_code)
+    if result:
+        return result
 
     return ContextType.UNKNOWN, 0.3
 

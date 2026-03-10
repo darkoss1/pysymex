@@ -15,6 +15,8 @@ Implementation spread across three sub-modules:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import dis
 from collections.abc import Sequence
@@ -127,7 +129,7 @@ class StaticAnalyzer:
             try:
                 flow_analyzer = FlowSensitiveAnalyzer(code)
             except (ValueError, TypeError):
-                pass
+                pass  # Used as expected type-check or feature fallback
 
         for instr in instructions:
             line_no = self._extract_line_number(instr, code)

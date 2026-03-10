@@ -53,11 +53,26 @@ class LoopDetector:
     def _build_cfg(self, instructions: list[dis.Instruction]) -> dict[int, set[int]]:
         """Build control flow graph from instructions."""
         cfg: dict[int, set[int]] = {}
+        # BUG-008 fix: include all unconditional jump variants emitted by CPython.
+        # JUMP_BACKWARD_NO_INTERRUPT and JUMP_NO_INTERRUPT are used in tight loops
+        # to skip the signal-check overhead of JUMP_BACKWARD.  Without them, loops
+        # using those opcodes are not recognised as back edges and widening is never
+        # triggered.
+        _unconditional_jumps = frozenset(
+            {
+                "JUMP_FORWARD",
+                "JUMP_BACKWARD",
+                "JUMP_BACKWARD_NO_INTERRUPT",
+                "JUMP_ABSOLUTE",
+                "JUMP",
+                "JUMP_NO_INTERRUPT",
+            }
+        )
         for i, instr in enumerate(instructions):
             pc = instr.offset
             if pc not in cfg:
                 cfg[pc] = set()
-            if instr.opname in ("JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_ABSOLUTE"):
+            if instr.opname in _unconditional_jumps:
                 cfg[pc].add(instr.argval)
             elif instr.opname in (
                 "POP_JUMP_IF_TRUE",
@@ -570,11 +585,11 @@ class LoopWidening:
             if old_val is not None and new_val is not None:
                 widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
                 widened.locals[name] = widened_sym
-                widened.path_constraints.append(type_constraint)
-                widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
+                widened.path_constraints = widened.path_constraints.append(type_constraint)
+                widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
                 if loop.bound is not None:
                     final = iv.final_value(loop.bound.upper)
-                    widened.path_constraints.append(widened_sym.z3_int <= final)
+                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= final)
         for name in set(old_state.locals.keys()) | set(new_state.locals.keys()):
             if name in loop.induction_vars:
                 continue
@@ -584,8 +599,9 @@ class LoopWidening:
                 if isinstance(old_val, SymbolicValue) and isinstance(new_val, SymbolicValue):
                     widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
                     widened.locals[name] = widened_sym
-                    widened.path_constraints.append(type_constraint)
+                    widened.path_constraints = widened.path_constraints.append(type_constraint)
         return widened
+
 
 
 __all__ = [

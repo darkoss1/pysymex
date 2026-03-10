@@ -3,6 +3,9 @@ pysymex - Core detectors, advanced detectors, and registry.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import dis
 from abc import ABC, abstractmethod
@@ -308,7 +311,7 @@ def _pure_check_division_by_zero(
                     pc=pc,
                 )
         except (ValueError, TypeError):
-            pass
+            pass  # Used as expected type-check or feature fallback
         return None
 
     zero_constraint = [
@@ -913,7 +916,7 @@ class EnhancedIndexErrorDetector(Detector):
                         pc=state.pc,
                     )
             except (ValueError, TypeError):
-                pass
+                pass  # Used as expected type-check or feature fallback
         return None
 
     def _check_unbounded_index(self, state: VMState, index: SymbolicValue) -> Issue | None:
@@ -1278,7 +1281,9 @@ class UnboundVariableDetector(Detector):
 
             if len(var_name) <= 2 and var_name[0].isupper():
                 return None
-            if state.get_local(var_name) is None:
+            from pysymex.core.state import UNBOUND
+
+            if state.get_local(var_name) is UNBOUND:
                 return Issue(
                     kind=IssueKind.UNBOUND_VARIABLE,
                     message=f"Variable '{var_name}' may be unbound (NameError)",
@@ -1432,7 +1437,7 @@ def _create_default_registry() -> DetectorRegistry:
 
         register_advanced_detectors(registry)
     except (ImportError, AttributeError):
-        pass
+        pass  # Used as expected type-check or feature fallback
     return registry
 
 

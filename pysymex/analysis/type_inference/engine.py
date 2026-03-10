@@ -7,6 +7,8 @@ Contains:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import inspect
 from collections.abc import Callable
@@ -154,7 +156,7 @@ class TypeInferenceEngine:
                 try:
                     stub_func = self.stub_resolver.repository.get_function_type(module, name)
                 except (AttributeError, KeyError, TypeError):
-                    pass
+                    pass  # Used as expected type-check or feature fallback
         sig = inspect.signature(func)
         param_types: list[PyType] = []
         for param_name, param in sig.parameters.items():
@@ -482,7 +484,7 @@ class TypeInferenceEngine:
                 if stub_type is not None and hasattr(stub_type, "to_pytype"):
                     return stub_type.to_pytype()
             except (AttributeError, KeyError, TypeError):
-                pass
+                pass  # Used as expected type-check or feature fallback
         return PyType.any_()
 
     def infer_call_result(

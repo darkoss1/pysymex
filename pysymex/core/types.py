@@ -49,15 +49,25 @@ SYMBOLIC_CACHE_LIMIT: int = 1024
 
 
 def _merge_taint(
-    a: frozenset[str] | set[str],
-    b: frozenset[str] | set[str],
-) -> frozenset[str]:
-    """Merge two taint-label sets into a frozen set."""
+    a: frozenset[str] | set[str] | None,
+    b: frozenset[str] | set[str] | None,
+) -> frozenset[str] | None:
+    """Merge two taint-label sets into a frozen set.
+
+    Handles None inputs (meaning 'no taint') gracefully:
+    - None + None → None
+    - None + labels → labels
+    - labels + None → labels
+    - labels + labels → union
+    """
+    if a is None and b is None:
+        return None
     if not a:
-        return frozenset(b)
+        return frozenset(b) if b else None
     if not b:
         return frozenset(a)
     return frozenset(a | b)
+
 
 
 int_to_bv = _int_to_bv
@@ -207,6 +217,12 @@ class SymbolicValue(SymbolicType):
     is_path: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
     is_none: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
     taint_labels: frozenset[str] = field(default_factory=frozenset, compare=False)
+    _constant_value: Any = field(default=None, compare=False, repr=False)
+
+    @property
+    def value(self) -> Any:
+        return self._constant_value
+
 
     _truthy_cache: z3.BoolRef | None = field(default=None, init=False, repr=False, compare=False)
     _falsy_cache: z3.BoolRef | None = field(default=None, init=False, repr=False, compare=False)
@@ -230,6 +246,17 @@ class SymbolicValue(SymbolicType):
         h = (h * 31) ^ self.is_bool.hash()
         h = (h * 31) ^ self.is_none.hash()
         return h
+
+    def __hash__(self) -> int:
+        """Return a stable hash so SymbolicValue works in sets and as dict keys.
+
+        CPython sets __hash__ = None for dataclasses that define __eq__ without
+        __hash__, which makes instances unhashable and causes `if sv == other:`
+        comparisons to always be truthy (non-None object is truthy). By
+        explicitly delegating to hash_value() we restore both invariants.
+        (Fixes BUG-003.)
+        """
+        return self.hash_value()
 
     def could_be_truthy(self) -> z3.BoolRef:
         cached = self._truthy_cache
@@ -399,6 +426,8 @@ class SymbolicValue(SymbolicType):
         Caches None, True, False, and small integers to avoid repeated
         Z3 allocation.
         """
+        if isinstance(value, SymbolicValue):
+            return value
         if value is None:
             cached = FROM_CONST_CACHE.get("None")
             if cached is not None:
@@ -419,6 +448,7 @@ class SymbolicValue(SymbolicType):
             cached = FROM_CONST_CACHE.get(key)
             if cached is not None:
                 return cached
+            
             if value:
                 sv = SymbolicValue(
                     _name="True",
@@ -427,6 +457,7 @@ class SymbolicValue(SymbolicType):
                     z3_bool=Z3_TRUE,
                     is_bool=Z3_TRUE,
                     is_path=Z3_FALSE,
+                    _constant_value=True,
                 )
             else:
                 sv = SymbolicValue(
@@ -436,7 +467,9 @@ class SymbolicValue(SymbolicType):
                     z3_bool=Z3_FALSE,
                     is_bool=Z3_TRUE,
                     is_path=Z3_FALSE,
+                    _constant_value=False,
                 )
+
             FROM_CONST_CACHE[key] = sv
             return sv
         if isinstance(value, int):
@@ -451,7 +484,9 @@ class SymbolicValue(SymbolicType):
                 z3_bool=Z3_FALSE,
                 is_bool=Z3_FALSE,
                 is_path=Z3_FALSE,
+                _constant_value=value,
             )
+
             if len(FROM_CONST_CACHE) < FROM_CONST_CACHE_LIMIT:
                 FROM_CONST_CACHE[key] = sv
             return sv
@@ -466,6 +501,7 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             is_path=Z3_FALSE,
+            _constant_value=value,
         )
         sv._enhanced_object = value
         return sv
@@ -555,6 +591,8 @@ class SymbolicValue(SymbolicType):
 
     def __mod__(self, other: object) -> SymbolicValue:
         other = SymbolicValue.from_const(other)
+        if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
+            raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
         return SymbolicValue(
             _name=f"({self._name}%{other._name})",
@@ -567,6 +605,8 @@ class SymbolicValue(SymbolicType):
 
     def __floordiv__(self, other: object) -> SymbolicValue:
         other = SymbolicValue.from_const(other)
+        if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
+            raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
         return SymbolicValue(
             _name=f"({self._name}//{other._name})",
@@ -580,6 +620,8 @@ class SymbolicValue(SymbolicType):
 
     def __truediv__(self, other: object) -> SymbolicValue:
         other = SymbolicValue.from_const(other)
+        if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
+            raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
         is_path = self.is_path
         return SymbolicValue(
@@ -740,9 +782,12 @@ class SymbolicValue(SymbolicType):
         )
 
     def __rshift__(self, other: SymbolicValue) -> SymbolicValue:
+        # BUG-005 fix: Python >> is ARITHMETIC shift (sign-preserving).
+        # z3.LShR fills with 0s (logical shift) — wrong for negative values.
+        # On z3.BitVecRef, the >> operator is arithmetic shift right.
         return SymbolicValue(
             _name=f"({self._name}>>{other._name})",
-            z3_int=_bv_to_int(z3.LShR(_int_to_bv(self.z3_int), _int_to_bv(other.z3_int))),
+            z3_int=_bv_to_int(_int_to_bv(self.z3_int) >> _int_to_bv(other.z3_int)),
             is_int=z3.And(self.is_int, other.is_int),
             z3_bool=self.z3_bool,
             is_bool=z3.BoolVal(False),

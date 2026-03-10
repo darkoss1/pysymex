@@ -216,7 +216,7 @@ class StateMerger:
         s2 = z3.simplify(c2)
 
         if z3.eq(s1, z3.simplify(z3.Not(s2))):
-            return s2, common_len
+            return s1, common_len
         if z3.eq(s2, z3.simplify(z3.Not(s1))):
             return s1, common_len
 
@@ -231,6 +231,22 @@ class StateMerger:
         def _merge_pair(left: object, right: object, merge_condition: z3.BoolRef) -> object | None:
             from pysymex.core.types import SymbolicValue
 
+            # Refuse to merge incompatible container types (e.g. list vs int)
+            from pysymex.core.types_containers import (
+                SymbolicDict,
+                SymbolicList,
+                SymbolicObject,
+                SymbolicString,
+            )
+            _CONTAINER_TYPES = (SymbolicList, SymbolicDict, SymbolicString, SymbolicObject)
+            left_is_container = isinstance(left, _CONTAINER_TYPES)
+            right_is_container = isinstance(right, _CONTAINER_TYPES)
+            if left_is_container != right_is_container:
+                return None  # incompatible types (e.g. list vs int)
+            if left_is_container and right_is_container and type(left) is not type(right):
+                return None  # different container types (e.g. list vs dict)
+
+
             left_symbolic = (
                 left if hasattr(left, "conditional_merge") else SymbolicValue.from_const(left)
             )
@@ -241,6 +257,7 @@ class StateMerger:
                 return left_symbolic.conditional_merge(right_symbolic, merge_condition)
             except TypeError:
                 return None
+
 
         merged = state1.fork()
 

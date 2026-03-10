@@ -7,6 +7,8 @@ This module provides filtering mechanisms to reduce false positives from:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import re
 from dataclasses import dataclass
@@ -190,7 +192,7 @@ def _model_involves_havoc(issue: Issue) -> bool:
             if decl.name().startswith("havoc_"):
                 return True
     except Exception:
-        pass
+        pass  # Used as expected type-check or feature fallback
     return False
 
 

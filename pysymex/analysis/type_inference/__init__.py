@@ -14,6 +14,8 @@ This module also contains:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import inspect
 import threading
@@ -184,7 +186,7 @@ class TypeAnalyzer:
                     ):
                         initial_env.set_type(param_name, param_type)
                 except (ValueError, TypeError):
-                    pass
+                    pass  # Used as expected type-check or feature fallback
 
             if initial_types:
                 for name, typ in initial_types.items():

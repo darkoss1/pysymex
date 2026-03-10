@@ -432,7 +432,7 @@ class OpcodeHandlersMixin:
             try:
                 result = SymValue(z3.Not(result.expr), sym_type=SymType.BOOL)
             except z3.Z3Exception:
-                pass
+                pass  # Used as expected type-check or feature fallback
 
         state.push(result)
         return result

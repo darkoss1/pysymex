@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dis
+import logging
 from typing import TYPE_CHECKING
 
 import z3
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from pysymex._typing import StackValue
     from pysymex.core.state import VMState
     from pysymex.execution.dispatcher import OpcodeDispatcher
+
+logger = logging.getLogger(__name__)
 
 
 def check_division_by_zero(
@@ -57,7 +60,7 @@ def check_division_by_zero(
         right.z3_int == 0,
     ]
     if is_satisfiable(zero_check):
-        print(f"DEBUG: Division by zero SAT for {right.name} at PC {state.pc}")
+        logger.debug("Division by zero SAT for %s at PC %d", right.name, state.pc)
         issues.append(
             Issue(
                 kind=IssueKind.DIVISION_BY_ZERO,
@@ -114,7 +117,14 @@ def _is_concrete_zero_divisor(value: SymbolicValue) -> bool:
 def handle_unary_positive(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Unary positive - essentially no-op."""
+    """Unary positive — pop TOS, push +TOS (identity for numeric types).
+
+    BUG-009 fix: the previous implementation advanced PC without touching
+    the stack, leaving TOS in place instead of popping and re-pushing it.
+    For numeric types +x == x, so we simply pop and push back unchanged.
+    """
+    top = state.pop()
+    state = state.push(top)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
@@ -183,7 +193,6 @@ def handle_binary_add(
     ):
         result = left + right
     else:
-
         type_error_cond = [
             *state.path_constraints,
             z3.Not(z3.And(getattr(left, "is_int", Z3_FALSE), getattr(right, "is_int", Z3_FALSE))),
@@ -532,9 +541,12 @@ def _get_binop_result(
         and op_code in {"+", "+="}
     ):
         result = left + right
+    elif isinstance(left, SymbolicString) and op_code in {"%", "%="}:
+        # BUG-007 fix: string % args formatting is valid Python — don't emit
+        # a TypeError.  Produce a fresh symbolic string as the result.
+        result, _ = SymbolicValue.symbolic(f"str_format_{state.pc}")
 
     if result is None:
-
         if op_code in ("+", "+=", "-", "-=", "*", "*=", "/", "/=", "//", "//=", "%", "%="):
             type_error_cond = list(state.path_constraints)
             if is_satisfiable(type_error_cond):
@@ -551,7 +563,6 @@ def _get_binop_result(
                 terminal = True
 
         if not terminal:
-
             result, _ = SymbolicValue.symbolic(f"binop_{state.pc}_fallback")
 
     return result, issues, terminal

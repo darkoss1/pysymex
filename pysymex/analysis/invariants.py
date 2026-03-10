@@ -8,6 +8,8 @@ This module provides:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import re
 from collections.abc import Callable
@@ -352,11 +354,11 @@ def _parse_value(s: str, self_attrs: dict[str, z3.ExprRef]) -> z3.ExprRef:
     try:
         return z3.IntVal(int(s))
     except ValueError:
-        pass
+        pass  # Used as expected type-check or feature fallback
     try:
         return z3.RealVal(float(s))
     except ValueError:
-        pass
+        pass  # Used as expected type-check or feature fallback
     return z3.Int(s)
 
 

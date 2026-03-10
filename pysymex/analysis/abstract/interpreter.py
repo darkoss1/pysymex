@@ -12,6 +12,8 @@ Features:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import dis
 from collections import defaultdict
@@ -355,7 +357,7 @@ class AbstractInterpreter:
                     for _ in range(effect):
                         state.push(NumericProduct.top())
             except (ValueError, TypeError):
-                pass
+                pass  # Used as expected type-check or feature fallback
 
 
 class AbstractAnalyzer:

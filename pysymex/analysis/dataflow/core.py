@@ -393,7 +393,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                 if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
                     stack.append(str(instr.argval))
                 elif instr.opname == "LOAD_CONST":
-                    stack.append(f"const_{instr .argval }")
+                    stack.append(f"const_{instr.argval}")
                 elif instr.opname == "BINARY_OP":
                     if len(stack) >= 2:
                         right = stack.pop()
@@ -403,7 +403,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                             operands=(left, right),
                         )
                         self.all_expressions.add(expr)
-                        stack.append(f"({left }{instr .argrepr }{right })")
+                        stack.append(f"({left}{instr.argrepr}{right})")
                 elif instr.opname == "UNARY_OP":
                     if stack:
                         operand = stack.pop()
@@ -412,7 +412,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                             operands=(operand,),
                         )
                         self.all_expressions.add(expr)
-                        stack.append(f"({instr .argrepr }{operand })")
+                        stack.append(f"({instr.argrepr}{operand})")
                 elif instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
                     if stack:
                         stack.pop()
@@ -435,7 +435,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
             if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
                 stack.append(str(instr.argval))
             elif instr.opname == "LOAD_CONST":
-                stack.append(f"const_{instr .argval }")
+                stack.append(f"const_{instr.argval}")
             elif instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
                 var_name = str(instr.argval)
                 to_remove = {e for e in result if var_name in e.operands}
@@ -451,7 +451,7 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                         operands=(left, right),
                     )
                     result.add(expr)
-                    stack.append(f"({left }{instr .argrepr }{right })")
+                    stack.append(f"({left}{instr.argrepr}{right})")
         return frozenset(result)
 
     def meet(self, facts: list[frozenset[Expression]]) -> frozenset[Expression]:
@@ -513,8 +513,14 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         """Process a single instruction for type flow."""
         if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
             var_name = instr.argval
-            if prev_instr is not None and prev_instr.opname == "LOAD_CONST":
-                env.set_type(var_name, self._type_from_const(prev_instr.argval))
+            if prev_instr is not None:
+                if prev_instr.opname == "LOAD_CONST":
+                    env.set_type(var_name, self._type_from_const(prev_instr.argval))
+                elif prev_instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
+                    loaded_var = prev_instr.argval
+                    env.set_type(var_name, env.get_type(loaded_var))
+                else:
+                    env.set_type(var_name, PyType.unknown())
             else:
                 env.set_type(var_name, PyType.unknown())
 
@@ -586,11 +592,22 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
         for instr in block.instructions:
             if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
                 var_name = instr.argval
-                if prev_instr is not None and prev_instr.opname == "LOAD_CONST":
-                    if prev_instr.argval is None:
-                        info.set_state(var_name, NullState.DEFINITELY_NULL)
+                if prev_instr is not None:
+                    if prev_instr.opname == "LOAD_CONST":
+                        if prev_instr.argval is None:
+                            info.set_state(var_name, NullState.DEFINITELY_NULL)
+                        else:
+                            info.set_state(var_name, NullState.DEFINITELY_NOT_NULL)
+                    elif prev_instr.opname in {
+                        "LOAD_NAME",
+                        "LOAD_FAST",
+                        "LOAD_GLOBAL",
+                        "LOAD_DEREF",
+                    }:
+                        loaded_var = prev_instr.argval
+                        info.set_state(var_name, info.get_state(loaded_var))
                     else:
-                        info.set_state(var_name, NullState.DEFINITELY_NOT_NULL)
+                        info.set_state(var_name, NullState.MAYBE_NULL)
                 else:
                     info.set_state(var_name, NullState.MAYBE_NULL)
             prev_instr = instr

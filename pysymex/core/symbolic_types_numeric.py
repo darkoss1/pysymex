@@ -25,6 +25,8 @@ class SymbolicBool(SymbolicType):
     z3_bool: z3.BoolRef
     _name: str = field(default="")
 
+    __hash__ = object.__hash__
+
     def __post_init__(self):
         if not self._name:
             self._name = fresh_name("bool")
@@ -98,6 +100,8 @@ class SymbolicInt(SymbolicType):
     z3_int: z3.ArithRef
     _name: str = field(default="")
 
+    __hash__ = object.__hash__
+
     def __post_init__(self):
         if not self._name:
             self._name = fresh_name("int")
@@ -167,23 +171,30 @@ class SymbolicInt(SymbolicType):
         return SymbolicInt(z3.If(self.z3_int >= 0, self.z3_int, -self.z3_int))
 
     def __mod__(self, other: SymbolicInt) -> SymbolicInt:
-
         divisor = other.z3_int
+        if z3.is_int_value(divisor) and divisor.as_long() == 0:
+            raise ZeroDivisionError("integer modulo by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
         return SymbolicInt(self.z3_int % safe_divisor)
 
     def __floordiv__(self, other: SymbolicInt) -> SymbolicInt:
-
         divisor = other.z3_int
+        if z3.is_int_value(divisor) and divisor.as_long() == 0:
+            raise ZeroDivisionError("integer division by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
         return SymbolicInt(self.z3_int / safe_divisor)
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
         if isinstance(other, SymbolicFloat):
             denom = other.z3_real
+            if z3.is_rational_value(denom) and denom.numerator_as_long() == 0:
+                raise ZeroDivisionError("float division by zero")
             safe_denom = z3.If(denom == 0, z3.RealVal(1), denom)
             return SymbolicFloat(z3.ToReal(self.z3_int) / safe_denom)
-        denom = z3.ToReal(other.z3_int)
+        denom_int = other.z3_int
+        if z3.is_int_value(denom_int) and denom_int.as_long() == 0:
+            raise ZeroDivisionError("division by zero")
+        denom = z3.ToReal(denom_int)
         safe_denom = z3.If(denom == 0, z3.RealVal(1), denom)
         return SymbolicFloat(z3.ToReal(self.z3_int) / safe_denom)
 
@@ -243,7 +254,7 @@ class SymbolicInt(SymbolicType):
         return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"lshift_{self._name}"))
 
     def __rshift__(self, other: SymbolicInt) -> SymbolicInt:
-        bv_result = z3.LShR(z3.Int2BV(self.z3_int, _BV_WIDTH), z3.Int2BV(other.z3_int, _BV_WIDTH))
+        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) >> z3.Int2BV(other.z3_int, _BV_WIDTH)
         return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"rshift_{self._name}"))
 
     @staticmethod
@@ -279,6 +290,8 @@ class SymbolicFloat(SymbolicType):
 
     z3_real: z3.ArithRef
     _name: str = field(default="")
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -336,8 +349,14 @@ class SymbolicFloat(SymbolicType):
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
         if isinstance(other, SymbolicInt):
-            return SymbolicFloat(self.z3_real / z3.ToReal(other.z3_int))
-        return SymbolicFloat(self.z3_real / other.z3_real)
+            denom = other.z3_int
+            if z3.is_int_value(denom) and denom.as_long() == 0:
+                raise ZeroDivisionError("float division by zero")
+            return SymbolicFloat(self.z3_real / z3.ToReal(denom))
+        denom = other.z3_real
+        if z3.is_rational_value(denom) and denom.numerator_as_long() == 0:
+            raise ZeroDivisionError("float division by zero")
+        return SymbolicFloat(self.z3_real / denom)
 
     def __neg__(self) -> SymbolicFloat:
         return SymbolicFloat(-self.z3_real)

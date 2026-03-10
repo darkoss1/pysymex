@@ -269,6 +269,10 @@ class IncrementalSolver:
     def is_sat(self, constraints: list[z3.BoolRef]) -> bool:
         """Check if constraints are satisfiable, with caching.
 
+        Uses constraint independence optimization: when constraints can be
+        partitioned into independent clusters, each cluster is checked
+        separately against the cache, enabling sub-query reuse.
+
         Args:
             constraints: List of Z3 boolean constraints.
 
@@ -285,12 +289,56 @@ class IncrementalSolver:
             if z3.is_false(c):
                 return False
 
+        # Try full-query cache first
         cache_key = self._make_cache_key(constraints)
         if self._use_cache and cache_key in self._cache:
             self._cache_hits += 1
             self._cache.move_to_end(cache_key)
             return self._cache[cache_key].is_sat
 
+        # Try cluster-level caching for multi-constraint queries
+        if len(constraints) >= 2:
+            clusters = self._get_independent_clusters(constraints)
+            if len(clusters) > 1:
+                # Check each cluster independently
+                for cluster in clusters:
+                    cluster_key = self._make_cache_key(cluster)
+                    if self._use_cache and cluster_key in self._cache:
+                        self._cache_hits += 1
+                        self._cache.move_to_end(cluster_key)
+                        if not self._cache[cluster_key].is_sat:
+                            # One cluster UNSAT → whole thing UNSAT
+                            result = SolverResult.unsat()
+                            if len(self._cache) >= self._cache_size:
+                                self._cache.popitem(last=False)
+                            self._cache[cache_key] = result
+                            return False
+                    else:
+                        # Cluster not cached — solve it
+                        self._solver.push()
+                        try:
+                            for c in cluster:
+                                self._solver.add(c)
+                            cluster_result = self.check()
+                        finally:
+                            self._solver.pop()
+                        if len(self._cache) >= self._cache_size:
+                            self._cache.popitem(last=False)
+                        self._cache[cluster_key] = cluster_result
+                        if not cluster_result.is_sat:
+                            result = SolverResult.unsat()
+                            if len(self._cache) >= self._cache_size:
+                                self._cache.popitem(last=False)
+                            self._cache[cache_key] = result
+                            return False
+                # All clusters SAT
+                result = SolverResult.sat(None)
+                if len(self._cache) >= self._cache_size:
+                    self._cache.popitem(last=False)
+                self._cache[cache_key] = result
+                return True
+
+        # Single cluster or single constraint — solve directly
         self._solver.push()
         try:
             for c in constraints:
@@ -303,6 +351,7 @@ class IncrementalSolver:
             self._cache.popitem(last=False)
         self._cache[cache_key] = result
         return result.is_sat
+
 
     def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
         """Check satisfiability with full result caching.
@@ -652,7 +701,22 @@ def is_satisfiable(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> bo
 
 
 def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
-    """Cached implementation of satisfiability check. (DISABLED)"""
+    """Standalone (non-incremental) satisfiability check.
+
+    BUG-011 note: The previous docstring said ``(DISABLED)`` — it was never
+    actually disabled, but it was also never cached.  Z3 BoolRef objects are
+    not hashable, so ``functools.lru_cache`` cannot be applied directly.
+
+    This function is called only when no ``IncrementalSolver`` context is
+    active (e.g., in standalone API usage or tests).  For production scan
+    runs the IncrementalSolver path is used instead, which has its own
+    structural-hash cache.
+
+    If you are calling ``is_satisfiable()`` in a tight loop without an
+    IncrementalSolver context, wrap the call-site with:
+        with IncrementalSolver() as solver:
+            ...
+    """
     solver = z3.Solver()
     solver.set("timeout", 5000)
     solver.add(constraints)

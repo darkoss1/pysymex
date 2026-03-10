@@ -38,6 +38,8 @@ class SymbolicString(SymbolicType):
     z3_len: z3.ArithRef
     taint_labels: frozenset[str] | None = field(default=None, compare=False)
 
+    __hash__ = object.__hash__
+
     @property
     def is_int(self) -> z3.BoolRef:
         return Z3_FALSE
@@ -232,6 +234,20 @@ class SymbolicString(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicString({self._name})"
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_str=self.z3_str,
+            is_str=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicList(SymbolicType):
@@ -248,6 +264,8 @@ class SymbolicList(SymbolicType):
     z3_len: z3.ArithRef
     element_type: str = "int"
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
+
+    __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
@@ -354,7 +372,6 @@ class SymbolicList(SymbolicType):
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicList:
         """Merge with another list based on condition."""
         if not isinstance(other, SymbolicList):
-
             val_self = SymbolicValue(
                 _name=self._name,
                 z3_int=Z3_ZERO,
@@ -380,6 +397,20 @@ class SymbolicList(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicList({self._name}, len={self.z3_len})"
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_array=self.z3_array,
+            is_list=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicDict(SymbolicType):
@@ -392,6 +423,8 @@ class SymbolicDict(SymbolicType):
     known_keys: z3.SeqRef
     z3_len: z3.ArithRef
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
+
+    __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
@@ -476,7 +509,6 @@ class SymbolicDict(SymbolicType):
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
         """Merge with another dict based on condition."""
         if not isinstance(other, SymbolicDict):
-
             val_self = SymbolicValue(
                 _name=self._name,
                 z3_int=Z3_ZERO,
@@ -503,6 +535,20 @@ class SymbolicDict(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicDict({self._name})"
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_array=self.z3_array,
+            is_dict=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicObject(SymbolicType):
@@ -517,6 +563,8 @@ class SymbolicObject(SymbolicType):
     address: int
     z3_addr: z3.ArithRef
     potential_addresses: set[int] = field(default_factory=lambda: set())
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self.potential_addresses and self.address != -1:
@@ -622,6 +670,20 @@ class SymbolicObject(SymbolicType):
             )
         return SymbolicValue.from_const(0)
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_addr=self.z3_addr,
+            is_obj=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicIterator(SymbolicType):
@@ -630,6 +692,8 @@ class SymbolicIterator(SymbolicType):
     _name: str
     iterable: object
     index: int = 0
+
+    __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
@@ -649,3 +713,15 @@ class SymbolicIterator(SymbolicType):
 
     def __repr__(self) -> str:
         return f"SymbolicIterator(of {self.iterable})"
+
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_path=Z3_FALSE,
+        )

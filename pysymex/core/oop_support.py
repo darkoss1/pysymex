@@ -401,7 +401,10 @@ def create_enhanced_instance(
     kwargs = kwargs or {}
     constraints: list[z3.ExprRef] = []
     if enhanced_class.is_abstract:
-        pass
+        abstract_methods = "', '".join(sorted(enhanced_class.abstract_methods))
+        raise TypeError(
+            f"Can't instantiate abstract class {enhanced_class.name} without an implementation for abstract method '{abstract_methods}'"
+        )
     base = object_state.create_object(enhanced_class.base)
     instance = EnhancedObject(
         base=base,

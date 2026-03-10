@@ -261,7 +261,7 @@ class SymbolicExecutor:
         self._execute_loop()
         self._promote_abstract_hints()
         end_time = time.time()
-        print(f"DEBUG: Executor issues count: {len(self._issues)}")
+        logger.debug("Executor issues count: %d", len(self._issues))
         final_issues = self._issues
         if self.config.enable_fp_filtering:
             try:
@@ -624,7 +624,7 @@ class SymbolicExecutor:
                 try:
                     _hook(self, state, "resource_limit")
                 except Exception:
-                    pass
+                    logger.exception("Plugin hook execution failed")
             return False
 
     def _fetch_instruction(
@@ -644,7 +644,7 @@ class SymbolicExecutor:
                 try:
                     _hook(self, state, "infeasible")
                 except Exception:
-                    pass
+                    logger.exception("Plugin hook execution failed")
             return False
         return True
 
@@ -670,7 +670,6 @@ class SymbolicExecutor:
         if state.loop_iterations[pc_key] > self.config.max_loop_iterations:
             if self._loop_widening is not None:
                 if self._loop_widening.should_widen(loop, state.loop_iterations[pc_key]):
-
                     prev_state = state.prev_loop_states.get(pc_key)
                     if prev_state is not None:
                         widened = self._loop_widening.widen_state(prev_state, state, loop)
@@ -730,7 +729,6 @@ class SymbolicExecutor:
     ) -> None:
         """Process the result of an opcode execution."""
         if result.issues:
-
             for issue in result.issues:
                 line_no = self._get_line_number(issue.pc, active_instructions)
                 if line_no != issue.line_number:
@@ -742,7 +740,7 @@ class SymbolicExecutor:
                     try:
                         _hook(self, state, issue)
                     except Exception:
-                        pass
+                        logger.exception("Plugin hook execution failed")
 
         if result.terminal:
             self._paths_completed += 1
@@ -763,7 +761,7 @@ class SymbolicExecutor:
                 try:
                     _hook(self, state, list(result.new_states))
                 except Exception:
-                    pass
+                    logger.exception("Plugin hook execution failed")
 
     def _execute_step(self, state: VMState) -> None:
         """Execute a single step (one instruction).
@@ -808,7 +806,7 @@ class SymbolicExecutor:
                 try:
                     _hook(self, state, "duplicate_state")
                 except Exception:
-                    pass
+                    logger.exception("Plugin hook execution failed")
             return
         self._visited_states.add(state_hash)
 
@@ -831,7 +829,7 @@ class SymbolicExecutor:
                 try:
                     _hook(self, state, instr)
                 except Exception:
-                    pass
+                    logger.exception("Plugin hook execution failed")
             self._process_execution_result(result, state, active_instructions)
         except (
             RuntimeError,
@@ -844,7 +842,7 @@ class SymbolicExecutor:
         ) as e:
             import traceback
 
-            print(f"DEBUG: Execution error at PC {state.pc}: {e}")
+            logger.debug("Execution error at PC %d: %s", state.pc, e)
             traceback.print_exc()
             if self.config.verbose:
                 logger.warning("Execution error at PC %d: %s", state.pc, e)
@@ -919,7 +917,7 @@ class SymbolicExecutor:
                     try:
                         _hook(self, state, issue)
                     except Exception:
-                        pass
+                        logger.exception("Plugin hook execution failed")
 
         specific = self._detector_dispatch.get(opname)
         if specific:
@@ -936,7 +934,7 @@ class SymbolicExecutor:
                         try:
                             _hook(self, state, issue)
                         except Exception:
-                            pass
+                            logger.exception("Plugin hook execution failed")
 
     def _hash_state(self, state: VMState) -> int:
         """Create a hash of the state to detect truly redundant paths.

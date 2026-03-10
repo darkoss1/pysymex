@@ -273,7 +273,7 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     timeout_ms=self.config.solver_timeout_ms
                 )
             except (RuntimeError, TypeError, ValueError):
-                pass
+                logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
 
     def execute_function(
         self,
@@ -382,7 +382,7 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                 self._current_coro_id = coro.coro_id
 
         except (AttributeError, KeyError, RuntimeError):
-            pass
+            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
 
     def _explore_interleavings(self, state: VMState) -> None:
         """At an await point, fork states for possible schedulings."""
@@ -398,7 +398,7 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     self._worklist.add_state(forked)
                 self._paths_explored += 1
         except (RuntimeError, KeyError):
-            pass
+            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
 
     def _check_await_deadlocks(self) -> list[Issue]:
         """Detect circular await chains and convert to Issues."""
@@ -413,7 +413,7 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     )
                 )
         except (RuntimeError, KeyError):
-            pass
+            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
         return issues
 
 

@@ -19,6 +19,7 @@ from pysymex.core.types import (
     SymbolicList,
     SymbolicNone,
     SymbolicString,
+    SymbolicType,
     SymbolicValue,
 )
 
@@ -181,21 +182,39 @@ class MinModel(FunctionModel):
         """Apply min() model."""
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"min_{state.pc}")[0])
-        if len(args) == 1 and isinstance(args[0], (list, SymbolicList)):
+        
+        # Handle concrete sequence
+        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+            seq = args[0]
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
+                try:
+                    return ModelResult(value=min(seq))
+                except (TypeError, ValueError):
+                    pass
             result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
-        if len(args) == 2:
-            a, b = args
-            if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
-                result, constraint = SymbolicValue.symbolic(f"min_{a.name}_{b.name}")
-                return ModelResult(
-                    value=result,
-                    constraints=[
-                        constraint,
-                        result.is_int,
-                        result.z3_int == z3.If(a.z3_int <= b.z3_int, a.z3_int, b.z3_int),
-                    ],
-                )
+
+        # Handle two or more arguments
+        if len(args) >= 2:
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in args):
+                try:
+                    return ModelResult(value=min(args))
+                except (TypeError, ValueError):
+                    pass
+            
+            if len(args) == 2:
+                a, b = args
+                if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
+                    result, constraint = SymbolicValue.symbolic(f"min_{a.name}_{b.name}")
+                    return ModelResult(
+                        value=result,
+                        constraints=[
+                            constraint,
+                            result.is_int,
+                            result.z3_int == z3.If(a.z3_int <= b.z3_int, a.z3_int, b.z3_int),
+                        ],
+                    )
+        
         result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -215,18 +234,39 @@ class MaxModel(FunctionModel):
         """Apply max() model."""
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"max_{state.pc}")[0])
-        if len(args) == 2:
-            a, b = args
-            if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
-                result, constraint = SymbolicValue.symbolic(f"max_{a.name}_{b.name}")
-                return ModelResult(
-                    value=result,
-                    constraints=[
-                        constraint,
-                        result.is_int,
-                        result.z3_int == z3.If(a.z3_int >= b.z3_int, a.z3_int, b.z3_int),
-                    ],
-                )
+        
+        # Handle concrete sequence
+        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+            seq = args[0]
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
+                try:
+                    return ModelResult(value=max(seq))
+                except (TypeError, ValueError):
+                    pass
+            result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
+            return ModelResult(value=result, constraints=[constraint])
+
+        # Handle two or more arguments
+        if len(args) >= 2:
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in args):
+                try:
+                    return ModelResult(value=max(args))
+                except (TypeError, ValueError):
+                    pass
+            
+            if len(args) == 2:
+                a, b = args
+                if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
+                    result, constraint = SymbolicValue.symbolic(f"max_{a.name}_{b.name}")
+                    return ModelResult(
+                        value=result,
+                        constraints=[
+                            constraint,
+                            result.is_int,
+                            result.z3_int == z3.If(a.z3_int >= b.z3_int, a.z3_int, b.z3_int),
+                        ],
+                    )
+        
         result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -453,6 +493,21 @@ class SumModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
+        """Apply sum() model."""
+        if not args:
+            return ModelResult(value=0)
+        
+        iterable = args[0]
+        start = args[1] if len(args) > 1 else 0
+        
+        if isinstance(iterable, (list, tuple)):
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in iterable) and \
+               not isinstance(start, (SymbolicValue, SymbolicType)):
+                try:
+                    return ModelResult(value=sum(iterable, start))
+                except TypeError:
+                    pass
+        
         result, constraint = SymbolicValue.symbolic(f"sum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 

@@ -36,7 +36,7 @@ class Definition:
     line: int | None = None
 
     def __repr__(self) -> str:
-        return f"Def({self .var_name }@{self .pc })"
+        return f"Def({self.var_name}@{self.pc})"
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ class Use:
     line: int | None = None
 
     def __repr__(self) -> str:
-        return f"Use({self .var_name }@{self .pc })"
+        return f"Use({self.var_name}@{self.pc})"
 
 
 @dataclass
@@ -84,8 +84,8 @@ class Expression:
 
     def __repr__(self) -> str:
         if len(self.operands) == 1:
-            return f"{self .operator }({self .operands [0 ]})"
-        return f"({self .operands [0 ]} {self .operator } {self .operands [1 ]})"
+            return f"{self.operator}({self.operands[0]})"
+        return f"({self.operands[0]} {self.operator} {self.operands[1]})"
 
 
 class NullState(Enum):
@@ -121,15 +121,10 @@ class NullInfo:
             s2 = other.get_state(var)
             if s1 == s2:
                 result.states[var] = s1
-            elif s1 == NullState.UNKNOWN or s2 == NullState.UNKNOWN:
-                result.states[var] = NullState.UNKNOWN
-            elif (
-                s1 == NullState.MAYBE_NULL
-                or s2 == NullState.MAYBE_NULL
-                or (s1 == NullState.DEFINITELY_NULL and s2 == NullState.DEFINITELY_NOT_NULL)
-                or (s1 == NullState.DEFINITELY_NOT_NULL and s2 == NullState.DEFINITELY_NULL)
-            ):
-                result.states[var] = NullState.MAYBE_NULL
+            elif s1 == NullState.UNKNOWN:
+                result.states[var] = s2
+            elif s2 == NullState.UNKNOWN:
+                result.states[var] = s1
             else:
                 result.states[var] = NullState.MAYBE_NULL
         return result

@@ -10,6 +10,8 @@ detect bugs like:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import dis
 import types
@@ -434,7 +436,7 @@ class RangeAnalyzer:
                         pc_to_line[instr.offset] = last_line
         except (AttributeError, Exception):
 
-            pass
+            logger.warning("CFG construction failed during range analysis, falling back", exc_info=True)
 
         if cfg.entry:
             initial = RangeState()

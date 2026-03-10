@@ -32,13 +32,11 @@ class OpcodeResult:
     @staticmethod
     def _collect_pending(state: VMState) -> list[Issue]:
         issues = []
-        if hasattr(state, "_pending_issues"):
-            issues.extend(state._pending_issues)
-            state._pending_issues = []
         if hasattr(state, "_pending_taint_issues"):
             issues.extend(state._pending_taint_issues)
             state._pending_taint_issues = []
         return issues
+
 
     @classmethod
     def continue_with(cls, state: VMState) -> OpcodeResult:

@@ -10,6 +10,8 @@ for mathematical proofs of memory safety. Covers:
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -651,7 +653,7 @@ class BoundsChecker:
                 else:
                     result[str(var)] = str(val)
             except z3.Z3Exception:
-                pass
+                logger.error("Z3Exception during model evaluation in BoundsChecker", exc_info=True)
         return result
 
 

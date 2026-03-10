@@ -61,21 +61,21 @@ def handle_compare_op(
     res_states = []
     res_issues = []
 
-    if is_satisfiable([*state.path_constraints, mixed]):
-        err_state = state.fork()
-        err_state = err_state.add_constraint(mixed)
-        res_issues.append(
-            Issue(
-                IssueKind.TYPE_ERROR,
-                f"TypeError: '{op_name}' not supported between mixed types",
-                constraints=list(err_state.path_constraints),
-                model=get_model(list(err_state.path_constraints)),
-                pc=state.pc,
+    if op_name not in ("==", "!="):
+        if is_satisfiable([*state.path_constraints, mixed]):
+            err_state = state.fork()
+            err_state = err_state.add_constraint(mixed)
+            res_issues.append(
+                Issue(
+                    IssueKind.TYPE_ERROR,
+                    f"TypeError: '{op_name}' not supported between mixed types",
+                    constraints=list(err_state.path_constraints),
+                    model=get_model(list(err_state.path_constraints)),
+                    pc=state.pc,
+                )
             )
-        )
 
     if is_satisfiable([*state.path_constraints, z3.Not(mixed)]) or op_name in ("==", "!="):
-
         ok_state = state.fork()
         if op_name not in ("==", "!="):
             ok_state = ok_state.add_constraint(z3.Not(mixed))
@@ -136,10 +136,8 @@ def handle_is_op(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) 
         from pysymex.core.types import SymbolicObject
 
         if isinstance(left, SymbolicObject) and isinstance(right, SymbolicObject):
-
             is_same = left.z3_addr == right.z3_addr
         elif isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue):
-
             is_same = z3.BoolVal(left is right)
         else:
             is_same = z3.BoolVal(left is right)

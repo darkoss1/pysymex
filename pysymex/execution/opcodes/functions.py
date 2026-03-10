@@ -1,6 +1,8 @@
 """Function call opcodes."""
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import dis
 from collections.abc import Callable
@@ -351,9 +353,7 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
             if not is_satisfiable(list(state.path_constraints)):
                 return OpcodeResult.error(issue, state=state)
 
-            if not hasattr(state, "_pending_issues"):
-                state._pending_issues = []
-            state._pending_issues.append(issue)
+            state._pending_taint_issues.append(issue)
 
     result = _apply_model(state, func_obj, args, kwargs)
     if result:
@@ -403,9 +403,6 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     if hasattr(state, "_pending_taint_issues"):
         result.issues.extend(state._pending_taint_issues)
         delattr(state, "_pending_taint_issues")
-    if hasattr(state, "_pending_issues"):
-        result.issues.extend(state._pending_issues)
-        delattr(state, "_pending_issues")
     return result
 
 
@@ -436,13 +433,14 @@ def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
         model = _resolve_model(model_name)
     if model:
         kw_kwargs: dict[str, StackValue] = {}
-        if kw_names and hasattr(kw_names, "value") and isinstance(kw_names.value, tuple):
-            names: tuple[object, ...] = cast("tuple[object, ...]", kw_names.value)
+        kw_names_val = getattr(kw_names, "value", kw_names)
+        if isinstance(kw_names_val, tuple):
+            names: tuple[object, ...] = cast("tuple[object, ...]", kw_names_val)
             if len(names) <= len(args):
                 kw_vals = args[-len(names) :]
                 args = args[: -len(names)]
                 for k, v in zip(names, kw_vals, strict=False):
-                    kw_kwargs[k] = v
+                    kw_kwargs[str(k)] = v
         model_result: object = model.apply(args, kw_kwargs, state)
         state = state.push(model_result.value)
         for constraint in cast("list[object]", model_result.constraints or []):
@@ -606,9 +604,7 @@ def handle_load_method(
             if not is_satisfiable(list(state.path_constraints)):
                 return OpcodeResult(new_states=[], issues=[issue], terminal=True)
 
-            if not hasattr(state, "_pending_issues"):
-                state._pending_issues = []
-            state._pending_issues.append(issue)
+            state._pending_taint_issues.append(issue)
 
     if result_val is None:
         result_val, type_constraint = SymbolicValue.symbolic(
@@ -727,7 +723,7 @@ def handle_load_build_class(
         state._building_class = True
         state._class_registry = enhanced_class_registry
     except (ImportError, AttributeError):
-        pass
+        pass  # Used as expected type-check or feature fallback
     builtin_val = SymbolicValue(
         _name="__build_class__",
         z3_int=z3.IntVal(0),

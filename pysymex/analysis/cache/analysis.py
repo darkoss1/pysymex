@@ -90,7 +90,7 @@ class ProgressReporter:
         """Format progress for display."""
         with self._lock:
             pct = (self.completed / self.total * 100) if self.total > 0 else 0.0
-            return f"[{self .completed }/{self .total }] {pct :.1f}% ({self .failed } failed)"
+            return f"[{self.completed}/{self.total}] {pct:.1f}% ({self.failed} failed)"
 
 
 class ParallelAnalyzer:
@@ -127,6 +127,9 @@ class ParallelAnalyzer:
             pending = list(ordered)
             while pending or futures:
                 ready = [t for t in pending if all(d in completed_ids for d in t.dependencies)]
+                # Ensure we submit highest priority tasks first
+                ready.sort()
+
                 if not ready and not futures:
                     for task in pending:
                         results.append(

@@ -60,23 +60,30 @@ class TestSolverAddCacheClear:
     """After fix: add() clears the result cache so stale results cannot leak."""
 
     def test_cache_cleared_after_add(self):
-        """Cache should be empty immediately after add()."""
+        """Cache context changes immediately after add()."""
         solver = IncrementalSolver()
         x = z3.Int("x")
         # Populate cache
         solver.is_sat([x > 0])
-        assert len(solver._cache) > 0, "cache should be populated after is_sat"
-        # add() must clear it
+        old_cache_size = len(solver._cache)
+        # add() must change context
         solver.add(x < 100)
-        assert len(solver._cache) == 0, "cache must be empty after add()"
+        assert len(solver._cache) >= old_cache_size, "old entries should remain"
+        
+        # New check should miss
+        hits = solver._cache_hits
+        solver.is_sat([x > 0])
+        assert solver._cache_hits == hits, "should be a cache miss due to new context"
 
     def test_cache_cleared_independently_of_constraint_content(self):
-        """Even a trivially-true constraint should still clear the cache."""
+        """Even a trivially-true constraint should still change the context."""
         solver = IncrementalSolver()
         x = z3.Int("x")
         solver.is_sat([x > 0])
+        hits = solver._cache_hits
         solver.add(z3.BoolVal(True))
-        assert len(solver._cache) == 0
+        solver.is_sat([x > 0])
+        assert solver._cache_hits == hits
 
     def test_stale_unsat_not_returned_after_add(self):
         """Classic hazard: constraints change from UNSAT to SAT but cache says UNSAT."""
@@ -84,7 +91,7 @@ class TestSolverAddCacheClear:
         x = z3.Int("x")
         # First query: UNSAT
         assert not solver.is_sat([x > 0, x < 0])
-        # Add a no-op constraint — still forces cache clear
+        # Add a no-op constraint — changes context
         solver.add(z3.BoolVal(True))
         # Same query is still UNSAT, but we're checking that the solver
         # re-evaluates rather than serving stale data
@@ -96,49 +103,74 @@ class TestSolverAddCacheClear:
         x = z3.Int("x")
         # Force SAT into cache
         assert solver.is_sat([x > 0])
-        cache_before = dict(solver._cache)
+        old_size = len(solver._cache)
         # Add a contradictory ambient constraint
         solver.add(x < -100)
-        assert len(solver._cache) == 0, "cache must be cleared"
-        # After adding the ambient constraint, the check *inside the solver*
-        # will push/pop; ambient x < -100 does not pollute the assumption scope.
-        # But the cache that previously said SAT must not be reused.
-        # (is_sat still pushes/pops internally, so it will be SAT in its own
-        #  scope — demonstrating that the OLD cached result was purged.)
-        # The point is just that cache_before keys no longer appear.
-        for key in cache_before:
-            assert key not in solver._cache
+        assert len(solver._cache) >= old_size, "old entries should physically remain"
+        
+        # Now query [x > 0] again in the new context
+        # It's an independent cluster in checking, but there's a problem:
+        # The query [x > 0] is SAT, but the ambient x < -100 makes it globally UNSAT.
+        # But wait - is_sat checks the constraints *together* with ambient constraints.
+        # The new caching uses structural hashing of ambient context.
+        # So we should get UNSAT because the ambient context has changed.
+        # Let's check:
+        assert solver.is_sat([x > 0]) is False
 
     def test_multiple_adds_each_clear(self):
-        """Multiple consecutive add() calls each clear the cache."""
+        """Multiple consecutive add() calls each change the context."""
         solver = IncrementalSolver()
         x = z3.Int("x")
         for i in range(5):
             solver.is_sat([x > i])
-            assert len(solver._cache) > 0
+            hits = solver._cache_hits
             solver.add(x != i)
-            assert len(solver._cache) == 0, f"cache not cleared on add() #{i}"
+            solver.is_sat([x > i])
+            assert solver._cache_hits == hits, "should miss after context change"
 
 
 class TestSolverPushPopCacheClear:
-    """push() and pop() also clear the cache."""
+    """Cache is context-keyed so push/pop don't need to clear it.
 
-    def test_push_clears_cache(self):
+    Entries from different scopes have different keys and won't produce
+    false cache hits.  Entries from the parent scope survive a push/pop
+    round-trip and CAN be reused (this is the desired optimisation).
+    """
+
+    def test_push_does_not_invalidate_parent_entries(self):
+        """After push(), old cache entries remain but won't match new scope."""
         solver = IncrementalSolver()
         x = z3.Int("x")
         solver.is_sat([x > 0])
-        assert len(solver._cache) > 0
+        cache_size_before = len(solver._cache)
+        assert cache_size_before > 0
         solver.push()
-        assert len(solver._cache) == 0
+        # Old entries still physically present (context-keyed, won't hit)
+        assert len(solver._cache) >= cache_size_before
 
-    def test_pop_clears_cache(self):
+    def test_pop_preserves_parent_scope_entries(self):
+        """After push/pop round-trip, parent cache entries survive."""
         solver = IncrementalSolver()
         x = z3.Int("x")
-        solver.push()
         solver.is_sat([x > 0])
-        assert len(solver._cache) > 0
+        parent_cache_size = len(solver._cache)
+        solver.push()
+        solver.is_sat([x < 100])  # new scope entry
         solver.pop()
-        assert len(solver._cache) == 0
+        # Parent entries still present
+        assert len(solver._cache) >= parent_cache_size
+
+    def test_add_changes_context(self):
+        """add() changes the cache context so old entries won't match."""
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+        solver.is_sat([x > 0])
+        old_cache_size = len(solver._cache)
+        assert old_cache_size > 0
+        solver.add(x < 100)
+        # Old entries still physically present but won't hit (different context)
+        assert len(solver._cache) >= old_cache_size
+
 
     def test_reset_clears_cache(self):
         solver = IncrementalSolver()
@@ -676,17 +708,24 @@ class TestSolverIntegration:
     """Longer scenarios combining multiple fixes."""
 
     def test_enter_scope_leave_scope_cache(self):
-        """enter_scope/leave_scope should clear cache at each transition."""
+        """enter_scope/leave_scope should change cache context, but keep entries alive."""
         solver = IncrementalSolver()
         x = z3.Int("x")
         solver.is_sat([x > 0])
-        assert len(solver._cache) > 0
+        parent_cache_size = len(solver._cache)
+        
         solver.enter_scope([x < 100])
-        assert len(solver._cache) == 0  # push clears
+        assert len(solver._cache) >= parent_cache_size
         solver.is_sat([x > 50])
-        assert len(solver._cache) > 0
+        child_cache_size = len(solver._cache)
+        assert child_cache_size > parent_cache_size
+        
         solver.leave_scope()
-        assert len(solver._cache) == 0  # pop clears
+        assert len(solver._cache) == child_cache_size
+        # The parent entry for [x > 0] should hit without solving again
+        hits = solver._cache_hits
+        solver.is_sat([x > 0])
+        assert solver._cache_hits > hits
 
     def test_is_sat_unsat_roundtrip(self):
         """SAT → add contradiction → re-check should produce correct results."""
@@ -694,19 +733,16 @@ class TestSolverIntegration:
         x = z3.Int("x")
 
         assert solver.is_sat([x > 0, x < 10]) is True
-        # The is_sat uses internal push/pop so this doesn't add to ambient
-        # But check_sat_cached for a model:
         result = solver.check_sat_cached([x > 0, x < 10])
         assert result.is_sat
 
         # Now add a contradictory ambient constraint
-        solver.add(x == 5)
-        # Cache should be cleared
-        assert len(solver._cache) == 0
-
-        # check_sat_cached should re-evaluate
+        solver.add(x == 50)  # Contradicts x < 10
+        # Context changed, old cache keys won't hit
+        
+        # check_sat_cached should re-evaluate and return UNSAT
         result2 = solver.check_sat_cached([x > 0, x < 10])
-        assert result2.is_sat
+        assert not result2.is_sat
 
     def test_implies_with_ambient_constraints(self):
         """implies() should work correctly with ambient constraints."""

@@ -99,11 +99,11 @@ def handle_return_value(
                 )
 
                 canonical_return = SymbolicValue(
-                    return_value.name,
-                    cast("z3.ArithRef", new_z3_int),
-                    return_value.is_int,
-                    cast("z3.BoolRef", new_z3_bool),
-                    return_value.is_bool,
+                    _name=return_value.name,
+                    z3_int=cast("z3.ArithRef", new_z3_int),
+                    is_int=return_value.is_int,
+                    z3_bool=cast("z3.BoolRef", new_z3_bool),
+                    is_bool=return_value.is_bool,
                 )
 
             summary.return_var = canonical_return
@@ -411,7 +411,6 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
     if isinstance(iterator, SymbolicIterator):
         iterable = iterator.iterable
     else:
-
         iterable = iterator
 
     continue_state = state.fork()

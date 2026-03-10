@@ -200,7 +200,6 @@ def analyze_file(file_path: Path) -> ScanResult:
             timestamp=datetime.now().isoformat(),
             error=f"Read Error: {e}",
         )
-        print(f"\n❌ {result.error}")
         if session:
             session.add_result(result)
         return result
@@ -325,8 +324,7 @@ def scan_file(
                     all_issues.append(processed_issue)
                 total_paths += exec_result.paths_explored
             except Exception as e:
-                if verbose:
-                    print(f"DEBUG: Module execution failed: {e}")
+                logger.debug("Module execution failed for %s: %s", str(file_path), e, exc_info=True)
         for code, class_name, full_path in other_items:
             if auto_tune:
                 tune_config = AutoTuner.tune(code, base_config)
@@ -395,23 +393,23 @@ def scan_file(
                         "counterexample": issue.get_counterexample(),
                     }
                 )
-        if verbose:
-            if reporter:
-                reporter.on_progress(0, 1, file_path, result)
-            else:
-                status_msg = f"{len(result.issues)} issues found" if result.issues else "No issues"
-                print(f"{'⚠️' if result.issues else '✅'} {file_path}: {status_msg}")
+            if verbose:
+                if reporter:
+                    reporter.on_progress(0, 1, file_path, result)
+                else:
+                    status_msg = f"{len(result.issues)} issues found" if result.issues else "No issues"
+                    print(f"{'⚠️' if result.issues else '✅'} {file_path}: {status_msg}")
     except SyntaxError as e:
         result.error = f"Syntax Error: {e}"
         if reporter:
             reporter.on_error(file_path, result.error)
-        else:
+        elif verbose:
             print(f"\n❌ {result.error}")
     except Exception as e:
         result.error = f"Analysis Error: {e}"
         if reporter:
             reporter.on_error(file_path, result.error)
-        else:
+        elif verbose:
             print(f"\n❌ {result.error}")
     finally:
         if tracer is not None:
@@ -596,7 +594,6 @@ def _scan_parallel(
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=workers_count,
         ) as executor:
-
             future_to_file: dict[concurrent.futures.Future[ScanResult], Path] = {}
             file_iter = iter(files)
 

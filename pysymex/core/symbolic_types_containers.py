@@ -30,6 +30,8 @@ class SymbolicString(SymbolicType):
     z3_str: z3.SeqRef
     _name: str = field(default="")
 
+    __hash__ = object.__hash__
+
     def __post_init__(self):
         if not self._name:
             self._name = fresh_name("str")
@@ -140,6 +142,20 @@ class SymbolicString(SymbolicType):
         """Create a concrete string."""
         return SymbolicString(z3.StringVal(value), repr(value))
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_str=self.z3_str,
+            is_str=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicBytes(SymbolicType):
@@ -149,6 +165,8 @@ class SymbolicBytes(SymbolicType):
 
     z3_bytes: z3.SeqRef
     _name: str = field(default="")
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -202,6 +220,18 @@ class SymbolicBytes(SymbolicType):
             result = z3.Concat(result, z3.Unit(z3.BitVecVal(b, 8)))
         return SymbolicBytes(result, repr(value))
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicTuple(SymbolicType):
@@ -211,6 +241,8 @@ class SymbolicTuple(SymbolicType):
 
     elements: tuple[SymbolicType, ...]
     _name: str = field(default="")
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -282,6 +314,18 @@ class SymbolicTuple(SymbolicType):
         """Create empty tuple."""
         return SymbolicTuple(())
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicList(SymbolicType):
@@ -292,6 +336,8 @@ class SymbolicList(SymbolicType):
     z3_seq: z3.SeqRef
     element_sort: z3.SortRef
     _name: str = field(default="")
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -367,6 +413,19 @@ class SymbolicList(SymbolicType):
             result = z3.Concat(result, z3.Unit(z3.IntVal(v)))
         return SymbolicList(result, z3.IntSort(), str(values))
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_list=Z3_TRUE,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicDict(SymbolicType):
@@ -380,6 +439,8 @@ class SymbolicDict(SymbolicType):
     value_sort: z3.SortRef
     _name: str = field(default="")
     _membership: z3.ArrayRef | None = field(default=None, repr=False)
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -457,6 +518,20 @@ class SymbolicDict(SymbolicType):
             _membership=membership,
         )
 
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_dict=Z3_TRUE,
+            z3_array=self.z3_array,
+            is_path=Z3_FALSE,
+        )
+
 
 @dataclass
 class SymbolicSet(SymbolicType):
@@ -467,6 +542,8 @@ class SymbolicSet(SymbolicType):
     z3_set: z3.ArrayRef
     element_sort: z3.SortRef
     _name: str = field(default="")
+
+    __hash__ = object.__hash__
 
     def __post_init__(self):
         if not self._name:
@@ -545,3 +622,15 @@ class SymbolicSet(SymbolicType):
     def empty_int_set() -> SymbolicSet:
         """Create an empty int set."""
         return SymbolicSet(z3.EmptySet(z3.IntSort()), z3.IntSort(), "set()")
+
+    def as_unified(self) -> "SymbolicValue":
+        from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
+
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_path=Z3_FALSE,
+        )

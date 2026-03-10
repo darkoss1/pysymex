@@ -61,7 +61,6 @@ class CowDict(Generic[K, V]):
         try:
             return hash(obj)
         except TypeError:
-
             if hasattr(obj, "hash_value") and callable(obj.hash_value):
                 return obj.hash_value()
 
@@ -74,35 +73,34 @@ class CowDict(Generic[K, V]):
             return 0
 
     def hash_value(self) -> int:
-        """Compute/return content-based hash. O(N) first time, then O(1)."""
+        """Compute/return content-based hash. O(N) first time, then O(1).
+
+        Uses an order-sensitive polynomial rolling hash (keys sorted by
+        repr for determinism) to avoid XOR-commutativity collisions (BUG-001).
+        Previously, {x:10, y:20} and {x:20, y:10} produced identical hashes.
+        """
         if self._hash is not None:
             return self._hash
-        h = 0
-        for k, v in self._data.items():
-
-            h ^= self._safe_hash(k) * 1000003 ^ self._safe_hash(v)
+        h = 0x345678
+        for k in sorted(self._data.keys(), key=repr):
+            v = self._data[k]
+            h = h * 1000003 ^ self._safe_hash(k)
+            h = h * 1000003 ^ self._safe_hash(v)
         self._hash = h
         return h
 
     def __setitem__(self, key: K, value: V) -> None:
         self._ensure_writable()
-
-        old_val = self._data.get(key)
-        if self._hash is not None:
-
-            if old_val is not None:
-                self._hash ^= self._safe_hash(key) * 1000003 ^ self._safe_hash(old_val)
-
-            self._hash ^= self._safe_hash(key) * 1000003 ^ self._safe_hash(value)
-
+        # Invalidate the cached hash on any mutation; recompute lazily on next
+        # hash_value() call.  Incremental order-sensitive updates are complex
+        # and error-prone, so we just invalidate.
+        self._hash = None
         self._data[key] = value
 
     def __delitem__(self, key: K) -> None:
         if key in self._data:
             self._ensure_writable()
-            old_val = self._data[key]
-            if self._hash is not None:
-                self._hash ^= self._safe_hash(key) * 1000003 ^ self._safe_hash(old_val)
+            self._hash = None
             del self._data[key]
 
     def get(self, key: K, default: V | None = None) -> V | None:
@@ -177,14 +175,14 @@ class CowSet:
         if item not in self._data:
             self._ensure_writable()
             if self._hash is not None:
-                self._hash ^= hash(item)
+                self._hash ^= hash(item + 1)  # BUG-002: use item+1 so hash(0) != 0
             self._data.add(item)
 
     def discard(self, item: int) -> None:
         if item in self._data:
             self._ensure_writable()
             if self._hash is not None:
-                self._hash ^= hash(item)
+                self._hash ^= hash(item + 1)  # BUG-002: keep consistent with add()
             self._data.discard(item)
 
     def __contains__(self, item: object) -> bool:
@@ -197,12 +195,16 @@ class CowSet:
         return iter(self._data)
 
     def hash_value(self) -> int:
-        """Content hash for the set."""
+        """Content hash for the set.
+
+        Uses hash(item + 1) instead of hash(item) to avoid the BUG-002
+        problem where hash(0) == 0 makes PC=0 invisible to XOR accumulation.
+        """
         if self._hash is not None:
             return self._hash
         h = 0
         for item in self._data:
-            h ^= hash(item)
+            h ^= hash(item + 1)
         self._hash = h
         return h
 
@@ -225,7 +227,7 @@ class ConstraintChain:
     New constraints are appended by creating a new head node.
     """
 
-    __slots__ = ("_hash", "_incremental_hash", "_length", "constraint", "parent")
+    __slots__ = ("_hash", "_incremental_hash", "_length", "_seen_hashes", "constraint", "parent")
 
     def __init__(
         self,
@@ -237,7 +239,9 @@ class ConstraintChain:
 
         if parent is None:
             self._length = 1 if constraint is not None else 0
-
+            self._seen_hashes: frozenset[int] = (
+                frozenset({constraint.hash()}) if constraint is not None else frozenset()
+            )
             h = 0x345678
             if constraint is not None:
                 h = (h ^ constraint.hash()) * 1000003
@@ -245,21 +249,25 @@ class ConstraintChain:
         else:
             self._length = parent._length + (1 if constraint is not None else 0)
             if constraint is not None:
-
                 mult = 1000003 + (self._length - 1) * 82520
                 self._incremental_hash = (parent._incremental_hash ^ constraint.hash()) * mult
+                # BUG-006 fix: track all constraint hashes, not just immediate parent
+                self._seen_hashes = parent._seen_hashes | {constraint.hash()}
             else:
                 self._incremental_hash = parent._incremental_hash
+                self._seen_hashes = parent._seen_hashes
 
         self._hash = self._incremental_hash ^ self._length
 
     def append(self, constraint: z3.BoolRef) -> ConstraintChain:
         """Append a constraint, returning a new chain head. O(1).
-        Deduplicates against the immediate parent for efficiency.
+
+        Always creates a new node. Each constraint on a path represents a
+        distinct branch decision, even if structurally identical to an
+        ancestor constraint.
         """
-        if self.constraint is not None and self.constraint.hash() == constraint.hash():
-            return self
         return ConstraintChain(constraint, self)
+
 
     def to_list(self) -> list[z3.BoolRef]:
         """Materialize the chain as a Python list. O(n).

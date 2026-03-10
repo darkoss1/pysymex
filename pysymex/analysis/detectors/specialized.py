@@ -211,16 +211,28 @@ class InfiniteLoopDetector(Detector):
         return None
 
 
+def _resolve_target_name(state: VMState, argc: int) -> str | None:
+    candidate_indices = [len(state.stack) - argc - 1, len(state.stack) - argc - 2]
+    for index in candidate_indices:
+        if index < 0 or index >= len(state.stack):
+            continue
+        candidate = state.stack[index]
+        for attr in ("qualname", "name", "origin"):
+            value = getattr(candidate, attr, None)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
 class ResourceLeakDetector(Detector):
     """Detects potential resource leaks (unclosed files, connections, etc.)."""
 
     name = "resource-leak"
     description = "Detects potential resource leaks"
     issue_kind = IssueKind.UNHANDLED_EXCEPTION
-    relevant_opcodes = frozenset({"CALL", "RETURN_VALUE", "RETURN_CONST"})
+    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "RETURN_VALUE", "RETURN_CONST"})
 
     def __init__(self):
-        self._open_resources: set[int] = set()
+        self._open_resources: int = 0
 
     def check(
         self,
@@ -229,13 +241,21 @@ class ResourceLeakDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for resource leaks."""
-        if instruction.opname == "CALL":
-            pass
-        if instruction.opname in ("RETURN_VALUE", "RETURN_CONST"):
-            if self._open_resources:
+        if instruction.opname in ("CALL", "CALL_FUNCTION"):
+            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            target = _resolve_target_name(state, argc)
+            if target == "open":
+                self._open_resources += 1
+            elif target and target.endswith(".close"):
+                if self._open_resources > 0:
+                    self._open_resources -= 1
+        elif instruction.opname in ("RETURN_VALUE", "RETURN_CONST"):
+            if self._open_resources > 0:
+                count = self._open_resources
+                self._open_resources = 0
                 return Issue(
                     kind=IssueKind.UNHANDLED_EXCEPTION,
-                    message=f"Potential resource leak: {len(self._open_resources)} unclosed resources",
+                    message=f"Potential resource leak: {count} unclosed resources",
                     pc=state.pc,
                 )
         return None
@@ -251,10 +271,10 @@ class UseAfterFreeDetector(Detector):
     name = "use-after-free"
     description = "Detects use of released resources"
     issue_kind = IssueKind.ATTRIBUTE_ERROR
-    relevant_opcodes = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
+    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "LOAD_METHOD", "LOAD_ATTR"})
 
     def __init__(self):
-        self._freed_resources: set[int] = set()
+        self._freed_vars: set[str] = set()
 
     def check(
         self,
@@ -263,13 +283,22 @@ class UseAfterFreeDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for use of freed/closed resources."""
-        if instruction.opname in ("LOAD_METHOD", "LOAD_ATTR"):
+        if instruction.opname in ("CALL", "CALL_FUNCTION"):
+            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            target = _resolve_target_name(state, argc)
+            if target and target.endswith(".close"):
+                # Mark receiver as closed if possible
+                if len(state.stack) >= argc + 2:
+                    receiver = state.stack[-(argc + 2)]
+                    if hasattr(receiver, "name"):
+                        self._freed_vars.add(receiver.name)
+        elif instruction.opname in ("LOAD_METHOD", "LOAD_ATTR"):
             if state.stack:
                 top = state.peek()
-                if id(top) in self._freed_resources:
+                if hasattr(top, "name") and top.name in self._freed_vars:
                     return Issue(
                         kind=IssueKind.ATTRIBUTE_ERROR,
-                        message="Use of closed/freed resource",
+                        message=f"Use of closed/freed resource: {top.name}",
                         pc=state.pc,
                     )
         return None
@@ -323,6 +352,17 @@ class IntegerOverflowDetector(Detector):
         )
 
 
+def _check_taint_in_args(state: VMState, argc: int) -> list[str]:
+    tainted_args: list[str] = []
+    for i in range(1, argc + 1):
+        if len(state.stack) >= i:
+            val = state.stack[-i]
+            labels = getattr(val, "taint_labels", set())
+            if labels:
+                tainted_args.extend(list(labels))
+    return tainted_args
+
+
 class FormatStringDetector(Detector):
     """Detects format string vulnerabilities."""
 
@@ -338,8 +378,25 @@ class FormatStringDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for format string issues."""
-        if instruction.opname in ("FORMAT_VALUE", "FORMAT_SIMPLE", "BUILD_STRING"):
-            pass
+        if instruction.opname in ("FORMAT_VALUE", "FORMAT_SIMPLE"):
+            if state.stack:
+                val = state.peek()
+                labels = getattr(val, "taint_labels", set())
+                if labels:
+                    return Issue(
+                        kind=IssueKind.INVALID_ARGUMENT,
+                        message=f"Format string vulnerability: Using tainted data ({', '.join(labels)}) in formatting",
+                        pc=state.pc,
+                    )
+        elif instruction.opname == "BUILD_STRING":
+            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            tainted = _check_taint_in_args(state, argc)
+            if tainted:
+                return Issue(
+                    kind=IssueKind.INVALID_ARGUMENT,
+                    message=f"Format string vulnerability: Using tainted data ({', '.join(tainted)}) in formatting",
+                    pc=state.pc,
+                )
         return None
 
 
@@ -349,7 +406,7 @@ class CommandInjectionDetector(Detector):
     name = "command-injection"
     description = "Detects potential command injection"
     issue_kind = IssueKind.INVALID_ARGUMENT
-    relevant_opcodes = frozenset({"CALL"})
+    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION"})
     DANGEROUS_FUNCTIONS = {
         "os.system",
         "os.popen",
@@ -359,18 +416,6 @@ class CommandInjectionDetector(Detector):
         "eval",
         "exec",
     }
-
-    def _resolve_call_target_name(self, state: VMState, argc: int) -> str | None:
-        candidate_indices = [len(state.stack) - argc - 1, len(state.stack) - argc - 2]
-        for index in candidate_indices:
-            if index < 0 or index >= len(state.stack):
-                continue
-            candidate = state.stack[index]
-            for attr in ("qualname", "name", "origin"):
-                value = getattr(candidate, attr, None)
-                if isinstance(value, str) and value:
-                    return value
-        return None
 
     def _is_dangerous_target(self, target_name: str | None) -> bool:
         if not target_name:
@@ -393,24 +438,14 @@ class CommandInjectionDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for command injection patterns (Tainted inputs flowing into CALLs)."""
-        if instruction.opname not in ("CALL", "CALL_FUNCTION"):
-            return None
-
         argc = instruction.argval if instruction.argval is not None else instruction.arg
         if argc is None or not isinstance(argc, int):
             return None
-        target_name = self._resolve_call_target_name(state, argc)
+        target_name = _resolve_target_name(state, argc)
         if not self._is_dangerous_target(target_name):
             return None
 
-        tainted_args: list[str] = []
-        for i in range(1, argc + 1):
-            if len(state.stack) >= i:
-                val = state.stack[-i]
-                labels = getattr(val, "taint_labels", set())
-                if labels:
-                    tainted_args.extend(list(labels))
-
+        tainted_args = _check_taint_in_args(state, argc)
         if not tainted_args:
             return None
 
@@ -427,7 +462,25 @@ class PathTraversalDetector(Detector):
     name = "path-traversal"
     description = "Detects potential path traversal"
     issue_kind = IssueKind.INVALID_ARGUMENT
-    relevant_opcodes = frozenset()
+    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION"})
+    PATH_FUNCTIONS = {
+        "open",
+        "os.open",
+        "os.remove",
+        "os.rmdir",
+        "shutil.rmtree",
+        "Path.open",
+        "Path.unlink",
+    }
+
+    def _is_path_function(self, target_name: str | None) -> bool:
+        if not target_name:
+            return False
+        normalized = target_name.lower()
+        for func in self.PATH_FUNCTIONS:
+            if normalized == func.lower() or normalized.endswith(f".{func.lower()}"):
+                return True
+        return False
 
     def check(
         self,
@@ -436,7 +489,22 @@ class PathTraversalDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for path traversal patterns."""
-        return None
+        argc = instruction.argval if instruction.argval is not None else instruction.arg
+        if argc is None or not isinstance(argc, int):
+            return None
+        target_name = _resolve_target_name(state, argc)
+        if not self._is_path_function(target_name):
+            return None
+
+        tainted_args = _check_taint_in_args(state, argc)
+        if not tainted_args:
+            return None
+
+        return Issue(
+            kind=IssueKind.INVALID_ARGUMENT,
+            message=f"Path Traversal Pattern: Tainted data ({', '.join(tainted_args)}) flows into file operation {target_name}",
+            pc=state.pc,
+        )
 
 
 class SQLInjectionDetector(Detector):
@@ -445,8 +513,17 @@ class SQLInjectionDetector(Detector):
     name = "sql-injection"
     description = "Detects potential SQL injection"
     issue_kind = IssueKind.INVALID_ARGUMENT
-    relevant_opcodes = frozenset()
+    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION"})
     SQL_METHODS = {"execute", "executemany", "executescript"}
+
+    def _is_sql_function(self, target_name: str | None) -> bool:
+        if not target_name:
+            return False
+        normalized = target_name.lower()
+        for func in self.SQL_METHODS:
+            if normalized == func or normalized.endswith(f".{func}"):
+                return True
+        return False
 
     def check(
         self,
@@ -455,6 +532,23 @@ class SQLInjectionDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check for SQL injection patterns."""
+        argc = instruction.argval if instruction.argval is not None else instruction.arg
+        if argc is None or not isinstance(argc, int):
+            return None
+        target_name = _resolve_target_name(state, argc)
+        if not self._is_sql_function(target_name):
+            return None
+
+        # Check if the query argument (usually args[0]) is tainted
+        if len(state.stack) >= argc:
+            query_arg = state.stack[-argc]
+            labels = getattr(query_arg, "taint_labels", set())
+            if labels:
+                return Issue(
+                    kind=IssueKind.INVALID_ARGUMENT,
+                    message=f"SQL Injection Pattern: Tainted query ({', '.join(labels)}) executed by {target_name}",
+                    pc=state.pc,
+                )
         return None
 
 
@@ -492,6 +586,10 @@ def register_advanced_detectors(registry: DetectorRegistry) -> None:
     registry.register(UnreachableCodeDetector)
     registry.register(UseAfterFreeDetector)
     registry.register(CommandInjectionDetector)
+    registry.register(ResourceLeakDetector)
+    registry.register(FormatStringDetector)
+    registry.register(PathTraversalDetector)
+    registry.register(SQLInjectionDetector)
 
 
 __all__ = [
@@ -507,3 +605,4 @@ __all__ = [
     "UseAfterFreeDetector",
     "register_advanced_detectors",
 ]
+

@@ -4,6 +4,8 @@ Detects data races, deadlocks, atomicity violations, and await cycles.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 from itertools import pairwise
 
@@ -452,7 +454,7 @@ class ConcurrencyAnalyzer:
             try:
                 self._solver.pop()
             except z3.Z3Exception:
-                pass
+                logger.error("Z3 solver state corruption during async branch pop", exc_info=True)
             return False
 
     def detect_await_cycles(

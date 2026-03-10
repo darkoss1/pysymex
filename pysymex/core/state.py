@@ -402,7 +402,7 @@ class VMState:
             taint_tracker=(self.taint_tracker.fork() if self.taint_tracker is not None else None),
             current_instructions=self.current_instructions,
             control_taint=self.control_taint,
-            pending_constraint_count=0,
+            pending_constraint_count=self.pending_constraint_count,  # BUG-012 fix: inherit, not reset to 0
             loop_iterations=dict(self.loop_iterations),
             prev_loop_states=dict(self.prev_loop_states),
         )
@@ -412,11 +412,7 @@ class VMState:
         child._class_registry = (
             dict(self._class_registry)
             if isinstance(self._class_registry, dict)
-            else (
-                self._class_registry.fork()
-                if hasattr(self._class_registry, "fork")
-                else copy.copy(self._class_registry)
-            )
+            else self._class_registry
         )
         child.pending_kw_names = self.pending_kw_names
         return child

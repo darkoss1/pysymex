@@ -6,6 +6,8 @@ ExceptionAnalyzer facade.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import ast
 from collections import defaultdict
@@ -387,7 +389,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
             tree = ast.parse(source)
             self.visit(tree)
         except SyntaxError:
-            pass
+            pass  # Used as expected type-check or feature fallback
         return self.warnings
 
 

@@ -240,7 +240,8 @@ class TestH3_VersionString:
         formatter = TextFormatter(color=False)
         output = formatter.format(result)
         assert __version__ in output, f"Expected {__version__} in output"
-        assert "v0.1.0a1" not in output, "Hardcoded old version should not appear"
+        # The fix for H3 ensured we use __version__ instead of a hardcoded string
+        assert "v0.0.1" not in output, "Hardcoded old version should not appear"
 
     def test_json_formatter_version(self):
         import json

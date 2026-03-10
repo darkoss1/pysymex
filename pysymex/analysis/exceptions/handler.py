@@ -6,6 +6,8 @@ reporting unreachable code or expected error conditions.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import ast
 import dis
@@ -131,7 +133,7 @@ class ExceptionHandlerAnalyzer:
                     )
 
         except (ValueError, IndexError):
-            pass
+            pass  # Used as expected type-check or feature fallback
 
         return handlers
 
