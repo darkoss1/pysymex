@@ -2,11 +2,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
-project = "PySpectre"
-copyright = "2026, PySpectre Team"
-author = "PySpectre Team"
-release = "1.0.0"
-version = "1.0"
+project = "pysymex"
+copyright = "2026, pysymex Team"
+author = "pysymex Team"
+release = "0.1.0a0"
+version = "0.1"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -21,7 +21,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
-html_title = "PySpectre Documentation"
+html_title = "pysymex Documentation"
 autodoc_default_options = {
     "members": True,
     "member-order": "bysource",

@@ -1,7 +1,7 @@
-Contributing to PySpectre
+Contributing to pysymex
 =========================
 
-Thank you for your interest in contributing to PySpectre!
+Thank you for your interest in contributing to pysymex!
 
 
 Development Setup
@@ -41,7 +41,7 @@ With coverage:
 
 .. code-block:: bash
 
-   pytest tests/ -v --cov=pyspectre --cov-report=html
+   pytest tests/ -v --cov=pysymex --cov-report=html
 
 
 Code Style
@@ -52,10 +52,10 @@ We use Black for formatting and Ruff for linting:
 .. code-block:: bash
 
    # Format code
-   black pyspectre/ tests/
+   black pysymex/ tests/
 
    # Lint code
-   ruff check pyspectre/ tests/
+   ruff check pysymex/ tests/
 
 
 Type Checking
@@ -65,7 +65,7 @@ Run MyPy for type checking:
 
 .. code-block:: bash
 
-   mypy pyspectre/
+   mypy pysymex/
 
 
 Adding New Opcodes
@@ -73,7 +73,7 @@ Adding New Opcodes
 
 To add support for a new Python opcode:
 
-1. Find the appropriate module in ``pyspectre/execution/opcodes/``
+1. Find the appropriate module in ``pysymex/execution/opcodes/``
 2. Add a handler function:
 
    .. code-block:: python
@@ -96,7 +96,7 @@ To add a new bug detector:
 2. Implement the ``check()`` method
 3. Register with the ``DetectorRegistry``
 
-See ``pyspectre/analysis/advanced_detectors.py`` for examples.
+See ``pysymex/analysis/advanced_detectors.py`` for examples.
 
 
 Pull Request Guidelines
@@ -115,7 +115,7 @@ Reporting Issues
 When reporting bugs, please include:
 
 - Python version
-- PySpectre version
+- pysymex version
 - Minimal reproduction example
 - Full error message/traceback
 

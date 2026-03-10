@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyspectre"
-version = "0.3.0a0"
+name = "pysymex"
+version = "0.1.0a1"
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
-    {name = "PySpectre Study Group"}
+    {name = "PySyMex Team"}
 ]
 keywords = [
     "symbolic-execution",
@@ -37,38 +37,42 @@ classifiers = [
 ]
 dependencies = [
     "z3-solver>=4.12.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "hypothesis>=6.0",
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
 ]
 
 [project.scripts]
-pyspectre = "pyspectre.cli:main"
-pyspectre-verify = "pyspectre.verify_cli:main"
+pysymex = "pysymex.cli:main"
+pysymex-verify = "pysymex.verify_cli:main"
+pysymex-trace-analyze = "pysymex.tracing.cli_analyzer:main"
 
 [project.urls]
-Homepage = "https://github.com/darkoss1/pyspecter"
-Documentation = "https://github.com/darkoss1/pyspecter#readme"
-Repository = "https://github.com/darkoss1/pyspecter"
-Issues = "https://github.com/darkoss1/pyspecter/issues"
+Homepage = "https://github.com/darkoss1/pysymex"
+Documentation = "https://github.com/darkoss1/pysymex#readme"
+Repository = "https://github.com/darkoss1/pysymex"
+Issues = "https://github.com/darkoss1/pysymex/issues"
 
 [tool.setuptools.packages.find]
-include = ["pyspectre*"]
+include = ["pysymex*"]
 
 [tool.setuptools.package-data]
-pyspectre = ["py.typed"]
+pysymex = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "fast: marks tests as fast",
@@ -83,12 +87,92 @@ target-version = ['py311', 'py312', 'py313']
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4"]
-ignore = ["E501"]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "S",    # flake8-bandit (security)
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific rules
+    "PTH",  # flake8-use-pathlib
+    "PLC",  # pylint convention
+    "PLE",  # pylint error
+    "PLW",  # pylint warning
+    "PERF", # perflint
+    "FURB", # refurb
+    "LOG",  # flake8-logging
+    "FLY",  # flynt (f-string conversion)
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "S101",    # assert usage (used in contracts)
+    "S301",    # pickle (HMAC-signed, intentional)
+    "S603",    # subprocess without shell=True check
+    "S604",    # function call with shell=True
+    "S605",    # process with a shell
+    "UP007",   # Optional[X] -> X | None (keep for readability in some cases)
+    "TCH001",  # move import into TYPE_CHECKING (z3 needed at runtime)
+    "TCH002",  # move third-party import into TYPE_CHECKING
+    "TCH003",  # move stdlib import into TYPE_CHECKING
+    "PLW0603", # global statement updates (used in reset functions)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PLW", "SIM"]
+"scripts/**" = ["S"]
+
+[tool.pyright]
+stubPath = "typings"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportUnusedImport = "warning"
+exclude = [
+    "build",
+    "_*.py",
+    "scripts",
+    "examples",
+    "benchmarks",
+    "tests",
+]
 
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-cast", "truthy-bool"]
+
+[tool.coverage.run]
+source = ["pysymex"]
+branch = true
+parallel = true
+omit = ["pysymex/__pycache__/*", "pysymex/_*.py"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@overload",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"

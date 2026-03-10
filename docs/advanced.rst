@@ -1,7 +1,7 @@
 Advanced Features
 =================
 
-This section covers advanced features of PySpectre.
+This section covers advanced features of pysymex.
 
 
 Inter-Procedural Analysis
@@ -11,7 +11,7 @@ Analyze multiple functions and their interactions:
 
 .. code-block:: python
 
-   from pyspectre.analysis.interprocedural import InterproceduralAnalyzer
+   from pysymex.analysis.interprocedural import InterproceduralAnalyzer
 
    analyzer = InterproceduralAnalyzer(
        max_inline_depth=3,
@@ -47,7 +47,7 @@ Track data flow from untrusted sources to sensitive sinks:
 
 .. code-block:: python
 
-   from pyspectre.analysis.taint import TaintAnalyzer, TaintSource
+   from pysymex.analysis.taint import TaintAnalyzer, TaintSource
 
    analyzer = TaintAnalyzer()
 
@@ -67,7 +67,7 @@ Define which source-sink combinations are dangerous:
 
 .. code-block:: python
 
-   from pyspectre.analysis.taint import TaintPolicy, TaintSource, TaintSink
+   from pysymex.analysis.taint import TaintPolicy, TaintSource, TaintSink
 
    policy = TaintPolicy()
 
@@ -84,7 +84,7 @@ Combine concrete and symbolic execution for better scalability:
 
 .. code-block:: python
 
-   from pyspectre.analysis.concolic import ConcolicExecutor
+   from pysymex.analysis.concolic import ConcolicExecutor
 
    executor = ConcolicExecutor(
        max_iterations=100,
@@ -107,8 +107,8 @@ Choose how paths are explored:
 
 .. code-block:: python
 
-   from pyspectre.execution.executor import ExecutionConfig
-   from pyspectre.analysis.path_manager import ExplorationStrategy
+   from pysymex.execution.executor import ExecutionConfig
+   from pysymex.analysis.path_manager import ExplorationStrategy
 
    # Depth-first (default)
    config = ExecutionConfig(strategy=ExplorationStrategy.DFS)
@@ -127,18 +127,18 @@ Enable additional bug detectors:
 
 .. code-block:: python
 
-   from pyspectre.analysis.advanced_detectors import (
+   from pysymex.analysis.advanced_detectors import (
        NullDereferenceDetector,
        IntegerOverflowDetector,
        InfiniteLoopDetector,
    )
-   from pyspectre.analysis.detectors import DetectorRegistry
+   from pysymex.analysis.detectors import DetectorRegistry
 
    registry = DetectorRegistry()
    registry.register(NullDereferenceDetector)
    registry.register(IntegerOverflowDetector)
 
-   from pyspectre.execution.executor import SymbolicExecutor
+   from pysymex.execution.executor import SymbolicExecutor
    executor = SymbolicExecutor(detector_registry=registry)
 
 
@@ -149,7 +149,7 @@ Create your own bug detector:
 
 .. code-block:: python
 
-   from pyspectre.analysis.detectors import Detector, Issue, IssueKind
+   from pysymex.analysis.detectors import Detector, Issue, IssueKind
 
    class MyDetector(Detector):
        name = "my-detector"
@@ -174,7 +174,7 @@ Use function summaries for modular analysis:
 
 .. code-block:: python
 
-   from pyspectre.analysis.interprocedural import FunctionSummary
+   from pysymex.analysis.interprocedural import FunctionSummary
 
    # Summaries capture function behavior without re-analysis
    summary = FunctionSummary(
@@ -192,9 +192,9 @@ Access the execution engine directly:
 
 .. code-block:: python
 
-   from pyspectre.execution.executor import SymbolicExecutor, ExecutionConfig
-   from pyspectre.core.state import VMState
-   from pyspectre.core.types import SymbolicValue
+   from pysymex.execution.executor import SymbolicExecutor, ExecutionConfig
+   from pysymex.core.state import VMState
+   from pysymex.core.types import SymbolicValue
 
    # Create executor
    config = ExecutionConfig(verbose=True)
@@ -215,7 +215,7 @@ Work directly with Z3 constraints:
 .. code-block:: python
 
    import z3
-   from pyspectre.core.solver import is_satisfiable, get_model
+   from pysymex.core.solver import is_satisfiable, get_model
 
    x = z3.Int("x")
    constraints = [x > 0, x < 10, x != 5]

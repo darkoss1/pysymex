@@ -1,7 +1,7 @@
 User Guide
 ==========
 
-This guide covers all features of PySpectre in detail.
+This guide covers all features of pysymex in detail.
 
 
 Basic Usage
@@ -14,7 +14,7 @@ The main entry point is the ``analyze()`` function:
 
 .. code-block:: python
 
-   from pyspectre import analyze
+   from pysymex import analyze
 
    def my_function(x, y):
        # function code
@@ -101,7 +101,7 @@ Filter by issue type:
 
 .. code-block:: python
 
-   from pyspectre import IssueKind
+   from pysymex import IssueKind
 
    div_issues = result.get_issues_by_kind(IssueKind.DIVISION_BY_ZERO)
    assert_issues = result.get_issues_by_kind(IssueKind.ASSERTION_ERROR)
@@ -115,7 +115,7 @@ Text Format (Default)
 
 .. code-block:: python
 
-   from pyspectre import format_result
+   from pysymex import format_result
 
    text_output = format_result(result, format="text")
    print(text_output)
@@ -150,11 +150,11 @@ Markdown Format
 Convenience Functions
 ---------------------
 
-PySpectre provides specialized analysis functions:
+pysymex provides specialized analysis functions:
 
 .. code-block:: python
 
-   from pyspectre import (
+   from pysymex import (
        quick_check,
        check_division_by_zero,
        check_assertions,
@@ -177,7 +177,7 @@ Analyze code directly as a string:
 
 .. code-block:: python
 
-   from pyspectre import analyze_code
+   from pysymex import analyze_code
 
    code = '''
    def foo(x):
@@ -195,7 +195,7 @@ Basic Usage
 
 .. code-block:: bash
 
-   pyspectre <file.py> -f <function_name>
+   pysymex <file.py> -f <function_name>
 
 
 Options
@@ -221,16 +221,16 @@ Examples
 .. code-block:: bash
 
    # Basic analysis
-   pyspectre myfile.py -f calculate
+   pysymex myfile.py -f calculate
 
    # With JSON output
-   pyspectre myfile.py -f calculate --format json
+   pysymex myfile.py -f calculate --format json
 
    # Save to file
-   pyspectre myfile.py -f calculate -o report.json --format json
+   pysymex myfile.py -f calculate -o report.json --format json
 
    # Specify types
-   pyspectre myfile.py -f process --args x=int y=str
+   pysymex myfile.py -f process --args x=int y=str
 
    # Increase path limit
-   pyspectre myfile.py -f complex_func --max-paths 5000
+   pysymex myfile.py -f complex_func --max-paths 5000

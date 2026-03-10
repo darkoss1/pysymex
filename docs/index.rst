@@ -1,7 +1,7 @@
-PySpectre Documentation
+pysymex Documentation
 ========================
 
-**PySpectre** is a symbolic execution engine for Python bytecode using Z3.
+**pysymex** is a symbolic execution engine for Python bytecode using Z3.
 It analyzes Python functions to find potential runtime errors like division
 by zero, assertion failures, and index errors.
 
@@ -21,7 +21,7 @@ Quick Example
 
 .. code-block:: python
 
-   from pyspectre import analyze
+   from pysymex import analyze
 
    def divide(x, y):
        return x / y
@@ -51,7 +51,7 @@ Installation
 
 .. code-block:: bash
 
-   pip install pyspectre
+   pip install pysymex
 
 
 Indices and tables

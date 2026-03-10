@@ -1,6 +1,6 @@
-# PySpectre API Reference
+# pysymex API Reference
 
-Complete Python API reference for PySpectre symbolic execution engine.
+Complete Python API reference for pysymex symbolic execution engine.
 
 ---
 
@@ -19,7 +19,7 @@ Complete Python API reference for PySpectre symbolic execution engine.
 ## Quick Start
 
 ```python
-from pyspectre import analyze, scan_file, scan_directory
+from pysymex import analyze, scan_file, scan_directory
 
 # Analyze a function
 def divide(x, y):
@@ -46,7 +46,7 @@ results = scan_directory("./src")
 The primary entry point for analyzing Python functions.
 
 ```python
-from pyspectre import analyze
+from pysymex import analyze
 
 result = analyze(
     func,                           # Function to analyze
@@ -97,7 +97,7 @@ if result.has_issues():
 Analyze a code snippet string.
 
 ```python
-from pyspectre import analyze_code
+from pysymex import analyze_code
 
 code = """
 def foo(x, y):
@@ -131,7 +131,7 @@ print(f"Issues: {len(result.issues)}")
 Analyze a specific function from a Python file.
 
 ```python
-from pyspectre import analyze_file
+from pysymex import analyze_file
 
 result = analyze_file(
     filepath,           # Path to Python file
@@ -158,7 +158,7 @@ result = analyze_file(
 Quick check a function with default settings.
 
 ```python
-from pyspectre import quick_check
+from pysymex import quick_check
 
 issues = quick_check(func) -> List[Issue]
 ```
@@ -175,7 +175,7 @@ if issues:
 ### Specific Checks
 
 ```python
-from pyspectre import (
+from pysymex import (
     check_division_by_zero,
     check_assertions,
     check_index_errors,
@@ -200,7 +200,7 @@ issues = check_index_errors(func) -> List[Issue]
 Scan a single Python file for all potential bugs.
 
 ```python
-from pyspectre import scan_file
+from pysymex import scan_file
 
 result = scan_file(
     file_path,          # Path to Python file
@@ -232,7 +232,7 @@ for issue in result.issues:
 Scan all Python files in a directory.
 
 ```python
-from pyspectre import scan_directory
+from pysymex import scan_directory
 
 results = scan_directory(
     dir_path,               # Directory path
@@ -371,7 +371,7 @@ class SymbolicExecutor:
 Configure the symbolic execution engine.
 
 ```python
-from pyspectre import ExecutionConfig
+from pysymex import ExecutionConfig
 
 config = ExecutionConfig(
     max_paths=1000,              # Max paths to explore
@@ -391,21 +391,21 @@ config = ExecutionConfig(
 
 ---
 
-### PySpectreConfig
+### pysymexConfig
 
 Load configuration from file.
 
 ```python
-from pyspectre import PySpectreConfig, load_config
+from pysymex import pysymexConfig, load_config
 
-# Load from pyspectre.toml in current directory
+# Load from pysymex.toml in current directory
 config = load_config()
 
 # Or specify path
 config = load_config("path/to/config.toml")
 ```
 
-**Config file format (pyspectre.toml):**
+**Config file format (pysymex.toml):**
 
 ```toml
 [execution]
@@ -431,7 +431,7 @@ format = "text"
 ### Logging Configuration
 
 ```python
-from pyspectre import configure_logging, LogLevel
+from pysymex import configure_logging, LogLevel
 
 # Set log level
 configure_logging(LogLevel.DEBUG)
@@ -447,7 +447,7 @@ configure_logging(LogLevel.ERROR)
 ### IssueKind Enum
 
 ```python
-from pyspectre import IssueKind
+from pysymex import IssueKind
 
 class IssueKind(Enum):
     DIVISION_BY_ZERO = "DIVISION_BY_ZERO"
@@ -484,8 +484,8 @@ class IssueKind(Enum):
 ### Custom Detectors
 
 ```python
-from pyspectre.analysis.detectors import BaseDetector, Issue, IssueKind
-from pyspectre.core.state import VMState
+from pysymex.analysis.detectors import BaseDetector, Issue, IssueKind
+from pysymex.core.state import VMState
 
 class CustomDetector(BaseDetector):
     """Custom detector for specific patterns."""
@@ -501,7 +501,7 @@ class CustomDetector(BaseDetector):
 For formal verification with contracts:
 
 ```python
-from pyspectre import (
+from pysymex import (
     verify,
     check_contracts,
     check_arithmetic,
@@ -527,7 +527,7 @@ result = prove_termination(func)
 Track data flow from untrusted sources:
 
 ```python
-from pyspectre.analysis.taint import TaintAnalyzer, TaintPolicy
+from pysymex.analysis.taint import TaintAnalyzer, TaintPolicy
 
 analyzer = TaintAnalyzer(
     policy=TaintPolicy.WEB_SECURITY  # SQL injection, XSS, etc.
@@ -543,7 +543,7 @@ for flow in result.taint_flows:
 Analyze call graphs:
 
 ```python
-from pyspectre.analysis.interprocedural import CallGraphAnalyzer
+from pysymex.analysis.interprocedural import CallGraphAnalyzer
 
 analyzer = CallGraphAnalyzer()
 call_graph = analyzer.build_call_graph(module)
@@ -556,10 +556,10 @@ paths = analyzer.find_paths_to_sink("sensitive_function")
 
 ## Module Exports
 
-All public exports from `pyspectre`:
+All public exports from `pysymex`:
 
 ```python
-from pyspectre import (
+from pysymex import (
     # Main API
     analyze,
     analyze_file,
@@ -592,7 +592,7 @@ from pyspectre import (
     IssueKind,
     
     # Configuration
-    PySpectreConfig,
+    pysymexConfig,
     load_config,
     configure_logging,
     get_logger,

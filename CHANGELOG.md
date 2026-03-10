@@ -1,64 +1,40 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to PySyMex will be documented in this file.
 
-## [0.3.0-alpha] - 2026-02-11
+## [0.1.0-alpha] - 2026-03-01
 
-### Added
-- **Intelligent False Positive Filter**: Integrated `fp_filter.py` to reduce noise from type annotations and intentional assertions.
-- **Enhanced Type Inference**: `PyType` now tracks `length`, `known_keys`, and `value_constraints` for higher precision.
-- **SARIF 2.1.0 Support**: Full support for static analysis results in SARIF format for CI/CD integration.
-- **Static Analysis Mode**: New `static` mode for `scan` command, providing fast and reliable multi-phase analysis.
-- **Confidence Scoring**: Issues now include a confidence score (high/medium/low) based on analysis depth.
-- **New Analysis Modules**: Specialized analyzers for Resource Leaks, String Safety, and Exception Flow.
+### Initial Release
 
-### Changed
-- Default `scan` mode changed from `symbolic` to `static` for improved performance.
-- Refactored CLI for better maintainability and reduced complexity.
+First public alpha release of PySyMex (Python Symbolic Execution Engine).
 
-### Fixed
-- Line number extraction bug (boolean `starts_line` issue in Python 3.11+).
-- Numerous linting warnings and technical debt items across the core engine.
+#### Core Engine
+- **Symbolic Execution Engine**: Full CPython 3.11–3.13 bytecode-level analysis
+  - 100+ opcode handlers including Python 3.13 paired instructions (`STORE_FAST_STORE_FAST`, `LOAD_FAST_LOAD_FAST`, etc.)
+  - Precision-guided exception handling with `SETUP_FINALLY` block tracking
+  - Path exploration strategies: DFS, BFS, coverage-guided
+- **Z3 SMT Solver Integration**: Incremental solver with push/pop scope management, caching, and portfolio solving
+- **Symbolic Types**: `SymbolicValue`, `SymbolicString`, `SymbolicList`, `SymbolicDict`, `SymbolicNone` with full Z3 constraint modeling
+- **VM State Management**: Copy-on-write state forking, structural constraint hashing, atomic path IDs
 
-## [0.2.0-alpha] - 2026-01-30
+#### Analysis
+- **12+ Bug Detectors**: Division by zero, modulo by zero, negative shift, index errors, key errors, None dereference, type errors, attribute errors, assertion failures, unreachable code, taint violations, integer overflow
+- **Interprocedural Analysis**: Call graph construction, function summaries, cross-function return type inference
+- **Taint Tracking**: Source-to-sink taint propagation with implicit flow tracking
+- **Abstract Interpretation**: Interval, Sign, Parity, and Null lattice domains with product domain, widening, narrowing, and loop fixpoint computation
+- **False Positive Reduction**: Dataclass awareness, context-sensitive exception analysis, known-crashy API allowlists, finding deduplication, and confidence scoring
 
-### Added
-- **61 new stdlib models**:
-  - `pathlib`: Path(), exists, is_file, is_dir, name, stem, suffix, parent, joinpath, /, read_text, write_text, read_bytes, write_bytes, resolve, mkdir, unlink, glob, rglob (21 models)
-  - `operator`: itemgetter, attrgetter, add, sub, mul, truediv, floordiv, mod, neg (9 models)
-  - `copy`: copy, deepcopy (2 models)
-  - `io`: StringIO, BytesIO, read, write, getvalue (5 models)
-  - `heapq`: heappush, heappop, heapify, heapreplace, heappushpop, nlargest, nsmallest (7 models)
-  - `bisect`: bisect_left, bisect_right, bisect, insort_left, insort_right, insort (6 models)
-  - `enum`: Enum, IntEnum, auto, value, name (5 models)
-  - `dataclasses`: dataclass, field, asdict, astuple, fields, replace (6 models)
+#### Infrastructure
+- **CLI**: `pysymex scan`, `pysymex analyze`, `pysymex verify`, `pysymex concolic`, `pysymex benchmark`
+- **Output Formats**: Text, JSON, HTML, SARIF 2.1.0
+- **Watch Mode**: Incremental re-analysis on file changes
+- **Parallel Scanning**: Multi-process file verification
+- **100+ stdlib models**: `pathlib`, `operator`, `copy`, `io`, `heapq`, `bisect`, `enum`, `dataclasses`, `collections`, `itertools`, `functools`, and more
+- **Plugin System**: Custom detector registration
+- **2583 tests**: Comprehensive test suite with stress tests for core components
 
-- **Enhanced loop handling**:
-  - Smart bound inference from SymbolicRange iterators
-  - Induction variable detection (i += step patterns)
-  - Loop summarization for closed-form computation
-  - Improved loop invariant generation
-  - Induction-aware widening with bound constraints
-
-- **State merging improvements**:
-  - Linking constraints to preserve condition-value relationships
-  - Better precision for single-arm conditionals
-
-### Changed
-- Rebranded from "Shadow VM" to "PySpectre" throughout documentation
-- Updated CLI to use `pyspectre` command
-
-### Fixed
-- Test patterns for symbolic division by zero detection
-- State merger precision for merged value constraints
-
-## [0.1.0-alpha] - 2026-01-24
-
-### Added
-- Initial release
-- Symbolic execution engine with Z3 integration
-- Bug detectors: division by zero, assertion errors, index errors, key errors, type errors
-- Path exploration strategies: DFS, BFS, coverage-guided
-- Output formats: text, JSON, HTML, Markdown, SARIF
-- CLI interface
-- Full type annotations
+#### Known Limitations
+- State deduplication uses constraint count heuristic (can merge states with different constraints but same count)
+- `lru_cache` with Z3 expressions as keys (theoretical hash collision risk, extremely unlikely in practice)
+- Heap modeling is approximate — complex object attribute tracking may produce false positives
+- UNKNOWN solver results treated as UNSAT (conservative, may miss some bugs)

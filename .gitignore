@@ -94,10 +94,26 @@ scan_log_*.json
 report.html
 test_output.txt
 
+# Scan outputs and debug files
+bugs_report*.txt
+*_scan*.txt
+*_scan*.json
+pyspectre_self_scan*.json
+full_scan_output*.txt
+scan_results*.txt
+scan_log*.txt
+scan_stderr*.log
+profile_results*.txt
+restats
+path_tree*.json
+visualize*.html
+triage_bugs.py
+
+# Build artifacts
+dist_tmp/
+
 # Tool artifacts
 tmpclaude-*-cwd/
 
-# Test and example directories
-tests/
-examples/
-AUDIT_REPORT.md
+# Comment backup archive (pre-cleanup originals)
+.comment_backups/

@@ -1,6 +1,6 @@
-# PySpectre Command-Line Interface (CLI) Guide
+# pysymex Command-Line Interface (CLI) Guide
 
-Complete guide for using PySpectre from the command line.
+Complete guide for using pysymex from the command line.
 
 ---
 
@@ -21,13 +21,13 @@ Complete guide for using PySpectre from the command line.
 
 ```bash
 # Scan a single file
-python -m pyspectre.scanner --dir myfile.py
+python -m pysymex.scanner --dir myfile.py
 
 # Scan a directory
-python -m pyspectre.scanner --dir ./src
+python -m pysymex.scanner --dir ./src
 
 # Watch mode (continuous scanning)
-python -m pyspectre.scanner --dir ./src --watch
+python -m pysymex.scanner --dir ./src --watch
 
 # Use the standalone scanner
 python auto_scanner.py --dir ./src
@@ -41,8 +41,8 @@ python auto_scanner.py --dir ./src
 
 ```bash
 # Clone the repository
-git clone https://github.com/darkoss1/pyspecter.git
-cd pyspecter
+git clone https://github.com/darkoss1/pysymex.git
+cd pysymex
 
 # Create virtual environment
 python -m venv .venv
@@ -64,10 +64,10 @@ pip install -e .
 
 ### Module Scanner
 
-The primary way to use PySpectre CLI:
+The primary way to use pysymex CLI:
 
 ```bash
-python -m pyspectre.scanner [OPTIONS]
+python -m pysymex.scanner [OPTIONS]
 ```
 
 ### Standalone Scanner
@@ -95,31 +95,31 @@ python auto_scanner.py [OPTIONS]
 
 #### Scan Current Directory
 ```bash
-python -m pyspectre.scanner
+python -m pysymex.scanner
 ```
 
 #### Scan Specific Directory
 ```bash
-python -m pyspectre.scanner --dir ./src
-python -m pyspectre.scanner -d C:\projects\myapp
+python -m pysymex.scanner --dir ./src
+python -m pysymex.scanner -d C:\projects\myapp
 ```
 
 #### Custom Log File
 ```bash
-python -m pyspectre.scanner --dir ./src --log results.json
-python -m pyspectre.scanner -d ./src -l ./reports/scan.json
+python -m pysymex.scanner --dir ./src --log results.json
+python -m pysymex.scanner -d ./src -l ./reports/scan.json
 ```
 
 #### Watch Mode (Continuous)
 ```bash
-python -m pyspectre.scanner --dir ./src --watch
-python -m pyspectre.scanner -d ./src -w
+python -m pysymex.scanner --dir ./src --watch
+python -m pysymex.scanner -d ./src -w
 ```
 Press `Ctrl+C` to stop watching and see the summary.
 
 #### Non-Recursive Scan
 ```bash
-python -m pyspectre.scanner --dir ./src --recursive=false
+python -m pysymex.scanner --dir ./src --recursive=false
 ```
 
 ---
@@ -128,7 +128,7 @@ python -m pyspectre.scanner --dir ./src --recursive=false
 
 ### Execution Configuration
 
-PySpectre uses these default settings (customizable via Python API):
+pysymex uses these default settings (customizable via Python API):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -137,9 +137,9 @@ PySpectre uses these default settings (customizable via Python API):
 | `max_iterations` | 5000 | Maximum iterations per function |
 | `timeout_seconds` | 30.0 | Timeout per file |
 
-### Config File (pyspectre.toml)
+### Config File (pysymex.toml)
 
-Create a `pyspectre.toml` file in your project root:
+Create a `pysymex.toml` file in your project root:
 
 ```toml
 [execution]
@@ -247,7 +247,7 @@ Scan a Python project and save results:
 cd C:\projects\myapp
 
 # Run scan
-python -m pyspectre.scanner --dir . --log security_scan.json
+python -m pysymex.scanner --dir . --log security_scan.json
 
 # View results in JSON
 type security_scan.json
@@ -263,15 +263,15 @@ name: Security Scan
 on: [push, pull_request]
 
 jobs:
-  pyspectre:
+  pysymex:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pyspectre
-      - run: python -m pyspectre.scanner --dir ./src --log scan.json
+      - run: pip install pysymex
+      - run: python -m pysymex.scanner --dir ./src --log scan.json
       - uses: actions/upload-artifact@v4
         with:
           name: scan-results
@@ -284,9 +284,9 @@ Create `.git/hooks/pre-commit`:
 
 ```bash
 #!/bin/bash
-python -m pyspectre.scanner --dir . > /dev/null 2>&1
+python -m pysymex.scanner --dir . > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-    echo "PySpectre found potential issues. Run: python -m pyspectre.scanner"
+    echo "pysymex found potential issues. Run: python -m pysymex.scanner"
     exit 1
 fi
 ```
@@ -297,7 +297,7 @@ Keep scanner running while developing:
 
 ```bash
 # Terminal 1: Start watch mode
-python -m pyspectre.scanner --dir ./src --watch
+python -m pysymex.scanner --dir ./src --watch
 
 # Terminal 2: Make code changes
 # Scanner will automatically re-analyze modified files
@@ -330,13 +330,13 @@ python -m pyspectre.scanner --dir ./src --watch
 .venv\Scripts\activate  # Windows
 source .venv/bin/activate  # Linux/macOS
 
-# Install PySpectre
+# Install pysymex
 pip install -e .
 ```
 
 #### Slow Analysis
 ```bash
-# Reduce analysis depth in pyspectre.toml
+# Reduce analysis depth in pysymex.toml
 [execution]
 max_paths = 50
 max_iterations = 2000
@@ -346,12 +346,12 @@ timeout_seconds = 15.0
 #### Out of Memory
 ```bash
 # Scan fewer files at once
-python -m pyspectre.scanner --dir ./src/module1 --log part1.json
-python -m pyspectre.scanner --dir ./src/module2 --log part2.json
+python -m pysymex.scanner --dir ./src/module1 --log part1.json
+python -m pysymex.scanner --dir ./src/module2 --log part2.json
 ```
 
 #### False Positives
-- PySpectre may report issues that cannot happen in practice
+- pysymex may report issues that cannot happen in practice
 - Review counterexamples to verify if the issue is real
 - Consider the symbolic analysis limitations (no runtime type info)
 
@@ -359,10 +359,10 @@ python -m pyspectre.scanner --dir ./src/module2 --log part2.json
 
 ```bash
 # Show help
-python -m pyspectre.scanner --help
+python -m pysymex.scanner --help
 
 # Version info
-python -c "import pyspectre; print(pyspectre.__version__)"
+python -c "import pysymex; print(pysymex.__version__)"
 ```
 
 ---

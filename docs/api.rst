@@ -1,23 +1,23 @@
 API Reference
 =============
 
-This section documents the public API of PySpectre.
+This section documents the public API of pysymex.
 
 
 Main Functions
 --------------
 
-.. autofunction:: pyspectre.analyze
+.. autofunction:: pysymex.analyze
 
-.. autofunction:: pyspectre.analyze_file
+.. autofunction:: pysymex.analyze_file
 
-.. autofunction:: pyspectre.quick_check
+.. autofunction:: pysymex.quick_check
 
-.. autofunction:: pyspectre.check_division_by_zero
+.. autofunction:: pysymex.check_division_by_zero
 
-.. autofunction:: pyspectre.check_assertions
+.. autofunction:: pysymex.check_assertions
 
-.. autofunction:: pyspectre.format_result
+.. autofunction:: pysymex.format_result
 
 
 Core Classes
@@ -26,21 +26,21 @@ Core Classes
 ExecutionResult
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.ExecutionResult
+.. autoclass:: pysymex.ExecutionResult
    :members:
    :undoc-members:
 
 Issue
 ~~~~~
 
-.. autoclass:: pyspectre.Issue
+.. autoclass:: pysymex.Issue
    :members:
    :undoc-members:
 
 IssueKind
 ~~~~~~~~~
 
-.. autoclass:: pyspectre.IssueKind
+.. autoclass:: pysymex.IssueKind
    :members:
    :undoc-members:
 
@@ -51,14 +51,14 @@ Execution
 SymbolicExecutor
 ~~~~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.execution.executor.SymbolicExecutor
+.. autoclass:: pysymex.execution.executor.SymbolicExecutor
    :members:
    :undoc-members:
 
 ExecutionConfig
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.execution.executor.ExecutionConfig
+.. autoclass:: pysymex.execution.executor.ExecutionConfig
    :members:
    :undoc-members:
 
@@ -69,21 +69,21 @@ Types
 SymbolicValue
 ~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.core.types.SymbolicValue
+.. autoclass:: pysymex.core.types.SymbolicValue
    :members:
    :undoc-members:
 
 SymbolicString
 ~~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.core.types.SymbolicString
+.. autoclass:: pysymex.core.types.SymbolicString
    :members:
    :undoc-members:
 
 SymbolicList
 ~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.core.types.SymbolicList
+.. autoclass:: pysymex.core.types.SymbolicList
    :members:
    :undoc-members:
 
@@ -94,14 +94,14 @@ Analysis
 DetectorRegistry
 ~~~~~~~~~~~~~~~~
 
-.. autoclass:: pyspectre.analysis.detectors.DetectorRegistry
+.. autoclass:: pysymex.analysis.detectors.DetectorRegistry
    :members:
    :undoc-members:
 
 PathManager
 ~~~~~~~~~~~
 
-.. autoclass:: pyspectre.analysis.path_manager.PathManager
+.. autoclass:: pysymex.analysis.path_manager.PathManager
    :members:
    :undoc-members:
 
@@ -109,16 +109,16 @@ PathManager
 Formatters
 ----------
 
-.. autofunction:: pyspectre.reporting.formatters.format_result
+.. autofunction:: pysymex.reporting.formatters.format_result
 
-.. autoclass:: pyspectre.reporting.formatters.TextFormatter
+.. autoclass:: pysymex.reporting.formatters.TextFormatter
    :members:
 
-.. autoclass:: pyspectre.reporting.formatters.JSONFormatter
+.. autoclass:: pysymex.reporting.formatters.JSONFormatter
    :members:
 
-.. autoclass:: pyspectre.reporting.formatters.HTMLFormatter
+.. autoclass:: pysymex.reporting.formatters.HTMLFormatter
    :members:
 
-.. autoclass:: pyspectre.reporting.formatters.MarkdownFormatter
+.. autoclass:: pysymex.reporting.formatters.MarkdownFormatter
    :members:

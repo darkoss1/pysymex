@@ -1,6 +1,6 @@
-# PySpectre Scanner - Complete Guide
+# pysymex Scanner - Complete Guide
 
-Detailed documentation for the PySpectre Scanner module and standalone auto-scanner.
+Detailed documentation for the pysymex Scanner module and standalone auto-scanner.
 
 ---
 
@@ -18,11 +18,11 @@ Detailed documentation for the PySpectre Scanner module and standalone auto-scan
 
 ## Overview
 
-PySpectre provides two ways to scan Python files:
+pysymex provides two ways to scan Python files:
 
 | Method | File | Use Case |
 |--------|------|----------|
-| **Module Scanner** | `pyspectre/scanner.py` | Integrated with PySpectre package |
+| **Module Scanner** | `pysymex/scanner.py` | Integrated with pysymex package |
 | **Standalone Scanner** | `auto_scanner.py` | Copy to any project, no installation |
 
 Both provide identical functionality:
@@ -38,7 +38,7 @@ Both provide identical functionality:
 ### Quick Start
 
 ```python
-from pyspectre import scan_file, scan_directory
+from pysymex import scan_file, scan_directory
 
 # Scan a single file
 result = scan_file("mycode.py")
@@ -55,7 +55,7 @@ print(f"Total issues: {total}")
 Scan a single Python file for potential bugs.
 
 ```python
-from pyspectre import scan_file
+from pysymex import scan_file
 
 result = scan_file(
     file_path="path/to/file.py",  # Required: file to scan
@@ -84,7 +84,7 @@ for issue in result.issues:
 Scan all Python files in a directory.
 
 ```python
-from pyspectre import scan_directory
+from pysymex import scan_directory
 
 results = scan_directory(
     dir_path="./src",           # Required: directory to scan
@@ -164,7 +164,7 @@ The `auto_scanner.py` file is a standalone scanner you can copy to any project.
 ### Setup
 
 1. Copy `auto_scanner.py` to your project root
-2. Ensure PySpectre is installed: `pip install pyspectre`
+2. Ensure pysymex is installed: `pip install pysymex`
 3. Run the scanner
 
 ### Command Line
@@ -202,7 +202,7 @@ Watch mode continuously monitors for file changes and re-scans modified files.
 
 ```bash
 # CLI
-python -m pyspectre.scanner --dir ./src --watch
+python -m pysymex.scanner --dir ./src --watch
 
 # Or with standalone scanner
 python auto_scanner.py --dir ./src --watch
@@ -212,7 +212,7 @@ python auto_scanner.py --dir ./src --watch
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
-║                   PySpectre Scanner - Watch Mode                     ║
+║                   pysymex Scanner - Watch Mode                     ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  Watching: ./src                                                     ║
 ║  Log:      scan_log_20260117_120000.json                            ║
@@ -314,7 +314,7 @@ Custom: Use `--log` argument or set in code
 ### Using ScanSession in Code
 
 ```python
-from pyspectre.scanner import ScanSession, analyze_file
+from pysymex.scanner import ScanSession, analyze_file
 from pathlib import Path
 
 # Create session with custom log file
@@ -339,7 +339,7 @@ print(f"Breakdown: {summary['issue_breakdown']}")
 ### Example 1: Custom Report Generator
 
 ```python
-from pyspectre import scan_directory
+from pysymex import scan_directory
 from pathlib import Path
 import json
 
@@ -396,10 +396,10 @@ print(f"High severity: {len(report['by_severity']['high'])}")
 
 ```python
 #!/usr/bin/env python3
-"""Pre-commit hook for PySpectre scanning."""
+"""Pre-commit hook for pysymex scanning."""
 import subprocess
 import sys
-from pyspectre import scan_file
+from pysymex import scan_file
 
 def get_staged_files():
     """Get list of staged Python files."""
@@ -414,7 +414,7 @@ def main():
     if not files:
         return 0
     
-    print(f"PySpectre: Scanning {len(files)} staged files...")
+    print(f"pysymex: Scanning {len(files)} staged files...")
     
     total_issues = 0
     for filepath in files:
@@ -441,32 +441,32 @@ if __name__ == "__main__":
 ```python
 # conftest.py
 import pytest
-from pyspectre import scan_file
+from pysymex import scan_file
 from pathlib import Path
 
 @pytest.fixture(scope="session")
-def pyspectre_results():
-    """Run PySpectre analysis on the entire project."""
+def pysymex_results():
+    """Run pysymex analysis on the entire project."""
     results = {}
     for py_file in Path("src").glob("**/*.py"):
         results[str(py_file)] = scan_file(py_file)
     return results
 
 def pytest_collection_modifyitems(session, config, items):
-    """Add PySpectre marker to tests."""
+    """Add pysymex marker to tests."""
     pass
 
 # test_security.py
-def test_no_division_by_zero(pyspectre_results):
+def test_no_division_by_zero(pysymex_results):
     """Ensure no division by zero issues."""
-    for filepath, result in pyspectre_results.items():
+    for filepath, result in pysymex_results.items():
         div_issues = [i for i in result.issues if i["kind"] == "DIVISION_BY_ZERO"]
         assert not div_issues, f"{filepath} has division by zero issues: {div_issues}"
 
-def test_no_high_severity_issues(pyspectre_results):
+def test_no_high_severity_issues(pysymex_results):
     """Ensure no high severity issues."""
     HIGH_SEVERITY = {"DIVISION_BY_ZERO", "NULL_DEREFERENCE"}
-    for filepath, result in pyspectre_results.items():
+    for filepath, result in pysymex_results.items():
         high = [i for i in result.issues if i["kind"] in HIGH_SEVERITY]
         assert not high, f"{filepath} has high severity issues: {high}"
 ```
@@ -475,10 +475,10 @@ def test_no_high_severity_issues(pyspectre_results):
 
 ```python
 # middleware.py
-from pyspectre import scan_file
+from pysymex import scan_file
 import logging
 
-logger = logging.getLogger("pyspectre.middleware")
+logger = logging.getLogger("pysymex.middleware")
 
 def analyze_on_import(filepath):
     """Analyze a module when it's imported (development only)."""
@@ -486,14 +486,14 @@ def analyze_on_import(filepath):
         result = scan_file(filepath, verbose=False, timeout=5.0)
         if result.issues:
             logger.warning(
-                f"PySpectre found {len(result.issues)} issues in {filepath}"
+                f"pysymex found {len(result.issues)} issues in {filepath}"
             )
             for issue in result.issues:
                 logger.warning(
                     f"  [{issue['kind']}] Line {issue['line']}: {issue['message']}"
                 )
     except Exception as e:
-        logger.debug(f"PySpectre analysis failed for {filepath}: {e}")
+        logger.debug(f"pysymex analysis failed for {filepath}: {e}")
 ```
 
 ---

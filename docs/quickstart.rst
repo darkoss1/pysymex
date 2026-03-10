@@ -1,17 +1,17 @@
 Quick Start Guide
 =================
 
-This guide will get you started with PySpectre in under 5 minutes.
+This guide will get you started with pysymex in under 5 minutes.
 
 
 Installation
 ------------
 
-Install PySpectre using pip:
+Install pysymex using pip:
 
 .. code-block:: bash
 
-   pip install pyspectre
+   pip install pysymex
 
 This will also install the Z3 solver as a dependency.
 
@@ -23,7 +23,7 @@ Let's analyze a simple function:
 
 .. code-block:: python
 
-   from pyspectre import analyze
+   from pysymex import analyze
 
    def calculate_average(total, count):
        return total / count
@@ -59,7 +59,7 @@ The ``analyze()`` function returns an ``ExecutionResult`` with:
 Safe Code Patterns
 ------------------
 
-PySpectre recognizes safe patterns. This function won't report issues:
+pysymex recognizes safe patterns. This function won't report issues:
 
 .. code-block:: python
 
@@ -75,18 +75,18 @@ PySpectre recognizes safe patterns. This function won't report issues:
 Using the CLI
 -------------
 
-You can also use PySpectre from the command line:
+You can also use pysymex from the command line:
 
 .. code-block:: bash
 
    # Analyze a function in a file
-   pyspectre myfile.py -f my_function
+   pysymex myfile.py -f my_function
 
    # Output as JSON
-   pyspectre myfile.py -f my_function --format json
+   pysymex myfile.py -f my_function --format json
 
    # Specify parameter types
-   pyspectre myfile.py -f my_function --args x=int y=str
+   pysymex myfile.py -f my_function --args x=int y=str
 
 
 Next Steps

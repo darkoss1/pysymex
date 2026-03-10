@@ -1,77 +1,91 @@
-# PySpectre
- 
- > [!IMPORTANT]
- > **EDUCATIONAL PURPOSES ONLY**
- > This project is a research prototype designed for studying symbolic execution and formal verification concepts. 
- > It is **NOT** intended for production use, security auditing, or critical systems verification. 
- > Use at your own risk.
- 
- <div align="center">
- 
- **Intelligent Formal Verification for Python using Z3 Theorem Prover**
- 
- [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
- [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
- [![Status: Educational](https://img.shields.io/badge/Status-Educational_Prototype-orange.svg)]()
- 
- *Mathematically prove your Python code won't crash.*
- 
- </div>
+# PySyMex
+
+> [!IMPORTANT]
+> **EDUCATIONAL PURPOSES ONLY**
+> This project is a research prototype designed for studying symbolic execution and formal verification concepts.
+> It is **NOT** intended for production use, security auditing, or critical systems verification.
+> Use at your own risk.
+
+<div align="center">
+
+**Python Symbolic Execution Engine powered by Z3 Theorem Prover**
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Status: Alpha](https://img.shields.io/badge/Status-v0.1.0--alpha-orange.svg)]()
+
+*Mathematically prove your Python code won't crash.*
+
+</div>
 
 ---
 
-## 🚀 Features
+## Overview
 
-- **Interprocedural Analysis**: Tracks bugs across function calls
-- **Call Graph Building**: Understands how functions relate to each other
-- **Function Summaries**: Caches analysis results for efficiency
-- **Taint Tracking**: Follows untrusted data through your code
-- **Mathematical Proofs**: Uses Z3 SMT solver for formal verification
-- **12+ Bug Types Detected**: Division by zero, null dereference, index/key errors, command injection, etc.
-- **Full Symbolic Execution Engine**: Complete bytecode-level analysis with precision-guided exception handling
-- **Loop Detection & Widening**: Handles loops without path explosion
-- **Type Inference**: Pre-analysis step to infer types for better precision
-- **HTML/SARIF Reports**: Export results for GitHub Security and VS Code integration
+**PySyMex** (Python Symbolic Execution) is a bytecode-level symbolic execution engine that uses the Z3 SMT solver to formally verify Python programs. It explores all possible execution paths through your code, building mathematical constraints at each decision point, then uses Z3 to find concrete inputs that trigger bugs — or prove no such inputs exist.
 
-## 📦 Installation
+### What it does
+
+- Disassembles Python bytecode (CPython 3.11–3.13)
+- Symbolically executes every reachable path
+- Builds Z3 constraints at branches, arithmetic, and API calls
+- Reports bugs with **counterexamples** (concrete crashing inputs)
+- Tracks taint from untrusted sources to dangerous sinks
+
+## Features
+
+- **Full Symbolic Execution Engine** — bytecode-level analysis with CPython 3.13 opcode support
+- **Interprocedural Analysis** — tracks bugs across function calls via call graph and function summaries
+- **12+ Bug Detectors** — division by zero, null dereference, index/key errors, type errors, assertion failures, dead code, taint violations, integer overflow, and more
+- **Taint Tracking** — follows untrusted data through your code to detect injection vulnerabilities
+- **Abstract Interpretation** — interval, sign, and parity domains with widening for loop analysis
+- **Z3 SMT Integration** — formal proofs via incremental solver with caching and portfolio solving
+- **Loop Handling** — bound inference, induction variable detection, loop summarization, and widening
+- **Multiple Output Formats** — text, JSON, HTML, SARIF 2.1.0 (GitHub Security tab compatible)
+- **Watch Mode** — incremental re-analysis on file changes during development
+- **Parallel Scanning** — multi-process file verification for large codebases
+
+## Installation
 
 ```bash
 # Install Z3 solver (required)
 pip install z3-solver
 
 # Clone and install
-git clone https://github.com/darkoss1/pyspecter.git
-cd pyspecter
+git clone https://github.com/darkoss1/pysymex.git
+cd pysymex
 pip install -e .
 ```
 
-## 🔍 Quick Start
+## Quick Start
 
 ### Command Line
 
 ```bash
-# Scan a file (auto-detects all functions)
-python -m pyspectre scan mycode.py
+# Scan a file
+pysymex scan mycode.py
 
 # Scan a directory recursively
-python -m pyspectre scan src/ -r
+pysymex scan src/ -r
 
 # Generate SARIF report for CI/CD
-python -m pyspectre scan src/ --format sarif -o report.sarif
+pysymex scan src/ --format sarif -o report.sarif
 
-# Provide type hints for specific variables
-python -m pyspectre analyze mycode.py -f risky_func --args x:int y:str
+# Analyze a specific function with type hints
+pysymex analyze mycode.py -f risky_func --args x:int y:str
 
-# Watch mode for development
-python -m pyspectre scan . --watch
+# Watch mode — re-scan on file changes
+pysymex scan . --watch
+
+# Run benchmarks
+pysymex benchmark --format markdown
 ```
 
 ### Python API
 
 ```python
-from pyspectre.analysis.z3_prover import verify_function, Z3Engine
+from pysymex.analysis.solver import verify_function
 
-# Verify a single function
 def risky_divide(x: int, y: int) -> int:
     return x // y
 
@@ -80,39 +94,42 @@ for r in results:
     if r.can_crash:
         print(f"Bug: {r.crash.description}")
         print(f"Counterexample: {r.counterexample}")
+```
 
-# Use the full engine for interprocedural analysis
+```python
+from pysymex.analysis.solver import Z3Engine
+
 engine = Z3Engine(
     timeout_ms=5000,
     interprocedural=True,
-    track_taint=True
+    track_taint=True,
 )
 file_results = engine.verify_file("mycode.py")
 ```
 
-## 🐛 Bug Types Detected
+## Bug Types Detected
 
 | Bug Type | Description | Example |
 |----------|-------------|---------|
-| ➗ Division by Zero | Division where denominator can be 0 | `x / y` where `y=0` |
-| ➗ Modulo by Zero | Modulo where divisor can be 0 | `x % y` where `y=0` |
-| ⬅️ Negative Shift | Bit shift with negative amount | `x << n` where `n<0` |
-| 📦 Index Out of Bounds | Array access beyond bounds | `arr[i]` where `i >= len(arr)` |
-| 🚫 None Dereference | Accessing attributes on None | `obj.method()` where `obj=None` |
-| 🔀 Type Error | Type mismatch in operations | Operations on wrong types |
-| 🔑 Key Error | Dictionary key not found | `d[key]` where key missing |
-| 📛 Attribute Error | Missing attribute access | Missing method/property |
-| ❌ Assertion Failure | Assertions that can fail | `assert x > 0` where `x<=0` |
-| 🚧 Unreachable Code | Dead code paths | Code after `return` |
-| ☠️ Tainted Data | Untrusted data to dangerous sink | SQL injection, etc. |
-| 💥 Integer Overflow | Arithmetic overflow | Large number operations |
+| Division by Zero | Division where denominator can be 0 | `x / y` where `y=0` |
+| Modulo by Zero | Modulo where divisor can be 0 | `x % y` where `y=0` |
+| Negative Shift | Bit shift with negative amount | `x << n` where `n<0` |
+| Index Out of Bounds | Array access beyond bounds | `arr[i]` where `i >= len(arr)` |
+| None Dereference | Accessing attributes on None | `obj.method()` where `obj=None` |
+| Type Error | Type mismatch in operations | Operations on wrong types |
+| Key Error | Dictionary key not found | `d[key]` where key missing |
+| Attribute Error | Missing attribute access | Missing method/property |
+| Assertion Failure | Assertions that can fail | `assert x > 0` where `x<=0` |
+| Unreachable Code | Dead code paths | Code after `return` |
+| Taint Violation | Untrusted data to dangerous sink | SQL injection, command injection |
+| Integer Overflow | Arithmetic overflow | Large number operations |
 
-## 📊 Example Output
+## Example Output
 
 ```
 ══════════════════════════════════════════════════════════════════════
- 🔍 PySpectre - Advanced Formal Verification Report
-    Interprocedural Analysis with Z3 Theorem Prover
+ 🔍 PySyMex — Formal Verification Report
+    Symbolic Execution with Z3 Theorem Prover
 ══════════════════════════════════════════════════════════════════════
 
 🔴 CRASHES PROVEN POSSIBLE (Z3 found counterexamples):
@@ -132,98 +149,86 @@ file_results = engine.verify_file("mycode.py")
   ✅ Proven safe:         45
   🔗 Call relationships:  12
   ⏱️  Total time:          1.23s
-
-  ❌ Found 3 potential crash(es) with mathematical proof!
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-pyspectre/
+pysymex/
 ├── analysis/              # Analysis engines
-│   ├── z3_engine.py       # Core Z3 verification (~1,700 lines)
-│   ├── z3_prover.py       # Backwards-compatible API
-│   ├── detectors.py       # Bug detectors
-│   ├── taint_analysis.py  # Taint tracking
-│   ├── bounds_checking.py # Bounds verification
+│   ├── solver/            # Core Z3 verification
+│   ├── abstract/          # Abstract interpretation domains
+│   ├── detectors/         # Bug detectors
+│   ├── taint/             # Taint tracking
 │   └── ...                # 35+ analysis modules
 ├── core/                  # Core symbolic types
-│   ├── types.py           # Symbolic value types
-│   ├── state.py           # VM state management
-│   ├── solver.py          # Z3 solver wrapper
-│   └── ...                # 15+ core modules
+│   ├── types.py           # SymbolicValue, SymbolicString, SymbolicList, etc.
+│   ├── state.py           # VM state management (stack, locals, constraints)
+│   ├── solver.py          # Z3 solver wrapper (incremental, portfolio)
+│   └── ...
 ├── execution/             # Bytecode execution
-│   ├── executor.py        # Main executor
-│   ├── opcodes/           # Opcode handlers
+│   ├── executor.py        # Main symbolic executor
+│   ├── opcodes/           # Per-opcode handlers (CPython 3.11–3.13)
 │   └── verified_executor.py
-├── models/                # Built-in models
-├── reporting/             # HTML/SARIF output
-├── contracts/             # Design-by-contract
-└── ...
+├── models/                # Built-in stdlib models (100+ functions)
+├── reporting/             # HTML, SARIF, JSON, text output
+├── contracts/             # Design-by-contract (experimental)
+└── plugins/               # Plugin system for custom detectors
 ```
 
-### Key Components
-
-- **Z3Engine**: Main verification engine with interprocedural analysis
-- **SymbolicExecutor**: Full bytecode-level symbolic execution
-- **CallGraph**: Tracks caller/callee relationships across functions
-- **FunctionSummary**: Caches analysis results for efficiency
-- **Detectors**: Pluggable bug detectors for various issue types
-
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (~2500 tests)
 pytest tests/ -v
 
-# Run specific test modules
+# Run specific modules
 pytest tests/test_z3_prover.py -v
 pytest tests/test_interprocedural.py -v
 
 # Run with coverage
-pytest --cov=pyspectre tests/ -v
+pytest --cov=pysymex tests/ -v
 ```
 
-## 📋 CLI Options
+## CLI Reference
 
 ```
-usage: pyspectre scan [-h] [-r] [--format {text,json,sarif}] [-o OUTPUT]
-                      [--max-paths MAX_PATHS] [--timeout TIMEOUT] [-v]
-                      [--workers WORKERS] [--auto] [--watch]
-                      path
-
-Scan file(s) for bugs (auto-discovers all functions)
+usage: pysymex scan [-h] [-r] [--format {text,json,sarif}] [-o OUTPUT]
+                    [--max-paths MAX_PATHS] [--timeout TIMEOUT] [-v]
+                    [--workers WORKERS] [--auto] [--watch]
+                    path
 
 positional arguments:
   path                  Python file or directory to scan
 
 options:
-  -h, --help            show help message
   -r, --recursive       Recursively scan directories
-  --format {text,json,sarif}
-                        Output format (default: text)
-  -o OUTPUT, --output OUTPUT
-                        Output file path (default: stdout)
-  --max-paths MAX_PATHS
-                        Max paths per function (default: 1000)
-  --timeout TIMEOUT     Timeout per function in seconds (default: 60)
+  --format {text,json,sarif}  Output format (default: text)
+  -o OUTPUT             Output file path (default: stdout)
+  --max-paths N         Max paths per function (default: 1000)
+  --timeout SECONDS     Timeout per function (default: 60)
   -v, --verbose         Verbose output
-  --workers WORKERS     Number of worker processes (default: CPU count)
-  --auto                Automatically tune configuration based on complexity
-  --watch               Watch for file changes and re-scan automatically
+  --workers N           Number of worker processes (default: CPU count)
+  --auto                Auto-tune configuration based on complexity
+  --watch               Watch for file changes and re-scan
+
 ```
 
-## 📄 License
+## Requirements
 
-MIT License - see [LICENSE](LICENSE) file.
+- Python 3.11+ (tested on 3.11, 3.12, 3.13)
+- z3-solver >= 4.12.0
 
-## 🤝 Contributing
+## License
 
-Contributions welcome! Please read our contributing guidelines first.
+MIT License — see [LICENSE](LICENSE).
+
+## Contributing
+
+Contributions welcome!
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Run tests (`pytest tests/ -v`)
-4. Commit your changes (`git commit -m 'Add amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+4. Commit and push
+5. Open a Pull Request
