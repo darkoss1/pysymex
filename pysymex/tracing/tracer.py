@@ -300,12 +300,13 @@ class ExecutionTracer:
 
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in func_name)
-        filename = f"trace_{ts}_{safe_name}.jsonl"
+        filename = f"trace_{ts}_{safe_name}.jsonl.gz"
         out_dir = Path(self._config.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         self._trace_path = out_dir / filename
 
-        self._file = self._trace_path.open("w", encoding="utf-8", buffering=1)
+        import gzip
+        self._file = gzip.open(self._trace_path, "wt", encoding="utf-8")
 
         z3_version = "unavailable"
         try:
