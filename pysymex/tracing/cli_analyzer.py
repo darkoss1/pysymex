@@ -105,8 +105,14 @@ def stream_events(
         unchanged) and *parsed_event* is the decoded JSON dict.
     """
     handle: Iterator[str]
+    is_gz = str(path).endswith(".gz")
+
     if path == "-":
         handle = sys.stdin
+    elif is_gz:
+        import gzip
+        # Open in 'rt' mode translates gzip bytes to unicode strings automatically
+        handle = gzip.open(path, "rt", encoding="utf-8")
     else:
         handle = open(path, encoding="utf-8")
 

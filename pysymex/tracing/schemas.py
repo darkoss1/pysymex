@@ -1,4 +1,4 @@
-﻿"""Typed event schemas for the pysymex execution tracer.
+"""Typed event schemas for the pysymex execution tracer.
 
 All event models are immutable Pydantic v2 BaseModels that serialise to a
 single JSONL line via ``model_dump_json()``.  The :data:`TraceEvent` type is a
@@ -55,6 +55,7 @@ class TracerConfig(BaseModel):
     keyframe_on_prune: bool = True
     keyframe_on_issue: bool = True
     max_constraint_display: int = Field(default=50, gt=0)
+    compression_level: int = Field(default=6, ge=0, le=9)
     enabled: bool = False
     """Tracing is **opt-in**.  Set ``enabled=True`` explicitly, or set the
     ``PY_SYMEX_TRACE=1`` environment variable and call :meth:`from_env`."""
@@ -86,7 +87,15 @@ class TracerConfig(BaseModel):
         env_val = os.environ.get("PY_SYMEX_TRACE", "0").strip().lower()
         enabled = env_val in _TRUTHY
 
-        return cls(enabled=overrides.pop("enabled", enabled), **overrides)
+        # Professional touch: allow overriding compression level via env
+        env_comp = os.environ.get("PY_SYMEX_TRACE_COMPRESSION", "6").strip()
+        comp_level = int(env_comp) if env_comp.isdigit() else 6
+
+        return cls(
+            enabled=overrides.pop("enabled", enabled),
+            compression_level=overrides.pop("compression_level", comp_level),
+            **overrides,
+        )
 
 
 class ConstraintEntry(BaseModel):
