@@ -60,7 +60,7 @@ class TracerConfig(BaseModel):
     ``PY_SYMEX_TRACE=1`` environment variable and call :meth:`from_env`."""
 
     @classmethod
-    def from_env(cls, **overrides: object) -> "TracerConfig":
+    def from_env(cls, **overrides: object) -> TracerConfig:
         """Construct a :class:`TracerConfig` whose ``enabled`` flag is driven
         by the ``PY_SYMEX_TRACE`` environment variable.
 

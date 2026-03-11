@@ -55,8 +55,8 @@ def handle_compare_op(
     both_str = z3.And(left_is_str, right_is_str)
 
     mixed = z3.Not(z3.Or(both_int, both_str))
-    from pysymex.core.solver import is_satisfiable, get_model
     from pysymex.analysis.detectors import Issue, IssueKind
+    from pysymex.core.solver import get_model, is_satisfiable
 
     res_states = []
     res_issues = []

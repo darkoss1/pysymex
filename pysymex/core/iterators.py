@@ -12,6 +12,7 @@ Factory functions (create_iterator, symbolic_*) remain here.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any, cast
 
 import z3
 
@@ -44,16 +45,18 @@ def create_iterator(iterable: object, name: str = "iter") -> SymbolicIterator:
     if isinstance(iterable, range):
         return SymbolicRange.from_args(iterable.start, iterable.stop, iterable.step, name=name)
     if isinstance(iterable, (list, tuple, str)):
-        return SymbolicSequenceIterator(sequence=iterable, _name=name)
+        return SymbolicSequenceIterator(
+            sequence=cast("list[object] | tuple[object, ...] | str", iterable), _name=name
+        )
     if isinstance(iterable, dict):
-        keys_list: list[object] = list(iterable.keys())
+        keys_list: list[object] = list(cast("dict[object, object]", iterable).keys())
         return SymbolicDictKeysIterator(keys=keys_list, _name=name)
     if isinstance(iterable, SymbolicArray):
         return SymbolicSequenceIterator(sequence=iterable, _name=name)
     try:
-        return SymbolicSequenceIterator(sequence=list(iterable), _name=name)
+        return SymbolicSequenceIterator(sequence=list(cast(Any, iterable)), _name=name)
     except TypeError as exc:
-        raise TypeError(f"Cannot create iterator from {type (iterable )}") from exc
+        raise TypeError(f"Cannot create iterator from {type(iterable)}") from exc
 
 
 def symbolic_range(*args: int | z3.ArithRef, name: str = "range") -> SymbolicRange:
@@ -86,12 +89,16 @@ def symbolic_filter(
 ) -> SymbolicFilter:
     """Create a symbolic filter iterator."""
     inner = create_iterator(iterable, f"{name}_inner")
-    return SymbolicFilter(predicate=predicate, inner=inner, _name=name)
+    return SymbolicFilter(
+        predicate=cast("Callable[[object], bool]", predicate), inner=inner, _name=name
+    )
 
 
 def symbolic_reversed(sequence: object, name: str = "reversed") -> SymbolicReversed:
     """Create a symbolic reversed iterator."""
-    return SymbolicReversed(sequence=sequence, _name=name)
+    return SymbolicReversed(
+        sequence=cast("list[object] | tuple[object, ...] | str", sequence), _name=name
+    )
 
 
 def collect_iterator(

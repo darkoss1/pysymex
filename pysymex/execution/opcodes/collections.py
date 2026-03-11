@@ -13,12 +13,9 @@ from pysymex.core.havoc import HavocValue
 from pysymex.core.solver import get_model, is_satisfiable
 from pysymex.core.type_checks import is_type_subscription
 from pysymex.core.types import (
-    SymbolicNone,
-    SymbolicType,
-    SymbolicValue,
     Z3_FALSE,
-    Z3_TRUE,
-    Z3_ZERO,
+    SymbolicNone,
+    SymbolicValue,
 )
 from pysymex.core.types_containers import (
     SymbolicDict,
@@ -162,11 +159,11 @@ def handle_build_const_key_map(
                 s_val: object = (
                     val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
                 )
-                sym_dict = sym_dict.__setitem__(key, cast(SymbolicValue, s_val))
+                sym_dict = sym_dict.__setitem__(key, cast("SymbolicValue", s_val))
             elif isinstance(key, str):
                 str_key = SymbolicString.from_const(key)
                 s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-                sym_dict = sym_dict.__setitem__(str_key, cast(SymbolicValue, s_val))
+                sym_dict = sym_dict.__setitem__(str_key, cast("SymbolicValue", s_val))
     sym_dict.z3_len = z3.IntVal(count)
 
     addr = next_address()
@@ -375,7 +372,7 @@ def handle_binary_subscr(
                     pc=state.pc,
                 )
             )
-        state.add_constraint(
+        state = state.add_constraint(
             z3.And(index.z3_int >= -real_container.z3_len, index.z3_int < real_container.z3_len)
         )
         result = real_container[index]
@@ -400,7 +397,7 @@ def handle_binary_subscr(
         try:
             import collections.abc
 
-            if isinstance(real_container, (collections.abc.Sequence, collections.abc.Mapping)):
+            if isinstance(real_container, (collections.abc.Sequence, collections.abc.Mapping, SymbolicValue)):
 
                 result, constraint = SymbolicValue.symbolic(f"subscr_{state.pc}")
                 state = state.add_constraint(constraint)
@@ -502,8 +499,8 @@ def handle_store_subscr(
     ):
 
         issue = Issue(
-            IssueKind.NULL_POINTER,
-            f"Store to None object",
+            IssueKind.NULL_DEREFERENCE,
+            "Store to None object",
             list(state.path_constraints),
             get_model(state.path_constraints),
             state.pc,
@@ -676,18 +673,27 @@ def handle_unpack_sequence(
         hasattr(container, "is_none")
         and is_satisfiable([*state.path_constraints, container.is_none])
     ):
-        issue = Issue(
-            IssueKind.NULL_POINTER,
-            "Unpacking None",
-            list(state.path_constraints),
-            get_model(state.path_constraints),
-            state.pc,
-        )
-        if not is_satisfiable(
+        must_be_none = container is None or not is_satisfiable(
             [*state.path_constraints, z3.Not(getattr(container, "is_none", Z3_FALSE))]
-        ):
-            return OpcodeResult.error(issue, state)
-        issues.append(issue)
+        )
+        
+        is_unconstrained_var = hasattr(container, "is_none") and z3.is_const(container.is_none) and container.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+        
+        if must_be_none or not is_unconstrained_var:
+            issue = Issue(
+                IssueKind.NULL_DEREFERENCE,
+                "Unpacking None",
+                list(state.path_constraints),
+                get_model(state.path_constraints),
+                state.pc,
+            )
+            if must_be_none:
+                return OpcodeResult.error(issue, state)
+            issues.append(issue)
+        
+        # Assume it's actually not None on the continuation path to avoid cascading FPs
+        if hasattr(container, "is_none"):
+            state = state.add_constraint(z3.Not(container.is_none))
 
     for i in range(count):
         if isinstance(container, SymbolicList):

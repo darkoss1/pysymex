@@ -133,6 +133,11 @@ def handle_load_global(
     if value is None:
         sym_val, type_constraint = SymbolicValue.symbolic(f"global_{name}")
         sym_val.model_name = name
+
+        # Add non-None constraint for all dynamically inferred globals
+        import z3 as _z3
+        state = state.add_constraint(_z3.Not(sym_val.is_none))
+
         state = state.set_global(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val
@@ -176,6 +181,10 @@ def handle_load_name(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
         value = state.get_global(name)
     if value is None:
         sym_val, type_constraint = SymbolicValue.symbolic(name)
+        
+        import z3 as _z3
+        state = state.add_constraint(_z3.Not(sym_val.is_none))
+
         state = state.set_local(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val
@@ -219,6 +228,10 @@ def handle_load_deref(
         value = state.get_global(name)
     if value is None:
         sym_val, type_constraint = SymbolicValue.symbolic(f"closure_{name}")
+        
+        import z3 as _z3
+        state = state.add_constraint(_z3.Not(sym_val.is_none))
+        
         state = state.set_local(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val

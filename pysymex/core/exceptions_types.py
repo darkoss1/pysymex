@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import Any
 
 import z3
 
@@ -107,7 +108,6 @@ def exception_matches(
     ``issubclass()`` when both are concrete types.
     """
     if isinstance(exc_type, str):
-
         return True
     try:
         return issubclass(exc_type, handler_type)
@@ -493,9 +493,10 @@ def raises(
     contract = RaisesContract(exc_type, when, message)
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
-        if not hasattr(func, "__raises__"):
-            func.__raises__ = []
-        func.__raises__.append(contract)
+        func_any: Any = func
+        if not hasattr(func_any, "__raises__"):
+            func_any.__raises__ = []
+        func_any.__raises__.append(contract)
         return func
 
     return decorator

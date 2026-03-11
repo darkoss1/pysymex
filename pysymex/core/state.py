@@ -23,7 +23,7 @@ from __future__ import annotations
 import copy
 import itertools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -39,11 +39,11 @@ _EMPTY_TAINT: frozenset[str] = frozenset()
 UNBOUND = object()
 
 
-def wrap_cow_dict(val: dict[str, object] | dict[int, object] | CowDict | None) -> CowDict:
+def wrap_cow_dict(val: dict[Any, Any] | CowDict[Any, Any] | None) -> CowDict[Any, Any]:
     """Wrap a dict in CowDict if it isn't already."""
     if isinstance(val, CowDict):
         return val
-    return CowDict(cast("dict[str, object]", val)) if val else CowDict()
+    return CowDict(val) if val else CowDict()
 
 
 def wrap_cow_set(val: set[int] | CowSet | None) -> CowSet:
@@ -63,10 +63,11 @@ def _copy_summary_builder(builder: object) -> object:
     inside those lists are immutable and safe to share.
     """
     try:
-        new = copy.copy(builder)
+        new: Any = copy.copy(builder)
 
-        if hasattr(builder, "summary"):
-            new.summary = copy.copy(builder.summary)
+        builder_any: Any = builder
+        if hasattr(builder_any, "summary"):
+            new.summary = copy.copy(builder_any.summary)
             for attr in (
                 "parameters",
                 "preconditions",
@@ -313,9 +314,9 @@ class VMState:
         return self.global_vars.get(name)
 
     @property
-    def locals(self) -> CowDict:
+    def locals(self) -> CowDict[Any, Any]:
         """Alias for local_vars (used by some callers)."""
-        return self.local_vars
+        return self.local_vars  # type: ignore[return-value]
 
     def current_block(self) -> BlockInfo | None:
         """Get the current control flow block."""
@@ -349,8 +350,9 @@ class VMState:
         h ^= self.visited_pcs.hash_value() * 12345
 
         for v in self.stack:
-            if hasattr(v, "hash_value") and callable(v.hash_value):
-                h = (h * 31) ^ v.hash_value()
+            v_any: Any = v
+            if hasattr(v_any, "hash_value") and callable(v_any.hash_value):
+                h = (h * 31) ^ cast("int", v_any.hash_value())
             else:
                 try:
                     h = (h * 31) ^ hash(v)
@@ -380,11 +382,7 @@ class VMState:
                 CallFrame(
                     function_name=f.function_name,
                     return_pc=f.return_pc,
-                    local_vars=(
-                        f.local_vars.cow_fork()
-                        if isinstance(f.local_vars, CowDict)
-                        else dict(f.local_vars)
-                    ),
+                    local_vars=f.local_vars.cow_fork(),
                     stack_depth=f.stack_depth,
                     caller_instructions=f.caller_instructions,
                     summary_builder=(
@@ -399,7 +397,9 @@ class VMState:
             memory=self.memory.cow_fork(),
             path_id=new_path_id,
             depth=self.depth,
-            taint_tracker=(self.taint_tracker.fork() if self.taint_tracker is not None else None),
+            taint_tracker=(
+                cast("Any", self.taint_tracker).fork() if self.taint_tracker is not None else None
+            ),
             current_instructions=self.current_instructions,
             control_taint=self.control_taint,
             pending_constraint_count=self.pending_constraint_count,  # BUG-012 fix: inherit, not reset to 0
@@ -407,14 +407,14 @@ class VMState:
             prev_loop_states=dict(self.prev_loop_states),
         )
 
-        child._pending_taint_issues = list(self._pending_taint_issues)
-        child._building_class = self._building_class
+        child._pending_taint_issues = list(getattr(self, "_pending_taint_issues", []))
+        child._building_class = getattr(self, "_building_class", False)
         child._class_registry = (
             dict(self._class_registry)
-            if isinstance(self._class_registry, dict)
-            else self._class_registry
+            if hasattr(self, "_class_registry") and isinstance(self._class_registry, dict)
+            else getattr(self, "_class_registry", {})
         )
-        child.pending_kw_names = self.pending_kw_names
+        child.pending_kw_names = getattr(self, "pending_kw_names", None)
         return child
 
     def copy(self) -> VMState:

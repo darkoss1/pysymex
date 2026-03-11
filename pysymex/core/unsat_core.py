@@ -64,13 +64,13 @@ def extract_unsat_core(
         return None
 
     core_indicators = solver.unsat_core()
-    core_ids = {ind.get_id() for ind in core_indicators}
+    core_ids = {ind.get_id() for ind in core_indicators}  # type: ignore[attr-defined]
 
     core_constraints: list[z3.BoolRef] = []
     core_indices: list[int] = []
 
     for i, (ind, c) in enumerate(zip(indicators, constraints, strict=False)):
-        if ind.get_id() in core_ids:
+        if ind.get_id() in core_ids:  # type: ignore[attr-defined]
             core_constraints.append(c)
             core_indices.append(i)
 

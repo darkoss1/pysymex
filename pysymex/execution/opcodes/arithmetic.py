@@ -505,7 +505,7 @@ def _get_binop_result(
             issues = check_division_by_zero(right, state, op, left)
             if _is_concrete_zero_divisor(right):
                 return None, issues, True
-            state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+            state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
             if op == "/":
                 result = left / right
             elif op == "//":
@@ -523,7 +523,7 @@ def _get_binop_result(
                 result = left ^ right
         elif op_code in {"<<", "<<=", ">>", ">>="}:
             issues = check_negative_shift(right, state, op_code, left)
-            state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int >= 0))
+            state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int >= 0))
             left_bv = int_to_bv(left.z3_int)
             right_bv = int_to_bv(right.z3_int)
             res_bv = left_bv << right_bv if op_code.startswith("<<") else left_bv >> right_bv
@@ -582,8 +582,8 @@ def handle_binary_op(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
     if terminal:
         return OpcodeResult(new_states=[], issues=issues, terminal=True)
 
-    state.push(result)
-    state.advance_pc()
+    state = state.push(result)
+    state = state.advance_pc()
     if issues:
         return OpcodeResult(new_states=[state], issues=issues)
     return OpcodeResult.continue_with(state)

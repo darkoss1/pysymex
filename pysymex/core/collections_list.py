@@ -75,6 +75,7 @@ class SymbolicListOps:
             idx = index
         else:
             idx = index
+
         if isinstance(lst, list):
             if isinstance(idx, int):
                 try:
@@ -88,19 +89,23 @@ class SymbolicListOps:
                 except IndexError:
                     return OpResult(value=None, error="IndexError: list index out of range")
             else:
-                result = SymbolicInt(z3.Int(f"list_item_{next_address ()}"))
+                result = SymbolicInt(z3.Int(f"list_item_{next_address()}"))
                 constraints: list[z3.BoolRef] = [idx >= 0, idx < len(lst)]
                 return OpResult(value=result, constraints=constraints)
         elif isinstance(lst, SymbolicList):
             result_sl = lst[idx]
-            constraints_sl: list[z3.BoolRef] = [idx >= 0, idx < lst.length]
+            z3_idx_sl = z3.IntVal(idx) if isinstance(idx, int) else idx
+            lst_length = lst.length().z3_int
+            constraints_sl: list[z3.BoolRef] = [
+                z3_idx_sl >= 0,
+                z3_idx_sl < lst_length,
+            ]
             return OpResult(value=result_sl, constraints=constraints_sl)
         else:
             assert isinstance(lst, SymbolicArray)
             result_sa = lst.get(idx)
             bounds = lst.in_bounds(idx)
             return OpResult(value=result_sa, constraints=[bounds])
-        return OpResult(value=None, error=f"Cannot index {type (lst )}")
 
     @staticmethod
     def setitem(
@@ -113,12 +118,14 @@ class SymbolicListOps:
             idx = z3.IntVal(index)
         else:
             idx = index
+
         if isinstance(value, SymbolicInt):
             z3_val: object = value.value
         elif isinstance(value, int):
             z3_val = z3.IntVal(value)
         else:
             z3_val = value
+
         if isinstance(lst, list):
             if isinstance(idx, int) or z3.is_int_value(idx):
                 concrete_idx = idx if isinstance(idx, int) else idx.as_long()
@@ -136,10 +143,9 @@ class SymbolicListOps:
                 )
         else:
             assert isinstance(lst, SymbolicArray)
-            new_array = lst.set(idx, z3_val)
+            new_array = lst.set(idx, cast(z3.ExprRef, z3_val))
             bounds = lst.in_bounds(idx)
             return OpResult(value=None, modified_collection=new_array, constraints=[bounds])
-        return OpResult(value=None, error=f"Cannot set item on {type (lst )}")
 
     @staticmethod
     def append(lst: list[object] | SymbolicArray, value: object) -> OpResult:
@@ -150,14 +156,14 @@ class SymbolicListOps:
             z3_val = z3.IntVal(value)
         else:
             z3_val = value
+
         if isinstance(lst, list):
             lst.append(value)
             return OpResult(value=None, modified_collection=lst)
         else:
             assert isinstance(lst, SymbolicArray)
-            new_array = lst.append(z3_val)
+            new_array = lst.append(cast(z3.ExprRef, z3_val))
             return OpResult(value=None, modified_collection=new_array)
-        return OpResult(value=None, error=f"Cannot append to {type (lst )}")
 
     @staticmethod
     def extend(lst: list[object] | SymbolicArray, items: list[object] | SymbolicArray) -> OpResult:
@@ -175,9 +181,9 @@ class SymbolicListOps:
                         z3_val = z3.IntVal(item)
                     else:
                         z3_val = item
-                    result_arr = result_arr.append(z3_val)
+                    result_arr = result_arr.append(cast(z3.ExprRef, z3_val))
                 return OpResult(value=None, modified_collection=result_arr)
-        return OpResult(value=None, error=f"Cannot extend {type (lst )} with {type (items )}")
+        return OpResult(value=None, error=f"Cannot extend {type(lst)} with {type(items)}")
 
     @staticmethod
     def pop(lst: list[object] | SymbolicArray, index: int | z3.ArithRef | None = None) -> OpResult:
@@ -191,7 +197,9 @@ class SymbolicListOps:
                 idx: int | None = (
                     index
                     if isinstance(index, int)
-                    else index.as_long() if z3.is_int_value(index) else None
+                    else index.as_long()
+                    if z3.is_int_value(index)
+                    else None
                 )
                 if idx is None:
                     return OpResult(
@@ -236,25 +244,39 @@ class SymbolicListOps:
             new_array.length = new_len
             constraints.extend([before, after])
             return OpResult(value=pop_val, modified_collection=new_array, constraints=constraints)
-        return OpResult(value=None, error=f"Cannot pop from {type (lst )}")
 
     @staticmethod
     def insert(
         lst: list[object] | SymbolicArray, index: int | z3.ArithRef, value: object
     ) -> OpResult:
-        """Insert item at index."""
+        """Insert item at index.
+
+        For concrete lists delegates directly to ``list.insert``.
+        For :class:`SymbolicArray` instances the semantics are modelled with
+        Z3 ``ForAll`` quantifiers that constrain the new array precisely:
+
+        * Elements at indices ``[0, idx)`` stay in place.
+        * The element at ``idx`` becomes the inserted *value*.
+        * Elements at indices ``(idx, new_len)`` are the originals shifted right
+          by one position (i.e. ``new[i] == old[i - 1]``).
+
+        An explicit bounds constraint ``0 <= idx <= len`` is also generated so
+        that the solver can detect out-of-range inserts.
+        """
         if isinstance(value, SymbolicInt):
             z3_val: object = value.value
         elif isinstance(value, int):
             z3_val = z3.IntVal(value)
         else:
             z3_val = value
+
         if isinstance(index, SymbolicInt):
             idx: int | z3.ArithRef = index.value
         elif isinstance(index, int):
             idx = index
         else:
             idx = index
+
         if isinstance(lst, list):
             if isinstance(idx, int):
                 lst.insert(idx, value)
@@ -265,14 +287,42 @@ class SymbolicListOps:
                 )
         else:
             assert isinstance(lst, SymbolicArray)
-            if z3.is_int_value(idx):
-                idx.as_long()
-                new_array = lst.append(z3_val)
-                return OpResult(value=None, modified_collection=new_array)
-            else:
-                new_array = lst.append(z3_val)
-                return OpResult(value=None, modified_collection=new_array)
-        return OpResult(value=None, error=f"Cannot insert into {type (lst )}")
+            # Normalise index to a Z3 expression for use in ForAll bodies.
+            z3_idx = z3.IntVal(idx) if isinstance(idx, int) else idx
+
+            new_array = SymbolicArray(f"{lst.name}_inserted", lst.element_sort)
+            new_len = lst.length + 1
+
+            for_i = z3.Int(f"{lst.name}_insert_i_{next_address()}")
+
+            # Elements strictly before the insertion point are unchanged.
+            before = z3.ForAll(
+                [for_i],
+                z3.Implies(
+                    z3.And(for_i >= 0, for_i < z3_idx),
+                    z3.Select(new_array.array, for_i) == z3.Select(lst.array, for_i),
+                ),
+            )
+
+            # The slot at the insertion index holds the new value.
+            at_idx = z3.Select(new_array.array, z3_idx) == z3_val
+
+            # Elements after the insertion point are shifted right by one.
+            after = z3.ForAll(
+                [for_i],
+                z3.Implies(
+                    z3.And(for_i > z3_idx, for_i < new_len),
+                    z3.Select(new_array.array, for_i) == z3.Select(lst.array, for_i - 1),
+                ),
+            )
+
+            new_array.length = new_len
+            bounds = z3.And(z3_idx >= 0, z3_idx <= lst.length)
+            return OpResult(
+                value=None,
+                modified_collection=new_array,
+                constraints=[bounds, before, at_idx, after],
+            )
 
     @staticmethod
     def remove(lst: list[object] | SymbolicArray, value: object) -> OpResult:
@@ -288,9 +338,11 @@ class SymbolicListOps:
             z3_val: object = (
                 value.value
                 if isinstance(value, SymbolicInt)
-                else z3.IntVal(value) if isinstance(value, int) else value
+                else z3.IntVal(value)
+                if isinstance(value, int)
+                else value
             )
-            i = z3.Int(f"remove_idx_{next_address ()}")
+            i = z3.Int(f"remove_idx_{next_address()}")
             exists_constraint = z3.Exists([i], z3.And(i >= 0, i < lst.length, lst.get(i) == z3_val))
             new_array = SymbolicArray(f"{lst.name}_removed", lst.element_sort)
             new_array.array = lst.array
@@ -298,7 +350,6 @@ class SymbolicListOps:
             return OpResult(
                 value=None, modified_collection=new_array, constraints=[exists_constraint]
             )
-        return OpResult(value=None, error=f"Cannot remove from {type (lst )}")
 
     @staticmethod
     def index(
@@ -319,18 +370,19 @@ class SymbolicListOps:
             z3_val: object = (
                 value.value
                 if isinstance(value, SymbolicInt)
-                else z3.IntVal(value) if isinstance(value, int) else value
+                else z3.IntVal(value)
+                if isinstance(value, int)
+                else value
             )
-            result_idx = z3.Int(f"index_result_{next_address ()}")
+            result_idx = z3.Int(f"index_result_{next_address()}")
             constraints: list[z3.BoolRef] = [
                 result_idx >= start,
                 result_idx < lst.length,
-                cast("z3.BoolRef", lst.get(result_idx) == z3_val),
+                lst.get(result_idx) == z3_val,
             ]
             if stop is not None:
                 constraints.append(result_idx < stop)
             return OpResult(value=SymbolicInt(result_idx), constraints=constraints)
-        return OpResult(value=None, error=f"Cannot find index in {type (lst )}")
 
     @staticmethod
     def count(lst: list[object] | SymbolicArray, value: object) -> OpResult:
@@ -342,12 +394,13 @@ class SymbolicListOps:
             _z3_val = (
                 value.value
                 if isinstance(value, SymbolicInt)
-                else z3.IntVal(value) if isinstance(value, int) else value
+                else z3.IntVal(value)
+                if isinstance(value, int)
+                else value
             )
-            count_var = z3.Int(f"count_{next_address ()}")
+            count_var = z3.Int(f"count_{next_address()}")
             constraints: list[z3.BoolRef] = [count_var >= 0, count_var <= lst.length]
             return OpResult(value=SymbolicInt(count_var), constraints=constraints)
-        return OpResult(value=None, error=f"Cannot count in {type (lst )}")
 
     @staticmethod
     def reverse(lst: list[object] | SymbolicArray) -> OpResult:
@@ -360,7 +413,6 @@ class SymbolicListOps:
             new_array = SymbolicArray(f"{lst.name}_reversed", lst.element_sort)
             new_array.length = lst.length
             return OpResult(value=None, modified_collection=new_array)
-        return OpResult(value=None, error=f"Cannot reverse {type (lst )}")
 
     @staticmethod
     def contains(lst: list[object] | SymbolicArray, value: object) -> OpResult:
@@ -372,14 +424,15 @@ class SymbolicListOps:
             z3_val: object = (
                 value.value
                 if isinstance(value, SymbolicInt)
-                else z3.IntVal(value) if isinstance(value, int) else value
+                else z3.IntVal(value)
+                if isinstance(value, int)
+                else value
             )
-            result = z3.Bool(f"contains_{next_address ()}")
-            i = z3.Int(f"contains_idx_{next_address ()}")
+            result = z3.Bool(f"contains_{next_address()}")
+            i = z3.Int(f"contains_idx_{next_address()}")
             exists = z3.Exists([i], z3.And(i >= 0, i < lst.length, lst.get(i) == z3_val))
             constraints: list[z3.BoolRef] = [result == exists]
             return OpResult(value=SymbolicBool(result), constraints=constraints)
-        return OpResult(value=None, error=f"Cannot check containment in {type (lst )}")
 
     @staticmethod
     def slice(
@@ -407,7 +460,6 @@ class SymbolicListOps:
                 e = stop if not isinstance(stop, int) else z3.IntVal(stop)
                 new_array.length = z3.If(e > s, e - s, z3.IntVal(0))
             return OpResult(value=new_array)
-        return OpResult(value=None, error=f"Cannot slice {type (lst )}")
 
     @staticmethod
     def concatenate(
@@ -420,7 +472,7 @@ class SymbolicListOps:
             new_array = SymbolicArray(f"{lst1.name}_concat_{lst2.name}", lst1.element_sort)
             new_array.length = lst1.length + lst2.length
             return OpResult(value=new_array)
-        return OpResult(value=None, error=f"Cannot concatenate {type (lst1 )} and {type (lst2 )}")
+        return OpResult(value=None, error=f"Cannot concatenate {type(lst1)} and {type(lst2)}")
 
 
 class SymbolicStringOps:
@@ -436,7 +488,6 @@ class SymbolicStringOps:
         else:
             assert isinstance(s, SymbolicString)
             return OpResult(value=s.length)
-        return OpResult(value=None, error=f"Cannot get length of {type (s )}")
 
     @staticmethod
     def contains(s: str | SymbolicString, substr: str | SymbolicString) -> OpResult:
@@ -444,9 +495,12 @@ class SymbolicStringOps:
         if isinstance(s, str) and isinstance(substr, str):
             return OpResult(value=substr in s)
         elif isinstance(s, SymbolicString):
-            result = s.contains(substr)
+            sym_substr = (
+                substr if isinstance(substr, SymbolicString) else SymbolicString.concrete(substr)
+            )
+            result = s.contains(sym_substr)
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot check containment in {type (s )}")
+        return OpResult(value=None, error=f"Cannot check containment in {type(s)}")
 
     @staticmethod
     def concatenate(s1: str | SymbolicString, s2: str | SymbolicString) -> OpResult:
@@ -454,12 +508,11 @@ class SymbolicStringOps:
         if isinstance(s1, str) and isinstance(s2, str):
             return OpResult(value=s1 + s2)
         elif isinstance(s1, SymbolicString) or isinstance(s2, SymbolicString):
-            if isinstance(s1, SymbolicString):
-                result = s1 + s2
-            else:
-                result = s2.__radd__(s1)
+            sym_s1 = s1 if isinstance(s1, SymbolicString) else SymbolicString.concrete(s1)
+            sym_s2 = s2 if isinstance(s2, SymbolicString) else SymbolicString.concrete(s2)
+            result = sym_s1 + sym_s2
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot concatenate {type (s1 )} and {type (s2 )}")
+        return OpResult(value=None, error=f"Cannot concatenate {type(s1)} and {type(s2)}")
 
     @staticmethod
     def startswith(s: str | SymbolicString, prefix: str | SymbolicString) -> OpResult:
@@ -467,9 +520,12 @@ class SymbolicStringOps:
         if isinstance(s, str) and isinstance(prefix, str):
             return OpResult(value=s.startswith(prefix))
         elif isinstance(s, SymbolicString):
-            result = s.startswith(prefix)
+            sym_prefix = (
+                prefix if isinstance(prefix, SymbolicString) else SymbolicString.concrete(prefix)
+            )
+            result = s.startswith(sym_prefix)
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot check startswith on {type (s )}")
+        return OpResult(value=None, error=f"Cannot check startswith on {type(s)}")
 
     @staticmethod
     def endswith(s: str | SymbolicString, suffix: str | SymbolicString) -> OpResult:
@@ -477,6 +533,9 @@ class SymbolicStringOps:
         if isinstance(s, str) and isinstance(suffix, str):
             return OpResult(value=s.endswith(suffix))
         elif isinstance(s, SymbolicString):
-            result = s.endswith(suffix)
+            sym_suffix = (
+                suffix if isinstance(suffix, SymbolicString) else SymbolicString.concrete(suffix)
+            )
+            result = s.endswith(sym_suffix)
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot check endswith on {type (s )}")
+        return OpResult(value=None, error=f"Cannot check endswith on {type(s)}")

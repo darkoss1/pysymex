@@ -20,17 +20,12 @@ import time
 from collections import OrderedDict, deque
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import z3
 
 from pysymex.core.constraint_hash import structural_hash
 from pysymex.core.constraint_independence import ConstraintIndependenceOptimizer
-from pysymex.core.constraint_simplifier import (
-    quick_contradiction_check,
-    remove_subsumed,
-    simplify_constraints,
-)
 from pysymex.core.unsat_core import UnsatCoreResult, extract_unsat_core
 
 logger = logging.getLogger(__name__)
@@ -62,7 +57,7 @@ class SolverResult:
     model: z3.ModelRef | None = None
 
     @staticmethod
-    def sat(model: z3.ModelRef) -> SolverResult:
+    def sat(model: z3.ModelRef | None) -> SolverResult:
         return SolverResult(is_sat=True, is_unsat=False, is_unknown=False, model=model)
 
     @staticmethod
@@ -258,7 +253,7 @@ class IncrementalSolver:
             if not var_names:
                 root = "CONST"
             else:
-                root = self._optimizer._uf.find(next(iter(var_names)))
+                root = self._optimizer._uf.find(next(iter(var_names)))  # type: ignore[protected-access]
 
             if root not in clusters:
                 clusters[root] = []
@@ -351,7 +346,6 @@ class IncrementalSolver:
             self._cache.popitem(last=False)
         self._cache[cache_key] = result
         return result.is_sat
-
 
     def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
         """Check satisfiability with full result caching.
@@ -724,9 +718,12 @@ def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
     return result
 
 
-def get_model(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> z3.ModelRef | None:
+def get_model(constraints: Any) -> z3.ModelRef | None:
     """Get a Z3 model for satisfiable constraints."""
-    if isinstance(constraints, list):
+    if not isinstance(constraints, (list, tuple)):
+        # Handle ConstraintChain or other iterables
+        constraints = tuple(constraints)
+    elif isinstance(constraints, list):
         constraints = tuple(constraints)
     return _get_model_cached(constraints)
 

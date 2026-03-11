@@ -161,7 +161,7 @@ class EnhancedClass:
     class_vars: dict[str, object] = field(default_factory=dict[str, object])
     slots: tuple[str, ...] | None = None
     is_dataclass: bool = False
-    dataclass_fields: dict[str, object] = field(default_factory=dict[str, object])
+    dataclass_fields: dict[str, Any] = field(default_factory=dict)
     abstract_methods: set[str] = field(default_factory=set[str])
 
     @property
@@ -437,10 +437,13 @@ def extract_init_params(code_obj: object) -> list[InitParameter]:
     """
     if not hasattr(code_obj, "co_varnames"):
         return []
+    from typing import Any as _Any
+
+    code_any: _Any = code_obj
     params: list[InitParameter] = []
-    arg_count = getattr(code_obj, "co_argcount", 0)
-    varnames = code_obj.co_varnames[:arg_count]
-    defaults = getattr(code_obj, "co_defaults", ()) or ()
+    arg_count = getattr(code_any, "co_argcount", 0)
+    varnames: tuple[str, ...] = code_any.co_varnames[:arg_count]
+    defaults = getattr(code_any, "co_defaults", ()) or ()
     default_offset = arg_count - len(defaults)
     for i, name in enumerate(varnames):
         is_self = i == 0 and name in ("self", "cls")
@@ -448,7 +451,7 @@ def extract_init_params(code_obj: object) -> list[InitParameter]:
         default = defaults[i - default_offset] if has_default else None
         params.append(
             InitParameter(
-                name=name,
+                name=str(name),
                 is_self=is_self,
                 has_default=has_default,
                 default=default,

@@ -87,7 +87,7 @@ class SymbolicType(ABC):
         """Z3 equality expression."""
 
     @abstractmethod
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         """Convert this specialized type to a unified SymbolicValue representation."""
 
     def __repr__(self) -> str:
@@ -123,7 +123,7 @@ class SymbolicNoneType(SymbolicType):
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
         return z3.BoolVal(isinstance(other, SymbolicNoneType))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(

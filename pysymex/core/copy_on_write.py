@@ -58,16 +58,19 @@ class CowDict(Generic[K, V]):
         This is critical for state deduplication. We prioritize deterministic
         hashing over object identity to allow merging of equivalent symbolic states.
         """
+        from typing import Any as _Any
+
         try:
             return hash(obj)
         except TypeError:
-            if hasattr(obj, "hash_value") and callable(obj.hash_value):
-                return obj.hash_value()
+            obj_any: _Any = obj
+            if hasattr(obj_any, "hash_value") and callable(obj_any.hash_value):
+                return int(obj_any.hash_value())
 
-            if hasattr(obj, "to_z3") and callable(obj.to_z3):
-                z3_ast = obj.to_z3()
+            if hasattr(obj_any, "to_z3") and callable(obj_any.to_z3):
+                z3_ast: _Any = obj_any.to_z3()
                 if hasattr(z3_ast, "hash") and callable(z3_ast.hash):
-                    return z3_ast.hash()
+                    return int(z3_ast.hash())
                 return hash(str(z3_ast))
 
             return 0
@@ -120,9 +123,14 @@ class CowDict(Generic[K, V]):
         return self._data.items()
 
     def setdefault(self, key: K, default: V | None = None) -> V | None:
-        """Set default value for key."""
-        if key not in self._data and default is not None:
-            self[key] = default
+        """Set default value for key, matching dict.setdefault semantics exactly.
+
+        Unlike the previous implementation, this always inserts *default*
+        (even when it is ``None``) if *key* is absent — matching the contract
+        of the built-in ``dict.setdefault``.
+        """
+        if key not in self._data:
+            self[key] = default  # type: ignore[assignment]
         return self._data.get(key)
 
     def update(self, other: dict[K, V] | CowDict[K, V]) -> None:
@@ -174,15 +182,16 @@ class CowSet:
     def add(self, item: int) -> None:
         if item not in self._data:
             self._ensure_writable()
-            if self._hash is not None:
-                self._hash ^= hash(item + 1)  # BUG-002: use item+1 so hash(0) != 0
+            # Invalidate the cached hash; recomputed lazily in hash_value().
+            # Incremental XOR updates were removed because the XOR-based running
+            # total was not consistent with the polynomial hash used in hash_value().
+            self._hash = None
             self._data.add(item)
 
     def discard(self, item: int) -> None:
         if item in self._data:
             self._ensure_writable()
-            if self._hash is not None:
-                self._hash ^= hash(item + 1)  # BUG-002: keep consistent with add()
+            self._hash = None
             self._data.discard(item)
 
     def __contains__(self, item: object) -> bool:
@@ -195,18 +204,24 @@ class CowSet:
         return iter(self._data)
 
     def hash_value(self) -> int:
-        """Content hash for the set.
+        """Content hash for the set using a collision-resistant polynomial hash.
 
-        Uses hash(item + 1) instead of hash(item) to avoid the BUG-002
-        problem where hash(0) == 0 makes PC=0 invisible to XOR accumulation.
+        Items are sorted before combining so the result is order-independent
+        (sets have no inherent order).  Uses the same polynomial rolling
+        algorithm as :meth:`CowDict.hash_value` to avoid the XOR-commutativity
+        collision problem where ``{a, b}`` and ``{c, d}`` could produce the
+        same hash whenever ``hash(a) ^ hash(b) == hash(c) ^ hash(d)``.
         """
         if self._hash is not None:
             return self._hash
-        h = 0
-        for item in self._data:
-            h ^= hash(item + 1)
-        self._hash = h
-        return h
+        h = 0x345678
+        mult = 1000003
+        for item in sorted(self._data):
+            h = (h ^ (item + 0x9E3779B9)) * mult
+            mult += 82520
+        h ^= len(self._data)
+        self._hash = h & 0xFFFFFFFF
+        return self._hash
 
     def cow_fork(self) -> CowSet:
         """Create a copy-on-write fork. O(1) operation."""
@@ -267,7 +282,6 @@ class ConstraintChain:
         ancestor constraint.
         """
         return ConstraintChain(constraint, self)
-
 
     def to_list(self) -> list[z3.BoolRef]:
         """Materialize the chain as a Python list. O(n).

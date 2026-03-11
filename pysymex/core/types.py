@@ -6,20 +6,25 @@ union of possible Z3 types with type discriminators.
 
 from __future__ import annotations
 
-import itertools
+import dataclasses as _dataclasses
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
+from typing import cast as _cast
 
 import z3
-from typing import TYPE_CHECKING, Any
+
+from pysymex.core.addressing import next_address
 
 AnySymbolic = Any
 
 
-_sym_counter = itertools.count(1)
-
-_sym_lock = threading.Lock()
+# Thread-safe write guard for the module-level FROM_CONST_CACHE dict.
+# Reads are left unprotected (fine under CPython's GIL and acceptable
+# under free-threaded Python since a missed cache entry is merely a
+# performance loss, not a correctness issue).
+_FROM_CONST_CACHE_LOCK = threading.Lock()
 
 
 Z3_TRUE: z3.BoolRef = z3.BoolVal(True)
@@ -69,7 +74,6 @@ def _merge_taint(
     return frozenset(a | b)
 
 
-
 int_to_bv = _int_to_bv
 bv_to_int = _bv_to_int
 merge_taint = _merge_taint
@@ -78,9 +82,11 @@ merge_taint = _merge_taint
 def fresh_name(prefix: str) -> str:
     """Generate a unique symbolic variable name.
 
-    Thread-safe: uses ``itertools.count`` which is atomic in CPython.
+    Delegates to :func:`pysymex.core.addressing.next_address` which uses a
+    ``contextvars.ContextVar`` counter, giving each async session its own
+    isolated namespace and eliminating cross-session Z3 variable collisions.
     """
-    return f"{prefix}_{next(_sym_counter)}"
+    return f"{prefix}_{next_address()}"
 
 
 def _guarded_nonzero_divisor(divisor: z3.ArithRef) -> z3.ArithRef:
@@ -92,7 +98,7 @@ def _guarded_nonzero_divisor(divisor: z3.ArithRef) -> z3.ArithRef:
     return z3.If(divisor == 0, z3.IntVal(1), divisor)
 
 
-def _is_concrete_zero(other: SymbolicValue) -> bool:
+def _is_concrete_zero(other: SymbolicValue) -> bool:  # type: ignore[misc]
     """Check if a symbolic value is concretely zero.
     Does not raise, allowing the executor to handle it as an Issue.
     """
@@ -143,6 +149,10 @@ class SymbolicNone(SymbolicType):
     @property
     def name(self) -> str:
         return "None"
+
+    @property
+    def type_tag(self) -> str:
+        return "NoneType"
 
     def to_z3(self) -> z3.ExprRef:
         return Z3_FALSE
@@ -216,13 +226,12 @@ class SymbolicValue(SymbolicType):
     _name: str = ""
     is_path: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
     is_none: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
-    taint_labels: frozenset[str] = field(default_factory=frozenset, compare=False)
+    taint_labels: frozenset[str] | None = field(default=None, compare=False)
     _constant_value: Any = field(default=None, compare=False, repr=False)
 
     @property
     def value(self) -> Any:
         return self._constant_value
-
 
     _truthy_cache: z3.BoolRef | None = field(default=None, init=False, repr=False, compare=False)
     _falsy_cache: z3.BoolRef | None = field(default=None, init=False, repr=False, compare=False)
@@ -234,6 +243,20 @@ class SymbolicValue(SymbolicType):
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def type_tag(self) -> str:
+        if self._type:
+            return self._type
+        if hasattr(self, "is_float") and self.is_float == Z3_TRUE:
+            return "float"
+        if self.is_int == Z3_TRUE:
+            return "int"
+        if self.is_bool == Z3_TRUE:
+            return "bool"
+        if self.is_str == Z3_TRUE:
+            return "str"
+        return "unknown"
 
     def to_z3(self) -> z3.ExprRef:
         return self.z3_int
@@ -288,14 +311,12 @@ class SymbolicValue(SymbolicType):
 
     def with_taint(self, label: str | set[str] | frozenset[str]) -> SymbolicValue:
         """Return a copy with added taint."""
-        import dataclasses
-
         new_labels = set(self.taint_labels or set())
         if isinstance(label, str):
             new_labels.add(label)
         else:
             new_labels.update(label)
-        return dataclasses.replace(self, taint_labels=frozenset(new_labels))
+        return _dataclasses.replace(self, taint_labels=frozenset(new_labels))
 
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicValue:
         """Merge with another value based on a condition: If(condition, self, other)."""
@@ -327,6 +348,7 @@ class SymbolicValue(SymbolicType):
             z3_str=z3.If(condition, self.z3_str, other_str),
             is_str=z3.If(condition, self.is_str, other_is_str),
             z3_addr=z3.If(condition, self.z3_addr, other_addr),
+            is_obj=z3.If(condition, self.is_obj, other_is_obj),
             is_path=z3.If(condition, self.is_path, other_is_path),
             is_none=z3.If(condition, self.is_none, other_is_none),
             z3_array=(
@@ -336,9 +358,7 @@ class SymbolicValue(SymbolicType):
             ),
             is_list=z3.If(condition, self.is_list, other_is_list),
             is_dict=z3.If(condition, self.is_dict, other_is_dict),
-            taint_labels=_merge_taint(
-                self.taint_labels, getattr(other, "taint_labels", frozenset())
-            ),
+            taint_labels=_merge_taint(self.taint_labels, getattr(other, "taint_labels", None)),
         )
 
     @staticmethod
@@ -349,7 +369,7 @@ class SymbolicValue(SymbolicType):
         to ensure path independence. This prevents "variable poisoning" where
         unrelated paths share the same underlying Z3 AST nodes.
         """
-        id_suffix = next(_sym_counter)
+        id_suffix = next_address()
         z3_int = z3.Int(f"{name}_{id_suffix}_int")
         z3_bool = z3.Bool(f"{name}_{id_suffix}_bool")
         is_int = z3.Bool(f"{name}_{id_suffix}_is_int")
@@ -416,7 +436,7 @@ class SymbolicValue(SymbolicType):
     def from_specialized(value: object) -> SymbolicValue:
         """Convert a specialized SymbolicType to a unified SymbolicValue."""
         if hasattr(value, "as_unified"):
-            return value.as_unified()
+            return _cast("SymbolicValue", _cast("Any", value).as_unified())
         return SymbolicValue.from_const(value)
 
     @staticmethod
@@ -441,14 +461,15 @@ class SymbolicValue(SymbolicType):
                 is_path=Z3_FALSE,
                 is_none=Z3_TRUE,
             )
-            FROM_CONST_CACHE["None"] = sv
+            with _FROM_CONST_CACHE_LOCK:
+                FROM_CONST_CACHE["None"] = sv
             return sv
         if isinstance(value, bool):
             key = "True" if value else "False"
             cached = FROM_CONST_CACHE.get(key)
             if cached is not None:
                 return cached
-            
+
             if value:
                 sv = SymbolicValue(
                     _name="True",
@@ -470,7 +491,8 @@ class SymbolicValue(SymbolicType):
                     _constant_value=False,
                 )
 
-            FROM_CONST_CACHE[key] = sv
+            with _FROM_CONST_CACHE_LOCK:
+                FROM_CONST_CACHE[key] = sv
             return sv
         if isinstance(value, int):
             key = ("int", value)
@@ -487,12 +509,13 @@ class SymbolicValue(SymbolicType):
                 _constant_value=value,
             )
 
-            if len(FROM_CONST_CACHE) < FROM_CONST_CACHE_LIMIT:
-                FROM_CONST_CACHE[key] = sv
+            with _FROM_CONST_CACHE_LOCK:
+                if len(FROM_CONST_CACHE) < FROM_CONST_CACHE_LIMIT:
+                    FROM_CONST_CACHE[key] = sv
             return sv
 
         if hasattr(value, "as_unified"):
-            return value.as_unified()
+            return _cast("SymbolicValue", _cast("Any", value).as_unified())
 
         sv = SymbolicValue(
             _name=str(value),
@@ -608,9 +631,22 @@ class SymbolicValue(SymbolicType):
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
+        # Z3's integer `/` is Euclidean division: the remainder is always >= 0.
+        # Python's `//` is floor division: the quotient rounds toward -infinity.
+        # They differ when the divisor is negative and the remainder is non-zero:
+        #   Python:  7 // -2 == -4   (Z3 Euclidean gives -3)
+        #   Python: -7 // -2 ==  3   (Z3 Euclidean gives  4)
+        # Fix: when divisor < 0 and the Euclidean remainder != 0, subtract 1.
+        euclid_q = self.z3_int / safe_divisor
+        euclid_mod = self.z3_int - euclid_q * safe_divisor
+        floor_q = z3.If(
+            z3.And(safe_divisor < z3.IntVal(0), euclid_mod != z3.IntVal(0)),
+            euclid_q - z3.IntVal(1),
+            euclid_q,
+        )
         return SymbolicValue(
             _name=f"({self._name}//{other._name})",
-            z3_int=self.z3_int / safe_divisor,
+            z3_int=floor_q,
             is_int=z3.And(self.is_int, other.is_int),
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
@@ -646,7 +682,7 @@ class SymbolicValue(SymbolicType):
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
         )
 
-    def __eq__(self, other: object) -> SymbolicValue:
+    def __eq__(self, other: object) -> SymbolicValue:  # type: ignore[override]
         other = SymbolicValue.from_const(other)
         int_eq = z3.And(self.is_int, other.is_int, self.z3_int == other.z3_int)
         bool_eq = z3.And(self.is_bool, other.is_bool, self.z3_bool == other.z3_bool)
@@ -667,7 +703,7 @@ class SymbolicValue(SymbolicType):
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
         )
 
-    def __ne__(self, other: object) -> SymbolicValue:
+    def __ne__(self, other: object) -> SymbolicValue:  # type: ignore[override]
         other = SymbolicValue.from_const(other)
         eq = self.__eq__(other)
         return SymbolicValue(

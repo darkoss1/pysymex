@@ -353,10 +353,10 @@ def handle_raise_varargs(
             exc_state = exc_state.add_constraint(constraint)
             exc_state = exc_state.set_pc(block.handler_pc)
 
-            if is_satisfiable(state.path_constraints):
+            if is_assertion and is_satisfiable(state.path_constraints):
                 issue = Issue(
-                    kind=IssueKind.ASSERTION_ERROR if is_assertion else IssueKind.EXCEPTION,
-                    message="Assertion may fail" if is_assertion else "Exception may be raised",
+                    kind=IssueKind.ASSERTION_ERROR,
+                    message="Assertion may fail",
                     constraints=state.copy_constraints(),
                     model=get_model(state.path_constraints),
                     pc=state.pc,
@@ -367,10 +367,10 @@ def handle_raise_varargs(
 
             return OpcodeResult.branch([exc_state])
 
-    if is_satisfiable(state.path_constraints):
+    if is_assertion and is_satisfiable(state.path_constraints):
         issue = Issue(
-            kind=IssueKind.ASSERTION_ERROR if is_assertion else IssueKind.EXCEPTION,
-            message="Assertion may fail" if is_assertion else "Exception may be raised",
+            kind=IssueKind.ASSERTION_ERROR,
+            message="Assertion may fail",
             constraints=state.copy_constraints(),
             model=get_model(state.path_constraints),
             pc=state.pc,

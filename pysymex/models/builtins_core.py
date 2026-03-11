@@ -182,7 +182,7 @@ class MinModel(FunctionModel):
         """Apply min() model."""
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"min_{state.pc}")[0])
-        
+
         # Handle concrete sequence
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             seq = args[0]
@@ -201,7 +201,7 @@ class MinModel(FunctionModel):
                     return ModelResult(value=min(args))
                 except (TypeError, ValueError):
                     pass
-            
+
             if len(args) == 2:
                 a, b = args
                 if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
@@ -214,7 +214,7 @@ class MinModel(FunctionModel):
                             result.z3_int == z3.If(a.z3_int <= b.z3_int, a.z3_int, b.z3_int),
                         ],
                     )
-        
+
         result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -234,7 +234,7 @@ class MaxModel(FunctionModel):
         """Apply max() model."""
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"max_{state.pc}")[0])
-        
+
         # Handle concrete sequence
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             seq = args[0]
@@ -253,7 +253,7 @@ class MaxModel(FunctionModel):
                     return ModelResult(value=max(args))
                 except (TypeError, ValueError):
                     pass
-            
+
             if len(args) == 2:
                 a, b = args
                 if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
@@ -266,7 +266,7 @@ class MaxModel(FunctionModel):
                             result.z3_int == z3.If(a.z3_int >= b.z3_int, a.z3_int, b.z3_int),
                         ],
                     )
-        
+
         result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -496,10 +496,10 @@ class SumModel(FunctionModel):
         """Apply sum() model."""
         if not args:
             return ModelResult(value=0)
-        
+
         iterable = args[0]
         start = args[1] if len(args) > 1 else 0
-        
+
         if isinstance(iterable, (list, tuple)):
             if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in iterable) and \
                not isinstance(start, (SymbolicValue, SymbolicType)):
@@ -507,7 +507,7 @@ class SumModel(FunctionModel):
                     return ModelResult(value=sum(iterable, start))
                 except TypeError:
                     pass
-        
+
         result, constraint = SymbolicValue.symbolic(f"sum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
@@ -595,19 +595,22 @@ class FloatModel(FunctionModel):
             if val.type_tag == "float":
                 return ModelResult(value=val)
             elif val.type_tag == "int" or val.is_int:
-                result, constraint = SymbolicValue.symbolic(f"float_{state.pc}")
+                from pysymex.core.floats import SymbolicFloat
+
+                result = SymbolicFloat(f"float_{state.pc}")
+                fp_val = z3.fpToFP(result._rm, z3.ToReal(val.z3_int), result._sort)
                 return ModelResult(
                     value=result,
-                    constraints=[
-                        constraint,
-                        result.is_float,
-                        result.z3_real == z3.ToReal(val.z3_int),
-                    ],
+                    constraints=[z3.fpEQ(result.z3_expr, fp_val)],
                 )
         if isinstance(val, (int, float)):
-            return ModelResult(value=SymbolicValue.from_const(float(val)))
-        result, constraint = SymbolicValue.symbolic(f"float_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_float])
+            from pysymex.core.floats import SymbolicFloat
+
+            return ModelResult(value=SymbolicFloat(value=float(val)))
+        from pysymex.core.floats import SymbolicFloat
+
+        result = SymbolicFloat(f"float_{state.pc}")
+        return ModelResult(value=result)
 
 
 class ListModel(FunctionModel):

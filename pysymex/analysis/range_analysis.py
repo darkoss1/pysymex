@@ -10,7 +10,9 @@ detect bugs like:
 """
 
 from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 
 import dis
@@ -430,7 +432,7 @@ class RangeAnalyzer:
                     for pc in range(start, end):
                         pc_to_line[pc] = last_line
 
-            for block in cfg.blocks:
+            for block in cfg.blocks.values():
                 for instr in block.instructions:
                     if instr.offset not in pc_to_line:
                         pc_to_line[instr.offset] = last_line
@@ -618,15 +620,7 @@ class RangeAnalyzer:
                     base = container_name.split("_", 1)[1] if "_" in container_name else ""
                     is_type_sub = base in BUILTIN_TYPE_NAMES
                 if not is_type_sub and index.must_be_negative():
-                    warnings.append(
-                        RangeWarning(
-                            line=line,
-                            pc=instr.offset,
-                            kind="NEGATIVE_INDEX",
-                            message=f"Index is always negative (range: {index})",
-                            range_info=index,
-                        )
-                    )
+                    pass  # Negative indexing is legal in Python (e.g. arr[-1]), so we don't warn.
                 state.push(Range.full())
             else:
                 pass

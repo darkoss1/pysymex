@@ -31,7 +31,6 @@ def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
 
     filtered: list[z3.BoolRef] = []
     for c in constraints:
-
         if z3.is_true(c):
             continue
         if z3.is_false(c):
@@ -87,6 +86,12 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
     Looks for explicit False values and direct negation pairs.
     Avoids calling z3.simplify() to keep this check truly cheap.
 
+    Uses a two-level approach to prevent false positives from hash collisions:
+    1. Check for explicit ``False`` literals (O(n)).
+    2. For each constraint ``c``, check whether ``Not(c)`` is structurally
+       present in the list using Z3's ``ExprRef.eq()`` (structural equality),
+       falling back to the hash only as a pre-filter.
+
     Args:
         constraints: List of Z3 boolean constraints.
 
@@ -96,19 +101,32 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
     if not constraints:
         return False
 
-    constraint_hashes: set[int] = set()
-    negation_hashes: set[int] = set()
+    # Pass 1 — explicit False literals and build hash → constraint map.
+    by_hash: dict[int, list[z3.BoolRef]] = {}
     for c in constraints:
         if z3.is_false(c):
             return True
         h = c.hash()
-        constraint_hashes.add(h)
+        bucket = by_hash.get(h)
+        if bucket is None:
+            by_hash[h] = [c]
+        else:
+            bucket.append(c)
 
-        neg_h = z3.Not(c).hash()
-        negation_hashes.add(neg_h)
-
-    if constraint_hashes & negation_hashes:
-        return True
+    # Pass 2 — structural negation pairs.
+    # For each constraint c, compute Not(c) and look up its hash.  Only
+    # declare a contradiction when a candidate in that bucket is *structurally
+    # identical* to Not(c) via ExprRef.eq(), avoiding hash-collision false
+    # positives.
+    for c in constraints:
+        neg = z3.Not(c)
+        neg_h = neg.hash()
+        candidates = by_hash.get(neg_h)
+        if candidates is None:
+            continue
+        for candidate in candidates:
+            if neg.eq(candidate):  # type: ignore[attr-defined]
+                return True
 
     return False
 

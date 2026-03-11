@@ -45,7 +45,8 @@ import argparse
 import collections
 import json
 import sys
-from typing import Any, Callable, Generator, Iterator
+from collections.abc import Callable, Generator, Iterator
+from typing import Any
 
 FilterFn = Callable[[dict[str, Any]], bool]
 """A predicate that accepts a parsed event dict and returns True to keep it."""

@@ -13,11 +13,12 @@ import json
 import logging
 import sys
 import time
-from importlib.metadata import PackageNotFoundError, version as pkg_version
-from pysymex import __version__ as version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import cast
 
+from pysymex import __version__ as version
 from pysymex._deps import ensure_z3_ready
 
 logger = logging.getLogger(__name__)

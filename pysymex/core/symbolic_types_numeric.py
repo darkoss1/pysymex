@@ -78,7 +78,7 @@ class SymbolicBool(SymbolicType):
         """Create a concrete boolean."""
         return SymbolicBool(z3.BoolVal(value), str(value))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, SymbolicValue
 
         return SymbolicValue(
@@ -268,7 +268,7 @@ class SymbolicInt(SymbolicType):
         """Create a concrete integer."""
         return SymbolicInt(z3.IntVal(value), str(value))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, SymbolicValue
 
         return SymbolicValue(
@@ -413,7 +413,7 @@ class SymbolicFloat(SymbolicType):
         """Create a concrete float."""
         return SymbolicFloat(z3.RealVal(value), str(value))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, SymbolicValue
 
         return SymbolicValue(

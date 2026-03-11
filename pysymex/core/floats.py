@@ -174,13 +174,13 @@ class SymbolicFloat:
         other_expr = self._to_fp(other)
         return z3.fpGEQ(self._expr, other_expr)
 
-    def __eq__(self, other: object) -> z3.BoolRef:
+    def __eq__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.fpEQ(self._expr, other_expr)
         return NotImplemented
 
-    def __ne__(self, other: object) -> z3.BoolRef:
+    def __ne__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.Not(z3.fpEQ(self._expr, other_expr))

@@ -337,19 +337,27 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
         is_none = Z3_TRUE if isinstance(func_obj, SymbolicNone) else func_obj.is_none
         none_check = [*state.path_constraints, is_none]
         if is_satisfiable(none_check):
-            issue = Issue(
-                kind=IssueKind.TYPE_ERROR,
-                message=f"Possible TypeError: object '{getattr(func_obj, 'name', 'obj')}' is not callable (is None)",
-                constraints=list(none_check),
-                model=get_model(none_check),
-                pc=state.pc,
-            )
+            must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(is_none)])
+            is_unconstrained_var = z3.is_const(is_none) and is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            
+            if must_be_none or not is_unconstrained_var:
+                issue = Issue(
+                    kind=IssueKind.TYPE_ERROR,
+                    message=f"Possible TypeError: object '{getattr(func_obj, 'name', 'obj')}' is not callable (is None)",
+                    constraints=list(none_check),
+                    model=get_model(none_check),
+                    pc=state.pc,
+                )
 
-            state.add_constraint(z3.Not(is_none))
-            if not is_satisfiable(list(state.path_constraints)):
-                return OpcodeResult.error(issue, state=state)
+                if not hasattr(state, "_pending_taint_issues"):
+                    state._pending_taint_issues = []
+                state._pending_taint_issues.append(issue)
 
-            state._pending_taint_issues.append(issue)
+                if must_be_none:
+                    return OpcodeResult.error(issue, state=state)
+
+            # Prune the 'is None' path for generic variables to avoid cascades
+            state = state.add_constraint(z3.Not(is_none))
 
     result = _apply_model(state, func_obj, args, kwargs)
     if result:
@@ -586,21 +594,26 @@ def handle_load_method(
 
         none_check = [*state.path_constraints, obj.is_none]
         if is_satisfiable(none_check):
+            must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(obj.is_none)])
+            is_unconstrained_var = z3.is_const(obj.is_none) and obj.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            
+            if must_be_none or not is_unconstrained_var:
+                issue = Issue(
+                    kind=IssueKind.NULL_DEREFERENCE,
+                    message=f"Possible None dereference: access '{attr_name}' on {obj.name}",
+                    constraints=list(none_check),
+                    model=get_model(none_check),
+                    pc=state.pc,
+                )
 
-            issue = Issue(
-                kind=IssueKind.NULL_DEREFERENCE,
-                message=f"Possible None dereference: access '{attr_name}' on {obj.name}",
-                constraints=list(none_check),
-                model=get_model(none_check),
-                pc=state.pc,
-            )
+                if not hasattr(state, "_pending_taint_issues"):
+                    state._pending_taint_issues = []
+                state._pending_taint_issues.append(issue)
+                
+                if must_be_none:
+                    return OpcodeResult(new_states=[], issues=[issue], terminal=True)
 
-            state.add_constraint(z3.Not(obj.is_none))
-
-            if not is_satisfiable(list(state.path_constraints)):
-                return OpcodeResult(new_states=[], issues=[issue], terminal=True)
-
-            state._pending_taint_issues.append(issue)
+            state = state.add_constraint(z3.Not(obj.is_none))
 
     if result_val is None:
         result_val, type_constraint = SymbolicValue.symbolic(
@@ -608,6 +621,10 @@ def handle_load_method(
         )
         result_val.model_name = f"{type_name}.{attr_name}"
         state = state.add_constraint(type_constraint)
+        
+        import z3 as _z3
+        state = state.add_constraint(_z3.Not(result_val.is_none))
+
     state = state.push(result_val)
     if push_null:
         state.push(
@@ -637,14 +654,24 @@ def handle_store_attr(
     attr_name = str(instr.argval)
     if isinstance(obj, SymbolicObject):
         if obj.address != -1:
-            from pysymex.core.state import _wrap_cow_dict
+            from pysymex.core.state import wrap_cow_dict
+            from pysymex.core.copy_on_write import CowDict
 
             obj_state = state.memory.get(obj.address)
             if obj_state is None:
-                obj_state = _wrap_cow_dict({})
+                obj_state = wrap_cow_dict({})
+            elif not isinstance(obj_state, (dict, CowDict)):
+                issue = Issue(
+                    kind=IssueKind.TYPE_ERROR,
+                    message=f"TypeError: '{type(obj_state).__name__}' object has no attribute '{attr_name}'",
+                    constraints=list(state.path_constraints),
+                    model=get_model(state.path_constraints),
+                    pc=state.pc,
+                )
+                return OpcodeResult.error(issue, state=state)
             else:
 
-                obj_state = _wrap_cow_dict(obj_state).cow_fork()
+                obj_state = wrap_cow_dict(obj_state).cow_fork()
 
             obj_state[attr_name] = value
             state.memory[obj.address] = obj_state
@@ -750,14 +777,12 @@ def handle_import_name(
     if state.stack:
         state.pop()
     module_name = str(instr.argval) if instr.argval else "unknown_module"
-    module_val = SymbolicValue(
-        _name=f"module_{module_name}",
-        z3_int=z3.IntVal(0),
-        is_int=z3.BoolVal(False),
-        z3_bool=z3.BoolVal(False),
-        is_bool=z3.BoolVal(False),
-    )
-    module_val.model_name = module_name
+    
+    # Modules should not be None
+    # We use a unique address for each module to represent its identity
+    addr = hash(module_name) & 0xFFFFFFFF
+    module_val = SymbolicObject(module_name, addr, z3.IntVal(addr), {addr})
+
     state = state.push(module_val)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -771,6 +796,10 @@ def handle_import_from(
     attr_name = str(instr.argval) if instr.argval else "unknown_attr"
     attr_val, type_constraint = SymbolicValue.symbolic(f"import_{attr_name}")
     attr_val.model_name = attr_name
+    
+    # Assume imports are usually valid (not None) to reduce noise
+    state = state.add_constraint(z3.Not(attr_val.is_none))
+    
     state = state.push(attr_val)
     state = state.add_constraint(type_constraint)
     state = state.advance_pc()

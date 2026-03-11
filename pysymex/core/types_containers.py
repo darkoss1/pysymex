@@ -234,7 +234,7 @@ class SymbolicString(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicString({self._name})"
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -320,6 +320,8 @@ class SymbolicList(SymbolicType):
 
     def __getitem__(self, index: SymbolicValue) -> SymbolicValue:
         """List indexing with negative wrap-around support."""
+        if not isinstance(index, SymbolicValue):
+            index = SymbolicValue.from_const(index)
         real_idx = z3.If(index.z3_int < 0, index.z3_int + self.z3_len, index.z3_int)
         elem = z3.Select(self.z3_array, real_idx)
         return SymbolicValue(
@@ -333,6 +335,10 @@ class SymbolicList(SymbolicType):
 
     def __setitem__(self, index: SymbolicValue, value: SymbolicValue) -> SymbolicList:
         """List assignment - returns new list (immutable semantics)."""
+        if not isinstance(index, SymbolicValue):
+            index = SymbolicValue.from_const(index)
+        if not isinstance(value, SymbolicValue):
+            value = SymbolicValue.from_const(value)
         new_array = z3.Store(self.z3_array, index.z3_int, value.z3_int)
         return SymbolicList(
             _name=f"{self._name}[{index.name}]={value.name}",
@@ -397,7 +403,7 @@ class SymbolicList(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicList({self._name}, len={self.z3_len})"
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -462,6 +468,8 @@ class SymbolicDict(SymbolicType):
 
     def __getitem__(self, key: SymbolicString) -> tuple[SymbolicValue, z3.BoolRef]:
         """Dict lookup. Returns (value, presence_check)."""
+        if not isinstance(key, SymbolicString):
+            key = SymbolicString.from_const(key)
         elem = z3.Select(self.z3_array, key.z3_str)
 
         presence_check = z3.Contains(self.known_keys, z3.Unit(key.z3_str))
@@ -477,6 +485,10 @@ class SymbolicDict(SymbolicType):
 
     def __setitem__(self, key: SymbolicString, value: SymbolicValue) -> SymbolicDict:
         """Dict assignment - returns new dict. Prevents redundant key growth."""
+        if not isinstance(key, SymbolicString):
+            key = SymbolicString.from_const(key)
+        if not isinstance(value, SymbolicValue):
+            value = SymbolicValue.from_const(value)
         new_array = z3.Store(self.z3_array, key.z3_str, value.z3_int)
         key_unit = z3.Unit(key.z3_str)
         new_keys = z3.If(
@@ -505,6 +517,12 @@ class SymbolicDict(SymbolicType):
             is_bool=Z3_TRUE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
         )
+
+    def __contains__(self, key: object) -> bool:
+        """Dict membership check (concrete). Returns False for symbolic keys to avoid iteration."""
+        # This prevents Python from falling back to __getitem__(0), __getitem__(1)...
+        # when 'in' is used on a SymbolicDict.
+        return False
 
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
         """Merge with another dict based on condition."""
@@ -535,7 +553,7 @@ class SymbolicDict(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicDict({self._name})"
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -670,7 +688,7 @@ class SymbolicObject(SymbolicType):
             )
         return SymbolicValue.from_const(0)
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -714,7 +732,7 @@ class SymbolicIterator(SymbolicType):
     def __repr__(self) -> str:
         return f"SymbolicIterator(of {self.iterable})"
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(

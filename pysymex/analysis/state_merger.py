@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.copy_on_write import CowDict, ConstraintChain
+from pysymex.core.copy_on_write import ConstraintChain, CowDict
 
 if TYPE_CHECKING:
     import dis
@@ -307,7 +307,7 @@ class StateMerger:
         merged.stack = merged_stack
 
         if len(state1.call_stack) == len(state2.call_stack):
-            from pysymex.core.state import CallFrame, wrap_cow_dict
+            from pysymex.core.state import wrap_cow_dict
 
             merged_call_stack = []
             for f1, f2 in zip(state1.call_stack, state2.call_stack):

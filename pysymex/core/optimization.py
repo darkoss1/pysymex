@@ -45,7 +45,7 @@ class CacheStats:
     def __str__(self) -> str:
         return (
             f"CacheStats(hits={self.hits}, misses={self.misses}, "
-            f"hit_rate={self.hit_rate :.1f}%, time_saved={self.total_time_saved_ms :.1f}ms)"
+            f"hit_rate={self.hit_rate:.1f}%, time_saved={self.total_time_saved_ms:.1f}ms)"
         )
 
 
@@ -171,7 +171,7 @@ class StateMerger:
         return (
             state.pc,
             len(state.stack),
-            tuple(sorted(state.locals.keys())),
+            tuple(sorted(str(k) for k in state.locals.keys())),
             len(state.path_constraints),
         )
 
@@ -209,42 +209,52 @@ class StateMerger:
             return None
         merged = state1.copy()
         if state1.path_constraints and state2.path_constraints:
+            from pysymex.core.copy_on_write import ConstraintChain
+
+            constraints_list1 = state1.path_constraints.to_list()
+            constraints_list2 = state2.path_constraints.to_list()
             common_len = 0
-            min_len = min(len(state1.path_constraints), len(state2.path_constraints))
+            min_len = min(len(constraints_list1), len(constraints_list2))
             while common_len < min_len:
                 try:
-                    if z3.eq(
-                        state1.path_constraints[common_len], state2.path_constraints[common_len]
-                    ):
+                    if z3.eq(constraints_list1[common_len], constraints_list2[common_len]):
                         common_len += 1
                     else:
                         break
                 except Exception:
                     break
 
-            merged.path_constraints = list(state1.path_constraints[:common_len])
+            merged.path_constraints = ConstraintChain.from_list(constraints_list1[:common_len])
 
-            extra1 = state1.path_constraints[common_len:]
-            extra2 = state2.path_constraints[common_len:]
+            extra1 = constraints_list1[common_len:]
+            extra2 = constraints_list2[common_len:]
             if extra1 and extra2:
                 branch_cond = extra1[0]
                 for c in extra1:
-                    merged.path_constraints.append(z3.Implies(branch_cond, c))
+                    merged.path_constraints = merged.path_constraints.append(
+                        z3.Implies(branch_cond, c)
+                    )
                 for c in extra2:
-                    merged.path_constraints.append(z3.Implies(z3.Not(branch_cond), c))
+                    merged.path_constraints = merged.path_constraints.append(
+                        z3.Implies(z3.Not(branch_cond), c)
+                    )
             elif extra1:
-                merged.path_constraints.extend(extra1)
+                for c in extra1:
+                    merged.path_constraints = merged.path_constraints.append(c)
             elif extra2:
-                merged.path_constraints.extend(extra2)
+                for c in extra2:
+                    merged.path_constraints = merged.path_constraints.append(c)
 
         for name, value2 in state2.locals.items():
             if name not in merged.locals:
                 merged.locals[name] = value2
             elif str(merged.locals[name]) != str(value2):
+                from typing import Any as _Any
+
                 from pysymex.core.types import SymbolicValue
 
-                s1 = merged.locals[name]
-                s2 = value2
+                s1: _Any = merged.locals[name]
+                s2: _Any = value2
                 if hasattr(s1, "conditional_merge"):
                     merged.locals[name] = s1.conditional_merge(s2, z3.BoolVal(True))
                 else:
@@ -428,8 +438,8 @@ class ProfileData:
             "=" * 60,
             "pysymex Performance Report",
             "=" * 60,
-            f"Total execution time: {self.total_time_seconds :.3f}s",
-            f"Solver time: {self.solver_time_seconds :.3f}s ({self.solver_time_seconds /total_time *100 :.1f}%)",
+            f"Total execution time: {self.total_time_seconds:.3f}s",
+            f"Solver time: {self.solver_time_seconds:.3f}s ({self.solver_time_seconds / total_time * 100:.1f}%)",
             f"States created: {self.states_created}",
             f"States explored: {self.states_explored}",
             f"Paths explored: {self.paths_explored}",
@@ -447,9 +457,7 @@ class ProfileData:
         for opcode, time_taken in sorted_opcodes:
             count = self.opcode_counts.get(opcode, 0)
             avg_time = (time_taken / count * 1000) if count > 0 else 0
-            lines.append(
-                f"  {opcode :30} {time_taken :.4f}s ({count :5} calls, {avg_time :.3f}ms avg)"
-            )
+            lines.append(f"  {opcode:30} {time_taken:.4f}s ({count:5} calls, {avg_time:.3f}ms avg)")
         lines.append("=" * 60)
         return "\n".join(lines)
 

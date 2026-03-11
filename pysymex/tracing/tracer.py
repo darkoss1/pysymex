@@ -41,16 +41,17 @@ single-threaded by default in pysymex).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import dis
 import json
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
 from pysymex.tracing.schemas import (
     ConstraintEntry,
     IssueEvent,
@@ -297,7 +298,7 @@ class ExecutionTracer:
         if not self._config.enabled:
             return Path(self._config.output_dir)
 
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in func_name)
         filename = f"trace_{ts}_{safe_name}.jsonl"
         out_dir = Path(self._config.output_dir)
@@ -330,7 +331,7 @@ class ExecutionTracer:
         raw_config = config_snapshot if config_snapshot is not None else self._config.model_dump()
 
         header = SystemContextEvent(
-            timestamp_iso=datetime.now(timezone.utc).isoformat(),
+            timestamp_iso=datetime.now(UTC).isoformat(),
             pysymex_version=pysymex_version,
             z3_version=z3_version,
             function_name=func_name,

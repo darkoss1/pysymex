@@ -417,14 +417,16 @@ class TestLoopWideningEnhanced:
             )
         }
 
+        from pysymex.core.copy_on_write import ConstraintChain
+        
         old_state = MagicMock(spec=VMState)
         old_state.locals = {"i": mock_symbolic("i_old")}
 
         new_state = MagicMock(spec=VMState)
         new_state.locals = {"i": mock_symbolic("i_new")}
-        new_state.path_constraints = []
+        new_state.path_constraints = ConstraintChain.empty()
         new_state.copy = MagicMock(
-            return_value=MagicMock(locals={"i": mock_symbolic("i_new")}, path_constraints=[])
+            return_value=MagicMock(locals={"i": mock_symbolic("i_new")}, path_constraints=ConstraintChain.empty())
         )
 
         widened = widening.widen_state(old_state, new_state, loop)
@@ -437,13 +439,15 @@ class TestLoopWideningEnhanced:
         loop = LoopInfo(header_pc=0, back_edge_pc=10, body_pcs={0, 5, 10}, exit_pcs={15})
         loop.induction_vars = {}
 
+        from pysymex.core.copy_on_write import ConstraintChain
         old_state = MagicMock(spec=VMState)
         old_state.locals = {"x": mock_symbolic("x_old")}
 
         new_state = MagicMock(spec=VMState)
         new_state.locals = {"x": mock_symbolic("x_new")}
+        new_state.path_constraints = ConstraintChain.empty()
         new_state.copy = MagicMock(
-            return_value=MagicMock(locals={"x": mock_symbolic("x_new")}, path_constraints=[])
+            return_value=MagicMock(locals={"x": mock_symbolic("x_new")}, path_constraints=ConstraintChain.empty())
         )
 
         widened = widening.widen_state(old_state, new_state, loop)

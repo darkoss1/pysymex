@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pysymex.analysis.autotuner import AutoTuner
-from pysymex.analysis.detectors import Issue
+from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.detectors.protocols import ScanReporter
 from pysymex.analysis.range_analysis import ValueRangeChecker
 from pysymex.cli.scan_reporter import ConsoleScanReporter
@@ -95,10 +95,15 @@ def analyze_source(
         total_paths = 0
         module_item = all_code_with_context[0] if all_code_with_context else None
         other_items = all_code_with_context[1:] if len(all_code_with_context) > 1 else []
-        module_globals: dict[str, object] = {}
+        module_globals = _get_default_scanner_globals()
         if module_item:
             code, class_name, full_path = module_item
-            symbolic_vars = dict.fromkeys(code.co_varnames[: code.co_argcount], "int")
+            symbolic_vars = {}
+            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                if i == 0 and name in ("self", "cls"):
+                    symbolic_vars[name] = "object"
+                else:
+                    symbolic_vars[name] = "int"
             try:
                 exec_result = executor.execute_code(code, symbolic_vars=symbolic_vars)
                 module_globals = exec_result.final_locals
@@ -111,10 +116,24 @@ def analyze_source(
                     )
                     all_issues.append(issue_with_context)
                 total_paths += exec_result.paths_explored
-            except Exception:
+            except Exception as e:
                 logger.debug("Module execution failed for %s", file_path, exc_info=True)
+                all_issues.append(
+                    Issue(
+                        kind=IssueKind.RUNTIME_ERROR,
+                        message=f"Internal Error during symbolic execution: {type(e).__name__}({e})",
+                        function_name=code.co_name,
+                        class_name=class_name,
+                        full_path=full_path,
+                    )
+                )
         for code, class_name, full_path in other_items:
-            symbolic_vars = dict.fromkeys(code.co_varnames[: code.co_argcount], "int")
+            symbolic_vars = {}
+            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                if i == 0 and name in ("self", "cls"):
+                    symbolic_vars[name] = "object"
+                else:
+                    symbolic_vars[name] = "int"
             try:
                 exec_result = executor.execute_code(
                     code,
@@ -130,9 +149,18 @@ def analyze_source(
                     )
                     all_issues.append(issue_ctx)
                 total_paths += exec_result.paths_explored
-            except Exception:
+            except Exception as e:
                 logger.debug(
                     "Execution failed for %s in %s", code.co_name, file_path, exc_info=True
+                )
+                all_issues.append(
+                    Issue(
+                        kind=IssueKind.RUNTIME_ERROR,
+                        message=f"Internal Error during symbolic execution: {type(e).__name__}({e})",
+                        function_name=code.co_name,
+                        class_name=class_name,
+                        full_path=full_path,
+                    )
                 )
         builder.add_paths(total_paths)
 
@@ -180,6 +208,44 @@ def analyze_source(
     except Exception as e:
         builder.set_error(f"Analysis Error: {e}")
     return builder.build()
+
+
+def _get_default_scanner_globals() -> dict[str, object]:
+    """Provide a default global environment for the scanner.
+
+    Includes symbolic objects for common standard library modules to
+    prevent the engine from assuming they could be None.
+    """
+    from pysymex.core.types_containers import SymbolicObject
+    import z3
+
+    defaults = {}
+    # Common modules frequently used in Python code
+    common_modules = [
+        "sys",
+        "os",
+        "functools",
+        "re",
+        "json",
+        "math",
+        "time",
+        "random",
+        "datetime",
+        "io",
+        "itertools",
+        "collections",
+        "pathlib",
+        "abc",
+        "typing",
+    ]
+
+    for mod_name in common_modules:
+        # Give each module a unique symbolic address to represent identity
+        addr = hash(mod_name) & 0xFFFFFFFF
+        obj = SymbolicObject(mod_name, addr, z3.IntVal(addr), {addr})
+        defaults[mod_name] = obj
+
+    return defaults
 
 
 def analyze_file(file_path: Path) -> ScanResult:
@@ -303,16 +369,53 @@ def scan_file(
                 )
                 tracer.install(executor)
 
-        all_issues: list[Issue] = []
+        seen: set[str] = set()
+
+        def _handle_issue(issue: object) -> None:
+            import re
+            # Check if it's already a dict (from range checker)
+            if isinstance(issue, dict):
+                issue_dict = issue
+                raw_msg_key = f"[{issue_dict['kind']}] {issue_dict['message']} (Line {issue_dict['line']})"
+            else:
+                raw_msg_key = f"[{issue.kind.name}] {issue.message} (Line {issue.line_number})"
+                issue_dict = {
+                    "kind": issue.kind.name,
+                    "message": issue.message,
+                    "line": issue.line_number,
+                    "pc": issue.pc,
+                    "function_name": getattr(issue, "function_name", None),
+                    "class_name": getattr(issue, "class_name", None),
+                    "full_path": getattr(issue, "full_path", None),
+                    "counterexample": getattr(issue, "get_counterexample", lambda: None)(),
+                }
+
+            # Normalize internal symbolic IDs (e.g. iter_12_54 -> iter or havoc_call@19 -> havoc_call)
+            # strictly for aggressive deduplication on identical bug reports
+            msg_key = re.sub(r"(_\d+|@\d+)", "", raw_msg_key)
+
+            if msg_key not in seen:
+                seen.add(msg_key)
+                result.issues.append(issue_dict)
+                if verbose and reporter:
+                    reporter.on_issue(issue_dict)
+
         total_paths = 0
         module_item = all_code_with_context[0] if all_code_with_context else None
         other_items = all_code_with_context[1:] if len(all_code_with_context) > 1 else []
-        module_globals: dict[str, object] = {}
+        module_globals = _get_default_scanner_globals()
         if module_item:
             code, class_name, full_path = module_item
-            symbolic_vars = dict.fromkeys(code.co_varnames[: code.co_argcount], "int")
+            symbolic_vars = {}
+            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                if i == 0 and name in ("self", "cls"):
+                    symbolic_vars[name] = "object"
+                else:
+                    symbolic_vars[name] = "int"
             try:
-                exec_result = executor.execute_code(code, symbolic_vars=symbolic_vars)
+                exec_result = executor.execute_code(
+                    code, symbolic_vars=symbolic_vars, initial_globals=module_globals
+                )
                 module_globals = exec_result.final_locals
                 for raw_issue in exec_result.issues:
                     processed_issue = dataclasses.replace(
@@ -321,10 +424,20 @@ def scan_file(
                         class_name=class_name,
                         full_path=full_path,
                     )
-                    all_issues.append(processed_issue)
+                    _handle_issue(processed_issue)
                 total_paths += exec_result.paths_explored
             except Exception as e:
                 logger.debug("Module execution failed for %s: %s", str(file_path), e, exc_info=True)
+                _handle_issue(
+                    Issue(
+                        kind=IssueKind.RUNTIME_ERROR,
+                        message=f"Internal Error during symbolic execution: {type(e).__name__}({e})",
+                        function_name=code.co_name,
+                        class_name=class_name,
+                        full_path=full_path,
+                    )
+                )
+
         for code, class_name, full_path in other_items:
             if auto_tune:
                 tune_config = AutoTuner.tune(code, base_config)
@@ -336,7 +449,12 @@ def scan_file(
                 )
                 executor = SymbolicExecutor(config=tune_config)
 
-            symbolic_vars = dict.fromkeys(code.co_varnames[: code.co_argcount], "int")
+            symbolic_vars = {}
+            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                if i == 0 and name in ("self", "cls"):
+                    symbolic_vars[name] = "object"
+                else:
+                    symbolic_vars[name] = "int"
             try:
                 exec_result = executor.execute_code(
                     code, symbolic_vars=symbolic_vars, initial_globals=module_globals
@@ -348,57 +466,44 @@ def scan_file(
                         class_name=class_name,
                         full_path=full_path,
                     )
-                    all_issues.append(processed_issue)
+                    _handle_issue(processed_issue)
                 total_paths += exec_result.paths_explored
-            except Exception:
+            except Exception as e:
                 logger.debug("Symbolic execution failed for %s", code.co_name, exc_info=True)
+                _handle_issue(
+                    Issue(
+                        kind=IssueKind.RUNTIME_ERROR,
+                        message=f"Internal Error during symbolic execution: {type(e).__name__}({e})",
+                        function_name=code.co_name,
+                        class_name=class_name,
+                        full_path=full_path,
+                    )
+                )
         result.paths_explored = total_paths
 
         range_checker = ValueRangeChecker()
-        seen: set[str] = set()
         for code, class_name, full_path in all_code_with_context:
             try:
                 range_warnings = range_checker.check_function(code, str(file_path))
                 for warning in range_warnings:
-                    msg = f"[Abstract Interpreter] [{warning.kind}] {warning.message} (Line {warning.line})"
-                    if msg not in seen:
-                        seen.add(msg)
-                        result.issues.append(
-                            {
-                                "kind": warning.kind,
-                                "message": f"[Abstract Interpreter] {warning.message}",
-                                "line": warning.line,
-                                "pc": warning.pc,
-                                "function_name": code.co_name,
-                                "class_name": class_name,
-                                "full_path": full_path,
-                                "counterexample": None,
-                            }
-                        )
+                    _handle_issue(
+                        {
+                            "kind": warning.kind,
+                            "message": f"[Abstract Interpreter] {warning.message}",
+                            "line": warning.line,
+                            "pc": warning.pc,
+                            "function_name": code.co_name,
+                            "class_name": class_name,
+                            "full_path": full_path,
+                            "counterexample": None,
+                        }
+                    )
             except (RuntimeError, TypeError, ValueError):
                 logger.debug("Value range analysis failed for %s", code.co_name, exc_info=True)
-        for issue in all_issues:
-            msg = f"[{issue.kind.name}] {issue.message} (Line {issue.line_number})"
-            if msg not in seen:
-                seen.add(msg)
-                result.issues.append(
-                    {
-                        "kind": issue.kind.name,
-                        "message": issue.message,
-                        "line": issue.line_number,
-                        "pc": issue.pc,
-                        "function_name": issue.function_name,
-                        "class_name": getattr(issue, "class_name", None),
-                        "full_path": getattr(issue, "full_path", None),
-                        "counterexample": issue.get_counterexample(),
-                    }
-                )
-            if verbose:
-                if reporter:
-                    reporter.on_progress(0, 1, file_path, result)
-                else:
-                    status_msg = f"{len(result.issues)} issues found" if result.issues else "No issues"
-                    print(f"{'⚠️' if result.issues else '✅'} {file_path}: {status_msg}")
+
+        if verbose and not reporter:
+            status_msg = f"{len(result.issues)} issues found" if result.issues else "No issues"
+            print(f"{'⚠️' if result.issues else '✅'} {file_path}: {status_msg}")
     except SyntaxError as e:
         result.error = f"Syntax Error: {e}"
         if reporter:

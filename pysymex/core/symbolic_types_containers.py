@@ -142,7 +142,7 @@ class SymbolicString(SymbolicType):
         """Create a concrete string."""
         return SymbolicString(z3.StringVal(value), repr(value))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -220,7 +220,7 @@ class SymbolicBytes(SymbolicType):
             result = z3.Concat(result, z3.Unit(z3.BitVecVal(b, 8)))
         return SymbolicBytes(result, repr(value))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -314,7 +314,7 @@ class SymbolicTuple(SymbolicType):
         """Create empty tuple."""
         return SymbolicTuple(())
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -413,7 +413,7 @@ class SymbolicList(SymbolicType):
             result = z3.Concat(result, z3.Unit(z3.IntVal(v)))
         return SymbolicList(result, z3.IntSort(), str(values))
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -518,7 +518,7 @@ class SymbolicDict(SymbolicType):
             _membership=membership,
         )
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -623,7 +623,7 @@ class SymbolicSet(SymbolicType):
         """Create an empty int set."""
         return SymbolicSet(z3.EmptySet(z3.IntSort()), z3.IntSort(), "set()")
 
-    def as_unified(self) -> "SymbolicValue":
+    def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(

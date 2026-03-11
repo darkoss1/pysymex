@@ -115,7 +115,7 @@ class TestDetectorAuditFixes:
 
         assert detector is not None
         assert detector.issue_kind == IssueKind.RESOURCE_LEAK
-        assert detector.__class__.__module__.endswith("detectors.base")
+        assert detector.__class__.__module__.split(".")[-2] == "detectors"
 
     def test_command_injection_requires_dangerous_target(self):
         detector = CommandInjectionDetector()

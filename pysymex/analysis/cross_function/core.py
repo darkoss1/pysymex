@@ -99,9 +99,16 @@ class FunctionSummaryCache:
             constraint_hash = 0
         else:
 
-            optimizer = ConstraintIndependenceOptimizer(path_constraints)
+            optimizer = ConstraintIndependenceOptimizer()
+            for c in path_constraints:
+                optimizer.register_constraint(c)
 
-            relevant_slice = cast("list[z3.BoolRef]", optimizer.slice_for_query(list(target_vars)))
+            # Combine target vars into a dummy query to find all relevant constraints.
+            if target_vars:
+                dummy_query = z3.And(*[(v == v) for v in target_vars])
+                relevant_slice = cast("list[z3.BoolRef]", optimizer.slice_for_query(path_constraints, dummy_query))
+            else:
+                relevant_slice = []
 
             canonical_constraints: list[z3.BoolRef] = []
             for c in relevant_slice:

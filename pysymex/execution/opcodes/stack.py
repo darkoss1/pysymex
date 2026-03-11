@@ -94,9 +94,9 @@ def handle_swap(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     return OpcodeResult.continue_with(state)
 
 
-@opcode_handler("NOP", "RESUME")
+@opcode_handler("NOP", "RESUME", "EXTENDED_ARG")
 def handle_nop(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """No operation."""
+    """No operation (EXTENDED_ARG is handled by dis.get_instructions pre-calculating operands)."""
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 

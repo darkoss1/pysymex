@@ -7,7 +7,9 @@ This module provides filtering mechanisms to reduce false positives from:
 """
 
 from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 
 import re

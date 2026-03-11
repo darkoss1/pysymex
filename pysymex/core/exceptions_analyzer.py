@@ -5,6 +5,7 @@ exception catalog.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 import z3
 
@@ -66,11 +67,48 @@ class ExceptionAnalyzer:
     ) -> tuple[bool, str | None]:
         """
         Verify that a @raises contract is satisfied.
-        Returns (satisfied, error_message).
+
+        Args:
+            contract: The raises contract to verify.
+            context_constraints: Optional path constraints under which to check
+                feasibility. When provided, only exceptions whose Z3 condition is
+                satisfiable together with these constraints are counted as matching.
+                This prevents false positives from infeasible exception paths.
+
+        Returns:
+            (satisfied, error_message) — satisfied is True when at least one
+            matching exception is feasible under the given constraints.
         """
         matching_exceptions = [exc for exc in self._potential_exceptions if contract.matches(exc)]
         if not matching_exceptions:
             return False, f"No {contract.type_name} exceptions found"
+
+        if not context_constraints:
+            return True, None
+
+        # Filter to exceptions that are feasible under the given path constraints.
+        feasible: list[SymbolicException] = []
+        for exc in matching_exceptions:
+            if exc.condition is None or z3.is_true(exc.condition):
+                # Unconditional exception — always feasible.
+                feasible.append(exc)
+                continue
+            # Check satisfiability of exc.condition ∧ context_constraints.
+            self.solver.push()
+            try:
+                for c in context_constraints:
+                    self.solver.add(c)
+                self.solver.add(exc.condition)
+                if self.solver.check() == z3.sat:
+                    feasible.append(exc)
+            finally:
+                self.solver.pop()
+
+        if not feasible:
+            return (
+                False,
+                f"No {contract.type_name} exceptions are feasible under the given path constraints",
+            )
         return True, None
 
     def check_unhandled_exceptions(
@@ -99,8 +137,9 @@ class ExceptionAnalyzer:
                 )
             return None
         if hasattr(divisor, "to_z3"):
-            z3_val = divisor.to_z3()
-            condition = z3_val == 0
+            divisor_any: Any = divisor
+            z3_val: Any = divisor_any.to_z3()
+            condition: Any = z3_val == 0
             return SymbolicException.symbolic(
                 f"div_zero_{pc}",
                 ZeroDivisionError,
@@ -122,18 +161,20 @@ class ExceptionAnalyzer:
     ) -> SymbolicException | None:
         """Analyze index access for potential IndexError."""
         if hasattr(container, "length"):
-            length = container.length
+            container_any: Any = container
+            length: Any = container_any.length
             if isinstance(index, int):
                 if hasattr(length, "to_z3"):
-                    z3_len = length.to_z3()
-                    condition = z3.Or(
+                    length_any: Any = length
+                    z3_len: Any = length_any.to_z3()
+                    condition_i: Any = z3.Or(
                         z3.IntVal(index) >= z3_len,
                         z3.IntVal(index) < -z3_len,
                     )
                     return SymbolicException.symbolic(
                         f"index_error_{pc}",
                         IndexError,
-                        condition,
+                        condition_i,
                         pc,
                     )
                 elif isinstance(length, int):
@@ -145,19 +186,21 @@ class ExceptionAnalyzer:
                         )
                     return None
             if hasattr(index, "to_z3"):
-                z3_idx = index.to_z3()
+                index_any: Any = index
+                z3_idx: Any = index_any.to_z3()
                 if hasattr(length, "to_z3"):
-                    z3_len = length.to_z3()
-                    condition = z3.Or(z3_idx >= z3_len, z3_idx < -z3_len)
+                    length_any2: Any = length
+                    z3_len2: Any = length_any2.to_z3()
+                    condition_s: Any = z3.Or(z3_idx >= z3_len2, z3_idx < -z3_len2)
                 else:
-                    condition = z3.Or(
-                        z3_idx >= z3.IntVal(length),
-                        z3_idx < z3.IntVal(-length),
+                    condition_s = z3.Or(
+                        z3_idx >= z3.IntVal(int(length)),
+                        z3_idx < z3.IntVal(-int(length)),
                     )
                 return SymbolicException.symbolic(
                     f"index_error_{pc}",
                     IndexError,
-                    condition,
+                    condition_s,
                     pc,
                 )
         return None
@@ -171,7 +214,8 @@ class ExceptionAnalyzer:
         """Analyze key access for potential KeyError."""
         if hasattr(container, "contains"):
             if hasattr(container, "contains_key"):
-                contains_result = container.contains_key(key)
+                container_any2: Any = container
+                contains_result: Any = container_any2.contains_key(key)
                 if isinstance(contains_result, bool):
                     if not contains_result:
                         return SymbolicException.concrete(
@@ -201,7 +245,8 @@ class ExceptionAnalyzer:
                 raised_at=pc,
             )
         if hasattr(obj, "has_attribute"):
-            has_attr = obj.has_attribute(attr)
+            obj_any: Any = obj
+            has_attr: Any = obj_any.has_attribute(attr)
             if isinstance(has_attr, bool):
                 if not has_attr:
                     type_name = type(obj).__name__
@@ -229,7 +274,8 @@ class ExceptionAnalyzer:
                 )
             return None
         if hasattr(condition, "could_be_falsy"):
-            falsy_cond = condition.could_be_falsy()
+            cond_any: Any = condition
+            falsy_cond: Any = cond_any.could_be_falsy()
             return SymbolicException.symbolic(
                 f"assertion_{pc}",
                 AssertionError,

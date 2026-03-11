@@ -3,6 +3,7 @@ pysymex - Core detectors, advanced detectors, and registry.
 """
 
 from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,9 @@ class Issue:
         """Extract counterexample from model."""
         if self.model is None:
             return {}
+        if isinstance(self.model, dict):
+            return self.model
+            
         counterexample: dict[str, object] = {}
         for decl in self.model.decls():
             name = decl.name()
@@ -360,6 +364,11 @@ class DivisionByZeroDetector(Detector):
             return None
         if len(state.stack) < 2:
             return None
+            
+        dividend = state.stack[-2]
+        if isinstance(dividend, str) or type(dividend).__name__ == "SymbolicString":
+            return None
+            
         return _pure_check_division_by_zero(
             state.stack[-1],
             state.stack[-2],
@@ -1097,46 +1106,13 @@ class EnhancedTypeErrorDetector(Detector):
             return None
         container = state.stack[-2]
         if isinstance(container, SymbolicValue):
-            container_name = getattr(container, "name", "") or ""
-            if any(pattern in container_name.lower() for pattern in self.DICT_CONTAINER_PATTERNS):
-                return None
-            if container_name.startswith("global_"):
-                return None
-            if any(container_name.startswith(prefix) for prefix in self.SKIP_PREFIXES):
-                return None
-            if any(pattern in container_name for pattern in self.INSTANCE_ATTR_PATTERNS):
-                return None
-            subscript_int = [
-                *state.path_constraints,
-                container.is_int,
-            ]
-            if is_satisfiable(subscript_int):
-                return Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Attempting to subscript {container.name} which could be an int",
-                    constraints=subscript_int,
-                    model=get_model(subscript_int),
-                    pc=state.pc,
-                )
+            pass # Removed noisy int-subscript FP for generic values
         return None
 
     def _check_binary_op(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
         if len(state.stack) < 2:
             return None
-        op = instruction.argrepr
-        left = state.stack[-2]
-        right = state.stack[-1]
-        if op == "+":
-            if isinstance(left, SymbolicString) and isinstance(right, SymbolicValue):
-                type_error = [*state.path_constraints, right.is_int]
-                if is_satisfiable(type_error):
-                    return Issue(
-                        kind=IssueKind.TYPE_ERROR,
-                        message="Cannot concatenate string with int",
-                        constraints=type_error,
-                        model=get_model(type_error),
-                        pc=state.pc,
-                    )
+        # Removed noisy string-concat FP for generic values
         return None
 
 

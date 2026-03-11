@@ -25,6 +25,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "ConstraintCache": ("pysymex.core.optimization", "ConstraintCache"),
     "get_constraint_cache": ("pysymex.core.optimization", "get_constraint_cache"),
     "cached_is_satisfiable": ("pysymex.core.optimization", "cached_is_satisfiable"),
+    # StateMerger: path-deduplication / state-merging for single-threaded exploration
+    # (pysymex.core.optimization.StateMerger).
+    # Do NOT confuse with ParallelStateMerger below, which comes from parallel_core.
     "StateMerger": ("pysymex.core.optimization", "StateMerger"),
     "LazySymbolicValue": ("pysymex.core.optimization", "LazySymbolicValue"),
     "CompactState": ("pysymex.core.optimization", "CompactState"),
@@ -50,6 +53,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "ParallelExplorer": ("pysymex.core.parallel", "ParallelExplorer"),
     "ParallelSolver": ("pysymex.core.parallel", "ParallelSolver"),
     "ConstraintPartitioner": ("pysymex.core.parallel", "ConstraintPartitioner"),
+    # ParallelStateMerger: thread-safe state merger used by ParallelExplorer
+    # (pysymex.core.parallel_core.StateMerger).
+    # Distinct from the single-threaded StateMerger exported above.
     "ParallelStateMerger": ("pysymex.core.parallel", "StateMerger"),
     "OOPMethodType": ("pysymex.core.oop_support", "MethodType"),
     "EnhancedMethod": ("pysymex.core.oop_support", "EnhancedMethod"),

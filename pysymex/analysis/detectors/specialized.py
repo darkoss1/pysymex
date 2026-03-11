@@ -206,7 +206,6 @@ class InfiniteLoopDetector(Detector):
                                 pc=state.pc,
                             )
                         else:
-
                             return None
         return None
 
@@ -222,6 +221,7 @@ def _resolve_target_name(state: VMState, argc: int) -> str | None:
             if isinstance(value, str) and value:
                 return value
     return None
+
 
 class ResourceLeakDetector(Detector):
     """Detects potential resource leaks (unclosed files, connections, etc.)."""
@@ -605,4 +605,3 @@ __all__ = [
     "UseAfterFreeDetector",
     "register_advanced_detectors",
 ]
-

@@ -4,7 +4,9 @@ Detects data races, deadlocks, atomicity violations, and await cycles.
 """
 
 from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 
 from itertools import pairwise

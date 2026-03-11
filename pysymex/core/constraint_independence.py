@@ -328,7 +328,6 @@ class ConstraintIndependenceOptimizer:
 
         query_vars = self.get_variables(query)
         if not query_vars:
-
             self.total_constraints_after += 0
             self.sliced_queries += 1
             return []
@@ -341,7 +340,6 @@ class ConstraintIndependenceOptimizer:
         for constraint in path_constraints:
             c_vars = self.get_variables(constraint)
             if not c_vars:
-
                 relevant.append(constraint)
                 continue
 
@@ -419,7 +417,7 @@ def _run_self_tests() -> None:
     assert uf.connected("a", "e")
 
     groups = uf.groups()
-    assert len(groups) == 1, f"Expected 1 group, got {len (groups )}"
+    assert len(groups) == 1, f"Expected 1 group, got {len(groups)}"
     print("  PASS — union, find, path compression, transitivity")
 
     print("\n[TEST 2] Z3 variable extraction + caching")
@@ -453,8 +451,8 @@ def _run_self_tests() -> None:
     assert vars5 == frozenset()
 
     stats = opt.get_stats()
-    assert stats["full_extractions"] >= 4
-    assert stats["cached_extractions"] >= 1
+    assert int(stats["full_extractions"]) >= 4
+    assert int(stats["cached_extractions"]) >= 1
     print(f"  PASS — extraction correct, cache: {stats}")
 
     print("\n[TEST 3] Constraint slicing — independent clusters")
@@ -483,7 +481,7 @@ def _run_self_tests() -> None:
     assert id(c4) in relevant_ids, "c4 should be relevant (shares 'a' and 'b')"
     assert id(c3) not in relevant_ids, "c3 should NOT be relevant (independent {c,d})"
     assert id(c5) not in relevant_ids, "c5 should NOT be relevant (independent {e})"
-    assert len(relevant) == 3, f"Expected 3 relevant, got {len (relevant )}"
+    assert len(relevant) == 3, f"Expected 3 relevant, got {len(relevant)}"
 
     query_e = e < 100
     relevant_e = opt.slice_for_query([c1, c2, c3, c4, c5], query_e)
@@ -497,7 +495,7 @@ def _run_self_tests() -> None:
     relevant_const = opt.slice_for_query([c1, c2, c3, c4, c5], query_const)
     assert len(relevant_const) == 0
 
-    print(f"  PASS — slicing correct, stats: {opt.get_stats ()}")
+    print(f"  PASS — slicing correct, stats: {opt.get_stats()}")
 
     print("\n[TEST 4] Performance simulation (1000 constraints, 500 queries)")
     opt2 = ConstraintIndependenceOptimizer()
@@ -527,19 +525,19 @@ def _run_self_tests() -> None:
         query = groups_list[g_idx][v_idx] > random.randint(-100, 100)
         sliced = opt2.slice_for_query(long_path, query)
 
-        assert len(sliced) == 100, f"Group {g_idx}: expected 100 relevant, got {len (sliced )}"
+        assert len(sliced) == 100, f"Group {g_idx}: expected 100 relevant, got {len(sliced)}"
     elapsed = time.perf_counter() - start
 
     stats2 = opt2.get_stats()
-    print(f"  500 queries × 1000 constraints in {elapsed *1000 :.1f} ms")
-    print(f"  Reduction ratio: {stats2 ['reduction_ratio']:.1%}")
+    print(f"  500 queries × 1000 constraints in {elapsed * 1000:.1f} ms")
+    print(f"  Reduction ratio: {stats2['reduction_ratio']:.1%}")
     print(
-        f"  Cache: {stats2 ['full_extractions']} AST walks, "
-        f"{stats2 ['cached_extractions']} cache hits"
+        f"  Cache: {stats2['full_extractions']} AST walks, "
+        f"{stats2['cached_extractions']} cache hits"
     )
     assert (
-        stats2["reduction_ratio"] > 0.85
-    ), f"Expected >85% reduction, got {stats2 ['reduction_ratio']:.1%}"
+        float(stats2["reduction_ratio"]) > 0.85  # type: ignore[arg-type]
+    ), f"Expected >85% reduction, got {float(stats2['reduction_ratio']):.1%}"
     print("  PASS — 90% constraint reduction on independent groups")
 
     print("\n[TEST 5] Edge cases")

@@ -26,6 +26,7 @@ from collections.abc import Callable
 
 import z3
 
+import pysymex.core.solver as solver_mod
 from pysymex._compat import get_starts_line
 from pysymex.analysis.abstract.interpreter import AbstractAnalyzer
 from pysymex.analysis.cache import LRUCache, hash_function
@@ -57,8 +58,6 @@ from pysymex.execution.executor_types import (
     ExecutionResult,
 )
 from pysymex.resources import LimitExceeded, ResourceLimits, ResourceTracker
-
-import pysymex.core.solver as solver_mod
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +520,6 @@ class SymbolicExecutor:
         inferred_types: dict[str, str] = {}
         if self.config and self.config.use_type_hints:
             try:
-                from typing import TYPE_CHECKING, cast
 
                 hints = get_type_hints(func)
                 for param, hint in hints.items():
@@ -581,8 +579,15 @@ class SymbolicExecutor:
             return SymbolicValue.symbolic_path(name)
         elif type_hint in ("dict", "mapping", "kwargs"):
             return SymbolicDict.symbolic(name)
+        elif type_hint == "object":
+            sym_val, constraint = SymbolicValue.symbolic(name)
+            import z3 as _z3
+            return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
         else:
-            return SymbolicValue.symbolic(name)
+            sym_val, constraint = SymbolicValue.symbolic(name)
+            # Default fallback for untyped arguments: assume they are NOT None to limit FP explosions
+            import z3 as _z3
+            return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
 
     def _execute_loop(self) -> None:
         """Main execution loop."""
@@ -840,12 +845,8 @@ class SymbolicExecutor:
             IndexError,
             z3.Z3Exception,
         ) as e:
-            import traceback
-
-            logger.debug("Execution error at PC %d: %s", state.pc, e)
-            traceback.print_exc()
             if self.config.verbose:
-                logger.warning("Execution error at PC %d: %s", state.pc, e)
+                logger.debug("Execution error at PC %d: %s", state.pc, e)
             self._paths_pruned += 1
             return
 

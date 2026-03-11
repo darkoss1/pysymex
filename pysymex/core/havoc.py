@@ -91,7 +91,7 @@ class HavocValue(SymbolicValue):
             _name=name,
             is_path=is_path,
             is_none=Z3_FALSE,
-            taint_labels=taint_labels,
+            taint_labels=frozenset(taint_labels) if taint_labels is not None else None,
         )
         return val, type_constraint
 
