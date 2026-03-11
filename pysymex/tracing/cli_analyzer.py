@@ -107,9 +107,6 @@ def stream_events(
     handle: Iterator[str]
     if path == "-":
         handle = sys.stdin
-    elif str(path).endswith(".gz"):
-        import gzip
-        handle = gzip.open(path, "rt", encoding="utf-8")
     else:
         handle = open(path, encoding="utf-8")
 
