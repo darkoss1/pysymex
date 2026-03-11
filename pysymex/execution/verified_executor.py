@@ -776,15 +776,10 @@ class VerifiedExecutor:
         return properties
 
     def _hash_state(self, state: VMState) -> int:
-        """Create a hash for loop detection."""
-        return hash(
-            (
-                state.pc,
-                len(state.path_constraints),
-                len(state.stack),
-                tuple(sorted(state.local_vars.keys())),
-            )
-        )
+        """Create a hash of the state to detect truly redundant paths.
+        Delegates to VMState.hash_value() for content-based hashing.
+        """
+        return state.hash_value()
 
 
 def verify(

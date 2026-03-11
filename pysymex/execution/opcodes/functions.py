@@ -1,7 +1,9 @@
 """Function call opcodes."""
 
 from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 
 import dis
@@ -12,12 +14,10 @@ import z3
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.summaries import SummaryBuilder, instantiate_summary
-from pysymex.core.cow import CowDict
 from pysymex.core.havoc import HavocValue, union_taint
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 from pysymex.core.solver import get_model, is_satisfiable
 from pysymex.core.types import (
-    Z3_FALSE,
     Z3_TRUE,
     SymbolicDict,
     SymbolicList,
@@ -318,14 +318,10 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
         if len(args) >= len(kw_names):
             kw_vals = args[-len(kw_names) :]
             args = args[: -len(kw_names)]
-            for k, v in zip(kw_names, kw_vals, strict=False):
-                kwargs[k] = v
+            kwargs = dict(zip(kw_names, kw_vals, strict=False))
         state.pending_kw_names = None
 
-    if state.stack:
-        receiver_or_null = state.pop()
-    else:
-        receiver_or_null = SymbolicNone()
+    receiver_or_null = state.pop() if state.stack else SymbolicNone()
 
     if state.stack:
         func_obj = state.pop()

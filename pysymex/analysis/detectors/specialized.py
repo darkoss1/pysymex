@@ -228,7 +228,7 @@ class ResourceLeakDetector(Detector):
 
     name = "resource-leak"
     description = "Detects potential resource leaks"
-    issue_kind = IssueKind.UNHANDLED_EXCEPTION
+    issue_kind = IssueKind.RESOURCE_LEAK
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "RETURN_VALUE", "RETURN_CONST"})
 
     def __init__(self):
@@ -254,7 +254,7 @@ class ResourceLeakDetector(Detector):
                 count = self._open_resources
                 self._open_resources = 0
                 return Issue(
-                    kind=IssueKind.UNHANDLED_EXCEPTION,
+                    kind=IssueKind.RESOURCE_LEAK,
                     message=f"Potential resource leak: {count} unclosed resources",
                     pc=state.pc,
                 )
