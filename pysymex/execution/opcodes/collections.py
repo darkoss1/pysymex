@@ -393,16 +393,20 @@ def handle_binary_subscr(
 
         state = state.add_constraint(presence_check)
     else:
-
         try:
             import collections.abc
 
-            if isinstance(real_container, (collections.abc.Sequence, collections.abc.Mapping, SymbolicValue)):
+            from pysymex.core.havoc import is_havoc
 
+            if is_havoc(real_container):
+                result, constraint = real_container[index]
+                state = state.add_constraint(constraint)
+            elif isinstance(
+                real_container, (collections.abc.Sequence, collections.abc.Mapping, SymbolicValue)
+            ):
                 result, constraint = SymbolicValue.symbolic(f"subscr_{state.pc}")
                 state = state.add_constraint(constraint)
             else:
-
                 issue = Issue(
                     kind=IssueKind.TYPE_ERROR,
                     message=f"Object is not subscriptable: {type(real_container).__name__}",
@@ -497,19 +501,25 @@ def handle_store_subscr(
         hasattr(real_container, "is_none")
         and is_satisfiable([*state.path_constraints, real_container.is_none])
     ):
-
-        issue = Issue(
-            IssueKind.NULL_DEREFERENCE,
-            "Store to None object",
-            list(state.path_constraints),
-            get_model(state.path_constraints),
-            state.pc,
+        must_be_none = real_container is None or not is_satisfiable(
+            [*state.path_constraints, z3.Not(getattr(real_container, "is_none", Z3_FALSE))]
         )
-        if not is_satisfiable(
-            [*state.path_constraints, z3.Not(getattr(container, "is_none", Z3_FALSE))]
-        ):
-            return OpcodeResult.error(issue, state)
-        issues.append(issue)
+        is_unconstrained_var = hasattr(real_container, "is_none") and z3.is_const(real_container.is_none) and getattr(real_container, "is_none").decl().kind() == z3.Z3_OP_UNINTERPRETED
+        
+        if must_be_none or not is_unconstrained_var:
+            issue = Issue(
+                IssueKind.NULL_DEREFERENCE,
+                "Store to None object",
+                list(state.path_constraints),
+                get_model(state.path_constraints),
+                state.pc,
+            )
+            if must_be_none:
+                return OpcodeResult.error(issue, state)
+            issues.append(issue)
+
+        if hasattr(real_container, "is_none"):
+            state = state.add_constraint(z3.Not(real_container.is_none))
 
     state = state.advance_pc()
     if issues:

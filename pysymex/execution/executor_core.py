@@ -47,10 +47,17 @@ from pysymex.analysis.path_manager import (
 from pysymex.analysis.state_merger import MergePolicy, StateMerger
 from pysymex.analysis.taint import TaintTracker
 from pysymex.analysis.type_inference import TypeAnalyzer
+from pysymex.core.addressing import next_address
 from pysymex.core.copy_on_write import CowDict
 from pysymex.core.solver import IncrementalSolver
 from pysymex.core.state import VMState
-from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicString, SymbolicValue
+from pysymex.core.types import (
+    SymbolicDict,
+    SymbolicList,
+    SymbolicString,
+    SymbolicValue,
+    SymbolicObject,
+)
 from pysymex.execution.dispatcher import OpcodeDispatcher
 from pysymex.execution.executor_types import (
     BRANCH_OPCODES,
@@ -520,7 +527,6 @@ class SymbolicExecutor:
         inferred_types: dict[str, str] = {}
         if self.config and self.config.use_type_hints:
             try:
-
                 hints = get_type_hints(func)
                 for param, hint in hints.items():
                     if param in params:
@@ -562,6 +568,10 @@ class SymbolicExecutor:
     def _create_symbolic_for_type(self, name: str, type_hint: str) -> tuple[object, z3.BoolRef]:
         """Create a symbolic value and its type constraint."""
         type_hint = type_hint.lower()
+
+        if name == "self" and type_hint == "any":
+            type_hint = "object"
+
         if type_hint in ("int", "integer"):
             return SymbolicValue.symbolic_int(name)
         elif type_hint in ("float", "real"):
@@ -580,13 +590,16 @@ class SymbolicExecutor:
         elif type_hint in ("dict", "mapping", "kwargs"):
             return SymbolicDict.symbolic(name)
         elif type_hint == "object":
-            sym_val, constraint = SymbolicValue.symbolic(name)
-            import z3 as _z3
-            return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
+            id_suffix = next_address()
+            z3_addr = z3.Int(f"{name}_{id_suffix}_addr")
+            sym_val = SymbolicObject(
+                _name=name, address=id_suffix, z3_addr=z3_addr, potential_addresses={id_suffix}
+            )
+            return sym_val, z3_addr != 0
         else:
             sym_val, constraint = SymbolicValue.symbolic(name)
-            # Default fallback for untyped arguments: assume they are NOT None to limit FP explosions
             import z3 as _z3
+
             return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
 
     def _execute_loop(self) -> None:
@@ -642,7 +655,14 @@ class SymbolicExecutor:
         return active_instructions[state.pc], active_instructions
 
     def _check_path_feasibility(self, state: VMState) -> bool:
-        """Check if the current path is feasible with Z3."""
+        """Check if the current path is feasible with Z3.
+
+        Optimization: skip the solver call if no new constraints have been added
+        since the last successful feasibility check.
+        """
+        if state.pending_constraint_count <= 0:
+            return True
+
         if not self.solver.is_sat(list(state.path_constraints)):
             self._paths_pruned += 1
             for _hook in self._hooks.get("on_prune", ()):
@@ -651,6 +671,9 @@ class SymbolicExecutor:
                 except Exception:
                     logger.exception("Plugin hook execution failed")
             return False
+
+        # Reset the pending counter after a confirmed SAT result
+        state.pending_constraint_count = 0
         return True
 
     def _handle_loop_logic(
@@ -777,8 +800,9 @@ class SymbolicExecutor:
         2. The pending constraint count exceeds the lazy_eval_threshold.
         3. Detectors need to verify a property.
         """
-        if not self._check_path_feasibility(state):
-            return
+        # Optimization: removed redundant _check_path_feasibility call here.
+        # Feasibility is already checked when states are added to the worklist
+        # or at the end of constraints-modifying opcodes.
         for hook in self._hooks.get("pre_step", ()):
             hook(self, state)
 
@@ -830,11 +854,14 @@ class SymbolicExecutor:
 
         try:
             result = self.dispatcher.dispatch(instr, state)
-            for _hook in self._hooks.get("post_step", ()):
-                try:
-                    _hook(self, state, instr)
-                except Exception:
-                    logger.exception("Plugin hook execution failed")
+            # Call post_step on each resulting state (or the original if terminal/unmodified)
+            states_to_hook = result.new_states if result.new_states else [state]
+            for next_state in states_to_hook:
+                for _hook in self._hooks.get("post_step", ()):
+                    try:
+                        _hook(self, next_state, instr)
+                    except Exception:
+                        logger.exception("Plugin hook execution failed")
             self._process_execution_result(result, state, active_instructions)
         except (
             RuntimeError,

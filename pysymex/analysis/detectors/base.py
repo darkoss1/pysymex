@@ -137,6 +137,8 @@ class Issue:
     class_name: str | None = None
     full_path: str | None = None
     counterexample: dict[str, object] | None = None
+    confidence: float = 1.0
+    likelihood: float = 1.0
 
     def get_counterexample(self) -> dict[str, object]:
         """Extract counterexample from model."""
@@ -440,12 +442,20 @@ def _pure_check_index_bounds(
         ),
     ]
     if is_satisfiable_fn(oob_constraint):
+        confidence = 1.0
+        if is_havoc(index) or is_havoc(container):
+            confidence = 0.5
+        elif hasattr(index, 'affinity_type') and index.affinity_type == "int":
+             # We are sure it's an int, so the mismatch is likely real
+             confidence = 0.9
+
         return Issue(
             kind=IssueKind.INDEX_ERROR,
             message=f"Possible index out of bounds: {container.name}[{index.name}]",
             constraints=oob_constraint,
             model=get_model_fn(oob_constraint),
             pc=pc,
+            confidence=confidence,
         )
     return None
 
@@ -545,12 +555,19 @@ class TypeErrorDetector(Detector):
                         right.is_int,
                     ]
                     if is_satisfiable(type_error):
+                        confidence = 1.0
+                        if is_havoc(right):
+                            confidence = 0.5
+                        elif hasattr(right, 'affinity_type') and right.affinity_type == 'int':
+                            confidence = 0.9
+
                         return Issue(
                             kind=IssueKind.TYPE_ERROR,
                             message=f"Cannot {op} string and int",
                             constraints=type_error,
                             model=get_model(type_error),
                             pc=state.pc,
+                            confidence=confidence,
                         )
         return None
 
@@ -941,6 +958,7 @@ class EnhancedIndexErrorDetector(Detector):
                 constraints=large_constraint,
                 model=get_model(large_constraint),
                 pc=state.pc,
+                confidence=0.8,
             )
         return None
 
@@ -971,12 +989,23 @@ def _pure_check_none_deref(
         if hasattr(obj, "is_none"):
             none_constraint = [*path_constraints, obj.is_none]
             if is_satisfiable_fn(none_constraint):
+                confidence = 1.0
+                if is_havoc(obj):
+                     confidence = 0.5
+                elif hasattr(obj, 'affinity_type') and obj.affinity_type == 'NoneType':
+                     confidence = 1.0
+                elif hasattr(obj, 'affinity_type') and obj.affinity_type is not None:
+                     # If it has another affinity (like 'int' or 'str'), it shouldn't be None
+                     # but Z3 found it could be. This is interesting but potentially an over-approximation.
+                     confidence = 0.7
+
                 return Issue(
                     kind=IssueKind.NULL_DEREFERENCE,
                     message=f"'{attr_name}' access on {obj.name} which could be None",
                     constraints=none_constraint,
                     model=get_model_fn(none_constraint),
                     pc=pc,
+                    confidence=confidence,
                 )
     return None
 
@@ -994,6 +1023,7 @@ class NoneDereferenceDetector(Detector):
     issue_kind = IssueKind.NULL_DEREFERENCE
     relevant_opcodes = frozenset({"LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR"})
     SKIP_NAMES = {"self", "cls", "module", "builtins", "__builtins__"}
+    INTERNAL_PREFIXES = ("_", "self.", "cls.", "tpl_", "args_", "kwargs_")
 
     def check(
         self,
@@ -1010,7 +1040,7 @@ class NoneDereferenceDetector(Detector):
             instruction.argval,
             list(state.path_constraints),
             state.pc,
-            self.SKIP_NAMES,
+            self.SKIP_NAMES | set(self.INTERNAL_PREFIXES),
         )
 
 
@@ -1225,8 +1255,22 @@ class UnboundVariableDetector(Detector):
             "IndexError",
             "AttributeError",
             "RuntimeError",
+            "id",
+            "slice",
+            "property",
+            "classmethod",
+            "staticmethod",
+            "super",
+            "vars",
+            "dir",
+            "help",
+            "repr",
+            "ascii",
+            "intern",
         }
     )
+
+    INTERNAL_PREFIXES = ("_", "self.", "cls.", "tpl_", "args_", "kwargs_")
 
     def check(
         self,
@@ -1237,22 +1281,10 @@ class UnboundVariableDetector(Detector):
         if instruction.opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
             var_name = instruction.argval
 
-            if var_name in (
-                "__class__",
-                "visit",
-                "dfs",
-                "strongconnect",
-                "lock_order_graph",
-                "mycmp",
-                "warnings",
-                "file_path",
-                "find",
-                "has_cycle",
-                "used",
-                "_ast",
-                "annotation_names",
-                "var_name",
-            ):
+            if var_name in self.BUILTIN_NAMES:
+                return None
+
+            if any(var_name.startswith(p) for p in self.INTERNAL_PREFIXES):
                 return None
 
             if len(var_name) <= 2 and var_name[0].isupper():

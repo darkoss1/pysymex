@@ -72,28 +72,62 @@ class HavocValue(SymbolicValue):
         """
         z3_int = z3.Int(f"{name}_int")
         z3_bool = z3.Bool(f"{name}_bool")
+        z3_str = z3.String(f"{name}_str")
+        z3_addr = z3.Int(f"{name}_addr")
+
         is_int = z3.Bool(f"{name}_is_int")
         is_bool = z3.Bool(f"{name}_is_bool")
+        is_str = z3.Bool(f"{name}_is_str")
         is_path = z3.Bool(f"{name}_is_path")
+        is_obj = z3.Bool(f"{name}_is_obj")
+        is_none = z3.Bool(f"{name}_is_none")
 
-        type_constraint = z3.And(
-            z3.Or(is_int, is_bool, is_path),
-            z3.Not(z3.And(is_int, is_bool)),
-            z3.Not(z3.And(is_int, is_path)),
-            z3.Not(z3.And(is_bool, is_path)),
-        )
+        is_list = z3.Bool(f"{name}_is_list")
+        is_dict = z3.Bool(f"{name}_is_dict")
+
+        type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_list, is_dict]
+        at_least_one = z3.Or(*type_vars)
+        at_most_one = []
+        for i in range(len(type_vars)):
+            for j in range(i + 1, len(type_vars)):
+                at_most_one.append(z3.Not(z3.And(type_vars[i], type_vars[j])))
+
+        type_constraint = z3.And(at_least_one, *at_most_one)
 
         val = HavocValue(
             z3_int=z3_int,
             is_int=is_int,
             z3_bool=z3_bool,
             is_bool=is_bool,
-            _name=name,
+            z3_str=z3_str,
+            is_str=is_str,
+            z3_addr=z3_addr,
+            is_obj=is_obj,
             is_path=is_path,
-            is_none=Z3_FALSE,
+            is_none=is_none,
+            is_list=is_list,
+            is_dict=is_dict,
+            _name=name,
             taint_labels=frozenset(taint_labels) if taint_labels is not None else None,
         )
         return val, type_constraint
+
+    def __getitem__(self, key: object) -> tuple[HavocValue, z3.BoolRef]:
+        """Subscripting a HavocValue produces a new HavocValue."""
+        name = f"{self._name}[{getattr(key, 'name', str(key))}]"
+        return HavocValue.havoc(name, taint_labels=self.taint_labels)
+
+    def __getattr__(self, name: str) -> tuple[HavocValue, z3.BoolRef]:
+         """Accessing attribute on a HavocValue produces a new HavocValue."""
+         if name.startswith('_'): # Avoid internal recursion
+             raise AttributeError(name)
+         full_name = f"{self._name}.{name}"
+         return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
+
+    def __call__(self, *args: object, **kwargs: object) -> tuple[HavocValue, z3.BoolRef]:
+        """Calling a HavocValue produces a new HavocValue."""
+        full_name = f"{self._name}()"
+        return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
 
     def __repr__(self) -> str:
         return f"HavocValue({self._name})"

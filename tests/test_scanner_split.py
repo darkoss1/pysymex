@@ -220,7 +220,7 @@ class TestScanFile:
         )
 
         assert result.error is None
-        trace_files = list(trace_dir.glob("trace_*.jsonl"))
+        trace_files = list(trace_dir.glob("trace_*.jsonl*"))
         assert trace_files, "Expected scan_file() to emit at least one trace file"
 
 

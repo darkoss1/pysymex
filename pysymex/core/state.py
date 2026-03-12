@@ -456,10 +456,15 @@ def create_initial_state(
     Returns:
         A fresh VMState ready for execution.
     """
+    gvars = global_vars or {}
+    if "__name__" not in gvars:
+        # Default to __main__ for script entry points
+        gvars["__name__"] = "__main__"
+
     return VMState(
         stack=[],
         local_vars=local_vars or {},
-        global_vars=global_vars or {},
+        global_vars=gvars,
         path_constraints=constraints or [],
         pc=0,
     )

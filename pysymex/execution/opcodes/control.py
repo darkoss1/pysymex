@@ -414,16 +414,45 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
         iterable = iterator
 
     continue_state = state.fork()
+    
+    # Create the symbolic iteration value
     iter_val, type_constraint = SymbolicValue.symbolic(f"iter_{state.pc}_{state.path_id}")
     continue_state = continue_state.push(iter_val)
     continue_state = continue_state.add_constraint(type_constraint)
 
-    if isinstance(iterable, SymbolicList):
-        idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
-        continue_state = continue_state.add_constraint(z3.And(idx >= 0, idx < iterable.z3_len))
-        continue_state = continue_state.add_constraint(
-            iter_val.z3_int == z3.Select(iterable.z3_array, idx)
-        )
+    # Robust check for SymbolicList or SymbolicValue acting as list
+    is_list_val = isinstance(iterable, SymbolicList)
+    if not is_list_val and isinstance(iterable, SymbolicValue):
+        # Check if it was unified from a list
+        is_list_val = hasattr(iterable, "is_list") and z3.is_true(iterable.is_list) if hasattr(iterable, "is_list") else False
+    
+    if is_list_val:
+        # Get array and length from either container or unified value
+        z3_array = getattr(iterable, "z3_array", None)
+        z3_len = getattr(iterable, "z3_len", None)
+        
+        # If length is missing from unified value, try to find it from name or assume SymbolicList
+        if z3_len is None and isinstance(iterable, SymbolicValue):
+            # Fallback: if we can't find length, we might have a gap in unified conversion.
+            # But range() model should return SymbolicList which has it.
+            pass
+
+        if z3_array is not None and z3_len is not None:
+            idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
+            continue_state = continue_state.add_constraint(z3.And(idx >= 0, idx < z3_len))
+            continue_state = continue_state.add_constraint(
+                iter_val.z3_int == z3.Select(z3_array, idx)
+            )
+            # Force is_int since SymbolicList elements are IntSort in Z3
+            continue_state = continue_state.add_constraint(iter_val.is_int)
+            continue_state = continue_state.add_constraint(z3.Not(iter_val.is_bool))
+        elif z3_array is not None:
+            # If we only have array, we can't safely bound idx yet, but we can still link them
+            idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
+            continue_state = continue_state.add_constraint(
+                iter_val.z3_int == z3.Select(z3_array, idx)
+            )
+            continue_state = continue_state.add_constraint(iter_val.is_int)
 
     continue_state = continue_state.set_pc(state.pc + 1)
 

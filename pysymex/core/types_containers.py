@@ -245,7 +245,12 @@ class SymbolicString(SymbolicType):
             is_bool=Z3_FALSE,
             z3_str=self.z3_str,
             is_str=Z3_TRUE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
+            taint_labels=self.taint_labels,
         )
 
 
@@ -330,6 +335,12 @@ class SymbolicList(SymbolicType):
             is_int=Z3_TRUE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (index.taint_labels or frozenset()),
         )
 
@@ -369,6 +380,12 @@ class SymbolicList(SymbolicType):
             is_int=Z3_TRUE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
         )
 
     def in_bounds(self, index: SymbolicValue) -> z3.BoolRef:
@@ -384,8 +401,13 @@ class SymbolicList(SymbolicType):
                 is_int=Z3_FALSE,
                 z3_bool=Z3_FALSE,
                 is_bool=Z3_FALSE,
+                is_str=Z3_FALSE,
                 z3_array=self.z3_array,
                 is_list=Z3_TRUE,
+                is_obj=Z3_FALSE,
+                is_dict=Z3_FALSE,
+                is_path=Z3_FALSE,
+                is_none=Z3_FALSE,
                 taint_labels=self.taint_labels,
             )
             return val_self.conditional_merge(other, condition)
@@ -412,9 +434,14 @@ class SymbolicList(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
             z3_array=self.z3_array,
             is_list=Z3_TRUE,
+            is_obj=Z3_FALSE,
+            is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
+            taint_labels=self.taint_labels,
         )
 
 
@@ -479,6 +506,12 @@ class SymbolicDict(SymbolicType):
             is_int=Z3_TRUE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
         )
         return val, presence_check
@@ -515,6 +548,12 @@ class SymbolicDict(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=result,
             is_bool=Z3_TRUE,
+            is_str=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
         )
 
@@ -533,8 +572,13 @@ class SymbolicDict(SymbolicType):
                 is_int=Z3_FALSE,
                 z3_bool=Z3_FALSE,
                 is_bool=Z3_FALSE,
+                is_str=Z3_FALSE,
                 z3_array=self.z3_array,
                 is_dict=Z3_TRUE,
+                is_list=Z3_FALSE,
+                is_obj=Z3_FALSE,
+                is_none=Z3_FALSE,
+                is_path=Z3_FALSE,
                 taint_labels=self.taint_labels,
             )
             return val_self.conditional_merge(other, condition)
@@ -562,9 +606,14 @@ class SymbolicDict(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
             z3_array=self.z3_array,
             is_dict=Z3_TRUE,
+            is_list=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_none=Z3_FALSE,
             is_path=Z3_FALSE,
+            taint_labels=self.taint_labels,
         )
 
 
@@ -650,6 +699,12 @@ class SymbolicObject(SymbolicType):
                     is_int=Z3_FALSE,
                     z3_bool=self.z3_addr == 0,
                     is_bool=Z3_TRUE,
+                    is_str=Z3_FALSE,
+                    is_obj=Z3_FALSE,
+                    is_list=Z3_FALSE,
+                    is_dict=Z3_FALSE,
+                    is_path=Z3_FALSE,
+                    is_none=Z3_FALSE,
                 )
             return SymbolicValue.from_const(False)
         return SymbolicValue(
@@ -658,6 +713,12 @@ class SymbolicObject(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=self.z3_addr == other.z3_addr,
             is_bool=Z3_TRUE,
+            is_str=Z3_FALSE,
+            is_obj=Z3_FALSE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
         )
 
     def __repr__(self) -> str:
@@ -686,7 +747,22 @@ class SymbolicObject(SymbolicType):
                 z3_addr=new_addr,
                 potential_addresses=self.potential_addresses.union(other.potential_addresses),
             )
-        return SymbolicValue.from_const(0)
+        # If other is not SymbolicObject or SymbolicNone, merge into a SymbolicValue
+        val_self = SymbolicValue(
+            _name=self._name,
+            z3_int=Z3_ZERO,
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
+            z3_addr=self.z3_addr,
+            is_obj=Z3_TRUE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
+        )
+        return val_self.conditional_merge(other, condition)
 
     def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
@@ -697,9 +773,14 @@ class SymbolicObject(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            is_str=Z3_FALSE,
             z3_addr=self.z3_addr,
             is_obj=Z3_TRUE,
+            is_list=Z3_FALSE,
+            is_dict=Z3_FALSE,
+            is_none=Z3_FALSE,
             is_path=Z3_FALSE,
+            taint_labels=None,
         )
 
 

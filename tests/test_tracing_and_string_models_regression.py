@@ -42,7 +42,9 @@ def test_start_session_normalizes_non_scalar_config_snapshot(tmp_path: Path):
     )
     tracer.end_session()
 
-    line = trace_path.read_text(encoding="utf-8").splitlines()[0]
+    import gzip
+    with gzip.open(trace_path, "rt", encoding="utf-8") as f:
+        line = f.readline()
     event = json.loads(line)
     cfg = event["tracer_config"]
 

@@ -340,6 +340,7 @@ def scan_file(
         )
         base_config = config
         executor = SymbolicExecutor(config=config)
+        tracer = None
         if trace_enabled is not False:
             from pysymex.tracing.schemas import TracerConfig, VerbosityLevel
             from pysymex.tracing.tracer import ExecutionTracer
@@ -408,8 +409,13 @@ def scan_file(
             code, class_name, full_path = module_item
             symbolic_vars = {}
             for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                name_lower = name.lower()
                 if i == 0 and name in ("self", "cls"):
                     symbolic_vars[name] = "object"
+                elif any(p in name_lower for p in ("collection", "items", "sequence", "data", "arr", "list")):
+                    symbolic_vars[name] = "list"
+                elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
+                    symbolic_vars[name] = "dict"
                 else:
                     symbolic_vars[name] = "int"
             try:
@@ -448,11 +454,18 @@ def scan_file(
                     enable_taint_tracking=base_config.enable_taint_tracking,
                 )
                 executor = SymbolicExecutor(config=tune_config)
+                if tracer:
+                    tracer.install(executor)
 
             symbolic_vars = {}
             for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+                name_lower = name.lower()
                 if i == 0 and name in ("self", "cls"):
                     symbolic_vars[name] = "object"
+                elif any(p in name_lower for p in ("collection", "items", "sequence", "data", "arr", "list")):
+                    symbolic_vars[name] = "list"
+                elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
+                    symbolic_vars[name] = "dict"
                 else:
                     symbolic_vars[name] = "int"
             try:

@@ -17,6 +17,8 @@ from pysymex.analysis.summaries import SummaryBuilder, instantiate_summary
 from pysymex.core.havoc import HavocValue, union_taint
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 from pysymex.core.solver import get_model, is_satisfiable
+from pysymex.core.copy_on_write import CowDict
+from pysymex.core.state import wrap_cow_dict
 from pysymex.core.types import (
     Z3_TRUE,
     SymbolicDict,
@@ -110,6 +112,9 @@ def _check_taint_sinks(state: VMState, call_name: str, args: list[StackValue]) -
     return issues
 
 
+
+
+
 def _apply_model(
     state: VMState,
     func_obj: object,
@@ -160,13 +165,41 @@ def _apply_model(
 
 
 def _perform_interprocedural_call(
-    state: VMState, ctx: OpcodeDispatcher, func_obj: object, args: list[StackValue]
+    state: VMState, 
+    ctx: OpcodeDispatcher, 
+    func_obj: object, 
+    args: list[StackValue],
+    kwargs: dict[str, StackValue] | None = None
 ) -> OpcodeResult | None:
-    """Attempt to perform an inter-procedural call to a user-defined function."""
+    """Attempt to perform an inter-procedural call to a user-defined function.
+    
+    Supports:
+    - Standard functions and methods.
+    - Python 3.12+ Generic Functions (calling the generic parameter code object).
+    - Positional and Keyword arguments.
+    """
     MAX_CALL_DEPTH = 10
-    from pysymex.core.types import SymbolicValue
+    if state.depth >= MAX_CALL_DEPTH:
+        return None
 
+    from pysymex.core.types import SymbolicValue, SymbolicDict
+    from pysymex.core.state import CallFrame, wrap_cow_dict
+
+    kwargs = kwargs or {}
     func_code = getattr(func_obj, "__code__", None) or getattr(func_obj, "_func_code", None)
+    
+    # Unwrap if wrapped in SymbolicValue (common for LOAD_CONST)
+    if func_code is None and hasattr(func_obj, "value"):
+        inner = getattr(func_obj, "value", None)
+        if inner is not None:
+            func_code = getattr(inner, "__code__", None) or getattr(inner, "_func_code", None)
+            func_obj = inner
+    if func_code is None and hasattr(func_obj, "_enhanced_object"):
+        inner = getattr(func_obj, "_enhanced_object", None)
+        if inner is not None:
+            func_code = getattr(inner, "__code__", None) or getattr(inner, "_func_code", None)
+            func_obj = inner
+
     func_name = getattr(func_obj, "__name__", None) or getattr(func_obj, "_func_name", "anonymous")
 
     if func_code is None:
@@ -177,19 +210,17 @@ def _perform_interprocedural_call(
     except (TypeError, ValueError):
         return None
 
+    # Parameter matching logic
     arg_count = func_code.co_argcount
-    argnames = func_code.co_varnames[:arg_count]
-
+    pos_arg_names = func_code.co_varnames[:arg_count]
+    
     builder = None
     if ctx.cross_function and hasattr(ctx.cross_function, "function_summary_cache"):
         builder = SummaryBuilder(func_name)
         builder.set_qualname(func_name)
         builder._initial_args = args
-        for i, name in enumerate(argnames):
-            if i < len(args):
-                builder.add_parameter(name)
-
-    from pysymex.core.state import CallFrame
+        for name in pos_arg_names:
+            builder.add_parameter(name)
 
     frame = CallFrame(
         function_name=func_name,
@@ -202,39 +233,33 @@ def _perform_interprocedural_call(
     state = state.push_call(frame)
 
     new_locals = {}
-    for i, name in enumerate(argnames):
+    # 1. Fill positional args
+    for i, name in enumerate(pos_arg_names):
         if i < len(args):
             new_locals[name] = args[i]
+        elif name in kwargs:
+            new_locals[name] = kwargs[name]
         else:
+            # Missing arg -> Symbolic arg
             val, constraint = SymbolicValue.symbolic(f"arg_{name}")
             new_locals[name] = val
             state = state.add_constraint(constraint)
 
+    # 2. Handle *args (co_flags 0x04)
     if func_code.co_flags & 0x04:
         vararg_name = func_code.co_varnames[arg_count]
-        extra_args = args[arg_count:] if len(args) > arg_count else []
-
-        z3_array = z3.Array(f"{vararg_name}_{state.pc}_arr", z3.IntSort(), z3.IntSort())
-
-        for idx, val in enumerate(extra_args):
-            if hasattr(val, "z3_int"):
-                z3_array = z3.Store(z3_array, idx, val.z3_int)
-            else:
-
-                sym_val = SymbolicValue.from_const(val)
-                z3_array = z3.Store(z3_array, idx, sym_val.z3_int)
-        new_locals[vararg_name] = SymbolicList(vararg_name, z3_array, z3.IntVal(len(extra_args)))
+        extra_pos = args[arg_count:] if len(args) > arg_count else []
+        # Simplified list creation for varargs
+        new_locals[vararg_name] = SymbolicList.from_const(extra_pos)
         arg_count += 1
 
+    # 3. Handle **kwargs (co_flags 0x08)
     if func_code.co_flags & 0x08:
         kwarg_name = func_code.co_varnames[arg_count]
-
-        new_locals[kwarg_name] = SymbolicDict.empty(kwarg_name)
-
-    from pysymex.core.state import wrap_cow_dict
+        unused_kwargs = {k: v for k, v in kwargs.items() if k not in pos_arg_names}
+        new_locals[kwarg_name] = SymbolicDict.from_const(unused_kwargs)
 
     state.local_vars = wrap_cow_dict(new_locals)
-
     state.current_instructions = list(callee_instructions)
     ctx.set_instructions(list(callee_instructions))
     state = state.set_pc(0)
@@ -412,47 +437,94 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
 
 @opcode_handler("CALL_KW")
 def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Handle function calls with keyword arguments."""
+    """Handle function calls with keyword arguments (Python 3.11+)."""
     argc = int(instr.argval) if instr.argval else 0
-    args: list[StackValue] = []
     kw_names = None
     if state.stack:
         kw_names = state.pop()
+    
+    args: list[StackValue] = []
     for _ in range(argc):
         if state.stack:
             args.insert(0, state.pop())
-    if state.stack:
-        receiver_or_null = state.pop()
-    else:
+            
+    receiver_or_null = state.pop() if state.stack else SymbolicNone()
+    func_obj = state.pop() if state.stack else receiver_or_null
+    
+    if func_obj is receiver_or_null:
         receiver_or_null = SymbolicNone()
-    if state.stack:
-        func_obj = state.pop()
-    else:
-        func_obj = SymbolicNone()
+    
     if not isinstance(receiver_or_null, SymbolicNone):
         args.insert(0, receiver_or_null)
-    model_name = getattr(func_obj, "model_name", None)
-    model: FunctionModel | None = None
-    if model_name:
-        model = _resolve_model(model_name)
-    if model:
-        kw_kwargs: dict[str, StackValue] = {}
+
+    # Convert positional args to kwargs based on kw_names
+    kwargs: dict[str, StackValue] = {}
+    if kw_names is not None:
         kw_names_val = getattr(kw_names, "value", kw_names)
         if isinstance(kw_names_val, tuple):
-            names: tuple[object, ...] = cast("tuple[object, ...]", kw_names_val)
+            names: tuple[str, ...] = cast("tuple[str, ...]", kw_names_val)
             if len(names) <= len(args):
                 kw_vals = args[-len(names) :]
                 args = args[: -len(names)]
                 for k, v in zip(names, kw_vals, strict=False):
-                    kw_kwargs[str(k)] = v
-        model_result: object = model.apply(args, kw_kwargs, state)
-        state = state.push(model_result.value)
-        for constraint in cast("list[object]", model_result.constraints or []):
-            state = state.add_constraint(cast("z3.BoolRef", constraint))
-        state = state.advance_pc()
-        return OpcodeResult.continue_with(state)
+                    kwargs[str(k)] = v
+
+    # Reuse handle_call logic for the actual execution
+    # We'll manually call the shared logic since handle_call expects stack to be intact
+    # but here we've already popped everything.
+    return _dispatch_call(instr, state, ctx, func_obj, args, kwargs)
+
+
+def _dispatch_call(
+    instr: dis.Instruction, 
+    state: VMState, 
+    ctx: OpcodeDispatcher, 
+    func_obj: object, 
+    args: list[StackValue], 
+    kwargs: dict[str, StackValue]
+) -> OpcodeResult:
+    """Shared dispatch logic for CALL, CALL_KW, etc."""
+    from pysymex.analysis.detectors import Issue, IssueKind
+    from pysymex.core.solver import get_model, is_satisfiable
+
+    # Handle None/Symbolic check
+    if isinstance(func_obj, (SymbolicNone, SymbolicValue)):
+        import z3
+        is_none = Z3_TRUE if isinstance(func_obj, SymbolicNone) else func_obj.is_none
+        none_check = [*state.path_constraints, is_none]
+        if is_satisfiable(none_check):
+            must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(is_none)])
+            if must_be_none:
+                issue = Issue(
+                    kind=IssueKind.TYPE_ERROR,
+                    message=f"Possible TypeError: object is not callable (is None)",
+                    constraints=list(none_check),
+                    model=get_model(none_check),
+                    pc=state.pc,
+                )
+                return OpcodeResult.error(issue, state=state)
+            state = state.add_constraint(z3.Not(is_none))
+
+    # Apply models
+    model_name = getattr(func_obj, "model_name", None)
+    if model_name:
+        model = _resolve_model(model_name)
+        if model:
+            model_result: object = model.apply(args, kwargs, state)
+            state = state.push(model_result.value)
+            for constraint in cast("list[object]", model_result.constraints or []):
+                state = state.add_constraint(cast("z3.BoolRef", constraint))
+            state = state.advance_pc()
+            return OpcodeResult.continue_with(state)
+
+    # Try interprocedural
+    result = _perform_interprocedural_call(state, ctx, func_obj, args, kwargs)
+    if result:
+        return result
+
+    # Fallback to Havoc
     combined_taint = union_taint(args)
-    ret, tc = HavocValue.havoc(f"havoc_callkw@{state.pc}", taint_labels=combined_taint)
+    ret, tc = HavocValue.havoc(f"havoc_call@{state.pc}", taint_labels=combined_taint)
     state = state.push(ret)
     state = state.add_constraint(tc)
     state = state.advance_pc()
@@ -504,6 +576,7 @@ def handle_load_method(
         return OpcodeResult(new_states=[], issues=[issue], terminal=True)
     attr_name = str(instr.argval)
     push_null = False
+    obj_state = None
     if hasattr(instr, "arg") and instr.arg is not None:
         if instr.arg & 1:
             push_null = True
@@ -512,12 +585,7 @@ def handle_load_method(
         if attr_name in obj._attributes:
             havoc_attr, havoc_tc = obj._attributes[attr_name]
         else:
-            obj_taint = getattr(obj, "taint_labels", None)
-            havoc_attr, havoc_tc = HavocValue.havoc(
-                f"{getattr(obj, 'name', 'havoc')}.{attr_name}",
-                taint_labels=obj_taint,
-            )
-            havoc_attr.model_name = f"havoc.{attr_name}"
+            havoc_attr, havoc_tc = obj.__getattr__(attr_name)
             obj._attributes[attr_name] = (havoc_attr, havoc_tc)
 
         if push_null:
@@ -616,6 +684,20 @@ def handle_load_method(
             state = state.add_constraint(z3.Not(obj.is_none))
 
     if result_val is None:
+        # If the object state itself exists but is not a dict (e.g., a SymbolicList),
+        # then it's a builtin type that doesn't support arbitrary attributes.
+        res_type = type(obj_state).__name__ if obj_state is not None else "unknown"
+        if obj_state is not None and not isinstance(obj_state, (dict, CowDict)):
+            issue = Issue(
+                kind=IssueKind.ATTRIBUTE_ERROR,
+                message=f"AttributeError: '{res_type}' object has no attribute '{attr_name}'",
+                constraints=list(state.path_constraints),
+                model=get_model(state.path_constraints),
+                pc=state.pc,
+            )
+            # If it's a concrete collision or must be this type, return terminal
+            return OpcodeResult(new_states=[], issues=[issue], terminal=True)
+            
         result_val, type_constraint = SymbolicValue.symbolic(
             f"{getattr(obj, 'name', 'obj')}.{attr_name}"
         )
@@ -654,16 +736,13 @@ def handle_store_attr(
     attr_name = str(instr.argval)
     if isinstance(obj, SymbolicObject):
         if obj.address != -1:
-            from pysymex.core.state import wrap_cow_dict
-            from pysymex.core.copy_on_write import CowDict
-
             obj_state = state.memory.get(obj.address)
             if obj_state is None:
                 obj_state = wrap_cow_dict({})
             elif not isinstance(obj_state, (dict, CowDict)):
                 issue = Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"TypeError: '{type(obj_state).__name__}' object has no attribute '{attr_name}'",
+                    kind=IssueKind.ATTRIBUTE_ERROR,
+                    message=f"AttributeError: '{type(obj_state).__name__}' object has no attribute '{attr_name}'",
                     constraints=list(state.path_constraints),
                     model=get_model(state.path_constraints),
                     pc=state.pc,

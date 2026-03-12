@@ -48,7 +48,7 @@ _Z3_AVAILABLE: Final[bool] = _z3_avail
 _ABSTRACT_VAR_RE = re.compile(r"\bk!(\d+)\b|\b!(\d+)\b")
 
 
-_MAX_EXPR_CHARS = 512
+_MAX_EXPR_CHARS = 16384
 
 
 _UNSERIALIZABLE = "<unserializable>"

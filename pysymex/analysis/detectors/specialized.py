@@ -43,15 +43,19 @@ def _pure_check_null_deref(
     if isinstance(top, SymbolicValue):
         none_check = [*path_constraints, top.is_none]
         if is_satisfiable_fn(none_check):
-            from pysymex.core.solver import get_model
+            # Suppress unconstrained vars that just happen to satisfy None
+            must_be_none = not is_satisfiable_fn([*path_constraints, z3.Not(top.is_none)])
+            is_unconstrained = z3.is_const(top.is_none) and top.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            if must_be_none or not is_unconstrained:
+                from pysymex.core.solver import get_model
 
-            return Issue(
-                kind=IssueKind.NULL_DEREFERENCE,
-                message=f"Possible None dereference at {opname}",
-                constraints=none_check,
-                model=get_model(none_check),
-                pc=pc,
-            )
+                return Issue(
+                    kind=IssueKind.NULL_DEREFERENCE,
+                    message=f"Possible None dereference at {opname}",
+                    constraints=none_check,
+                    model=get_model(none_check),
+                    pc=pc,
+                )
     return None
 
 

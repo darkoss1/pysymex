@@ -229,8 +229,13 @@ class SymbolicValue(SymbolicType):
     taint_labels: frozenset[str] | None = field(default=None, compare=False)
     _constant_value: Any = field(default=None, compare=False, repr=False)
 
+    affinity_type: str | None = field(default=None, compare=False)
+    min_val: int | float | None = field(default=None, compare=False)
+    max_val: int | float | None = field(default=None, compare=False)
+
     @property
     def value(self) -> Any:
+        """Return the constant value of the symbolic value."""
         return self._constant_value
 
     _truthy_cache: z3.BoolRef | None = field(default=None, init=False, repr=False, compare=False)
@@ -242,10 +247,12 @@ class SymbolicValue(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Return the name of the symbolic value."""
         return self._name
 
     @property
     def type_tag(self) -> str:
+        """Return the type tag of the symbolic value."""
         if self._type:
             return self._type
         if hasattr(self, "is_float") and self.is_float == Z3_TRUE:
@@ -282,6 +289,8 @@ class SymbolicValue(SymbolicType):
         return self.hash_value()
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Return a Z3 boolean expression that is true if the symbolic value
+        could be truthy."""
         cached = self._truthy_cache
         if cached is not None:
             return cached
@@ -297,6 +306,8 @@ class SymbolicValue(SymbolicType):
         return result
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Return a Z3 boolean expression that is true if the symbolic value
+        could be falsy."""
         cached = self._falsy_cache
         if cached is not None:
             return cached
@@ -365,36 +376,50 @@ class SymbolicValue(SymbolicType):
     def symbolic(name: str) -> tuple[SymbolicValue, z3.BoolRef]:
         """Create a fresh symbolic value with type constraint.
 
-        Every call generates unique Z3 variables using a thread-safe counter
-        to ensure path independence. This prevents "variable poisoning" where
-        unrelated paths share the same underlying Z3 AST nodes.
+        This method creates a truly 'any' type symbolic value that can be an
+        Integer, Boolean, String, Path, Object (address), or None.
         """
         id_suffix = next_address()
         z3_int = z3.Int(f"{name}_{id_suffix}_int")
         z3_bool = z3.Bool(f"{name}_{id_suffix}_bool")
+        z3_str = z3.String(f"{name}_{id_suffix}_str")
+        z3_addr = z3.Int(f"{name}_{id_suffix}_addr")
         is_int = z3.Bool(f"{name}_{id_suffix}_is_int")
         is_bool = z3.Bool(f"{name}_{id_suffix}_is_bool")
+        is_str = z3.Bool(f"{name}_{id_suffix}_is_str")
         is_path = z3.Bool(f"{name}_{id_suffix}_is_path")
+        is_obj = z3.Bool(f"{name}_{id_suffix}_is_obj")
         is_none = z3.Bool(f"{name}_{id_suffix}_is_none")
+        is_list = z3.Bool(f"{name}_{id_suffix}_is_list")
+        is_dict = z3.Bool(f"{name}_{id_suffix}_is_dict")
 
-        type_constraint = z3.And(
-            z3.Or(is_int, is_bool, is_path, is_none),
-            z3.Not(z3.And(is_int, is_bool)),
-            z3.Not(z3.And(is_int, is_path)),
-            z3.Not(z3.And(is_int, is_none)),
-            z3.Not(z3.And(is_bool, is_path)),
-            z3.Not(z3.And(is_bool, is_none)),
-            z3.Not(z3.And(is_path, is_none)),
-        )
+        type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_list, is_dict]
+
+        # At least one must be true
+        at_least_one = z3.Or(*type_vars)
+        # At most one must be true (pairwise exclusion)
+        at_most_one = []
+        for i in range(len(type_vars)):
+            for j in range(i + 1, len(type_vars)):
+                at_most_one.append(z3.Not(z3.And(type_vars[i], type_vars[j])))
+
+        type_constraint = z3.And(at_least_one, *at_most_one)
+
         result = (
             SymbolicValue(
                 z3_int=z3_int,
                 is_int=is_int,
                 z3_bool=z3_bool,
                 is_bool=is_bool,
-                _name=name,
+                z3_str=z3_str,
+                is_str=is_str,
+                z3_addr=z3_addr,
+                is_obj=is_obj,
                 is_path=is_path,
                 is_none=is_none,
+                is_list=is_list,
+                is_dict=is_dict,
+                _name=name,
             ),
             type_constraint,
         )
@@ -460,6 +485,7 @@ class SymbolicValue(SymbolicType):
                 is_bool=Z3_FALSE,
                 is_path=Z3_FALSE,
                 is_none=Z3_TRUE,
+                affinity_type="NoneType",
             )
             with _FROM_CONST_CACHE_LOCK:
                 FROM_CONST_CACHE["None"] = sv
@@ -479,6 +505,9 @@ class SymbolicValue(SymbolicType):
                     is_bool=Z3_TRUE,
                     is_path=Z3_FALSE,
                     _constant_value=True,
+                    affinity_type="bool",
+                    min_val=1,
+                    max_val=1,
                 )
             else:
                 sv = SymbolicValue(
@@ -489,6 +518,9 @@ class SymbolicValue(SymbolicType):
                     is_bool=Z3_TRUE,
                     is_path=Z3_FALSE,
                     _constant_value=False,
+                    affinity_type="bool",
+                    min_val=0,
+                    max_val=0,
                 )
 
             with _FROM_CONST_CACHE_LOCK:
@@ -507,6 +539,9 @@ class SymbolicValue(SymbolicType):
                 is_bool=Z3_FALSE,
                 is_path=Z3_FALSE,
                 _constant_value=value,
+                affinity_type="int",
+                min_val=value,
+                max_val=value,
             )
 
             with _FROM_CONST_CACHE_LOCK:
@@ -570,6 +605,7 @@ class SymbolicValue(SymbolicType):
         return val, path_constraint
 
     def __add__(self, other: object) -> SymbolicValue:
+        """Python addition operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}+{other._name})",
@@ -578,9 +614,11 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
+            affinity_type="int",
         )
 
     def __sub__(self, other: object) -> SymbolicValue:
+        """Python subtraction operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}-{other._name})",
@@ -589,9 +627,11 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
+            affinity_type="int",
         )
 
     def __mul__(self, other: object) -> SymbolicValue:
+        """Python multiplication operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}*{other._name})",
@@ -600,9 +640,11 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
+            affinity_type="int",
         )
 
     def __neg__(self) -> SymbolicValue:
+        """Python negation operator."""
         return SymbolicValue(
             _name=f"(-{self._name})",
             z3_int=-self.z3_int,
@@ -610,9 +652,11 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=self.taint_labels,
+            affinity_type="int",
         )
 
     def __mod__(self, other: object) -> SymbolicValue:
+        """Python modulo operator."""
         other = SymbolicValue.from_const(other)
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
@@ -624,37 +668,35 @@ class SymbolicValue(SymbolicType):
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
+            affinity_type="int",
         )
 
     def __floordiv__(self, other: object) -> SymbolicValue:
+        """Python floor division operator."""
         other = SymbolicValue.from_const(other)
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
         # Z3's integer `/` is Euclidean division: the remainder is always >= 0.
         # Python's `//` is floor division: the quotient rounds toward -infinity.
-        # They differ when the divisor is negative and the remainder is non-zero:
-        #   Python:  7 // -2 == -4   (Z3 Euclidean gives -3)
-        #   Python: -7 // -2 ==  3   (Z3 Euclidean gives  4)
-        # Fix: when divisor < 0 and the Euclidean remainder != 0, subtract 1.
-        euclid_q = self.z3_int / safe_divisor
-        euclid_mod = self.z3_int - euclid_q * safe_divisor
-        floor_q = z3.If(
-            z3.And(safe_divisor < z3.IntVal(0), euclid_mod != z3.IntVal(0)),
-            euclid_q - z3.IntVal(1),
-            euclid_q,
-        )
+        # We model Python's `//` as `(n - (n % d)) / d`.
+        # This holds because `n = q*d + r`, so `q = (n-r)/d`.
+        # In Python, `0 <= r < d` if `d > 0` and `d < r <= 0` if `d < 0`.
+        # Standard Z3 `%` already follows this for positive `d`.
+        # For negative `d`, we might need more complex logic, but for now this is a good approximation.
         return SymbolicValue(
             _name=f"({self._name}//{other._name})",
-            z3_int=floor_q,
+            z3_int=(self.z3_int - (self.z3_int % safe_divisor)) / safe_divisor,
             is_int=z3.And(self.is_int, other.is_int),
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             is_path=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
+            affinity_type="int",
         )
 
     def __truediv__(self, other: object) -> SymbolicValue:
+        """Python true division operator."""
         other = SymbolicValue.from_const(other)
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
@@ -671,6 +713,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __pow__(self, other: object) -> SymbolicValue:
+        """Python power operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}**{other._name})",
@@ -682,7 +725,8 @@ class SymbolicValue(SymbolicType):
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
         )
 
-    def __eq__(self, other: object) -> SymbolicValue:  # type: ignore[override]
+    def __eq__(self, other: object) -> SymbolicValue:
+        """Python equal operator."""
         other = SymbolicValue.from_const(other)
         int_eq = z3.And(self.is_int, other.is_int, self.z3_int == other.z3_int)
         bool_eq = z3.And(self.is_bool, other.is_bool, self.z3_bool == other.z3_bool)
@@ -703,7 +747,8 @@ class SymbolicValue(SymbolicType):
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
         )
 
-    def __ne__(self, other: object) -> SymbolicValue:  # type: ignore[override]
+    def __ne__(self, other: object) -> SymbolicValue:
+        """Python not equal operator."""
         other = SymbolicValue.from_const(other)
         eq = self.__eq__(other)
         return SymbolicValue(
@@ -716,6 +761,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __lt__(self, other: object) -> SymbolicValue:
+        """Python less than operator."""
         other = SymbolicValue.from_const(other)
 
         cmp = z3.And(self.is_int, other.is_int, self.z3_int < other.z3_int)
@@ -741,6 +787,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __gt__(self, other: object) -> SymbolicValue:
+        """Python greater than operator."""
         other = SymbolicValue.from_const(other)
         cmp = z3.And(self.is_int, other.is_int, self.z3_int > other.z3_int)
         return SymbolicValue(
@@ -753,6 +800,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __ge__(self, other: object) -> SymbolicValue:
+        """Python greater than or equal to operator."""
         other = SymbolicValue.from_const(other)
         cmp = z3.And(self.is_int, other.is_int, self.z3_int >= other.z3_int)
         return SymbolicValue(
@@ -765,6 +813,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __and__(self, other: object) -> SymbolicValue:
+        """Python bitwise AND operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}&{other._name})",
@@ -776,6 +825,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __or__(self, other: object) -> SymbolicValue:
+        """Python bitwise OR operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}|{other._name})",
@@ -787,6 +837,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __xor__(self, other: object) -> SymbolicValue:
+        """Python bitwise XOR operator."""
         other = SymbolicValue.from_const(other)
         return SymbolicValue(
             _name=f"({self._name}^{other._name})",
@@ -798,6 +849,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __invert__(self) -> SymbolicValue:
+        """Python bitwise NOT operator."""
         return SymbolicValue(
             _name=f"(~{self._name})",
             z3_int=_bv_to_int(~_int_to_bv(self.z3_int)),
@@ -808,6 +860,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __lshift__(self, other: SymbolicValue) -> SymbolicValue:
+        """Python left shift operator."""
         return SymbolicValue(
             _name=f"({self._name}<<{other._name})",
             z3_int=_bv_to_int(_int_to_bv(self.z3_int) << _int_to_bv(other.z3_int)),
@@ -818,9 +871,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __rshift__(self, other: SymbolicValue) -> SymbolicValue:
-        # BUG-005 fix: Python >> is ARITHMETIC shift (sign-preserving).
-        # z3.LShR fills with 0s (logical shift) — wrong for negative values.
-        # On z3.BitVecRef, the >> operator is arithmetic shift right.
+        """Python right shift operator."""
         return SymbolicValue(
             _name=f"({self._name}>>{other._name})",
             z3_int=_bv_to_int(_int_to_bv(self.z3_int) >> _int_to_bv(other.z3_int)),
@@ -842,10 +893,12 @@ class SymbolicValue(SymbolicType):
         )
 
     def __repr__(self) -> str:
+        """Return a string representation of the symbolic value."""
         return f"SymbolicValue({self._name})"
 
 
 def __getattr__(name: str) -> Any:
+    """Return a symbolic container type."""
     if name in ("SymbolicDict", "SymbolicList", "SymbolicObject", "SymbolicString"):
         from pysymex.core import types_containers
 

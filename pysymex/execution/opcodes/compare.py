@@ -63,17 +63,19 @@ def handle_compare_op(
 
     if op_name not in ("==", "!="):
         if is_satisfiable([*state.path_constraints, mixed]):
-            err_state = state.fork()
-            err_state = err_state.add_constraint(mixed)
-            res_issues.append(
-                Issue(
-                    IssueKind.TYPE_ERROR,
-                    f"TypeError: '{op_name}' not supported between mixed types",
-                    constraints=list(err_state.path_constraints),
-                    model=get_model(list(err_state.path_constraints)),
-                    pc=state.pc,
+            # If they COULD be same types, don't report mixed error unless we are sure
+            if not is_satisfiable([*state.path_constraints, z3.Not(mixed)]):
+                err_state = state.fork()
+                err_state = err_state.add_constraint(mixed)
+                res_issues.append(
+                    Issue(
+                        IssueKind.TYPE_ERROR,
+                        f"TypeError: '{op_name}' not supported between mixed types",
+                        constraints=list(err_state.path_constraints),
+                        model=get_model(list(err_state.path_constraints)),
+                        pc=state.pc,
+                    )
                 )
-            )
 
     if is_satisfiable([*state.path_constraints, z3.Not(mixed)]) or op_name in ("==", "!="):
         ok_state = state.fork()

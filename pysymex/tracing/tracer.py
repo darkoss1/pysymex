@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import dis
 import json
+import linecache
 import sys
 import time
 from datetime import UTC, datetime
@@ -263,6 +264,7 @@ class ExecutionTracer:
         ) = None
 
         self._current_state: VMState | None = None
+        self._linecache = linecache
 
     @property
     def registry(self) -> Z3SemanticRegistry:
@@ -306,6 +308,7 @@ class ExecutionTracer:
         self._trace_path = out_dir / filename
 
         import gzip
+
         self._file = gzip.open(
             self._trace_path,
             "wt",
@@ -347,7 +350,16 @@ class ExecutionTracer:
             tracer_config=_normalise_config_snapshot(raw_config),
         )
         self._write_event(header, force_flush=True)
+        self._session_source_file = source_file
         return self._trace_path
+
+    def _get_source_line(self, filename: str | None, line_number: int | None) -> str | None:
+        """Retrieve a specific line of source code from the cache."""
+        target = filename or self._session_source_file
+        if not target or not line_number:
+            return None
+        line = self._linecache.getline(target, line_number)
+        return line.strip() if line else None
 
     def end_session(self) -> Path | None:
         """Flush all buffered events and close the trace file.
@@ -374,7 +386,6 @@ class ExecutionTracer:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if exc_type is not None:
-
             try:
                 self.end_session()
             except Exception:
@@ -423,6 +434,9 @@ class ExecutionTracer:
             globals_copy = dict(state.global_vars) if state.global_vars is not None else {}
             memory_copy = dict(state.memory) if state.memory is not None else {}
             self._pre_step_snapshot = (stack_copy, locals_copy, globals_copy, memory_copy)
+            constraints = state.path_constraints
+            count = len(constraints) if constraints is not None else 0
+            self._pre_step_snapshot = (stack_copy, locals_copy, globals_copy, memory_copy, count)
         except Exception:
             self._pre_step_snapshot = None
 
@@ -471,7 +485,6 @@ class ExecutionTracer:
                     ]
                     stack_diff = StackDiff(popped=0, pushed=pushed_vals)
                 elif current_stack != prev_stack:
-
                     n_changed = sum(1 for a, b in zip(prev_stack, current_stack) if a is not b)
                     if n_changed:
                         stack_diff = StackDiff(
@@ -512,16 +525,28 @@ class ExecutionTracer:
                             mem_diff[str(addr)] = self._serializer.serialize_stack_value(val)
 
             try:
-                prev_constraint_count = getattr(state, "_pre_step_constraint_count", None)
+                prev_constraint_count = (
+                    self._pre_step_snapshot[4]
+                    if (self._pre_step_snapshot and len(self._pre_step_snapshot) > 4)
+                    else None
+                )
                 current_constraints = state.path_constraints
                 current_count = len(current_constraints) if current_constraints is not None else 0
                 if prev_constraint_count is not None and current_count > prev_constraint_count:
-
-                    if (
-                        current_constraints is not None
-                        and current_constraints.constraint is not None
-                    ):
-                        newest = current_constraints.constraint
+                    # Capture multiple added constraints if several were added in one step
+                    new_constraints = []
+                    curr = current_constraints
+                    # Traverse back to the previous head
+                    for _ in range(current_count - prev_constraint_count):
+                        if curr is not None and curr.constraint is not None:
+                            new_constraints.append(curr.constraint)
+                            curr = curr.parent
+                        else:
+                            break
+                    
+                    if new_constraints:
+                        # Combine them for logging, or just take the most recent
+                        newest = new_constraints[0]
                         causality = f"{instr.opname} at PC={state.pc}"
                         constraint_added = ConstraintEntry(
                             smtlib=self._serializer.safe_sexpr(newest),
@@ -550,6 +575,7 @@ class ExecutionTracer:
             offset=getattr(instr, "offset", 0),
             opcode=getattr(instr, "opname", "UNKNOWN"),
             source_line=source_line,
+            source_text=self._get_source_line(None, source_line),
             stack_diff=stack_diff,
             var_diff=var_diff,
             mem_diff=mem_diff,
@@ -735,15 +761,34 @@ class ExecutionTracer:
 
         source_line: int | None = getattr(issue, "line_number", None)
 
+        confidence = 1.0
+        likelihood = 1.0
+        # If the detector already calculated confidence score, use it
+        if hasattr(issue, "confidence") and issue.confidence is not None:
+            confidence = float(issue.confidence)
+        if hasattr(issue, "likelihood") and issue.likelihood is not None:
+            likelihood = float(issue.likelihood)
+
+        # Triage Logic: Reduce confidence for known noisy patterns (fallback/override)
+        if confidence == 1.0:
+            if issue_kind == "NULL_DEREFERENCE" and "unpack_" in detector_name:
+                confidence = 0.4
+                likelihood = 0.3
+            elif issue_kind == "TYPE_ERROR" and "None" in str(getattr(issue, "message", "")):
+                confidence = 0.5
+
         event = IssueEvent(
             seq=self._next_seq(),
             path_id=getattr(state, "path_id", 0),
             pc=getattr(issue, "pc", getattr(state, "pc", 0)),
             source_line=source_line,
+            source_text=self._get_source_line(getattr(issue, "filename", None), source_line),
             severity=severity,
             detector_name=detector_name,
             issue_kind=issue_kind,
             message=str(getattr(issue, "message", "")),
+            confidence=confidence,
+            likelihood_score=likelihood,
             constraints_at_issue=constraints_at_issue,
             z3_model=z3_model,
         )

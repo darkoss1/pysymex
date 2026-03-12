@@ -373,6 +373,13 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
         isl: int = args.issue_source_line
         p.add(lambda e, s=isl: e.get("source_line") == s)
 
+    if args.confidence:
+        conf_lo, conf_hi = args.confidence
+        p.add(
+            lambda e, lo=conf_lo, hi=conf_hi: e.get("confidence") is not None
+            and lo <= float(e["confidence"]) <= hi
+        )
+
     if args.constraint_at_issue_contains:
         caic: str = args.constraint_at_issue_contains
         p.add(lambda e, s=caic: _constraints_contain(e.get("constraints_at_issue"), s))
@@ -584,29 +591,29 @@ _AI_MANUAL = """
 
 ## 1. Trace Format Overview
 
-pysymex writes a **JSONL** file (one JSON object per line).  Each line is one
+pysymex writes a **JSONL** file (one JSON object per line). Each line is one
 **TraceEvent** from a discriminated union keyed on `event_type`:
 
 | `event_type`     | Frequency       | Purpose |
 |------------------|-----------------|---------|
 | `system_context` | Once (first)    | Static analysis-session metadata (pysymex version, Z3 version, function name, initial symbolic arguments, TracerConfig). |
-| `step`           | Per instruction | Incremental diff: what changed on the stack, in locals, in memory, and whether a new path constraint was added. |
+| `step`           | Per instruction | Incremental diff: what changed on the stack, in locals, in memory, whether a new path constraint was added, and the **original source text**. |
 | `keyframe`       | Fork/prune/issue | Full symbolic-state snapshot. Re-anchors understanding without replaying prior deltas. |
 | `solve`          | Per SMT call    | SMT solver telemetry: latency (ms), cache hit/miss, satisfying model excerpt, number of constraints. |
-| `issue`          | Per bug found   | Bug report: severity, detector name, Z3 model of the triggering input, constraints at detection time. |
+| `issue`          | Per bug found   | Bug report: severity, **confidence (0-1)**, source_text, Z3 model of the triggering input. |
 
 All events carry a **monotonically increasing `seq` integer** — use it to
 establish temporal ordering across mixed event types.
 
 **Keyframe + Delta strategy:**
 - *Deltas* (`step` events) record only what changed — cheap to write, cheap to scan.
-- *Keyframes* (`keyframe` events) record the complete symbolic state (stack, locals, globals, all path constraints) at structurally important moments (fork, prune, detected issue).  They let you understand a path without replaying all prior deltas.
+- *Keyframes* (`keyframe` events) record the complete symbolic state (stack, locals, globals, all path constraints) at structurally important moments (fork, prune, detected issue). They let you understand a path without replaying all prior deltas.
 
 ---
 
 ## 2. Filter Reference Table
 
-Every CLI flag is listed below.  Columns: flag name, which `event_type` it
+Every CLI flag is listed below. Columns: flag name, which `event_type` it
 targets, what field it tests, when to use it.
 
 ### 2.1 Event Routing (universal — works on all event types)
@@ -681,8 +688,10 @@ targets, what field it tests, when to use it.
 | `--message-contains TEXT` | `message` | Keep issues whose human-readable message contains TEXT. |
 | `--has-z3-model` | `z3_model` | Keep issues that have a concrete Z3 counterexample model. |
 | `--z3-model-var NAME` | `z3_model` | Keep issues whose Z3 model contains variable NAME. |
-| `--issue-source-line N` | `source_line` | Keep issues detected at source line N. |
+| `--issue-source-line N` | `source_text` | Keep issues detected at source line N. |
 | `--constraint-at-issue-contains TEXT` | `constraints_at_issue[*].smtlib` | Keep issues where at least one constraint in the path-at-detection-time contains TEXT. |
+| `--confidence MIN:MAX` | `confidence` | Keep issues whose confidence is in [MIN, MAX]. |
+| `--source-text TEXT` | `source_text` | Keep issues whose source_text contains TEXT. |
 
 ### 2.6 SystemContextEvent Filters (`event_type = system_context`)
 
@@ -912,7 +921,7 @@ pysymex-trace-analyze trace.jsonl --event-type issue --has-z3-model --format pre
 
 ## 4. Feeding Output to an LLM
 
-Gigabyte trace files cannot be fed directly to any LLM.  Use these strategies:
+Gigabyte trace files cannot be fed directly to any LLM. Use these strategies:
 
 ### Strategy A: Summary Preamble
 ```bash
@@ -953,12 +962,16 @@ pysymex-trace-analyze trace.jsonl --event-type issue --count
 pysymex-trace-analyze trace.jsonl --event-type issue --head 10 --format pretty
 ```
 
+### Strategy E: Issue-Specific Context
+- **Isolate a bug**: `pysymex-trace-analyze trace.jsonl --event-type issue --fields seq,path_id,message,source_text,confidence`
+- **Reconstruct logic around a bug**: Find sequence N for an `issue`. Then run `pysymex-trace-analyze trace.jsonl --seq-range (N-20):N --format pretty` to see the instructions that led to it.
+
 ---
 
 ## 5. Architecture Notes for LLM Reasoning
 
 **seq monotonicity:** `seq` is a global, monotonically increasing integer
-incremented under a lock.  You can sort any mixed-type subset of events by
+incremented under a lock. You can sort any mixed-type subset of events by
 `seq` to recover chronological order.
 
 **Keyframe + Delta composition:**
@@ -971,30 +984,30 @@ To reconstruct full symbolic state at any `step` event:
 
 **Path tree reconstruction:**
 Each `keyframe` with `trigger=fork` contains `parent_path_id` and
-`child_path_ids`.  Collecting all fork keyframes reconstructs the complete
+`child_path_ids`. Collecting all fork keyframes reconstructs the complete
 execution tree topology.
 
 **Thread safety note:**
-The tracer uses a single `threading.Lock` for all writes.  The JSONL file is
-always consistent — a line is either fully written or not present.  You will
+The tracer uses a single `threading.Lock` for all writes. The JSONL file is
+always consistent — a line is either fully written or not present. You will
 never see a partial line.
 
 **QUIET verbosity:**
 When `TracerConfig.verbosity=QUIET`, `step` events are suppressed entirely.
-Only `keyframe`, `solve`, and `issue` events are emitted.  Use
+Only `keyframe`, `solve`, and `issue` events are emitted. Use
 `--event-type keyframe,solve,issue` to avoid filtering out everything when
 analyzing a QUIET-mode trace.
 
 **Zero-overhead guarantee:**
 When `TracerConfig.enabled=False` (the default), the tracer performs zero
-work.  No Z3 serialization, no Pydantic validation, no file I/O.  Every hook
-method short-circuits immediately on the `enabled` check.  Set
+work. No Z3 serialization, no Pydantic validation, no file I/O. Every hook
+method short-circuits immediately on the `enabled` check. Set
 `PY_SYMEX_TRACE=1` in the environment (or pass `TracerConfig(enabled=True)`)
 to activate tracing.
 
 ---
 
-*End of AI Manual.  Generated by `pysymex-trace-analyze --ai-manual`.*
+*End of AI Manual. Generated by `pysymex-trace-analyze --ai-manual`.*
 """.strip()
 
 
@@ -1033,6 +1046,16 @@ def _parse_path_id_list(value: str) -> list[int]:
         ) from exc
 
 
+def _parse_confidence_range(value: str) -> tuple[float, float]:
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError("confidence must be in the form MIN:MAX (e.g. 0.8:1.0)")
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"confidence values must be floats: {exc}") from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct and return the fully-configured CLI :class:`ArgumentParser`.
 
@@ -1045,7 +1068,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Streaming Omni-Filter CLI for pysymex JSONL execution trace files.\n\n"
             "Processes the trace file line-by-line (O(1) memory for all modes except "
-            "--tail N) and applies a composable filter pipeline.  Only lines matching "
+            "--tail N) and applies a composable filter pipeline. Only lines matching "
             "ALL active filters are emitted to stdout.\n\n"
             "Run --ai-manual to print a full Markdown reference for LLM agents."
         ),
@@ -1059,7 +1082,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TRACE_FILE",
         help=(
             "Path to the .jsonl trace file produced by pysymex ExecutionTracer, "
-            "or '-' (default) to read from stdin.  The file is processed one line "
+            "or '-' (default) to read from stdin. The file is processed one line "
             "at a time so files of any size are supported."
         ),
     )
@@ -1070,9 +1093,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help=(
             "Print a richly formatted Markdown document designed as a "
-            "Prompt/Context for LLM agents (Gemini, GPT-4o, Claude, etc.).  "
+            "Prompt/Context for LLM agents (Gemini, GPT-4o, Claude, etc.). "
             "Includes a complete filter reference table and 8 Diagnostic Recipes "
-            "for common pysymex engine bug classes.  "
+            "for common pysymex engine bug classes. "
             "Bypasses all other flags and exits immediately after printing."
         ),
     )
@@ -1089,9 +1112,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TYPE",
         choices=["step", "keyframe", "solve", "issue", "system_context"],
         help=(
-            "Keep only events of TYPE.  Repeatable: "
-            "`-e step -e solve` keeps both step and solve events.  "
-            "Values: step, keyframe, solve, issue, system_context.  "
+            "Keep only events of TYPE. Repeatable: "
+            "`-e step -e solve` keeps both step and solve events. "
+            "Values: step, keyframe, solve, issue, system_context. "
             "Use `--event-type keyframe` to focus on fork/prune/issue snapshots "
             "without the high-volume delta noise."
         ),
@@ -1102,7 +1125,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="N",
         help=(
-            "Keep the single event whose seq == N.  Useful for pinpointing an "
+            "Keep the single event whose seq == N. Useful for pinpointing an "
             "exact event from a seq number seen in a summary or issue report."
         ),
     )
@@ -1112,7 +1135,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="START:END",
         help=(
-            "Keep events with seq in the inclusive range [START, END].  "
+            "Keep events with seq in the inclusive range [START, END]. "
             "Use this to isolate a time window around a known bad event "
             "(e.g. --seq-range 1000:1050 to see the 50 events around seq 1025)."
         ),
@@ -1633,6 +1656,19 @@ def build_parser() -> argparse.ArgumentParser:
             "Keep issues whose z3_model dict contains key NAME.  "
             "Use to find all bugs where a specific input variable (e.g. 'n', "
             "'user_id') appears in the triggering counterexample."
+        ),
+    )
+    issue_grp.add_argument(
+        "--confidence",
+        type=_parse_confidence_range,
+        default=None,
+        metavar="MIN:MAX",
+        help=(
+            "Keep issues whose confidence score is in [MIN, MAX].  "
+            "Higher confidence (0.8-1.0) means the engine is highly certain "
+            "it found a real bug.  Low confidence (0.1-0.5) usually indicates "
+            "theoretical edge cases involving unconstrained parameters.  "
+            "Use --confidence 0.8:1.0 to see only the most reliable findings."
         ),
     )
     issue_grp.add_argument(

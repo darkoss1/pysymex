@@ -127,11 +127,39 @@ class RangeModel(FunctionModel):
                 abs_step = z3.If(step.z3_int > 0, step.z3_int, -step.z3_int)
                 length = z3.If(abs_step == 0, z3.IntVal(0), (abs_diff + abs_step - 1) / abs_step)
                 constraints.append(result.z3_len == z3.If(length > 0, length, z3.IntVal(0)))
-            else:
+                
+                # Constraint elements: array[i] = start + i * step
+                i = z3.Int(f"range_idx_{state.pc}")
                 constraints.append(
-                    result.z3_len
-                    == z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
+                    z3.ForAll([i], z3.Implies(
+                        z3.And(i >= 0, i < result.z3_len),
+                        z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int
+                    ))
                 )
+            else:
+                length = z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
+                constraints.append(result.z3_len == length)
+                
+                # Constraint elements: array[i] = start + i
+                i = z3.Int(f"range_idx_{state.pc}")
+                constraints.append(
+                    z3.ForAll([i], z3.Implies(
+                        z3.And(i >= 0, i < result.z3_len),
+                        z3.Select(result.z3_array, i) == start.z3_int + i
+                    ))
+                )
+        if len(args) == 1 and isinstance(args[0], SymbolicValue):
+            # stop only case
+            stop = args[0]
+            length = z3.If(stop.z3_int > 0, stop.z3_int, 0)
+            constraints.append(result.z3_len == length)
+            i = z3.Int(f"range_idx_{state.pc}")
+            constraints.append(
+                z3.ForAll([i], z3.Implies(
+                    z3.And(i >= 0, i < result.z3_len),
+                    z3.Select(result.z3_array, i) == i
+                ))
+            )
         return ModelResult(value=result, constraints=constraints)
 
 

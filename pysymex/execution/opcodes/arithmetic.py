@@ -204,15 +204,17 @@ def handle_binary_add(
             ),
         ]
         if is_satisfiable(type_error_cond):
-            issues.append(
-                Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: {getattr(left, 'name', 'a')} + {getattr(right, 'name', 'b')}",
-                    constraints=list(type_error_cond),
-                    model=get_model(type_error_cond),
-                    pc=state.pc,
+            # If they COULD be same types, don't report mixed error unless we are sure
+            if not is_satisfiable([*state.path_constraints, z3.Not(z3.And(*type_error_cond[len(state.path_constraints):]))]):
+                issues.append(
+                    Issue(
+                        kind=IssueKind.TYPE_ERROR,
+                        message=f"Possible TypeError: {getattr(left, 'name', 'a')} + {getattr(right, 'name', 'b')}",
+                        constraints=list(type_error_cond),
+                        model=get_model(type_error_cond),
+                        pc=state.pc,
+                    )
                 )
-            )
 
         result, _ = SymbolicValue.symbolic(
             f"{getattr(left, 'name', 'a')}+{getattr(right, 'name', 'b')}"
@@ -245,15 +247,17 @@ def handle_binary_subtract(
             z3.Not(z3.And(getattr(left, "is_int", Z3_FALSE), getattr(right, "is_int", Z3_FALSE))),
         ]
         if is_satisfiable(type_error_cond):
-            issues.append(
-                Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: {getattr(left, 'name', 'a')} - {getattr(right, 'name', 'b')}",
-                    constraints=list(type_error_cond),
-                    model=get_model(type_error_cond),
-                    pc=state.pc,
+            # If they COULD be same types, don't report mixed error unless we are sure
+            if not is_satisfiable([*state.path_constraints, z3.Not(z3.And(*type_error_cond[len(state.path_constraints):]))]):
+                issues.append(
+                    Issue(
+                        kind=IssueKind.TYPE_ERROR,
+                        message=f"Possible TypeError: {getattr(left, 'name', 'a')} - {getattr(right, 'name', 'b')}",
+                        constraints=list(type_error_cond),
+                        model=get_model(type_error_cond),
+                        pc=state.pc,
+                    )
                 )
-            )
         result, _ = SymbolicValue.symbolic(
             f"{getattr(left, 'name', 'a')}-{getattr(right, 'name', 'b')}"
         )
@@ -284,15 +288,17 @@ def handle_binary_multiply(
             z3.Not(z3.And(getattr(left, "is_int", Z3_FALSE), getattr(right, "is_int", Z3_FALSE))),
         ]
         if is_satisfiable(type_error_cond):
-            issues.append(
-                Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: {getattr(left, 'name', 'a')} * {getattr(right, 'name', 'b')}",
-                    constraints=list(type_error_cond),
-                    model=get_model(type_error_cond),
-                    pc=state.pc,
+            # If they COULD be same types, don't report mixed error unless we are sure
+            if not is_satisfiable([*state.path_constraints, z3.Not(z3.And(*type_error_cond[len(state.path_constraints):]))]):
+                issues.append(
+                    Issue(
+                        kind=IssueKind.TYPE_ERROR,
+                        message=f"Possible TypeError: {getattr(left, 'name', 'a')} * {getattr(right, 'name', 'b')}",
+                        constraints=list(type_error_cond),
+                        model=get_model(type_error_cond),
+                        pc=state.pc,
+                    )
                 )
-            )
         result, _ = SymbolicValue.symbolic(
             f"{getattr(left, 'name', 'a')}*{getattr(right, 'name', 'b')}"
         )
@@ -329,15 +335,17 @@ def handle_binary_divide(
             z3.Not(z3.And(getattr(left, "is_int", Z3_FALSE), getattr(right, "is_int", Z3_FALSE))),
         ]
         if is_satisfiable(type_error_cond):
-            issues.append(
-                Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: {getattr(left, 'name', 'a')} {op_name} {getattr(right, 'name', 'b')}",
-                    constraints=list(type_error_cond),
-                    model=get_model(type_error_cond),
-                    pc=state.pc,
+            # If they COULD be same types, don't report mixed error unless we are sure
+            if not is_satisfiable([*state.path_constraints, z3.Not(z3.And(*type_error_cond[len(state.path_constraints):]))]):
+                issues.append(
+                    Issue(
+                        kind=IssueKind.TYPE_ERROR,
+                        message=f"Possible TypeError: {getattr(left, 'name', 'a')} {op_name} {getattr(right, 'name', 'b')}",
+                        constraints=list(type_error_cond),
+                        model=get_model(type_error_cond),
+                        pc=state.pc,
+                    )
                 )
-            )
         result, _ = SymbolicValue.symbolic(
             f"{getattr(left, 'name', 'a')}{op_name}{getattr(right, 'name', 'b')}"
         )
@@ -352,29 +360,70 @@ def handle_binary_divide(
 def handle_binary_modulo(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary modulo with zero check."""
+    """Binary modulo with zero check.
+
+    Handles both mathematical modulo (n % d) and string formatting (s % args).
+    """
     right = state.pop()
     left = state.pop()
     issues = []
+
     if not isinstance(left, (SymbolicValue, SymbolicString)):
         left = SymbolicValue.from_const(left)
     if not isinstance(right, (SymbolicValue, SymbolicString)):
-        right = SymbolicValue.from_const(right)
-    if isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue):
-        issues = check_division_by_zero(right, state, "%", left)
-        if _is_concrete_zero_divisor(right):
-            return OpcodeResult(new_states=[], issues=issues, terminal=True)
-        state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
-        result = left % right
-    else:
-        result, _ = SymbolicValue.symbolic(
-            f"{getattr(left, 'name', 'a')}%{getattr(right, 'name', 'b')}"
-        )
-    state = state.push(result)
-    state = state.advance_pc()
-    if issues:
-        return OpcodeResult(new_states=[state], issues=issues)
-    return OpcodeResult.continue_with(state)
+        right = SymbolicValue.from_const(right)    # Check for string formatting: s % args
+    # We must be careful: if left is symbolic (Havoc), it might be a string OR an int.
+    # We should explore both paths if it's ambiguous.
+    new_states = []
+    
+    # Path 1: It IS a string (Formatting)
+    if isinstance(left, SymbolicString) or (isinstance(left, SymbolicValue) and state.is_satisfiable(left.is_str)):
+        s_state = state.copy()
+        if isinstance(left, SymbolicValue):
+            s_state = s_state.add_constraint(left.is_str)
+        # Produce a fresh symbolic string as result of formatting
+        result, _ = SymbolicString.symbolic(f"str_format_{state.pc}")
+        s_state = s_state.push(result)
+        s_state = s_state.advance_pc()
+        new_states.append(s_state)
+
+    # Path 2: It is NOT a string (Math Modulo)
+    if not isinstance(left, SymbolicString) and (not isinstance(left, SymbolicValue) or state.is_satisfiable(z3.Not(left.is_str))):
+        m_state = state.copy()
+        if isinstance(left, SymbolicValue):
+            m_state = m_state.add_constraint(z3.Not(left.is_str))
+            
+        m_issues = []
+        if isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue):
+            m_issues = check_division_by_zero(right, m_state, "%", left)
+            if _is_concrete_zero_divisor(right):
+                # This path is terminal
+                if not new_states:
+                    return OpcodeResult(new_states=[], issues=m_issues, terminal=True)
+                # If there are other paths (like the string one), just don't add this one
+            else:
+                m_state = m_state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+                result = left % right
+                m_state = m_state.push(result)
+                m_state = m_state.advance_pc()
+                new_states.append(m_state)
+        else:
+            # Concrete fallback or mixed
+            result, _ = SymbolicValue.symbolic(f"{getattr(left, '_name', 'a')}%{getattr(right, '_name', 'b')}")
+            m_state = m_state.push(result)
+            m_state = m_state.advance_pc()
+            new_states.append(m_state)
+            
+        if m_issues:
+             # If we're returning multiple states, issues are tricky. 
+             # Usually we return them attached to the result.
+             return OpcodeResult(new_states=new_states, issues=m_issues)
+
+    if not new_states:
+        # Should not happen if satisfiability is consistent
+        return OpcodeResult.error(Issue(IssueKind.TYPE_ERROR, "Invalid modulo operands", list(state.path_constraints), None), state)
+
+    return OpcodeResult(new_states=new_states)
 
 
 @opcode_handler("BINARY_POWER")
@@ -502,16 +551,28 @@ def _get_binop_result(
             result = left * right
         elif op_code in {"/", "/=", "//", "//=", "%", "%="}:
             op = op_code.replace("=", "")
-            issues = check_division_by_zero(right, state, op, left)
-            if _is_concrete_zero_divisor(right):
-                return None, issues, True
-            state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
-            if op == "/":
-                result = left / right
-            elif op == "//":
-                result = left // right
+            is_str_format = False
+            if op == "%":
+                if isinstance(left, SymbolicString):
+                    is_str_format = True
+                elif hasattr(left, "is_str") and (
+                    left.is_str == z3.BoolVal(True) or left.affinity_type == "str"
+                ):
+                    is_str_format = True
+
+            if is_str_format:
+                result, _ = SymbolicString.symbolic(f"str_format_{state.pc}")
             else:
-                result = left % right
+                issues = check_division_by_zero(right, state, op, left)
+                if _is_concrete_zero_divisor(right):
+                    return None, issues, True
+                state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+                if op == "/":
+                    result = left / right
+                elif op == "//":
+                    result = left // right
+                else:
+                    result = left % right
         elif op_code in {"**", "**="}:
             result = left**right
         elif op_code in {"&", "&=", "|", "|=", "^", "^="}:
@@ -542,9 +603,7 @@ def _get_binop_result(
     ):
         result = left + right
     elif isinstance(left, SymbolicString) and op_code in {"%", "%="}:
-        # BUG-007 fix: string % args formatting is valid Python — don't emit
-        # a TypeError.  Produce a fresh symbolic string as the result.
-        result, _ = SymbolicValue.symbolic(f"str_format_{state.pc}")
+        result, _ = SymbolicString.symbolic(f"str_format_{state.pc}")
 
     if result is None:
         if op_code in ("+", "+=", "-", "-=", "*", "*=", "/", "/=", "//", "//=", "%", "%="):

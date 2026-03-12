@@ -167,6 +167,7 @@ class StepDeltaEvent(BaseModel):
     offset: int = 0
     opcode: str = "UNKNOWN"
     source_line: int | None = None
+    source_text: str | None = None
     stack_diff: StackDiff = Field(default_factory=StackDiff)
     var_diff: VarDiff = Field(default_factory=VarDiff)
     mem_diff: dict[str, str] = Field(default_factory=dict)
@@ -223,6 +224,9 @@ class IssueEvent(BaseModel):
     detector_name: str = ""
     issue_kind: str = "UNKNOWN"
     message: str = ""
+    source_text: str | None = None
+    confidence: float = 1.0
+    likelihood_score: float = 1.0
     constraints_at_issue: list[ConstraintEntry] = Field(default_factory=_new_constraint_list)
     z3_model: dict[str, str] | None = None
 
