@@ -134,28 +134,74 @@ def _apply_model(
     result = model.apply(args, kwargs, state)
     opcode_res = OpcodeResult.continue_with(state)
 
-    if result.side_effects and "potential_exception" in result.side_effects:
-        exc = result.side_effects["potential_exception"]
-        cond = exc.get("condition")
-        full_cond = list(state.path_constraints)
-        if cond is not None:
-            full_cond.append(cond)
-        if is_satisfiable(full_cond):
-            kind = IssueKind.TYPE_ERROR
-            if exc["type"] == "KeyError":
-                kind = IssueKind.KEY_ERROR
-            elif exc["type"] == "IndexError":
-                kind = IssueKind.INDEX_ERROR
+    if result.side_effects:
+        if "potential_exception" in result.side_effects:
+            exc = result.side_effects["potential_exception"]
+            # ... existing exception logic ...
+            cond = exc.get("condition")
+            full_cond = list(state.path_constraints)
+            if cond is not None:
+                if isinstance(cond, str) and cond == "element_not_found":
+                     # For models that use a string placeholder
+                     pass
+                else:
+                     full_cond.append(cond)
+            if is_satisfiable(full_cond):
+                kind = IssueKind.TYPE_ERROR
+                if exc["type"] == "KeyError":
+                    kind = IssueKind.KEY_ERROR
+                elif exc["type"] == "IndexError":
+                    kind = IssueKind.INDEX_ERROR
+                elif exc["type"] == "ValueError":
+                    kind = IssueKind.VALUE_ERROR
 
-            opcode_res.issues.append(
-                Issue(
-                    kind=kind,
-                    message=exc["message"],
-                    constraints=full_cond,
-                    model=get_model(full_cond),
-                    pc=state.pc,
+                opcode_res.issues.append(
+                    Issue(
+                        kind=kind,
+                        message=exc["message"],
+                        constraints=full_cond,
+                        model=get_model(full_cond),
+                        pc=state.pc,
+                    )
                 )
-            )
+
+        if "list_mutation" in result.side_effects:
+            mut = result.side_effects["list_mutation"]
+            orig_lst = mut.get("original_list")
+            updated_lst = mut.get("updated_list")
+            if orig_lst and updated_lst:
+                # Find which object this list belongs to
+                found_in_memory = False
+                for addr, obj in state.memory.items():
+                    if obj is orig_lst:
+                        state.memory[addr] = updated_lst
+                        found_in_memory = True
+                        break
+                if not found_in_memory:
+                    # If it was a list directly on the stack (not in memory)
+                    for i, item in enumerate(state.stack):
+                        if item is orig_lst:
+                            state.stack[i] = updated_lst
+                            found_in_memory = True
+                            break
+
+        if "dict_mutation" in result.side_effects:
+            mut = result.side_effects["dict_mutation"]
+            orig_dict = mut.get("original_dict")
+            updated_dict = mut.get("updated_dict")
+            if orig_dict and updated_dict:
+                found_in_memory = False
+                for addr, obj in state.memory.items():
+                    if obj is orig_dict:
+                        state.memory[addr] = updated_dict
+                        found_in_memory = True
+                        break
+                if not found_in_memory:
+                    for i, item in enumerate(state.stack):
+                        if item is orig_dict:
+                            state.stack[i] = updated_dict
+                            found_in_memory = True
+                            break
 
     state = state.push(result.value)
     for constraint in result.constraints or []:
@@ -508,14 +554,9 @@ def _dispatch_call(
     # Apply models
     model_name = getattr(func_obj, "model_name", None)
     if model_name:
-        model = _resolve_model(model_name)
-        if model:
-            model_result: object = model.apply(args, kwargs, state)
-            state = state.push(model_result.value)
-            for constraint in cast("list[object]", model_result.constraints or []):
-                state = state.add_constraint(cast("z3.BoolRef", constraint))
-            state = state.advance_pc()
-            return OpcodeResult.continue_with(state)
+        res = _apply_model(state, model_name, args, kwargs)
+        if res:
+            return res
 
     # Try interprocedural
     result = _perform_interprocedural_call(state, ctx, func_obj, args, kwargs)
@@ -535,7 +576,7 @@ def _dispatch_call(
 def handle_call_method(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Handle method calls."""
+    """Handle method calls, including symbolic list/dict methods."""
     argc = int(instr.argval) if instr.argval else 0
     method_args: list[object] = []
     for _ in range(argc):
@@ -545,7 +586,28 @@ def handle_call_method(
         self_val = state.pop()
         method_args.insert(0, self_val)
     if state.stack:
-        state.pop()
+        method_name_obj = state.pop()
+        method_name = getattr(method_name_obj, "name", str(method_name_obj))
+    else:
+        method_name = "unknown"
+
+    # Try to resolve model based on self_val and method_name
+    model_name = None
+    container = self_val
+    if isinstance(self_val, SymbolicObject):
+        if self_val.address in state.memory:
+            container = state.memory[self_val.address]
+    
+    if isinstance(container, SymbolicList):
+        model_name = f"list.{method_name.split('.')[-1]}"
+    elif isinstance(container, SymbolicDict):
+        model_name = f"dict.{method_name.split('.')[-1]}"
+
+    if model_name:
+        res = _apply_model(state, model_name, method_args, {})
+        if res:
+            return res
+
     combined_taint = union_taint(method_args)
     ret, tc = HavocValue.havoc(f"havoc_method@{state.pc}", taint_labels=combined_taint)
     state = state.push(ret)
@@ -599,10 +661,27 @@ def handle_load_method(
     if isinstance(obj, SymbolicObject):
         if obj.address != -1:
             obj_state = state.memory.get(obj.address)
-            if obj_state is None:
+            if isinstance(obj_state, SymbolicList):
+                type_name = "list"
+            elif isinstance(obj_state, SymbolicDict):
+                type_name = "dict"
+            elif obj_state is None:
                 obj_state = {}
                 state.memory[obj.address] = obj_state
-            if attr_name in obj_state:
+            
+            if type_name != "unknown":
+                model_name = f"{type_name}.{attr_name}"
+                if _resolve_model(model_name):
+                    res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+                    res_val.model_name = model_name
+                    state = state.push(res_val)
+                    if push_null:
+                        state = state.push(obj)
+                    state = state.add_constraint(tc)
+                    state = state.advance_pc()
+                    return OpcodeResult.continue_with(state)
+
+            if isinstance(obj_state, dict) and attr_name in obj_state:
                 result_val: object = obj_state[attr_name]
             else:
                 result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
@@ -658,6 +737,18 @@ def handle_load_method(
         obj_name = getattr(obj, "name", "") or getattr(obj, "_name", "")
         if "set" in obj_name.lower() or getattr(obj, "_type", "") == "set":
             type_name = "set"
+
+    if type_name != "unknown":
+        model_name = f"{type_name}.{attr_name}"
+        if _resolve_model(model_name):
+            res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+            res_val.model_name = model_name
+            state = state.push(res_val)
+            if push_null:
+                state = state.push(obj)
+            state = state.add_constraint(tc)
+            state = state.advance_pc()
+            return OpcodeResult.continue_with(state)
     if isinstance(obj, SymbolicValue):
 
         none_check = [*state.path_constraints, obj.is_none]

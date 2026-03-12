@@ -23,6 +23,7 @@ import inspect
 import logging
 import types
 from collections.abc import Callable
+from typing import get_type_hints
 
 import z3
 
@@ -201,6 +202,7 @@ class SymbolicExecutor:
         self,
         func: Callable[..., object],
         symbolic_args: dict[str, str] | None = None,
+        initial_values: dict[str, object] | None = None,
     ) -> ExecutionResult:
         """Symbolically execute a Python function.
 
@@ -233,7 +235,7 @@ class SymbolicExecutor:
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
         self._build_line_mapping(code)
-        initial_state = self._create_initial_state(func, symbolic_args or {})
+        initial_state = self._create_initial_state(func, symbolic_args or {}, initial_values)
         if self._taint_tracker is not None:
             initial_state.taint_tracker = self._taint_tracker
         self._worklist = create_path_manager(self.config.strategy)
@@ -243,7 +245,7 @@ class SymbolicExecutor:
             self._loop_detector.analyze_cfg(self._instructions)
             self._loop_widening = LoopWidening(widening_threshold=self.config.max_loop_iterations)
         if self._state_merger is not None:
-            self._state_merger.detect_join_points(self._instructions)
+            self._state_merger.detect_join_points(self._instructions, code=func.__code__)
 
         if self._abstract_analyzer is not None:
             self._run_abstract_interpretation(code)
@@ -285,6 +287,9 @@ class SymbolicExecutor:
             total_time_seconds=end_time - start_time,
             function_name=func.__name__,
             source_file=code.co_filename,
+            final_globals=getattr(self, "_last_globals", {}),
+            final_locals=getattr(self, "_last_locals", {}),
+            branches=getattr(self, "_last_branches", []),
         )
         if cache_key is not None and self._result_cache is not None:
             self._result_cache.put(cache_key, result)
@@ -359,7 +364,7 @@ class SymbolicExecutor:
             self._loop_widening = LoopWidening(widening_threshold=self.config.max_loop_iterations)
         if self._state_merger is not None:
             try:
-                self._state_merger.detect_join_points(self._instructions)
+                self._state_merger.detect_join_points(self._instructions, code=code)
             except (AttributeError, TypeError, IndexError, ValueError):
                 logger.debug("State merger join-point detection failed", exc_info=True)
 
@@ -388,6 +393,7 @@ class SymbolicExecutor:
             source_file=code.co_filename,
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
+            branches=getattr(self, "_last_branches", []),
         )
 
     def _reset(self) -> None:
@@ -403,10 +409,11 @@ class SymbolicExecutor:
         self._abstract_hints = []
         self._coverage = set()
         self._visited_states = set()
-        self._paths_explored = 0
+        self._paths_explored = 1
         self._paths_completed = 0
         self._paths_pruned = 0
         self._iterations = 0
+        self._last_branches = []
         self._loop_detector = None
         self._loop_widening = None
         self._prev_loop_states = {}
@@ -516,6 +523,7 @@ class SymbolicExecutor:
         self,
         func: Callable[..., object],
         symbolic_args: dict[str, str],
+        initial_values: dict[str, object] | None = None,
     ) -> VMState:
         """Create initial VM state with symbolic arguments."""
         state = VMState()
@@ -544,6 +552,15 @@ class SymbolicExecutor:
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
             state.local_vars[name] = sym_val
             state = state.add_constraint(constraint)
+            
+            if initial_values and name in initial_values:
+                val = initial_values[name]
+                from pysymex.core.types import SymbolicValue
+                if isinstance(sym_val, SymbolicValue):
+                    if isinstance(val, int) and not isinstance(val, bool):
+                        state = state.add_constraint(sym_val.z3_int == val)
+                    elif isinstance(val, bool):
+                        state = state.add_constraint(sym_val.z3_bool == val)
         return state
 
     def _hint_to_type_str(self, hint: object) -> str:
@@ -747,9 +764,9 @@ class SymbolicExecutor:
             self._paths_pruned += 1
             return False
 
-        if not hasattr(self, "_prev_loop_states"):
-            self._prev_loop_states = {}
-        self._prev_loop_states[pc_key] = state.fork()
+        if not hasattr(state, "prev_loop_states"):
+            state.prev_loop_states = {}
+        state.prev_loop_states[pc_key] = state.fork()
         return True
 
     def _process_execution_result(
@@ -772,18 +789,35 @@ class SymbolicExecutor:
 
         if result.terminal:
             self._paths_completed += 1
+            self._last_branches = state.branch_trace.to_list()
+            self._last_globals = state.global_vars
+            self._last_locals = state.local_vars
             return
 
         if result.new_states:
-            for new_state in result.new_states:
-                if not self._check_path_feasibility(new_state):
-                    continue
-                new_state.depth = state.depth + 1
+            # The first state is always a continuation of the current path
+            first_state = result.new_states[0]
+            if self._check_path_feasibility(first_state):
+                first_state.depth = state.depth + 1
                 if self._worklist:
-                    self._worklist.add_state(new_state)
-            if self._resource_tracker is not None:
-                self._resource_tracker.record_path()
-            self._paths_explored += 1
+                    self._worklist.add_state(first_state)
+            
+            # Additional states are new paths, check limits before adding
+            for new_state in result.new_states[1:]:
+                can_add = True
+                if self._resource_tracker is not None:
+                    try:
+                        self._resource_tracker.record_path()
+                    except LimitExceeded:
+                        self._paths_pruned += 1
+                        can_add = False
+                
+                if can_add:
+                    if self._check_path_feasibility(new_state):
+                        new_state.depth = state.depth + 1
+                        if self._worklist:
+                            self._worklist.add_state(new_state)
+                        self._paths_explored += 1
         if len(result.new_states) >= 2:
             for _hook in self._hooks.get("on_fork", ()):
                 try:
@@ -812,6 +846,7 @@ class SymbolicExecutor:
             self._paths_completed += 1
             self._last_globals = state.global_vars
             self._last_locals = state.local_vars
+            self._last_branches = state.branch_trace.to_list()
             return
 
         if not self._check_resource_limits(state):

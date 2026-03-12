@@ -361,7 +361,7 @@ class ResourceTracker:
             raise LimitExceeded(ResourceType.DEPTH, self._current_depth, self.limits.max_depth)
         if iters >= self.limits.max_iterations:
             raise LimitExceeded(ResourceType.ITERATIONS, iters, self.limits.max_iterations)
-        if self._paths_explored >= self.limits.max_paths:
+        if self.limits.max_paths > 0 and self._paths_explored > self.limits.max_paths:
             raise LimitExceeded(ResourceType.PATHS, self._paths_explored, self.limits.max_paths)
 
         self.check_time_limit()

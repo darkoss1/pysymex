@@ -355,6 +355,46 @@ def handle_interpreter_exit(
     return OpcodeResult.terminate()
 
 
+@opcode_handler("RAISE_VARARGS")
+def handle_raise_varargs(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Handle exception raising."""
+    from pysymex.analysis.detectors import Issue, IssueKind
+    from pysymex.core.solver import get_model
+
+    argc = int(instr.argval) if instr.argval is not None else 0
+    exc = None
+    for _ in range(argc):
+        if state.stack:
+            exc = state.pop()
+
+    # Look for a try-block handler in the block stack
+    block = state.current_block()
+    if block and block.block_type in ("finally", "except", "cleanup"):
+        state = state.set_pc(block.handler_pc)
+        return OpcodeResult.continue_with(state)
+
+    msg = f"Exception raised: {getattr(exc, 'name', 'unknown')}"
+    kind = IssueKind.EXCEPTION
+    exc_name = str(getattr(exc, "name", ""))
+    if "AssertionError" in exc_name:
+        kind = IssueKind.ASSERTION_ERROR
+    elif "ValueError" in exc_name:
+        kind = IssueKind.VALUE_ERROR
+    elif "TypeError" in exc_name:
+        kind = IssueKind.TYPE_ERROR
+
+    issue = Issue(
+        kind=kind,
+        message=msg,
+        constraints=list(state.path_constraints),
+        model=get_model(list(state.path_constraints)),
+        pc=state.pc,
+    )
+    return OpcodeResult.error(issue, state=state)
+
+
 @opcode_handler("RETURN_GENERATOR")
 def handle_return_generator(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher

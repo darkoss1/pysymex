@@ -10,7 +10,7 @@ import z3
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.core.copy_on_write import CowDict
 from pysymex.core.solver import get_model, is_satisfiable
-from pysymex.core.types import SymbolicNone, SymbolicValue
+from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicNone, SymbolicValue
 from pysymex.core.types_containers import SymbolicIterator, SymbolicList
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
@@ -146,6 +146,7 @@ def handle_return_const(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Return a constant (Python 3.13+) with inter-procedural support."""
+    print(f"DEBUG: handle_return_const PC={state.pc}")
     const_val = instr.argval
     if const_val is None:
         return_value = SymbolicNone()
@@ -181,15 +182,24 @@ def handle_pop_jump_if_false(
         cond_taint = frozenset(cond._taint)
     true_state = state.fork()
     true_state = true_state.add_constraint(cond_expr)
+    true_state = true_state.record_branch(cond_expr, True, state.pc)
     true_state = true_state.set_pc(state.pc + 1)
     if cond_taint:
         true_state.control_taint = true_state.control_taint | cond_taint
     false_state = state.fork()
     false_state = false_state.add_constraint(z3.Not(cond_expr))
+    false_state = false_state.record_branch(cond_expr, False, state.pc)
     false_state = false_state.set_pc(target_index)
     if cond_taint:
         false_state.control_taint = false_state.control_taint | cond_taint
-    return OpcodeResult.branch([false_state, true_state])
+    
+    # Prune infeasible paths
+    branches = []
+    if is_satisfiable(true_state.path_constraints):
+        branches.append(true_state)
+    if is_satisfiable(false_state.path_constraints):
+        branches.append(false_state)
+    return OpcodeResult.branch(branches)
 
 
 @opcode_handler("POP_JUMP_IF_TRUE", "POP_JUMP_FORWARD_IF_TRUE", "POP_JUMP_BACKWARD_IF_TRUE")
@@ -209,15 +219,24 @@ def handle_pop_jump_if_true(
         cond_taint = frozenset(cond._taint)
     true_state = state.fork()
     true_state = true_state.add_constraint(cond_expr)
+    true_state = true_state.record_branch(cond_expr, True, state.pc)
     true_state = true_state.set_pc(target_index)
     if cond_taint:
         true_state.control_taint = true_state.control_taint | cond_taint
     false_state = state.fork()
     false_state = false_state.add_constraint(z3.Not(cond_expr))
+    false_state = false_state.record_branch(cond_expr, False, state.pc)
     false_state = false_state.set_pc(state.pc + 1)
     if cond_taint:
         false_state.control_taint = false_state.control_taint | cond_taint
-    return OpcodeResult.branch([true_state, false_state])
+    
+    # Prune infeasible paths
+    branches = []
+    if is_satisfiable(true_state.path_constraints):
+        branches.append(true_state)
+    if is_satisfiable(false_state.path_constraints):
+        branches.append(false_state)
+    return OpcodeResult.branch(branches)
 
 
 @opcode_handler("POP_JUMP_IF_NONE", "POP_JUMP_FORWARD_IF_NONE", "POP_JUMP_BACKWARD_IF_NONE")
@@ -237,11 +256,20 @@ def handle_pop_jump_if_none(
         none_expr = value.is_none
         none_state = state.fork()
         none_state = none_state.add_constraint(none_expr)
+        none_state = none_state.record_branch(none_expr, True, state.pc)
         none_state = none_state.set_pc(target_index)
         not_none_state = state.fork()
         not_none_state = not_none_state.add_constraint(z3.Not(none_expr))
+        not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
         not_none_state = not_none_state.set_pc(state.pc + 1)
-        return OpcodeResult.branch([none_state, not_none_state])
+        
+        # Prune infeasible paths
+        branches = []
+        if is_satisfiable(none_state.path_constraints):
+            branches.append(none_state)
+        if is_satisfiable(not_none_state.path_constraints):
+            branches.append(not_none_state)
+        return OpcodeResult.branch(branches)
     else:
         state = state.advance_pc()
         return OpcodeResult.continue_with(state)
@@ -266,11 +294,20 @@ def handle_pop_jump_if_not_none(
         none_expr = value.is_none
         not_none_state = state.fork()
         not_none_state = not_none_state.add_constraint(z3.Not(none_expr))
+        not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
         not_none_state = not_none_state.set_pc(target_index)
         none_state = state.fork()
         none_state = none_state.add_constraint(none_expr)
+        none_state = none_state.record_branch(none_expr, True, state.pc)
         none_state = none_state.set_pc(state.pc + 1)
-        return OpcodeResult.branch([not_none_state, none_state])
+        
+        # Prune infeasible paths
+        branches = []
+        if is_satisfiable(not_none_state.path_constraints):
+            branches.append(not_none_state)
+        if is_satisfiable(none_state.path_constraints):
+            branches.append(none_state)
+        return OpcodeResult.branch(branches)
     else:
         state = state.set_pc(target_index)
         return OpcodeResult.continue_with(state)
@@ -413,12 +450,32 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
     else:
         iterable = iterator
 
+    from pysymex.core.types_containers import SymbolicObject
+    if isinstance(iterable, SymbolicObject):
+        addr = iterable.address
+        if addr in state.memory:
+            iterable = state.memory[addr]
+
     continue_state = state.fork()
+    
+    # Advance the iterator if it's one
+    if isinstance(iterator, SymbolicIterator):
+        # We replace the iterator on the stack with an advanced one
+        # to ensure state isolation even if someone uses the index.
+        new_it = iterator.advance()
+        continue_state.stack[-1] = new_it
     
     # Create the symbolic iteration value
     iter_val, type_constraint = SymbolicValue.symbolic(f"iter_{state.pc}_{state.path_id}")
     continue_state = continue_state.push(iter_val)
     continue_state = continue_state.add_constraint(type_constraint)
+
+    # Exit state (loop finished)
+    exit_state = state.fork()
+    exit_state = exit_state.set_pc(target_index)
+
+    # Continue state PC (loop body)
+    continue_state = continue_state.advance_pc()
 
     # Robust check for SymbolicList or SymbolicValue acting as list
     is_list_val = isinstance(iterable, SymbolicList)
@@ -431,21 +488,30 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
         z3_array = getattr(iterable, "z3_array", None)
         z3_len = getattr(iterable, "z3_len", None)
         
-        # If length is missing from unified value, try to find it from name or assume SymbolicList
-        if z3_len is None and isinstance(iterable, SymbolicValue):
-            # Fallback: if we can't find length, we might have a gap in unified conversion.
-            # But range() model should return SymbolicList which has it.
-            pass
-
         if z3_array is not None and z3_len is not None:
-            idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
-            continue_state = continue_state.add_constraint(z3.And(idx >= 0, idx < z3_len))
-            continue_state = continue_state.add_constraint(
-                iter_val.z3_int == z3.Select(z3_array, idx)
-            )
-            # Force is_int since SymbolicList elements are IntSort in Z3
-            continue_state = continue_state.add_constraint(iter_val.is_int)
-            continue_state = continue_state.add_constraint(z3.Not(iter_val.is_bool))
+            idx = iterator.index if isinstance(iterator, SymbolicIterator) else 0
+            # If continuing, idx MUST be < length
+            continue_state = continue_state.add_constraint(z3.IntVal(idx) < z3_len)
+            # Yielded value MUST be from list
+            continue_state = continue_state.add_constraint(iter_val.z3_int == z3.Select(z3_array, z3.IntVal(idx)))
+            # Force types since SymbolicList currently only stores integers in Z3
+            continue_state = continue_state.add_constraint(iter_val.is_int == Z3_TRUE)
+            continue_state = continue_state.add_constraint(iter_val.is_bool == Z3_FALSE)
+            continue_state = continue_state.add_constraint(iter_val.is_float == Z3_FALSE)
+            continue_state = continue_state.add_constraint(iter_val.is_str == Z3_FALSE)
+            continue_state = continue_state.add_constraint(iter_val.is_obj == Z3_FALSE)
+            continue_state = continue_state.add_constraint(iter_val.is_none == Z3_FALSE)
+            # If exiting, idx MUST be >= length
+            exit_state = exit_state.add_constraint(z3.IntVal(idx) >= z3_len)
+            
+            # Prune infeasible paths immediately
+            new_states = []
+            if is_satisfiable(continue_state.path_constraints):
+                new_states.append(continue_state)
+            if is_satisfiable(exit_state.path_constraints):
+                new_states.append(exit_state)
+            
+            return OpcodeResult.branch(new_states)
         elif z3_array is not None:
             # If we only have array, we can't safely bound idx yet, but we can still link them
             idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")

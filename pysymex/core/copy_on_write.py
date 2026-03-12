@@ -9,7 +9,8 @@ Provides efficient state forking via copy-on-write semantics:
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Generic, TypeVar
+from dataclasses import dataclass
+from typing import Generic, TypeVar, cast
 
 import z3
 
@@ -233,6 +234,58 @@ class CowSet:
     def to_set(self) -> set[int]:
         """Return a plain set copy."""
         return set(self._data)
+
+
+@dataclass(frozen=True, slots=True)
+class BranchRecord:
+    """Records a branch decision in an execution trace."""
+
+    pc: int
+    condition: z3.BoolRef
+    taken: bool
+
+
+class BranchChain:
+    """Persistent linked list for branch decisions.
+
+    Forking is O(1) — both parent and child share the same chain.
+    """
+
+    __slots__ = ("_length", "parent", "record")
+
+    def __init__(
+        self,
+        record: BranchRecord | None = None,
+        parent: BranchChain | None = None,
+    ) -> None:
+        self.record = record
+        self.parent = parent
+        if parent is None:
+            self._length = 1 if record is not None else 0
+        else:
+            self._length = parent._length + (1 if record is not None else 0)
+
+    def append(self, record: BranchRecord) -> BranchChain:
+        """Append a branch record, returning a new chain head. O(1)."""
+        return BranchChain(record, self)
+
+    def to_list(self) -> list[BranchRecord]:
+        """Materialize the chain as a Python list. O(n)."""
+        result: list[BranchRecord] = []
+        node: BranchChain | None = self
+        while node is not None and node.record is not None:
+            result.append(node.record)
+            node = node.parent
+        result.reverse()
+        return result
+
+    def __len__(self) -> int:
+        return self._length
+
+    @staticmethod
+    def empty() -> BranchChain:
+        """Create an empty branch chain."""
+        return BranchChain()
 
 
 class ConstraintChain:

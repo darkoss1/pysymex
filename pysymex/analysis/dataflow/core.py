@@ -7,6 +7,7 @@ and all concrete analysis implementations.
 
 from __future__ import annotations
 
+import collections
 import dis
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -77,65 +78,73 @@ class DataFlowAnalysis(ABC, Generic[T]):
         return True
 
     def analyze(self) -> None:
-        """Run the data flow analysis to fixed point."""
+        """Analyze the CFG using a worklist algorithm for better performance."""
+        if not self.cfg.blocks:
+            return
+
+        # Initialize facts
         for block_id in self.cfg.blocks:
-            if self.is_forward() and block_id == self.cfg.entry_block_id:
-                self.in_facts[block_id] = self.boundary_value()
-            elif not self.is_forward() and block_id in self.cfg.exit_block_ids:
-                self.out_facts[block_id] = self.boundary_value()
-            else:
-                if self.is_forward():
+            if self.is_forward():
+                if block_id == self.cfg.entry_block_id:
+                    self.in_facts[block_id] = self.boundary_value()
+                else:
                     self.in_facts[block_id] = self.initial_value()
+                self.out_facts[block_id] = self.initial_value()
+            else:
+                if block_id in self.cfg.exit_block_ids:
+                    self.out_facts[block_id] = self.boundary_value()
                 else:
                     self.out_facts[block_id] = self.initial_value()
-        changed = True
+                self.in_facts[block_id] = self.initial_value()
+
+        # Worklist initialization: start with all blocks in appropriate order
+        worklist = collections.deque(
+            self.cfg.iter_blocks_forward() if self.is_forward() else self.cfg.iter_blocks_reverse()
+        )
+        on_worklist = {block.id for block in worklist}
+
         iterations = 0
         max_iterations = len(self.cfg.blocks) * 10
-        while changed and iterations < max_iterations:
-            changed = False
+
+        while worklist and iterations < max_iterations:
+            block = worklist.popleft()
+            on_worklist.remove(block.id)
             iterations += 1
-            blocks = (
-                self.cfg.iter_blocks_forward()
-                if self.is_forward()
-                else self.cfg.iter_blocks_reverse()
-            )
-            for block in blocks:
-                if self.is_forward():
-                    if block.id != self.cfg.entry_block_id:
-                        pred_outs = [
-                            self.out_facts.get(p, self.initial_value()) for p in block.predecessors
-                        ]
-                        if pred_outs:
-                            new_in = self.meet(pred_outs)
-                        else:
-                            new_in = self.initial_value()
-                        if new_in != self.in_facts.get(block.id):
-                            self.in_facts[block.id] = new_in
-                            changed = True
-                    new_out = self.transfer(
-                        block, self.in_facts.get(block.id, self.initial_value())
-                    )
-                    if new_out != self.out_facts.get(block.id):
-                        self.out_facts[block.id] = new_out
-                        changed = True
-                else:
-                    if block.id not in self.cfg.exit_block_ids:
-                        succ_ins = [
-                            self.in_facts.get(s, self.initial_value()) for s in block.successors
-                        ]
-                        if succ_ins:
-                            new_out = self.meet(succ_ins)
-                        else:
-                            new_out = self.initial_value()
-                        if new_out != self.out_facts.get(block.id):
-                            self.out_facts[block.id] = new_out
-                            changed = True
-                    new_in = self.transfer(
-                        block, self.out_facts.get(block.id, self.initial_value())
-                    )
+
+            if self.is_forward():
+                if block.id != self.cfg.entry_block_id:
+                    pred_outs = [
+                        self.out_facts.get(p, self.initial_value()) for p in block.predecessors
+                    ]
+                    new_in = self.meet(pred_outs) if pred_outs else self.initial_value()
                     if new_in != self.in_facts.get(block.id):
                         self.in_facts[block.id] = new_in
-                        changed = True
+
+                new_out = self.transfer(block, self.in_facts.get(block.id, self.initial_value()))
+                if new_out != self.out_facts.get(block.id):
+                    self.out_facts[block.id] = new_out
+                    # Add successors to worklist
+                    for succ_id in block.successors:
+                        if succ_id not in on_worklist:
+                            worklist.append(self.cfg.blocks[succ_id])
+                            on_worklist.add(succ_id)
+            else:
+                if block.id not in self.cfg.exit_block_ids:
+                    succ_ins = [
+                        self.in_facts.get(s, self.initial_value()) for s in block.successors
+                    ]
+                    new_out = self.meet(succ_ins) if succ_ins else self.initial_value()
+                    if new_out != self.out_facts.get(block.id):
+                        self.out_facts[block.id] = new_out
+
+                new_in = self.transfer(block, self.out_facts.get(block.id, self.initial_value()))
+                if new_in != self.in_facts.get(block.id):
+                    self.in_facts[block.id] = new_in
+                    # Add predecessors to worklist
+                    for pred_id in block.predecessors:
+                        if pred_id not in on_worklist:
+                            worklist.append(self.cfg.blocks[pred_id])
+                            on_worklist.add(pred_id)
 
     def get_in(self, block_id: int) -> T:
         """Get input facts for a block."""
@@ -390,20 +399,32 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
         for block in self.cfg.blocks.values():
             stack: list[str] = []
             for instr in block.instructions:
-                if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
+                if instr.opname in {
+                    "LOAD_NAME",
+                    "LOAD_FAST",
+                    "LOAD_GLOBAL",
+                    "LOAD_DEREF",
+                    "LOAD_FAST_CHECK",
+                    "LOAD_FAST_AND_CLEAR",
+                }:
                     stack.append(str(instr.argval))
+                elif instr.opname == "LOAD_FAST_LOAD_FAST":
+                    arg1, arg2 = instr.argval
+                    stack.append(str(arg1))
+                    stack.append(str(arg2))
                 elif instr.opname == "LOAD_CONST":
                     stack.append(f"const_{instr.argval}")
-                elif instr.opname == "BINARY_OP":
+                elif instr.opname in {"BINARY_OP", "BINARY_SUBSCR"}:
                     if len(stack) >= 2:
                         right = stack.pop()
                         left = stack.pop()
+                        op = instr.argrepr if instr.opname == "BINARY_OP" else "[]"
                         expr = Expression(
-                            operator=instr.argrepr,
+                            operator=op,
                             operands=(left, right),
                         )
                         self.all_expressions.add(expr)
-                        stack.append(f"({left}{instr.argrepr}{right})")
+                        stack.append(f"({left}{op}{right})")
                 elif instr.opname == "UNARY_OP":
                     if stack:
                         operand = stack.pop()
@@ -413,7 +434,12 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                         )
                         self.all_expressions.add(expr)
                         stack.append(f"({instr.argrepr}{operand})")
-                elif instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+                elif instr.opname in {
+                    "STORE_NAME",
+                    "STORE_FAST",
+                    "STORE_GLOBAL",
+                    "STORE_DEREF",
+                }:
                     if stack:
                         stack.pop()
 
@@ -432,26 +458,43 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
         result = set(in_fact)
         stack: list[str] = []
         for instr in block.instructions:
-            if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
+            if instr.opname in {
+                "LOAD_NAME",
+                "LOAD_FAST",
+                "LOAD_GLOBAL",
+                "LOAD_DEREF",
+                "LOAD_FAST_CHECK",
+                "LOAD_FAST_AND_CLEAR",
+            }:
                 stack.append(str(instr.argval))
+            elif instr.opname == "LOAD_FAST_LOAD_FAST":
+                arg1, arg2 = instr.argval
+                stack.append(str(arg1))
+                stack.append(str(arg2))
             elif instr.opname == "LOAD_CONST":
                 stack.append(f"const_{instr.argval}")
-            elif instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+            elif instr.opname in {
+                "STORE_NAME",
+                "STORE_FAST",
+                "STORE_GLOBAL",
+                "STORE_DEREF",
+            }:
                 var_name = str(instr.argval)
                 to_remove = {e for e in result if var_name in e.operands}
                 result -= to_remove
                 if stack:
                     stack.pop()
-            elif instr.opname == "BINARY_OP":
+            elif instr.opname in {"BINARY_OP", "BINARY_SUBSCR"}:
                 if len(stack) >= 2:
                     right = stack.pop()
                     left = stack.pop()
+                    op = instr.argrepr if instr.opname == "BINARY_OP" else "[]"
                     expr = Expression(
-                        operator=instr.argrepr,
+                        operator=op,
                         operands=(left, right),
                     )
                     result.add(expr)
-                    stack.append(f"({left}{instr.argrepr}{right})")
+                    stack.append(f"({left}{op}{right})")
         return frozenset(result)
 
     def meet(self, facts: list[frozenset[Expression]]) -> frozenset[Expression]:
@@ -516,9 +559,20 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
             if prev_instr is not None:
                 if prev_instr.opname == "LOAD_CONST":
                     env.set_type(var_name, self._type_from_const(prev_instr.argval))
-                elif prev_instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
+                elif prev_instr.opname in {
+                    "LOAD_NAME",
+                    "LOAD_FAST",
+                    "LOAD_GLOBAL",
+                    "LOAD_DEREF",
+                    "LOAD_FAST_CHECK",
+                    "LOAD_FAST_AND_CLEAR",
+                }:
                     loaded_var = prev_instr.argval
                     env.set_type(var_name, env.get_type(loaded_var))
+                elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
+                    # This instruction pushes two, so STORE_FAST likely pops the second one
+                    var1, var2 = prev_instr.argval
+                    env.set_type(var_name, env.get_type(var2))
                 else:
                     env.set_type(var_name, PyType.unknown())
             else:
@@ -603,9 +657,14 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
                         "LOAD_FAST",
                         "LOAD_GLOBAL",
                         "LOAD_DEREF",
+                        "LOAD_FAST_CHECK",
+                        "LOAD_FAST_AND_CLEAR",
                     }:
                         loaded_var = prev_instr.argval
                         info.set_state(var_name, info.get_state(loaded_var))
+                    elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
+                        var1, var2 = prev_instr.argval
+                        info.set_state(var_name, info.get_state(var2))
                     else:
                         info.set_state(var_name, NullState.MAYBE_NULL)
                 else:

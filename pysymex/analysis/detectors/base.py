@@ -322,8 +322,10 @@ def _pure_check_division_by_zero(
 
     zero_constraint = [
         *path_constraints,
-        divisor.is_int,
-        divisor.z3_int == 0,
+        z3.Or(
+            z3.And(divisor.is_int, divisor.z3_int == 0),
+            z3.And(divisor.is_float, z3.fpIsZero(divisor.z3_float)),
+        ),
     ]
     if is_satisfiable_fn(zero_constraint):
         return Issue(

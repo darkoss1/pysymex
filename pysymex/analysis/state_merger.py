@@ -102,36 +102,19 @@ class StateMerger:
         """Set the CFG join points for merge consideration."""
         self._join_points = join_points
 
-    def detect_join_points(self, instructions: list[dis.Instruction]) -> set[int]:
-        """Detect join points from instruction list by finding branch targets."""
-        join_points: set[int] = set()
-        branch_targets: dict[int, int] = {}
-        for _i, instr in enumerate(instructions):
-            if instr.opname in (
-                "JUMP_FORWARD",
-                "JUMP_BACKWARD",
-                "JUMP_ABSOLUTE",
-                "POP_JUMP_IF_TRUE",
-                "POP_JUMP_IF_FALSE",
-                "POP_JUMP_FORWARD_IF_TRUE",
-                "POP_JUMP_FORWARD_IF_FALSE",
-                "POP_JUMP_BACKWARD_IF_TRUE",
-                "POP_JUMP_BACKWARD_IF_FALSE",
-                "JUMP_IF_TRUE_OR_POP",
-                "JUMP_IF_FALSE_OR_POP",
-                "FOR_ITER",
-            ):
-                target = instr.argval if instr.argval else instr.arg
-                if target is not None:
-                    branch_targets[target] = branch_targets.get(target, 0) + 1
-        for target, count in branch_targets.items():
-            if count >= 1:
-                for i, instr in enumerate(instructions):
-                    if instr.offset == target:
-                        join_points.add(i)
-                        break
-        self._join_points = join_points
-        return join_points
+    def detect_join_points(self, instructions: list[dis.Instruction], code: object = None) -> set[int]:
+        """Detect join points using CFG analysis for better accuracy."""
+        from pysymex.analysis.cfg import CFGBuilder
+        
+        builder = CFGBuilder()
+        # Use CFG to find blocks with multiple predecessors
+        cfg = builder.build(code) if code else builder.build_from_instructions(instructions)
+        
+        self._join_points = {
+            block.start_pc for block in cfg.blocks.values() 
+            if len(block.predecessors) > 1
+        }
+        return self._join_points
 
     def is_join_point(self, pc: int) -> bool:
         """Check if a program counter is at a join point."""

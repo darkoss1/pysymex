@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 import z3
 
-from pysymex.core.copy_on_write import ConstraintChain, CowDict, CowSet
+from pysymex.core.copy_on_write import BranchChain, BranchRecord, ConstraintChain, CowDict, CowSet
 
 _path_id_counter = itertools.count()
 
@@ -100,6 +100,10 @@ class BlockInfo:
     end_pc: int
     handler_pc: int | None = None
 
+    def hash_value(self) -> int:
+        """Stable hash of the block metadata."""
+        return hash((self.block_type, self.start_pc, self.end_pc, self.handler_pc))
+
 
 @dataclass(frozen=True, slots=True)
 class CallFrame:
@@ -120,6 +124,13 @@ class CallFrame:
     stack_depth: int
     caller_instructions: list[object] | None = None
     summary_builder: object | None = None
+
+    def hash_value(self) -> int:
+        """Stable hash of the call frame."""
+        return (
+            hash((self.function_name, self.return_pc, self.stack_depth))
+            ^ self.local_vars.hash_value()
+        )
 
 
 class VMState:
@@ -161,6 +172,7 @@ class VMState:
         "stack",
         "taint_tracker",
         "visited_pcs",
+        "branch_trace",
     )
 
     def __init__(
@@ -182,6 +194,7 @@ class VMState:
         pending_constraint_count: int = 0,
         loop_iterations: dict[int, int] | None = None,
         prev_loop_states: dict[int, VMState] | None = None,
+        branch_trace: BranchChain | None = None,
         _path_counter: int = 0,
     ) -> None:
         self.stack = stack if stack is not None else []
@@ -207,6 +220,7 @@ class VMState:
         self.pending_constraint_count = pending_constraint_count
         self.loop_iterations = dict(loop_iterations) if loop_iterations is not None else {}
         self.prev_loop_states = dict(prev_loop_states) if prev_loop_states is not None else {}
+        self.branch_trace = branch_trace if branch_trace is not None else BranchChain.empty()
         self.pending_kw_names: tuple[str, ...] | None = None
         self._pending_taint_issues: list[object] = []
         self._building_class: bool = False
@@ -264,6 +278,12 @@ class VMState:
         """Append *constraint* to path constraints.  Returns ``self``."""
         self.path_constraints = self.path_constraints.append(constraint)
         self.pending_constraint_count += 1
+        return self
+
+    def record_branch(self, condition: z3.BoolRef, taken: bool, pc: int) -> VMState:
+        """Record a branch decision. Returns ``self``."""
+        record = BranchRecord(pc=pc, condition=condition, taken=taken)
+        self.branch_trace = self.branch_trace.append(record)
         return self
 
     def mark_visited(self) -> bool:
@@ -342,7 +362,13 @@ class VMState:
         """
         h = self.pc * 2654435761
         h ^= self.constraint_hash() * 999999937
-        h ^= len(self.call_stack) * 1000000007
+        
+        # Hash stacks
+        for frame in self.call_stack:
+            h = (h * 1000003) ^ frame.hash_value()
+        
+        for block in self.block_stack:
+            h = (h * 1000003) ^ block.hash_value()
 
         h ^= self.local_vars.hash_value() * 31
         h ^= self.global_vars.hash_value() * 1000003
@@ -371,14 +397,16 @@ class VMState:
             A new VMState sharing data with original until either mutates.
         """
         new_path_id = next(_path_id_counter)
-        child = VMState(
-            stack=list(self.stack),
-            local_vars=self.local_vars.cow_fork(),
-            global_vars=self.global_vars.cow_fork(),
-            path_constraints=self.path_constraints,
-            pc=self.pc,
-            block_stack=list(self.block_stack),
-            call_stack=[
+
+        # OPTIMIZATION: Only rebuild call_stack if there are summary_builders
+        # that need to be deep-copied. For most cases, we can share the frames.
+        # Since CallFrame is frozen and local_vars is CowDict, sharing is safe.
+        needs_deep_copy = any(f.summary_builder is not None for f in self.call_stack)
+        
+        if not needs_deep_copy:
+            new_call_stack = list(self.call_stack)
+        else:
+            new_call_stack = [
                 CallFrame(
                     function_name=f.function_name,
                     return_pc=f.return_pc,
@@ -392,7 +420,16 @@ class VMState:
                     ),
                 )
                 for f in self.call_stack
-            ],
+            ]
+
+        child = VMState(
+            stack=list(self.stack),
+            local_vars=self.local_vars.cow_fork(),
+            global_vars=self.global_vars.cow_fork(),
+            path_constraints=self.path_constraints,
+            pc=self.pc,
+            block_stack=list(self.block_stack),
+            call_stack=new_call_stack,
             visited_pcs=self.visited_pcs.cow_fork(),
             memory=self.memory.cow_fork(),
             path_id=new_path_id,
@@ -405,6 +442,7 @@ class VMState:
             pending_constraint_count=self.pending_constraint_count,  # BUG-012 fix: inherit, not reset to 0
             loop_iterations=dict(self.loop_iterations),
             prev_loop_states=dict(self.prev_loop_states),
+            branch_trace=self.branch_trace,
         )
 
         child._pending_taint_issues = list(getattr(self, "_pending_taint_issues", []))

@@ -144,6 +144,7 @@ class ExecutionResult:
     source_file: str = ""
     final_globals: dict[str, object] = field(default_factory=dict[str, object])
     final_locals: dict[str, object] = field(default_factory=dict[str, object])
+    branches: list[object] = field(default_factory=list[object])
 
     def has_issues(self) -> bool:
         """Check if any issues were found."""

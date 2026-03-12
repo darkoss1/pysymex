@@ -77,9 +77,6 @@ class SymbolicString(SymbolicType):
     def could_be_falsy(self) -> z3.BoolRef:
         return self.z3_len == 0
 
-    def hash_value(self) -> int:
-        """Stable hash based on Z3 string content."""
-        return self.z3_str.hash()
 
     def with_taint(self, label: str | set[str] | frozenset[str]) -> SymbolicString:
         """Return a copy with added taint."""
@@ -783,16 +780,23 @@ class SymbolicObject(SymbolicType):
             taint_labels=None,
         )
 
+    def hash_value(self) -> int:
+        """Stable hash based on address."""
+        h = hash(self.address)
+        h = (h * 31) ^ self.z3_addr.hash()
+        # potential_addresses is a set, need stable iteration or frozenset
+        if self.potential_addresses:
+            h = (h * 31) ^ hash(frozenset(self.potential_addresses))
+        return h
 
-@dataclass
+
+@dataclass(slots=True)
 class SymbolicIterator(SymbolicType):
     """Symbolic iterator tracking the source sequence."""
 
     _name: str
     iterable: object
     index: int = 0
-
-    __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
@@ -811,7 +815,13 @@ class SymbolicIterator(SymbolicType):
         return z3.BoolVal(False)
 
     def __repr__(self) -> str:
-        return f"SymbolicIterator(of {self.iterable})"
+        return f"SymbolicIterator(of {self.iterable}, index={self.index})"
+
+    def advance(self) -> SymbolicIterator:
+        """Return a new iterator with incremented index."""
+        import dataclasses
+
+        return dataclasses.replace(self, index=self.index + 1)
 
     def as_unified(self) -> SymbolicValue:
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue

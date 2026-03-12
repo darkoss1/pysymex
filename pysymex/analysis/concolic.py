@@ -211,9 +211,13 @@ class ConcolicExecutor:
             else:
                 symbolic_args[name] = "int"
         try:
-            result = executor.execute_function(func, symbolic_args)
+            result = executor.execute_function(func, symbolic_args, initial_values=concrete_input.values)
             trace.coverage = result.coverage
             trace.result = result
+            trace.branches = [
+                BranchRecord(pc=b.pc, condition=b.condition, taken=b.taken)
+                for b in getattr(result, "branches", [])
+            ]
         except Exception as e:
             trace.exception = e
         return trace
@@ -230,7 +234,7 @@ class ConcolicExecutor:
                 new_values: dict[str, object] = {}
                 for name, value in trace.input.values.items():
                     for decl in model.decls():
-                        if decl.name() == name or decl.name().startswith(f"{name }_"):
+                        if decl.name() == name or decl.name().startswith(f"{name}_"):
                             val = model[decl]
                             new_values[name] = self._z3_to_python(val)
                             break

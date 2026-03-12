@@ -263,6 +263,36 @@ class SymbolicFloat:
         bv = z3.fpToSBV(z3.RTZ(), self._expr, z3.BitVecSort(64))
         return z3.BV2Int(bv, is_signed=True)
 
+    def hash_value(self) -> int:
+        """Stable hash of the Z3 expression."""
+        return self._expr.hash()
+
+    def conditional_merge(self, other: SymbolicFloat | float, condition: z3.BoolRef) -> AnySymbolic:
+        """Merge with another float based on a condition."""
+        if not isinstance(other, (SymbolicFloat, float, int)):
+            return self.as_unified().conditional_merge(other, condition)
+        other_fp = self._to_fp(other)
+        return SymbolicFloat(
+            z3_expr=z3.If(condition, self._expr, other_fp),
+            config=self.config,
+        )
+
+    def as_unified(self) -> object:
+        """Convert to unified SymbolicValue."""
+        from pysymex.core.types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+        return SymbolicValue(
+            _name=self._name,
+            z3_int=self.to_int(),
+            is_int=Z3_FALSE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            z3_float=self._expr,
+            is_float=Z3_TRUE,
+            is_path=Z3_FALSE,
+            is_none=Z3_FALSE,
+            taint_labels=self.taint_labels,
+        )
+
     def _to_fp(self, value: SymbolicFloat | float | int) -> z3.FPRef:
         """Convert value to FP expression."""
         if isinstance(value, SymbolicFloat):

@@ -6,11 +6,13 @@ hybrid) that determine the order in which states are explored.
 
 from __future__ import annotations
 
+import collections
 import heapq
+import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
@@ -44,18 +46,21 @@ class PrioritizedState:
         return cls(priority=priority, state=state)
 
 
-class PathManager(ABC):
+T = TypeVar("T")
+
+
+class PathManager(ABC, Generic[T]):
     """Abstract base class for path-exploration managers.
 
     Implementations define how states are queued, dequeued, and prioritised.
     """
 
     @abstractmethod
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
+    def add_state(self, state: T, priority: float = 0.0) -> None:
         """Add a state to explore."""
 
     @abstractmethod
-    def get_next_state(self) -> VMState | None:
+    def get_next_state(self) -> T | None:
         """Get the next state to explore."""
 
     @abstractmethod
@@ -67,16 +72,16 @@ class PathManager(ABC):
         """Get number of pending states."""
 
 
-class DFSPathManager(PathManager):
+class DFSPathManager(PathManager[T]):
     """Depth-first search path exploration."""
 
     def __init__(self):
-        self._stack: list[VMState] = []
+        self._stack: list[T] = []
 
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
+    def add_state(self, state: T, priority: float = 0.0) -> None:
         self._stack.append(state)
 
-    def get_next_state(self) -> VMState | None:
+    def get_next_state(self) -> T | None:
         if self._stack:
             return self._stack.pop()
         return None
@@ -88,18 +93,18 @@ class DFSPathManager(PathManager):
         return len(self._stack)
 
 
-class BFSPathManager(PathManager):
+class BFSPathManager(PathManager[T]):
     """Breadth-first search path exploration."""
 
     def __init__(self):
-        self._queue: list[VMState] = []
+        self._queue: collections.deque[T] = collections.deque()
 
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
+    def add_state(self, state: T, priority: float = 0.0) -> None:
         self._queue.append(state)
 
-    def get_next_state(self) -> VMState | None:
+    def get_next_state(self) -> T | None:
         if self._queue:
-            return self._queue.pop(0)
+            return self._queue.popleft()
         return None
 
     def is_empty(self) -> bool:
@@ -109,16 +114,16 @@ class BFSPathManager(PathManager):
         return len(self._queue)
 
 
-class PriorityPathManager(PathManager):
+class PriorityPathManager(PathManager[T]):
     """Priority-based path exploration (for coverage/directed)."""
 
     def __init__(self):
-        self._heap: list[PrioritizedState] = []
+        self._heap: list[PrioritizedState[T]] = []
 
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
+    def add_state(self, state: T, priority: float = 0.0) -> None:
         heapq.heappush(self._heap, PrioritizedState(priority, state))
 
-    def get_next_state(self) -> VMState | None:
+    def get_next_state(self) -> T | None:
         if self._heap:
             return heapq.heappop(self._heap).state
         return None
@@ -130,7 +135,20 @@ class PriorityPathManager(PathManager):
         return len(self._heap)
 
 
-class CoverageGuidedPathManager(PathManager):
+@dataclass(frozen=True, order=True)
+class PrioritizedState(Generic[T]):
+    """VM state paired with a numeric priority for heap-based scheduling.
+
+    Attributes:
+        priority: Lower values are dequeued first.
+        state: The item to explore.
+    """
+
+    priority: float
+    state: T = field(compare=False)
+
+
+class CoverageGuidedPathManager(PathManager["VMState"]):
     """Coverage-guided exploration prioritising states that cover new PCs.
 
     Attributes:
@@ -200,8 +218,19 @@ class DirectedPathManager(PathManager):
         return len(self._heap)
 
 
-class HybridPathManager(PathManager):
+@dataclass(frozen=True)
+class StateEntry:
+    """Wrapper to treat each added state as a unique entry in HybridPathManager."""
+
+    state: VMState
+    entry_id: int
+
+
+class HybridPathManager(PathManager["VMState"]):
     """Hybrid path exploration combining DFS, coverage, and random sampling.
+
+    Ensures that each state entry is returned exactly once even though multiple
+    strategies are tracked internally (fix for duplication bug).
 
     Args:
         dfs_weight: Probability of choosing DFS next.
@@ -218,50 +247,83 @@ class HybridPathManager(PathManager):
         import random
 
         self._random = random
-        self._dfs = DFSPathManager()
-        self._coverage = CoverageGuidedPathManager()
+        self._entry_counter = itertools.count()
+        self._dfs = DFSPathManager[StateEntry]()
+        self._coverage = PriorityPathManager[StateEntry]()
         self._weights = {
             "dfs": dfs_weight,
             "coverage": coverage_weight,
             "random": random_weight,
         }
-        self._all_states: list[VMState] = []
+        self._all_entries: list[StateEntry] = []
+        # Track entry IDs to ensure uniqueness across strategies
+        self._returned_entry_ids: set[int] = set()
+        self._total_entries = 0
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        self._dfs.add_state(state)
-        self._coverage.add_state(state)
-        self._all_states.append(state)
+        entry = StateEntry(state, next(self._entry_counter))
+        self._dfs.add_state(entry)
+        
+        # Simple heuristic for coverage: states with more visited PCs are better
+        # Note: True CoverageGuidedPathManager is more complex, but this suffices here
+        self._coverage.add_state(entry, priority=-len(state.visited_pcs))
+        
+        self._all_entries.append(entry)
+        self._total_entries += 1
+
+    def _get_unique(self, manager: PathManager[StateEntry] | list[StateEntry]) -> VMState | None:
+        """Fetch next state entry from sub-manager, skipping already-returned ones."""
+        while True:
+            entry: StateEntry | None = None
+            if isinstance(manager, PathManager):
+                if manager.is_empty():
+                    return None
+                entry = manager.get_next_state()
+            elif isinstance(manager, list):
+                if not manager:
+                    return None
+                idx = self._random.randint(0, len(manager) - 1)
+                entry = manager.pop(idx)
+            
+            if entry is None:
+                return None
+            
+            if entry.entry_id not in self._returned_entry_ids:
+                self._returned_entry_ids.add(entry.entry_id)
+                return entry.state
 
     def get_next_state(self) -> VMState | None:
         if self.is_empty():
             return None
+            
         choice = self._random.random()
+        
         if choice < self._weights["dfs"]:
-            state = self._dfs.get_next_state()
+            state = self._get_unique(self._dfs)
             if state is not None:
                 return state
         elif choice < self._weights["dfs"] + self._weights["coverage"]:
-            state = self._coverage.get_next_state()
+            state = self._get_unique(self._coverage)
             if state is not None:
                 return state
         else:
-            if self._all_states:
-                idx = self._random.randint(0, len(self._all_states) - 1)
-                return self._all_states.pop(idx)
+            state = self._get_unique(self._all_entries)
+            if state is not None:
+                return state
 
-        if not self._dfs.is_empty():
-            return self._dfs.get_next_state()
-        if not self._coverage.is_empty():
-            return self._coverage.get_next_state()
-        if self._all_states:
-            return self._all_states.pop()
+        # Fallback if preferred choice was already returned elsewhere
+        for strategy in [self._dfs, self._coverage, self._all_entries]:
+            state = self._get_unique(strategy)
+            if state is not None:
+                return state
+                
         return None
 
     def is_empty(self) -> bool:
-        return self._dfs.is_empty() and self._coverage.is_empty() and not self._all_states
+        return len(self._returned_entry_ids) >= self._total_entries
 
     def size(self) -> int:
-        return len(self._all_states)
+        return self._total_entries - len(self._returned_entry_ids)
 
 
 def create_path_manager(strategy: ExplorationStrategy, **kwargs: object) -> PathManager:
