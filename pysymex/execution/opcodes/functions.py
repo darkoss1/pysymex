@@ -812,14 +812,15 @@ def handle_store_attr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store attribute on object, updating heap memory."""
+    # Python 3.13+: TOS is the object, TOS1 is the value
     if state.stack:
-        value = state.pop()
+        obj = state.pop()
     else:
         return OpcodeResult.error(
             Issue(IssueKind.RUNTIME_ERROR, "Stack underflow", [], None, state.pc)
         )
     if state.stack:
-        obj = state.pop()
+        value = state.pop()
     else:
         return OpcodeResult.error(
             Issue(IssueKind.RUNTIME_ERROR, "Stack underflow", [], None, state.pc)

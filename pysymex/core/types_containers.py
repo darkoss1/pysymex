@@ -37,6 +37,12 @@ class SymbolicString(SymbolicType):
     z3_str: z3.SeqRef
     z3_len: z3.ArithRef
     taint_labels: frozenset[str] | None = field(default=None, compare=False)
+    _h_active: bool = field(default=False)
+
+    def __post_init__(self):
+        if not self._h_active and self._name:
+             if self._name.lower().startswith(("self", "cls")):
+                 object.__setattr__(self, "_h_active", True)
 
     __hash__ = object.__hash__
 
@@ -266,6 +272,12 @@ class SymbolicList(SymbolicType):
     z3_len: z3.ArithRef
     element_type: str = "int"
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
+    _h_active: bool = field(default=False)
+
+    def __post_init__(self):
+        if not self._h_active and self._name:
+             if self._name.lower().startswith(("self", "cls")):
+                 object.__setattr__(self, "_h_active", True)
 
     __hash__ = object.__hash__
 
@@ -453,6 +465,12 @@ class SymbolicDict(SymbolicType):
     known_keys: z3.SeqRef
     z3_len: z3.ArithRef
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
+    _h_active: bool = field(default=False)
+
+    def __post_init__(self):
+        if not self._h_active and self._name:
+             if self._name.lower().startswith(("self", "cls")):
+                 object.__setattr__(self, "_h_active", True)
 
     __hash__ = object.__hash__
 
@@ -610,6 +628,7 @@ class SymbolicDict(SymbolicType):
             is_obj=Z3_FALSE,
             is_none=Z3_FALSE,
             is_path=Z3_FALSE,
+            _h_active=self._h_active,
             taint_labels=self.taint_labels,
         )
 
@@ -633,6 +652,9 @@ class SymbolicObject(SymbolicType):
     def __post_init__(self):
         if not self.potential_addresses and self.address != -1:
             self.potential_addresses = {self.address}
+        if not self._h_active and self._name:
+             if self._name.lower().startswith(("self", "cls")):
+                 object.__setattr__(self, "_h_active", True)
 
     @property
     def name(self) -> str:

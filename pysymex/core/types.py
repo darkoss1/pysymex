@@ -233,7 +233,13 @@ class SymbolicValue(SymbolicType):
     taint_labels: frozenset[str] | None = field(default=None, compare=False)
     _constant_value: Any = field(default=None, compare=False, repr=False)
 
-    affinity_type: str | None = field(default=None, compare=False)
+    affinity_type: str = field(default="NoneType", compare=False)
+    _h_active: bool = field(default=False)
+
+    def __post_init__(self):
+        if not self._h_active and self._name:
+             if self._name.lower().startswith(("self", "cls")):
+                 object.__setattr(self, "_h_active", True)
     min_val: int | float | None = field(default=None, compare=False)
     max_val: int | float | None = field(default=None, compare=False)
 
@@ -390,6 +396,7 @@ class SymbolicValue(SymbolicType):
             is_list=z3.If(condition, self.is_list, other_is_list),
             is_dict=z3.If(condition, self.is_dict, other_is_dict),
             taint_labels=_merge_taint(self.taint_labels, getattr(other, "taint_labels", None)),
+            _h_active=self._h_active or getattr(other, "_h_active", False),
         )
 
     @staticmethod
@@ -451,33 +458,35 @@ class SymbolicValue(SymbolicType):
     def symbolic_int(name: str) -> tuple[SymbolicValue, z3.BoolRef]:
         """Create a specialized symbolic integer (more efficient for solver)."""
         z3_int = z3.Int(f"{name}_int")
-        return (
-            SymbolicValue(
-                _name=name,
-                z3_int=z3_int,
-                is_int=Z3_TRUE,
-                z3_bool=Z3_FALSE,
-                is_bool=Z3_FALSE,
-                is_path=Z3_FALSE,
-            ),
-            Z3_TRUE,
+        sv = SymbolicValue(
+            _name=name,
+            z3_int=z3_int,
+            is_int=Z3_TRUE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+            is_path=Z3_FALSE,
+            affinity_type="int",
         )
+        if name.lower().startswith(("self", "cls")):
+            object.__setattr(sv, "_h_active", True)
+        return sv, Z3_TRUE
 
     @staticmethod
     def symbolic_bool(name: str) -> tuple[SymbolicValue, z3.BoolRef]:
         """Create a specialized symbolic boolean (more efficient for solver)."""
         z3_bool = z3.Bool(f"{name}_bool")
-        return (
-            SymbolicValue(
-                _name=name,
-                z3_int=z3.If(z3_bool, z3.IntVal(1), Z3_ZERO),
-                is_int=Z3_FALSE,
-                z3_bool=z3_bool,
-                is_bool=Z3_TRUE,
-                is_path=Z3_FALSE,
-            ),
-            Z3_TRUE,
+        sv = SymbolicValue(
+            _name=name,
+            z3_int=z3.If(z3_bool, z3.IntVal(1), Z3_ZERO),
+            is_int=Z3_FALSE,
+            z3_bool=z3_bool,
+            is_bool=Z3_TRUE,
+            is_path=Z3_FALSE,
+            affinity_type="bool",
         )
+        if name.lower().startswith(("self", "cls")):
+            object.__setattr(sv, "_h_active", True)
+        return sv, Z3_TRUE
 
     @staticmethod
     def from_specialized(value: object) -> SymbolicValue:
@@ -508,6 +517,7 @@ class SymbolicValue(SymbolicType):
                 is_path=Z3_FALSE,
                 is_none=Z3_TRUE,
                 affinity_type="NoneType",
+                _h_active=False,
             )
             with _FROM_CONST_CACHE_LOCK:
                 FROM_CONST_CACHE["None"] = sv
@@ -643,6 +653,11 @@ class SymbolicValue(SymbolicType):
         """Create a fresh symbolic path."""
         val, constraint = SymbolicValue.symbolic(name)
         path_constraint = z3.And(constraint, val.is_path)
+        
+        if not val._h_active and name:
+            if name.lower().startswith(("self", "cls")):
+                object.__setattr(val, "_h_active", True)
+                
         return val, path_constraint
 
     def __add__(self, other: object) -> SymbolicValue:
