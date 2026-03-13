@@ -22,7 +22,7 @@
 
 ## Upcoming
 
-### v0.2.0 — Detection Depth
+### v0.1.1 — Detection Depth
 **Theme:** Deeper analysis, more bug categories
 
 - [ ] Inter-module taint tracking
@@ -33,7 +33,7 @@
 - [ ] Sanitizer-aware taint tracking
 - [ ] Custom taint sources/sinks via config
 
-### v0.3.0 — Contract System
+### v0.1.2 — Contract System
 **Theme:** Formal specifications
 
 - [ ] `@requires` / `@ensures` / `@invariant` decorators
@@ -41,7 +41,7 @@
 - [ ] Contract inference from existing code
 - [ ] Integration with `typing` annotations as lightweight contracts
 
-### v0.4.0 — CI/CD Integration
+### v0.1.3 — CI/CD Integration
 **Theme:** Developer workflow
 
 - [ ] GitHub Actions workflow template
@@ -50,7 +50,7 @@
 - [ ] Diff-only mode (scan changed lines in PRs)
 - [ ] JUnit XML output
 
-### v0.5.0 — IDE & Ecosystem
+### v0.1.4 — IDE & Ecosystem
 **Theme:** Real-time experience
 
 - [ ] LSP server for real-time analysis
@@ -80,4 +80,4 @@
 
 ---
 
-*Last updated: March 1, 2026*
+*Last updated: March 13, 2026*
