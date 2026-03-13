@@ -110,6 +110,7 @@ class ExecutionConfig:
     max_interleavings: int = 1000
     dpor_enabled: bool = True
     enable_solver_cache: bool = True
+    heuristic_assume_non_null_self: bool = True
 
 
 @dataclass(frozen=True, slots=True)

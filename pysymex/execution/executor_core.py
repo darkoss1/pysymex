@@ -555,7 +555,9 @@ class SymbolicExecutor:
             
             # Apply Noise Reduction Heuristic: Assume 'self'/'cls' is non-None
             if self.config and self.config.heuristic_assume_non_null_self:
-                if name.lower() in ("self", "cls"):
+                ln_name = name.lower()
+                if ln_name == "self" or ln_name.startswith("self_") or \
+                   ln_name == "cls" or ln_name.startswith("cls_"):
                     import z3
                     if hasattr(sym_val, "is_none"):
                         state = state.add_constraint(z3.Not(sym_val.is_none))

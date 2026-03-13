@@ -144,7 +144,15 @@ class SymbolicNone(SymbolicType):
     produces a :class:`SymbolicValue` with an ``is_none`` discriminator.
     """
 
-    _name: str = field(default_factory=lambda: fresh_name("none"))
+    _name: str = "None"
+    _h_active: bool = field(default=False)
+
+    def __post_init__(self):
+        if self._name:
+            ln = self._name.lower()
+            if ln == "self" or ln.startswith("self_") or \
+               ln == "cls" or ln.startswith("cls_"):
+                object.__setattr__(self, "_h_active", True)
 
     @property
     def name(self) -> str:
@@ -238,9 +246,11 @@ class SymbolicValue(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
-        if not self._h_active and self._name:
-             if self._name.lower().startswith(("self", "cls")):
-                 object.__setattr(self, "_h_active", True)
+        if self._name:
+            ln = self._name.lower()
+            if ln == "self" or ln.startswith("self_") or \
+               ln == "cls" or ln.startswith("cls_"):
+                object.__setattr__(self, "_h_active", True)
     min_val: int | float | None = field(default=None, compare=False)
     max_val: int | float | None = field(default=None, compare=False)
 
