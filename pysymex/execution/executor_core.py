@@ -553,6 +553,15 @@ class SymbolicExecutor:
             state.local_vars[name] = sym_val
             state = state.add_constraint(constraint)
             
+            # Apply Noise Reduction Heuristic: Assume 'self'/'cls' is non-None
+            if self.config and self.config.heuristic_assume_non_null_self:
+                if name.lower() in ("self", "cls"):
+                    import z3
+                    if hasattr(sym_val, "is_none"):
+                        state = state.add_constraint(z3.Not(sym_val.is_none))
+                    elif hasattr(sym_val, "z3_addr"):
+                        state = state.add_constraint(sym_val.z3_addr != 0)
+
             if initial_values and name in initial_values:
                 val = initial_values[name]
                 from pysymex.core.types import SymbolicValue

@@ -21,7 +21,7 @@ def handle_load_const(
     """Load a constant onto the stack."""
     value = instr.argval
     if value is None:
-        sym_val = SymbolicNone()
+        sym_val = SymbolicNone("load_const_None")
     elif isinstance(value, str):
         sym_val = SymbolicString.from_const(value)
     else:

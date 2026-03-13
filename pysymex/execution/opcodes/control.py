@@ -135,7 +135,7 @@ def handle_return_value(
         if return_value is not None:
             state = state.push(return_value)
         else:
-            state = state.push(SymbolicNone())
+            state = state.push(SymbolicNone("return_None"))
         state.depth -= 1
         return OpcodeResult.continue_with(state)
     return OpcodeResult.terminate()
@@ -149,7 +149,7 @@ def handle_return_const(
     print(f"DEBUG: handle_return_const PC={state.pc}")
     const_val = instr.argval
     if const_val is None:
-        return_value = SymbolicNone()
+        return_value = SymbolicNone("return_None")
     else:
         return_value = SymbolicValue.from_const(const_val)
     frame = state.pop_call()

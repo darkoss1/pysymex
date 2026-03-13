@@ -343,14 +343,14 @@ class StateMerger:
                 elif v1 is not None:
                     from pysymex.core.types import SymbolicNone
 
-                    merged_val = _merge_pair(v1, SymbolicNone(), condition)
+                    merged_val = _merge_pair(v1, SymbolicNone(f"{attr}_missing"), condition)
                     if merged_val is None:
                         return None
                     merged_dict[attr] = merged_val
                 elif v2 is not None:
                     from pysymex.core.types import SymbolicNone
 
-                    merged_val = _merge_pair(v2, SymbolicNone(), z3.Not(condition))
+                    merged_val = _merge_pair(v2, SymbolicNone(f"{attr}_missing"), z3.Not(condition))
                     if merged_val is None:
                         return None
                     merged_dict[attr] = merged_val

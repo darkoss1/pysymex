@@ -177,6 +177,7 @@ class SymbolicNone(SymbolicType):
             is_bool=Z3_FALSE,
             is_none=Z3_TRUE,
             is_path=Z3_FALSE,
+            _h_active=self._h_active,
             taint_labels=None,
         )
 

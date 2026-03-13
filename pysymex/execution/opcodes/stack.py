@@ -104,7 +104,7 @@ def handle_nop(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) ->
 @opcode_handler("PUSH_NULL")
 def handle_push_null(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Push NULL onto stack (Python 3.11+ for CALL)."""
-    null_val = SymbolicNone()
+    null_val = SymbolicNone("PUSH_NULL_None")
     state = state.push(null_val)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
