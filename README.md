@@ -1,4 +1,4 @@
-# PySyMex
+# PySyMex: Python Symbolic Execution & Formal Verification
 
 > [!IMPORTANT]
 > **EDUCATIONAL PURPOSES ONLY**
