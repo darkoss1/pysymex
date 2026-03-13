@@ -64,6 +64,8 @@ class UnionFind:
     __slots__ = ("_parent", "_rank")
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._parent: dict[str, str] = {}
         self._rank: dict[str, int] = {}
 
@@ -179,6 +181,8 @@ class ConstraintIndependenceOptimizer:
     )
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._uf = UnionFind()
 
         self._var_cache: dict[int, frozenset[str]] = {}

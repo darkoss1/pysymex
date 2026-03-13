@@ -33,6 +33,7 @@ class FrozensetContainsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.__contains__(elem)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -53,6 +54,7 @@ class FrozensetLenModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the len(frozenset)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -81,6 +83,7 @@ class FrozensetUnionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.union(*others)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -102,6 +105,7 @@ class FrozensetIntersectionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.intersection(*others)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -123,6 +127,7 @@ class FrozensetDifferenceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.difference(*others)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -144,6 +149,7 @@ class FrozensetSymmetricDifferenceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.symmetric_difference(other)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -162,6 +168,7 @@ class FrozensetIssubsetModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.issubset(other)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -182,6 +189,7 @@ class FrozensetIssupersetModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.issuperset(other)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -199,6 +207,7 @@ class FrozensetIsdisjointModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.isdisjoint(other)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -219,6 +228,7 @@ class FrozensetCopyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.copy()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -240,6 +250,7 @@ class FrozensetHashModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the frozenset.__hash__()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

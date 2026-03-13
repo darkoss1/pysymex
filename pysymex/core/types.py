@@ -148,6 +148,7 @@ class SymbolicNone(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
+        """Post init."""
         if self._name:
             ln = self._name.lower()
             if ln == "self" or ln.startswith("self_") or \
@@ -156,22 +157,30 @@ class SymbolicNone(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return "None"
 
     @property
     def type_tag(self) -> str:
+        """Type tag."""
+        """Property returning the type_tag."""
         return "NoneType"
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return Z3_FALSE
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return Z3_FALSE
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return Z3_TRUE
 
     def hash_value(self) -> int:
+        """Hash value."""
         return hash("SymbolicNone")
 
     def as_unified(self) -> SymbolicValue:
@@ -196,6 +205,8 @@ class SymbolicNone(SymbolicType):
         return self.as_unified().conditional_merge(other, condition)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return "SymbolicNone()"
 
 
@@ -246,6 +257,7 @@ class SymbolicValue(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
+        """Post init."""
         if self._name:
             ln = self._name.lower()
             if ln == "self" or ln.startswith("self_") or \
@@ -287,6 +299,7 @@ class SymbolicValue(SymbolicType):
         return "unknown"
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_int
 
     def hash_value(self) -> int:
@@ -876,6 +889,7 @@ class SymbolicValue(SymbolicType):
         )
 
     def __le__(self, other: object) -> SymbolicValue:
+        """Le."""
         other = SymbolicValue.from_const(other)
         cmp = z3.And(self.is_int, other.is_int, self.z3_int <= other.z3_int)
         return SymbolicValue(

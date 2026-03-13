@@ -20,6 +20,8 @@ class ContractCompiler(ast.NodeVisitor):
     """Compiles Python expressions to Z3 constraints."""
 
     def __init__(self, symbols: dict[str, z3.ExprRef]):
+        """Init."""
+        """Initialize the class instance."""
         self.symbols = symbols
         self._old_prefix = "old_"
 

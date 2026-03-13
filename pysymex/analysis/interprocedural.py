@@ -97,6 +97,8 @@ class CallGraph:
     """Represents the call graph of analyzed functions."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._nodes: set[str] = set()
         self._edges: dict[str, set[str]] = {}
         self._call_sites: dict[tuple[str, str], list[CallSite]] = {}
@@ -205,6 +207,8 @@ class InterproceduralAnalyzer:
         max_recursion_depth: int = 5,
         use_summaries: bool = True,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.max_inline_depth = max_inline_depth
         self.max_recursion_depth = max_recursion_depth
         self.use_summaries = use_summaries
@@ -342,9 +346,13 @@ class CallContext:
         return CallContext(new_string, self.max_length)
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(self.call_string)
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, CallContext):
             return False
         return self.call_string == other.call_string
@@ -357,6 +365,8 @@ class ContextSensitiveAnalyzer:
     """
 
     def __init__(self, k: int = 2):
+        """Init."""
+        """Initialize the class instance."""
         self.k = k
         self._results: dict[tuple[str, CallContext], Any] = {}
 

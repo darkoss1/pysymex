@@ -28,6 +28,8 @@ class ExceptionAnalyzer:
     """
 
     def __init__(self, solver: z3.Solver | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.solver = solver or create_solver()
         self._exception_paths: list[ExceptionPath] = []
         self._potential_exceptions: list[SymbolicException] = []

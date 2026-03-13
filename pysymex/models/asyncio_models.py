@@ -186,6 +186,7 @@ class SemaphoreModel:
     _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
 
     def __post_init__(self) -> None:
+        """Post init."""
         self._initial = self._value
 
     def locked(self) -> bool:
@@ -314,6 +315,7 @@ class QueueModel(Generic[T]):
         """Block until all items in the queue have been processed."""
 
         async def waiter() -> None:
+            """Waiter."""
             pass
 
         return waiter()
@@ -323,6 +325,7 @@ class FutureModel(Generic[T]):
     """Model for asyncio.Future - a placeholder for a result that will be set later."""
 
     def __init__(self) -> None:
+        """Initialize a new FutureModel instance."""
         self._result: T | None = None
         self._exception: BaseException | None = None
         self._done: bool = False
@@ -401,63 +404,77 @@ class FutureModel(Generic[T]):
 
 
 def _stub_sleep(_delay: object) -> object:
+    """Stub sleep."""
     return type("sleep_coro", (), {"__await__": lambda self: (yield None)})()
 
 
 def _stub_gather(*coros: object) -> list[None]:
+    """Stub gather."""
     return [None] * len(coros)
 
 
 def _stub_wait(coros: object) -> tuple[dict[str, set[object]], None]:
+    """Stub wait."""
     _c: set[object] = set() if not isinstance(coros, set) else coros
     return ({"done": set(), "pending": _c}, None)
 
 
 def _stub_wait_for(coro: object, timeout: object) -> object:
+    """Stub wait for."""
     return coro
 
 
 def _stub_create_task(coro: object) -> TaskModel:
+    """Stub create task."""
     return TaskModel(coro)
 
 
 def _stub_run(coro: object, loop: object = None) -> None:
+    """Stub run."""
     return None
 
 
 def _make_loop() -> object:
+    """Make loop."""
     return type(
         "Loop", (), {"run_until_complete": lambda self, coro: None, "close": lambda self: None}
     )()
 
 
 def _stub_new_event_loop() -> object:
+    """Stub new event loop."""
     return _make_loop()
 
 
 def _stub_get_event_loop() -> object:
+    """Stub get event loop."""
     return _make_loop()
 
 
 def _stub_get_running_loop() -> object:
+    """Stub get running loop."""
     return type("Loop", (), {})()
 
 
 def _stub_shield(coro: object) -> object:
+    """Stub shield."""
     return coro
 
 
 def _stub_timeout(_delay: object) -> object:
+    """Stub timeout."""
     return type(
         "timeout_ctx", (), {"__aenter__": lambda self: None, "__aexit__": lambda self, *args: None}
     )()
 
 
 def _stub_to_thread(func: Callable[..., object], *args: object) -> object:
+    """Stub to thread."""
     return func(*args)
 
 
 def _stub_from_thread(func: Callable[..., object], *args: object) -> object:
+    """Stub from thread."""
     return func(*args)
 
 

@@ -62,6 +62,8 @@ class TracingHookPlugin(HookPlugin):
     )
 
     def __init__(self, tracer: ExecutionTracer) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__()
         self._tracer = tracer
 
@@ -117,6 +119,7 @@ def _wrap_on_fork(tracer: ExecutionTracer) -> Callable[..., None]:
     """
 
     def _adapter(executor: Any, state: Any) -> None:
+        """Adapter."""
 
         try:
             tracer.on_fork(executor, state, [state])

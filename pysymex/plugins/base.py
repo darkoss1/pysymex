@@ -73,6 +73,8 @@ class Plugin(ABC):
     metadata: PluginMetadata
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._enabled: bool = True
         self._config: dict[str, object] = {}
 
@@ -188,6 +190,8 @@ class PluginRegistry:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._plugins: dict[str, Plugin] = {}
         self._plugin_types: dict[PluginType, list[Plugin]] = {pt: [] for pt in PluginType}
         self._hooks: dict[str, list[Callable[..., object]]] = {name: [] for name in HOOKS}
@@ -271,6 +275,8 @@ class PluginLoader:
     """Loads plugins from various sources."""
 
     def __init__(self, registry: PluginRegistry):
+        """Init."""
+        """Initialize the class instance."""
         self.registry = registry
         self._search_paths: list[Path] = []
 
@@ -366,6 +372,8 @@ class PluginManager:
     """
 
     def __init__(self, config: PluginManagerConfig | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.config = config or PluginManagerConfig()
         self.registry = PluginRegistry()
         self.loader = PluginLoader(self.registry)

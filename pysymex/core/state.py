@@ -197,6 +197,8 @@ class VMState:
         branch_trace: BranchChain | None = None,
         _path_counter: int = 0,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.stack = stack if stack is not None else []
         self.local_vars = wrap_cow_dict(local_vars)
         self.global_vars = wrap_cow_dict(global_vars)
@@ -472,6 +474,8 @@ class VMState:
         return self._replace(**changes)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return (
             f"VMState(path={self.path_id}, pc={self.pc}, "
             f"stack_depth={len(self.stack)}, "

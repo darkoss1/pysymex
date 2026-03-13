@@ -233,6 +233,8 @@ class GlobalState:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.nodes: list[dict[str, object]] = []
         self.edges: list[dict[str, str]] = []
         self.active_file: Path | None = None
@@ -270,6 +272,7 @@ class VisHandler(BaseHTTPRequestHandler):
     """
 
     def log_message(self, format: str, *args: object) -> None:
+        """Log message."""
         pass
 
     def do_GET(self) -> None:
@@ -318,6 +321,8 @@ class RealtimeVisualizationPlugin(HookPlugin):
     )
 
     def __init__(self, throttle_every: int = 5, sleep_ms: float = 5.0) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__()
         self._throttle_every = throttle_every
         self._sleep_seconds = sleep_ms / 1000.0

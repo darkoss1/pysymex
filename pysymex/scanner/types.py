@@ -33,6 +33,7 @@ class ScanResult:
         """
 
         def _serialize(obj: object) -> object:
+            """Serialize."""
             if isinstance(obj, (str, int, float, bool, type(None))):
                 return obj
             if isinstance(obj, dict):
@@ -51,6 +52,8 @@ class ScanResult:
         }
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"ScanResult({self.file_path}, issues={len(self.issues)}, error={self.error})"
 
 
@@ -63,6 +66,8 @@ class ScanResultBuilder:
     """
 
     def __init__(self, file_path: str, timestamp: str | None = None) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.file_path = file_path
         self.timestamp = timestamp or datetime.now().isoformat()
         self.issues: list[dict[str, object]] = []
@@ -106,6 +111,8 @@ class ScanSession:
     """
 
     def __init__(self, log_file: Path | None = None, cache_size: int = 10_000):
+        """Init."""
+        """Initialize the class instance."""
         self.results: list[ScanResult] = []
         self.start_time = datetime.now()
         self.log_file = log_file or Path(

@@ -165,6 +165,8 @@ class InfiniteLoopDetector(Detector):
     )
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._loop_counters: dict[int, int] = {}
         self._max_iterations = 1000
 
@@ -215,6 +217,7 @@ class InfiniteLoopDetector(Detector):
 
 
 def _resolve_target_name(state: VMState, argc: int) -> str | None:
+    """Resolve target name."""
     candidate_indices = [len(state.stack) - argc - 1, len(state.stack) - argc - 2]
     for index in candidate_indices:
         if index < 0 or index >= len(state.stack):
@@ -236,6 +239,8 @@ class ResourceLeakDetector(Detector):
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "RETURN_VALUE", "RETURN_CONST"})
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._open_resources: int = 0
 
     def check(
@@ -278,6 +283,8 @@ class UseAfterFreeDetector(Detector):
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "LOAD_METHOD", "LOAD_ATTR"})
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._freed_vars: set[str] = set()
 
     def check(
@@ -326,6 +333,8 @@ class IntegerOverflowDetector(Detector):
     INT64_MAX = 2**63 - 1
 
     def __init__(self, bits: int = 64):
+        """Init."""
+        """Initialize the class instance."""
         self.bits = bits
         self.min_val = -(2 ** (bits - 1))
         self.max_val = 2 ** (bits - 1) - 1
@@ -357,6 +366,7 @@ class IntegerOverflowDetector(Detector):
 
 
 def _check_taint_in_args(state: VMState, argc: int) -> list[str]:
+    """Check taint in args."""
     tainted_args: list[str] = []
     for i in range(1, argc + 1):
         if len(state.stack) >= i:
@@ -422,6 +432,7 @@ class CommandInjectionDetector(Detector):
     }
 
     def _is_dangerous_target(self, target_name: str | None) -> bool:
+        """Is dangerous target."""
         if not target_name:
             return False
         normalized = target_name.lower()
@@ -478,6 +489,7 @@ class PathTraversalDetector(Detector):
     }
 
     def _is_path_function(self, target_name: str | None) -> bool:
+        """Is path function."""
         if not target_name:
             return False
         normalized = target_name.lower()
@@ -521,6 +533,7 @@ class SQLInjectionDetector(Detector):
     SQL_METHODS = {"execute", "executemany", "executescript"}
 
     def _is_sql_function(self, target_name: str | None) -> bool:
+        """Is sql function."""
         if not target_name:
             return False
         normalized = target_name.lower()

@@ -38,6 +38,8 @@ class OpResult:
 
     @property
     def success(self) -> bool:
+        """Success."""
+        """Property returning the success."""
         return self.error is None
 
     def with_constraint(self, constraint: z3.BoolRef) -> OpResult:

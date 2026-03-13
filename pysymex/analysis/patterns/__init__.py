@@ -43,6 +43,7 @@ class StringMultiplyHandler(PatternHandler):
     """Handles string multiplication patterns (str * int)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
+        """Pattern kinds."""
         return {PatternKind.STRING_MULTIPLY}
 
     def match(
@@ -106,6 +107,7 @@ class StringMultiplyHandler(PatternHandler):
         return None
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
+        """Can raise error."""
         if error_type == "TypeError":
             return False
         return True
@@ -115,6 +117,7 @@ class OptionalChainHandler(PatternHandler):
     """Handles optional chaining patterns (x and x.attr)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
+        """Pattern kinds."""
         return {PatternKind.OPTIONAL_CHAIN}
 
     def match(
@@ -153,6 +156,7 @@ class OptionalChainHandler(PatternHandler):
         return None
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
+        """Can raise error."""
         if error_type == "AttributeError":
             return False
         return True
@@ -162,6 +166,7 @@ class NullCoalesceHandler(PatternHandler):
     """Handles null coalesce patterns (x or default)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
+        """Pattern kinds."""
         return {PatternKind.NULL_COALESCE}
 
     def match(
@@ -199,6 +204,7 @@ class SafeCollectionHandler(PatternHandler):
     """Handles safe collection operations that don't raise errors."""
 
     def pattern_kinds(self) -> set[PatternKind]:
+        """Pattern kinds."""
         return {
             PatternKind.LIST_APPEND,
             PatternKind.LIST_EXTEND,
@@ -255,6 +261,7 @@ class SafeCollectionHandler(PatternHandler):
         return None
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
+        """Can raise error."""
         method = match.variables.get("method")
         if method == "discard" and error_type == "KeyError":
             return False
@@ -267,6 +274,7 @@ class TryExceptHandler(PatternHandler):
     """Handles try/except patterns."""
 
     def pattern_kinds(self) -> set[PatternKind]:
+        """Pattern kinds."""
         return {PatternKind.TRY_EXCEPT_PATTERN}
 
     def match(
@@ -304,6 +312,7 @@ class TryExceptHandler(PatternHandler):
         return None
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
+        """Can raise error."""
         caught = match.variables.get("caught_exceptions", set())
         if error_type in caught:
             return False
@@ -316,6 +325,8 @@ class PatternRegistry:
     """Registry of all pattern handlers."""
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.handlers: list[PatternHandler] = []
         self._kind_to_handlers: dict[PatternKind, list[PatternHandler]] = defaultdict(list)
         self._register_default_handlers()
@@ -362,6 +373,8 @@ class PatternMatcher:
         self,
         registry: PatternRegistry | None = None,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.registry = registry or PatternRegistry()
         self._cache: dict[int, list[PatternMatch]] = {}
 
@@ -423,6 +436,8 @@ class PatternAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.registry = PatternRegistry()
         self.matcher = PatternMatcher(self.registry)
 

@@ -74,6 +74,8 @@ class SymbolicEventLoop:
     """
 
     def __init__(self, max_interleavings: int = 1000) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._ready: list[SymbolicCoroutine] = []
         self._suspended: dict[str, SymbolicCoroutine] = {}
         self._completed: dict[str, SymbolicCoroutine] = {}
@@ -205,6 +207,7 @@ class SymbolicEventLoop:
         in_path: set[str] = set()
 
         def dfs(node: str, path: list[str]) -> None:
+            """Dfs."""
             if node in in_path:
                 idx = path.index(node)
                 cycles.append(path[idx:] + [node])
@@ -261,6 +264,8 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
         config: ExecutionConfig | None = None,
         **kwargs: object,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(config=config, **kwargs)
         self._event_loop = SymbolicEventLoop(max_interleavings=self.config.max_interleavings)
         self._coroutine_states: dict[str, VMState] = {}

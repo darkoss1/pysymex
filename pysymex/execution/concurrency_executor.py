@@ -35,6 +35,8 @@ class SharedVariableTracker:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._accesses: dict[str, set[str]] = {}
         self._writes: dict[str, set[str]] = {}
 
@@ -113,6 +115,8 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         config: ExecutionConfig | None = None,
         **kwargs: object,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(config=config, **kwargs)
         self._concurrency_analyzer = ConcurrencyAnalyzer(timeout_ms=self.config.solver_timeout_ms)
         self._shared_tracker = SharedVariableTracker()

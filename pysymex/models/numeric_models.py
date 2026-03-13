@@ -27,6 +27,7 @@ class IntBitLengthModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.bit_length() - number of bits needed to represent the int."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -49,6 +50,7 @@ class IntBitCountModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.bit_count() - number of 1 bits (Python 3.10+)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -70,6 +72,7 @@ class IntToBytesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.to_bytes(length, byteorder)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -91,6 +94,7 @@ class IntFromBytesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.from_bytes(bytes, byteorder) - classmethod."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -108,6 +112,7 @@ class IntAsIntegerRatioModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.as_integer_ratio() - returns (self, 1)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -125,6 +130,7 @@ class IntConjugateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the int.conjugate() - returns self."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -143,6 +149,7 @@ class FloatIsIntegerModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float.is_integer()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -159,6 +166,7 @@ class FloatAsIntegerRatioModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float.as_integer_ratio()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -176,6 +184,7 @@ class FloatHexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float.hex() - returns hex string representation."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -192,6 +201,7 @@ class FloatFromhexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float.fromhex(s) - classmethod."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -208,6 +218,7 @@ class FloatConjugateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float.conjugate() - returns self."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -237,6 +248,7 @@ class IntNumeratorModel(FunctionModel):
     qualname = "int.numerator"
 
     def apply(self, args, kwargs, state):
+        """Apply the IntNumeratorModel model."""
         if not args:
             return ModelResult(1, [], {})
         return ModelResult(args[0], [], {})
@@ -247,6 +259,7 @@ class IntDenominatorModel(FunctionModel):
     qualname = "int.denominator"
 
     def apply(self, args, kwargs, state):
+        """Apply the IntDenominatorModel model."""
         return ModelResult(1, [], {})
 
 
@@ -255,6 +268,7 @@ class IntRealModel(FunctionModel):
     qualname = "int.real"
 
     def apply(self, args, kwargs, state):
+        """Apply the IntRealModel model."""
         if not args:
             return ModelResult(0, [], {})
         return ModelResult(args[0], [], {})
@@ -265,6 +279,7 @@ class IntImagModel(FunctionModel):
     qualname = "int.imag"
 
     def apply(self, args, kwargs, state):
+        """Apply the IntImagModel model."""
         return ModelResult(0, [], {})
 
 
@@ -273,6 +288,7 @@ class FloatRealModel(FunctionModel):
     qualname = "float.real"
 
     def apply(self, args, kwargs, state):
+        """Apply the FloatRealModel model."""
         if not args:
             return ModelResult(0.0, [], {})
         return ModelResult(args[0], [], {})
@@ -283,6 +299,7 @@ class FloatImagModel(FunctionModel):
     qualname = "float.imag"
 
     def apply(self, args, kwargs, state):
+        """Apply the FloatImagModel model."""
         return ModelResult(0.0, [], {})
 
 

@@ -28,6 +28,8 @@ class GitHubActionsReporter:
     """
 
     def __init__(self, output: TextIO = sys.stdout):
+        """Init."""
+        """Initialize the class instance."""
         self.output = output
 
     def set_output(self, name: str, value: str) -> None:
@@ -358,6 +360,8 @@ class CIRunner:
         github_actions: bool = False,
         gitlab_ci: bool = False,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.threshold = threshold or FailureThreshold()
         self.sarif_output = sarif_output
         self.github_actions = github_actions

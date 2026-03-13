@@ -145,6 +145,8 @@ class SymValue:
 
     @property
     def is_tainted(self) -> bool:
+        """Is tainted."""
+        """Property returning the is_tainted."""
         return self.taint.is_tainted
 
     def with_taint(self, source: TaintSource, path: str = "") -> SymValue:

@@ -52,6 +52,7 @@ def z3_diagnostics(module: ModuleType | None = None) -> dict[str, object]:
 
 
 def _build_z3_error() -> RuntimeError:
+    """Build z3 error."""
     diag = z3_diagnostics()
     details = [
         "pysymex requires a working z3-solver Python module.",

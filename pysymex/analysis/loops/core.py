@@ -32,6 +32,8 @@ class LoopDetector:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._loops: list[LoopInfo] = []
         self._back_edges: list[tuple[int, int]] = []
 
@@ -192,6 +194,8 @@ class LoopBoundInference:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._cached_bounds: dict[int, LoopBound] = {}
 
     def infer_bound(
@@ -321,6 +325,8 @@ class InductionVariableDetector:
     """Detects induction variables in loop bodies."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._detected: dict[str, InductionVariable] = {}
 
     def detect(
@@ -430,6 +436,8 @@ class LoopSummarizer:
     """Summarizes loop effects for closed-form computation."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         pass
 
     def summarize(
@@ -497,6 +505,8 @@ class LoopInvariantGenerator:
     """Generates loop invariants for verification."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._invariants: dict[int, list[z3.BoolRef]] = {}
 
     def generate_invariants(
@@ -550,6 +560,8 @@ class LoopWidening:
     """Applies widening to accelerate loop analysis."""
 
     def __init__(self, widening_threshold: int = 3):
+        """Init."""
+        """Initialize the class instance."""
         self.widening_threshold = widening_threshold
         self._iteration_count: dict[int, int] = {}
 

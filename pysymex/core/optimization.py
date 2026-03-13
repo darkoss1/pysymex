@@ -43,6 +43,8 @@ class CacheStats:
         return (self.hits / total * 100) if total > 0 else 0.0
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return (
             f"CacheStats(hits={self.hits}, misses={self.misses}, "
             f"hit_rate={self.hit_rate:.1f}%, time_saved={self.total_time_saved_ms:.1f}ms)"
@@ -57,6 +59,8 @@ class ConstraintCache:
     """
 
     def __init__(self, max_size: int = 10000):
+        """Init."""
+        """Initialize the class instance."""
         self.max_size = max_size
         self._cache: OrderedDict[int, tuple[bool, z3.ModelRef | None, float]] = OrderedDict()
         self.stats = CacheStats()
@@ -101,6 +105,8 @@ class ConstraintCache:
         self._cache.clear()
 
     def __len__(self) -> int:
+        """Len."""
+        """Return the number of elements in the container."""
         return len(self._cache)
 
 
@@ -162,6 +168,8 @@ class StateMerger:
         similarity_threshold: float = 0.8,
         max_pending_states: int = 100,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.similarity_threshold = similarity_threshold
         self.max_pending_states = max_pending_states
         self.stats = MergeStats()
@@ -303,6 +311,8 @@ class LazySymbolicValue:
         name: str,
         value_factory: Callable[[], Any],
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.name = name
         self._factory = value_factory
         self._value: object | None = None
@@ -337,6 +347,8 @@ class CompactState:
         constraints: tuple[object, ...] | None = None,
         parent: CompactState | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self._pc = pc
         self._stack: tuple[object, ...] = stack or ()
         self._locals = locals_ or frozenset()
@@ -345,18 +357,26 @@ class CompactState:
 
     @property
     def pc(self) -> int:
+        """Pc."""
+        """Property returning the pc."""
         return self._pc
 
     @property
     def stack(self) -> tuple[object, ...]:
+        """Stack."""
+        """Property returning the stack."""
         return self._stack
 
     @property
     def locals(self) -> dict[str, object]:
+        """Locals."""
+        """Property returning the locals."""
         return dict(self._locals)
 
     @property
     def constraints(self) -> tuple[object, ...]:
+        """Constraints."""
+        """Property returning the constraints."""
         return self._constraints
 
     def with_pc(self, pc: int) -> CompactState:
@@ -466,6 +486,8 @@ class ExecutionProfiler:
     """Profiler for symbolic execution."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self.data = ProfileData()
         self._start_time: float | None = None
         self._opcode_start: float | None = None

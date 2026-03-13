@@ -39,4 +39,5 @@ class ExecutionContext(Protocol):
 
     _issues: Sequence[object]
 
+                                                                                     """Register hook."""
     def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None: ...

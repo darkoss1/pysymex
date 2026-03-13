@@ -83,6 +83,7 @@ class SymbolicClass:
     _mro: list[SymbolicClass] | None = None
 
     def __post_init__(self):
+        """Post init."""
         self._compute_mro()
 
     def _compute_mro(self) -> None:
@@ -92,6 +93,7 @@ class SymbolicClass:
             return
 
         def merge(seqs: list[list[SymbolicClass]]) -> list[SymbolicClass]:
+            """Merge."""
             result: list[SymbolicClass] = []
             while True:
                 seqs = [s for s in seqs if s]
@@ -249,6 +251,7 @@ class ClassRegistry:
     """
 
     def __init__(self):
+        """Initialize a new ClassRegistry instance."""
         self._classes: dict[str, SymbolicClass] = {}
         self._builtin_classes: dict[str, SymbolicClass] = {}
         self._next_instance_id: int = 0
@@ -309,6 +312,7 @@ class TypeChecker:
     """Runtime type checking for symbolic execution."""
 
     def __init__(self, registry: ClassRegistry):
+        """Initialize a new TypeChecker instance."""
         self.registry = registry
 
     def isinstance_check(
@@ -345,12 +349,15 @@ class SymbolicDescriptor:
     """Base class for symbolic descriptors (property, classmethod, etc.)."""
 
     def __get__(self, instance: SymbolicInstance | None, owner: SymbolicClass) -> object:
+        """Get."""
         raise NotImplementedError
 
     def __set__(self, instance: SymbolicInstance, value: object) -> None:
+        """Set."""
         raise NotImplementedError
 
     def __delete__(self, instance: SymbolicInstance) -> None:
+        """Delete."""
         raise NotImplementedError
 
 
@@ -364,12 +371,14 @@ class SymbolicProperty(SymbolicDescriptor):
         fdel: Callable[..., object] | None = None,
         doc: str | None = None,
     ):
+        """Initialize a new SymbolicProperty instance."""
         self.fget: Callable[..., object] | None = fget
         self.fset: Callable[..., object] | None = fset
         self.fdel: Callable[..., object] | None = fdel
         self.__doc__ = doc
 
     def __get__(self, instance: SymbolicInstance | None, owner: SymbolicClass) -> object:
+        """Get."""
         if instance is None:
             return self
         if self.fget is None:
@@ -377,11 +386,13 @@ class SymbolicProperty(SymbolicDescriptor):
         return self.fget(instance)
 
     def __set__(self, instance: SymbolicInstance, value: object) -> None:
+        """Set."""
         if self.fset is None:
             raise AttributeError("can't set attribute")
         self.fset(instance, value)
 
     def __delete__(self, instance: SymbolicInstance) -> None:
+        """Delete."""
         if self.fdel is None:
             raise AttributeError("can't delete attribute")
         self.fdel(instance)

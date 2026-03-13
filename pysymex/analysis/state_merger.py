@@ -53,6 +53,8 @@ class MergeStatistics:
 
     @property
     def reduction_ratio(self) -> float:
+        """Reduction ratio."""
+        """Property returning the reduction_ratio."""
         if self.states_before_merge == 0:
             return 0.0
         return 1.0 - (self.states_after_merge / self.states_before_merge)
@@ -91,6 +93,8 @@ class StateMerger:
         max_constraints_for_merge: int = 50,
         similarity_threshold: float = 0.7,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.policy = policy
         self.max_constraints_for_merge = max_constraints_for_merge
         self.similarity_threshold = similarity_threshold
@@ -212,6 +216,7 @@ class StateMerger:
             return None
 
         def _merge_pair(left: object, right: object, merge_condition: z3.BoolRef) -> object | None:
+            """Merge pair."""
             from pysymex.core.types import SymbolicValue
 
             # Refuse to merge incompatible container types (e.g. list vs int)

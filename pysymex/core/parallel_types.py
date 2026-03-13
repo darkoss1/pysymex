@@ -108,9 +108,13 @@ class StateSignature:
     constraint_hash: int
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash((self.pc, self.stack_depth, self.local_keys, self.constraint_hash))
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, StateSignature):
             return False
         return (

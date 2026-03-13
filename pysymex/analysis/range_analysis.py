@@ -295,6 +295,8 @@ class Range:
         return Range.full(), may_div_by_zero
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         if self.is_empty:
             return "∅"
         low_str = str(self.low) if self.low is not None else "-∞"
@@ -312,13 +314,16 @@ class RangeState:
 
     @classmethod
     def bottom(cls) -> RangeState:
+        """Bottom."""
         return cls(is_bottom=True)
 
     @classmethod
     def top(cls) -> RangeState:
+        """Top."""
         return cls()
 
     def copy(self) -> RangeState:
+        """Copy."""
         if self.is_bottom:
             return RangeState.bottom()
         return RangeState(
@@ -327,26 +332,32 @@ class RangeState:
         )
 
     def get(self, var: str) -> Range:
+        """Get."""
         return self.variables.get(var, Range.full())
 
     def set(self, var: str, range_val: Range) -> None:
+        """Set."""
         self.variables[var] = range_val
 
     def push(self, range_val: Range) -> None:
+        """Push."""
         self.stack.append(range_val)
 
     def pop(self) -> Range:
+        """Pop."""
         if self.stack:
             return self.stack.pop()
         return Range.full()
 
     def peek(self, depth: int = 0) -> Range:
+        """Peek."""
         idx = -(depth + 1)
         if abs(idx) <= len(self.stack):
             return self.stack[idx]
         return Range.full()
 
     def join(self, other: RangeState) -> RangeState:
+        """Join."""
         if self.is_bottom:
             return other.copy()
         if other.is_bottom:
@@ -360,6 +371,7 @@ class RangeState:
         return result
 
     def widen(self, other: RangeState) -> RangeState:
+        """Widen."""
         if self.is_bottom:
             return other.copy()
         if other.is_bottom:
@@ -373,6 +385,7 @@ class RangeState:
         return result
 
     def subset_of(self, other: RangeState) -> bool:
+        """Subset of."""
         if self.is_bottom:
             return True
         if other.is_bottom:
@@ -679,6 +692,8 @@ class ValueRangeChecker:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = RangeAnalyzer()
 
     def check_function(

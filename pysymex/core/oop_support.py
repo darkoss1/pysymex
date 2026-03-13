@@ -62,6 +62,8 @@ class EnhancedMethod:
 
     @property
     def is_bound(self) -> bool:
+        """Is bound."""
+        """Property returning the is_bound."""
         return self.bound_to is not None
 
     def bind_to_instance(self, instance: SymbolicObject) -> EnhancedMethod:
@@ -166,14 +168,20 @@ class EnhancedClass:
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self.base.name
 
     @property
     def qualname(self) -> str:
+        """Qualname."""
+        """Property returning the qualname."""
         return self.base.qualname
 
     @property
     def is_abstract(self) -> bool:
+        """Is abstract."""
+        """Property returning the is_abstract."""
         return len(self.abstract_methods) > 0
 
     def add_method(
@@ -262,10 +270,14 @@ class EnhancedObject:
 
     @property
     def id(self) -> ObjectId:
+        """Id."""
+        """Property returning the id."""
         return self.base.id
 
     @property
     def cls(self) -> SymbolicClass:
+        """Cls."""
+        """Property returning the cls."""
         return self.base.cls
 
     def get_attribute(self, name: str) -> tuple[object, bool]:
@@ -345,6 +357,8 @@ class EnhancedClassRegistry:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._classes: dict[str, EnhancedClass] = {}
         self._by_code: dict[int, EnhancedClass] = {}
 

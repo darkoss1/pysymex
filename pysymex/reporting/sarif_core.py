@@ -367,6 +367,8 @@ class SARIFGenerator:
         tool_name: str = "pysymex",
         tool_version: str = "1.0.0",
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.tool_name = tool_name
         self.tool_version = tool_version
 

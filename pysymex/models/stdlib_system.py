@@ -35,6 +35,7 @@ class OsPathExistsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.exists()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"exists_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
@@ -48,6 +49,7 @@ class OsPathIsfileModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.isfile()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"isfile_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
@@ -61,6 +63,7 @@ class OsPathIsdirModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.isdir()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"isdir_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
@@ -74,6 +77,7 @@ class OsPathJoinModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.join()."""
     ) -> ModelResult:
         if all(isinstance(a, str) for a in args):
             import os.path
@@ -94,6 +98,7 @@ class OsPathDirnameModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.dirname()."""
     ) -> ModelResult:
         if args and isinstance(args[0], str):
             import os.path
@@ -111,6 +116,7 @@ class OsPathBasenameModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.basename()."""
     ) -> ModelResult:
         if args and isinstance(args[0], str):
             import os.path
@@ -128,6 +134,7 @@ class OsPathSplitModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.split()."""
     ) -> ModelResult:
         if args and isinstance(args[0], str):
             import os.path
@@ -152,6 +159,7 @@ class OsPathAbspathModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the os.path.abspath()."""
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"abspath_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
@@ -165,6 +173,7 @@ class JsonLoadsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the json.loads()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"json_loads_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -178,6 +187,7 @@ class JsonDumpsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the json.dumps()."""
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"json_dumps_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 2])
@@ -191,6 +201,7 @@ class JsonLoadModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the json.load()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"json_load_{state .pc }")
         return ModelResult(
@@ -208,6 +219,7 @@ class JsonDumpModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the json.dump()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -223,6 +235,7 @@ class DatetimeNowModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the datetime.now()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"now_{state .pc }")
         return ModelResult(
@@ -239,6 +252,7 @@ class DatetimeConstructorModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the datetime() constructor."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"datetime_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
@@ -252,6 +266,7 @@ class TimedeltaConstructorModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the timedelta() constructor."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"timedelta_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
@@ -265,6 +280,7 @@ class RandomRandomModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.random()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"random_{state .pc }")
         return ModelResult(
@@ -286,6 +302,7 @@ class RandomRandintModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.randint()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"randint_{state .pc }")
         constraints = [constraint, result.is_int]
@@ -310,6 +327,7 @@ class RandomChoiceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.choice()."""
     ) -> ModelResult:
         if args and isinstance(args[0], (list, tuple)) and args[0]:
             result, constraint = SymbolicValue.symbolic(f"choice_{state .pc }")
@@ -332,6 +350,7 @@ class RandomShuffleModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.shuffle()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -347,6 +366,7 @@ class RandomSampleModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.sample()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"sample_{state .pc }")
         if len(args) >= 2:
@@ -372,6 +392,7 @@ class RandomUniformModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the random.uniform()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"uniform_{state .pc }")
         constraints: list[object] = [constraint, result.is_float]
@@ -392,6 +413,7 @@ class SimpleNamespaceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the types.SimpleNamespace()."""
     ) -> ModelResult:
         addr = next_address()
         result, constraint = SymbolicObject.symbolic(f"namespace_{state .pc }", addr)

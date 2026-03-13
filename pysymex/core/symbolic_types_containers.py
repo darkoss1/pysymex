@@ -33,27 +33,36 @@ class SymbolicString(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("str")
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.STRING
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_str
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         return z3.Length(self.z3_str) > 0
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.Length(self.z3_str) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicString):
             return self.z3_str == other.z3_str
         return z3.BoolVal(False)
@@ -114,20 +123,26 @@ class SymbolicString(SymbolicType):
         return SymbolicBool(self.z3_str < other.z3_str)
 
     def __le__(self, other: SymbolicString) -> SymbolicBool:
+        """Le."""
         return SymbolicBool(self.z3_str <= other.z3_str)
 
     def __gt__(self, other: SymbolicString) -> SymbolicBool:
+        """Gt."""
         return SymbolicBool(self.z3_str > other.z3_str)
 
     def __ge__(self, other: SymbolicString) -> SymbolicBool:
+        """Ge."""
         return SymbolicBool(self.z3_str >= other.z3_str)
 
     def __eq__(self, other: object) -> SymbolicBool:
+        """Eq."""
+        """Check for equality with another object."""
         if isinstance(other, SymbolicString):
             return SymbolicBool(self.z3_str == other.z3_str)
         return SymbolicBool.concrete(False)
 
     def __ne__(self, other: object) -> SymbolicBool:
+        """Ne."""
         eq = self.__eq__(other)
         return SymbolicBool(z3.Not(eq.z3_bool))
 
@@ -143,6 +158,7 @@ class SymbolicString(SymbolicType):
         return SymbolicString(z3.StringVal(value), repr(value))
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -169,27 +185,36 @@ class SymbolicBytes(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("bytes")
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.BYTES
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_bytes
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         return z3.Length(self.z3_bytes) > 0
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.Length(self.z3_bytes) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicBytes):
             return self.z3_bytes == other.z3_bytes
         return z3.BoolVal(False)
@@ -221,6 +246,7 @@ class SymbolicBytes(SymbolicType):
         return SymbolicBytes(result, repr(value))
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -245,6 +271,7 @@ class SymbolicTuple(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("tuple")
 
@@ -255,24 +282,32 @@ class SymbolicTuple(SymbolicType):
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.TUPLE
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         if self.elements:
             return self.elements[0].to_z3()
         return z3.IntVal(0)
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         return z3.BoolVal(len(self.elements) > 0)
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.BoolVal(len(self.elements) == 0)
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicTuple):
             if len(self.elements) != len(other.elements):
                 return z3.BoolVal(False)
@@ -289,15 +324,21 @@ class SymbolicTuple(SymbolicType):
         return SymbolicInt.concrete(len(self.elements))
 
     def __len__(self) -> int:
+        """Len."""
+        """Return the number of elements in the container."""
         return len(self.elements)
 
     def __getitem__(self, index: int | SymbolicInt) -> SymbolicType:
+        """Getitem."""
+        """Retrieve an item from the container."""
         if isinstance(index, int):
             return self.elements[index]
         result_name = fresh_name(f"tuple_elem_{self._name}")
         return SymbolicInt(z3.Int(result_name), result_name)
 
     def __iter__(self) -> Iterator[SymbolicType]:
+        """Iter."""
+        """Return an iterator over the container."""
         return iter(self.elements)
 
     def __add__(self, other: SymbolicTuple) -> SymbolicTuple:
@@ -315,6 +356,7 @@ class SymbolicTuple(SymbolicType):
         return SymbolicTuple(())
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -340,27 +382,36 @@ class SymbolicList(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("list")
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.LIST
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_seq
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         return z3.Length(self.z3_seq) > 0
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.Length(self.z3_seq) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicList):
             return self.z3_seq == other.z3_seq
         return z3.BoolVal(False)
@@ -414,6 +465,7 @@ class SymbolicList(SymbolicType):
         return SymbolicList(result, z3.IntSort(), str(values))
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -443,6 +495,7 @@ class SymbolicDict(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("dict")
         if self._membership is None:
@@ -450,24 +503,32 @@ class SymbolicDict(SymbolicType):
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.DICT
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_array
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         if not hasattr(self, "_cached_truthy"):
             self._cached_truthy: z3.BoolRef = z3.Bool(fresh_name(f"dict_nonempty_{self._name}"))
         return self._cached_truthy
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.Not(self.is_truthy())
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicDict):
             return self.z3_array == other.z3_array
         return z3.BoolVal(False)
@@ -519,6 +580,7 @@ class SymbolicDict(SymbolicType):
         )
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -546,26 +608,34 @@ class SymbolicSet(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self._name:
             self._name = fresh_name("set")
 
     @property
     def type_tag(self) -> TypeTag:
+        """Type tag."""
+        """Property returning the type_tag."""
         return TypeTag.SET
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_set
 
     def is_truthy(self) -> z3.BoolRef:
+        """Is truthy."""
         if not hasattr(self, "_cached_truthy"):
             self._cached_truthy: z3.BoolRef = z3.Bool(fresh_name(f"set_nonempty_{self._name}"))
         return self._cached_truthy
 
     def is_falsy(self) -> z3.BoolRef:
+        """Is falsy."""
         return z3.Not(self.is_truthy())
 
     @property
@@ -578,6 +648,7 @@ class SymbolicSet(SymbolicType):
         return self._cached_length
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Symbolic eq."""
         if isinstance(other, SymbolicSet):
             return self.z3_set == other.z3_set
         return z3.BoolVal(False)
@@ -624,6 +695,7 @@ class SymbolicSet(SymbolicType):
         return SymbolicSet(z3.EmptySet(z3.IntSort()), z3.IntSort(), "set()")
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(

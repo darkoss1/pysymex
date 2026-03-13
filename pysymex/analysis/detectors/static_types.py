@@ -161,6 +161,8 @@ class StaticDetector(ABC):
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.name = self.__class__.__name__
         self.issues: list[Issue] = []
 

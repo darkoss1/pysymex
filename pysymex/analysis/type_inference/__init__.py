@@ -148,6 +148,8 @@ class TypeAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.type_engine = TypeInferenceEngine()
         self.pattern_recognizer = PatternRecognizer(self.type_engine)
         self.state_machine = TypeStateMachine(self.type_engine, self.pattern_recognizer)
@@ -155,6 +157,7 @@ class TypeAnalyzer:
         self._lock = threading.RLock()
 
     def _reset_run_state(self) -> None:
+        """Reset run state."""
         self.state_machine = TypeStateMachine(self.type_engine, self.pattern_recognizer)
         self.confidence_scores = {}
 

@@ -60,6 +60,8 @@ class TypeInferencePhase(AnalysisPhase):
     name = "type_inference"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = TypeAnalyzer()
 
     def analyze(
@@ -81,6 +83,8 @@ class PatternRecognitionPhase(AnalysisPhase):
     name = "pattern_recognition"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = PatternAnalyzer()
 
     def analyze(
@@ -102,6 +106,8 @@ class FlowAnalysisPhase(AnalysisPhase):
     name = "flow_analysis"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         pass
 
     def analyze(
@@ -125,6 +131,8 @@ class BugDetectionPhase(AnalysisPhase):
     name = "bug_detection"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = StaticAnalyzer()
 
     def analyze(
@@ -188,7 +196,10 @@ class BugDetectionPhase(AnalysisPhase):
                 issue.confidence *= 0.1
 
         class MockIssue:
+            """Mock issue object for testing suppression logic."""
             def __init__(self, kind: str, line: int, message: str, function_name: str) -> None:
+                """Init."""
+                """Initialize the class instance."""
                 from ..detectors.static import IssueKind
 
                 try:
@@ -514,7 +525,9 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
     annotation_names: set[str] = set()
 
     class _AnnotationVisitor(_ast.NodeVisitor):
+        """Internal visitor for extracting names from type annotations."""
         def _scan_annotation(self, node: _ast.expr | None) -> None:
+            """Scan annotation."""
             if node is None:
                 return
             for child in _ast.walk(node):
@@ -528,6 +541,7 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
                         annotation_names.add(var_name)
 
         def visit_FunctionDef(self, node: _ast.FunctionDef) -> None:
+            """Visit functiondef."""
             if node.returns:
                 self._scan_annotation(node.returns)
             for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
@@ -539,9 +553,11 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
             self.generic_visit(node)
 
         def visit_AsyncFunctionDef(self, node: _ast.AsyncFunctionDef) -> None:
+            """Visit asyncfunctiondef."""
             self.visit_FunctionDef(cast("_ast.FunctionDef", node))
 
         def visit_AnnAssign(self, node: _ast.AnnAssign) -> None:
+            """Visit annassign."""
             self._scan_annotation(node.annotation)
             self.generic_visit(node)
 
@@ -597,6 +613,8 @@ class DeadCodePhase(AnalysisPhase):
     name = "dead_code"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = DeadCodeAnalyzer()
 
     def analyze(
@@ -637,6 +655,8 @@ class ResourcePhase(AnalysisPhase):
     name = "resource_analysis"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = ResourceAnalyzer()
 
     def analyze(
@@ -676,6 +696,8 @@ class SecurityPhase(AnalysisPhase):
     name = "security"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.taint_checker = TaintChecker()
         self.string_analyzer = StringAnalyzer()
 
@@ -741,6 +763,8 @@ class ExceptionPhase(AnalysisPhase):
     name = "exception"
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = ExceptionAnalyzer()
 
     def analyze(

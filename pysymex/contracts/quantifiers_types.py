@@ -35,6 +35,7 @@ class QuantifierVar:
     z3_var: z3.ExprRef | None = None
 
     def __post_init__(self):
+        """Post init."""
         if self.z3_var is None:
             if self.sort == z3.IntSort():
                 object.__setattr__(self, "z3_var", z3.Int(self.name))

@@ -28,6 +28,7 @@ class _ContextManager:
     """Wrapper that transforms a generator into a context manager."""
 
     def __init__(self, func: Callable[..., object]) -> None:
+        """Initialize a new _ContextManager instance."""
         self._func: Callable[..., object] = func
         self._generator: Generator[Any, Any, Any] | None = None
 
@@ -80,6 +81,7 @@ class _AsyncContextManager:
     """Wrapper that transforms an async generator into an async context manager."""
 
     def __init__(self, func: Callable[..., object]) -> None:
+        """Initialize a new _AsyncContextManager instance."""
         self._func: Callable[..., object] = func
         self._generator: object = None
 
@@ -139,6 +141,7 @@ class ContextDecoratorModel:
         """Decorate a function to run within the context."""
 
         def wrapper(*args: object, **kwargs: object) -> object:
+            """Wrapper."""
             with self:
                 return func(*args, **kwargs)
 
@@ -149,11 +152,13 @@ class ExitStackModel:
     """Model for ExitStack - a context manager that maintains a stack of exit callbacks."""
 
     def __init__(self) -> None:
+        """Initialize a new ExitStackModel instance."""
         self._exit_callbacks: list[
             tuple[Callable[..., object], tuple[object, ...], dict[str, object]]
         ] = []
 
     def __enter__(self) -> Self:
+        """Enter."""
         return self
 
     def __exit__(
@@ -162,6 +167,7 @@ class ExitStackModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> bool:
+        """Exit."""
         suppressed: bool = False
         for callback, args, kwargs in reversed(self._exit_callbacks):
             try:
@@ -200,14 +206,17 @@ class AsyncExitStackModel:
     """Model for AsyncExitStack - async version of ExitStack."""
 
     def __init__(self) -> None:
+        """Initialize a new AsyncExitStackModel instance."""
         self._exit_callbacks: list[
             tuple[Callable[..., object], tuple[object, ...], dict[str, object]]
         ] = []
 
     async def __aenter__(self) -> AsyncExitStackModel:
+        """Aenter."""
         return self
 
     async def __aexit__(self, exc_type: type | None, exc_val: object, exc_tb: object) -> bool:
+        """Aexit."""
         suppressed: bool = False
         for callback, args, kwargs in reversed(self._exit_callbacks):
             try:
@@ -235,6 +244,7 @@ class AsyncExitStackModel:
         """Register an async callback to be called on exit."""
 
         async def wrapper() -> object:
+            """Wrapper."""
             return await callback(*args, **kwargs)
 
         self._exit_callbacks.append((wrapper, (), {}))
@@ -242,14 +252,17 @@ class AsyncExitStackModel:
 
 
 def _stub_closing(obj: object) -> object:
+    """Stub closing."""
     return obj
 
 
 def _stub_aclosing(obj: object) -> object:
+    """Stub aclosing."""
     return obj
 
 
 def _stub_redirect_stdout(_new_target: object) -> object:
+    """Stub redirect stdout."""
     return type(
         "redirect_stdout",
         (),
@@ -258,6 +271,7 @@ def _stub_redirect_stdout(_new_target: object) -> object:
 
 
 def _stub_redirect_stderr(_new_target: object) -> object:
+    """Stub redirect stderr."""
     return type(
         "redirect_stderr",
         (),

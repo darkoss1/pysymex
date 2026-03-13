@@ -80,6 +80,8 @@ class BasicBlock:
         return self.id
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(self.id)
 
     def add_instruction(self, instr: dis.Instruction) -> None:
@@ -118,6 +120,8 @@ class BasicBlock:
         return False
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"BasicBlock({self .id }, pc={self .start_pc }-{self .end_pc })"
 
 
@@ -209,6 +213,7 @@ class ControlFlowGraph:
         result: list[BasicBlock] = []
 
         def visit(block_id: int) -> None:
+            """Visit."""
             if block_id in visited:
                 return
             visited.add(block_id)

@@ -225,7 +225,9 @@ class FStringAnalyzer:
             return warnings
 
         class FStringVisitor(ast.NodeVisitor):
+            """AST visitor for analyzing f-string components."""
             def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+                """Visit joinedstr."""
                 for value in node.values:
                     if isinstance(value, ast.FormattedValue):
                         if value.format_spec and isinstance(value.format_spec, ast.JoinedStr):
@@ -330,10 +332,14 @@ class SQLInjectionAnalyzer:
             return warnings
 
         class SQLVisitor(ast.NodeVisitor):
+            """AST visitor for identifying potential SQL query strings."""
             def __init__(self) -> None:
+                """Init."""
+                """Initialize the class instance."""
                 self.warnings = warnings
 
             def visit_BinOp(self, node: ast.BinOp) -> None:
+                """Visit binop."""
                 if isinstance(node.op, (ast.Add, ast.Mod)):
                     sql_string = self._extract_sql_string(node.left)
                     if sql_string:
@@ -351,6 +357,7 @@ class SQLInjectionAnalyzer:
                 self.generic_visit(node)
 
             def visit_Call(self, node: ast.Call) -> None:
+                """Visit call."""
                 if isinstance(node.func, ast.Attribute):
                     if node.func.attr == "execute":
                         if node.args:
@@ -424,10 +431,14 @@ class PathTraversalAnalyzer:
             return warnings
 
         class PathVisitor(ast.NodeVisitor):
+            """AST visitor for identifying potential filesystem paths."""
             def __init__(self) -> None:
+                """Init."""
+                """Initialize the class instance."""
                 self.warnings = warnings
 
             def visit_Call(self, node: ast.Call) -> None:
+                """Visit call."""
                 func_name = self._get_func_name(node.func)
                 if func_name in {"open", "Path"}:
                     if node.args:
@@ -529,6 +540,8 @@ class StringAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.printf_analyzer = PrintfFormatAnalyzer()
         self.format_analyzer = StrFormatAnalyzer()
         self.fstring_analyzer = FStringAnalyzer()

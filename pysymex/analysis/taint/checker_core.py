@@ -66,6 +66,8 @@ class TaintAnalyzer:
     )
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.sources = {s.name: s for s in TaintDefinitions.SOURCES}
         self.sinks = {s.name: s for s in TaintDefinitions.SINKS}
         self.sanitizers = {s.name: s for s in TaintDefinitions.SANITIZERS}
@@ -365,14 +367,18 @@ class TaintFlowAnalysis(DataFlowAnalysis[TaintState]):
         analyzer: TaintAnalyzer,
         file_path: str = "<unknown>",
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
         self.analyzer = analyzer
         self.file_path = file_path
 
     def initial_value(self) -> TaintState:
+        """Initial value."""
         return TaintState()
 
     def boundary_value(self) -> TaintState:
+        """Boundary value."""
         return TaintState()
 
     def transfer(self, block: BasicBlock, in_fact: TaintState) -> TaintState:
@@ -404,6 +410,8 @@ class TaintChecker:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = TaintAnalyzer()
 
     def check_function(

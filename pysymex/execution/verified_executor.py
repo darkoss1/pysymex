@@ -94,6 +94,8 @@ class VerifiedExecutor:
         config: VerifiedExecutionConfig | None = None,
         detector_registry: DetectorRegistry | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.config = config or VerifiedExecutionConfig()
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()

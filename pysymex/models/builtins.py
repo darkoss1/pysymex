@@ -95,6 +95,7 @@ class ModelRegistry:
     """Registry for function models."""
 
     def __init__(self):
+        """Initialize a new ModelRegistry instance."""
         self._models: dict[str, FunctionModel] = {}
         self._register_defaults()
 

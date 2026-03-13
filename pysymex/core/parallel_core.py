@@ -47,6 +47,8 @@ class WorkQueue(Generic[T]):
     """
 
     def __init__(self, maxsize: int = 0):
+        """Init."""
+        """Initialize the class instance."""
         self._queue: queue.PriorityQueue[WorkItem[T]] = queue.PriorityQueue(maxsize)
         self._lock = threading.Lock()
         self._item_count = 0
@@ -117,6 +119,8 @@ class StateMerger(Generic[T]):
     """
 
     def __init__(self, merge_threshold: int = 10):
+        """Init."""
+        """Initialize the class instance."""
         self._pending: dict[StateSignature, list[T]] = {}
         self._merge_threshold = merge_threshold
         self._lock = threading.Lock()
@@ -195,6 +199,8 @@ class ParallelExplorer(Generic[T]):
         step_function: Callable[[T], list[T]] | None = None,
         check_function: Callable[[T], list[dict[str, object]]] | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.config = config or ExplorationConfig()
         self._step_fn = step_function
         self._check_fn = check_function
@@ -370,6 +376,8 @@ class ConstraintPartitioner:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._variable_graph: dict[str, set[str]] = {}
 
     def partition(self, constraints: list[z3.BoolRef]) -> list[list[z3.BoolRef]]:
@@ -383,11 +391,13 @@ class ConstraintPartitioner:
         parent = list(range(len(constraints)))
 
         def find(x: int) -> int:
+            """Find."""
             if parent[x] != x:
                 parent[x] = find(parent[x])
             return parent[x]
 
         def union(x: int, y: int) -> None:
+            """Union."""
             px, py = find(x), find(y)
             if px != py:
                 parent[px] = py
@@ -409,6 +419,7 @@ class ConstraintPartitioner:
         variables: set[str] = set()
 
         def visit(e: z3.ExprRef) -> None:
+            """Visit."""
             if z3.is_const(e) and e.decl().kind() == z3.Z3_OP_UNINTERPRETED:
                 variables.add(e.decl().name())
             else:
@@ -432,6 +443,8 @@ class ParallelSolver:
     """
 
     def __init__(self, max_workers: int = 4, timeout_ms: int = 5000):
+        """Init."""
+        """Initialize the class instance."""
         self.max_workers = max_workers
         self.timeout_ms = timeout_ms
         self._partitioner = ConstraintPartitioner()
@@ -513,6 +526,8 @@ class ProcessParallelVerifier:
         max_workers: int | None = None,
         timeout_ms: int = 5000,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._max_workers = max_workers or min(os.cpu_count() or 2, 8)
         self._timeout_ms = timeout_ms
 
@@ -545,6 +560,7 @@ class ProcessParallelVerifier:
         return self._verify_sequential(paths, max_depth)
 
     def _verify_sequential(self, file_paths: list[str], max_depth: int) -> dict[str, object]:
+        """Verify sequential."""
         results: dict[str, object] = {}
         for path in file_paths:
             try:
@@ -559,6 +575,7 @@ class ProcessParallelVerifier:
         return results
 
     def _verify_parallel(self, file_paths: list[str], max_depth: int) -> dict[str, object]:
+        """Verify parallel."""
         results: dict[str, object] = {}
         errors: list[Exception] = []
         with ProcessPoolExecutor(max_workers=self._max_workers) as pool:

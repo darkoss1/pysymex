@@ -17,6 +17,8 @@ class StubParser:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._current_module: str = ""
         self._type_aliases: dict[str, StubType] = {}
 
@@ -274,6 +276,8 @@ class StubRepository:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._cache: dict[str, ModuleStub] = {}
         self._parser = StubParser()
         self._search_paths: list[Path] = []
@@ -379,6 +383,8 @@ class StubBasedTypeResolver:
     """
 
     def __init__(self, repository: StubRepository | None = None) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.repository = repository or StubRepository()
 
     def resolve_function_return(

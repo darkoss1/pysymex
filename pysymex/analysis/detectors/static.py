@@ -62,6 +62,8 @@ class DetectorRegistry:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.detectors: list[StaticDetector] = []
         self._register_default_detectors()
 
@@ -98,6 +100,8 @@ class StaticAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.registry = DetectorRegistry()
         self.type_analyzer = TypeAnalyzer()
         self.pattern_analyzer = PatternAnalyzer()
@@ -120,6 +124,7 @@ class StaticAnalyzer:
         type_data = type_env if type_env is not None else self.type_analyzer.analyze_function(code)
 
         def get_env_at(pc: int) -> TypeEnvironment:
+            """Get env at."""
             if isinstance(type_data, dict):
                 return type_data.get(pc, TypeEnvironment())
             return type_data

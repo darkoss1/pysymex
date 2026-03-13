@@ -83,6 +83,8 @@ class FileWatcher:
         patterns: list[str] | None = None,
         poll_interval: float = 0.5,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.paths = paths
         self.patterns = patterns or ["*.py"]
         self.poll_interval = poll_interval
@@ -197,6 +199,8 @@ class AsyncFileWatcher:
         patterns: list[str] | None = None,
         poll_interval: float = 0.5,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.paths = paths
         self.patterns = patterns or ["*.py"]
         self.poll_interval = poll_interval
@@ -325,6 +329,8 @@ class IncrementalAnalyzer:
     """
 
     def __init__(self, engine: SymbolicEngine | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.engine = engine
         self._cache: dict[str, AnalysisCache] = {}
         self._dependencies: dict[str, set[str]] = {}
@@ -418,6 +424,8 @@ class WatchModeRunner:
         on_result: Callable[[str, Any], None] | None = None,
         on_error: Callable[[str, Exception], None] | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.paths = paths
         self.engine = engine
         self.on_result = on_result
@@ -505,6 +513,8 @@ class DependencyTracker:
     """Tracks import dependencies between Python files."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._imports: dict[str, set[str]] = {}
 
     def extract_imports(self, path: Path) -> set[str]:

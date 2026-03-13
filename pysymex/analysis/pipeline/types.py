@@ -168,6 +168,7 @@ class ScanIssue:
         from enum import Enum
 
         def _safe(v: object) -> object:
+            """Safe."""
             return v.name if isinstance(v, Enum) else v
 
         return {

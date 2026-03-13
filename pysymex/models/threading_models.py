@@ -29,6 +29,7 @@ class ThreadModel:
         name: str | None = None,
         daemon: bool = False,
     ) -> None:
+        """Initialize a new ThreadModel instance."""
         self._thread_id = f"thread_{next (_thread_id_counter )}"
         self._started = False
         self._alive = False
@@ -40,6 +41,7 @@ class ThreadModel:
 
     @property
     def thread_id(self) -> str:
+        """Thread id."""
         return self._thread_id
 
     def start(self) -> None:
@@ -58,6 +60,7 @@ class ThreadModel:
         return self._alive
 
     def __repr__(self) -> str:
+        """Repr."""
         status = "started" if self._started else "not started"
         alive = "alive" if self._alive else "dead"
         return f"ThreadModel({self .name }, {status }, {alive })"
@@ -70,12 +73,14 @@ class LockModel:
     """
 
     def __init__(self) -> None:
+        """Initialize a new LockModel instance."""
         self._name = f"lock_{next (_lock_id_counter )}"
         self._locked = False
         self._owner: str | None = None
 
     @property
     def name(self) -> str:
+        """Name."""
         return self._name
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
@@ -97,6 +102,7 @@ class LockModel:
         return self._locked
 
     def __enter__(self) -> Self:
+        """Enter."""
         self.acquire()
         return self
 
@@ -106,9 +112,11 @@ class LockModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
+        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
+        """Repr."""
         status = "locked" if self._locked else "unlocked"
         return f"LockModel({self ._name }, {status })"
 
@@ -120,6 +128,7 @@ class RLockModel(LockModel):
     """
 
     def __init__(self) -> None:
+        """Initialize a new RLockModel instance."""
         super().__init__()
         self._count = 0
 
@@ -148,6 +157,7 @@ class RLockModel(LockModel):
             self._owner = None
 
     def __repr__(self) -> str:
+        """Repr."""
         status = f"locked(count={self ._count })" if self._locked else "unlocked"
         return f"RLockModel({self ._name }, {status })"
 
@@ -159,6 +169,7 @@ class SemaphoreModel:
     """
 
     def __init__(self, value: int = 1) -> None:
+        """Initialize a new SemaphoreModel instance."""
         if value < 0:
             raise ValueError("semaphore initial value must be >= 0")
         self._value = value
@@ -179,6 +190,7 @@ class SemaphoreModel:
         self._value += n
 
     def __enter__(self) -> Self:
+        """Enter."""
         self.acquire()
         return self
 
@@ -188,9 +200,11 @@ class SemaphoreModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
+        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
+        """Repr."""
         return f"SemaphoreModel(value={self ._value })"
 
 
@@ -214,6 +228,7 @@ class EventModel:
     """
 
     def __init__(self) -> None:
+        """Initialize a new EventModel instance."""
         self._flag = False
         self._waiters: list[str] = []
 
@@ -235,6 +250,7 @@ class EventModel:
         return self._flag
 
     def __repr__(self) -> str:
+        """Repr."""
         return f"EventModel(set={self ._flag })"
 
 
@@ -245,6 +261,7 @@ class ConditionModel:
     """
 
     def __init__(self, lock: LockModel | None = None) -> None:
+        """Initialize a new ConditionModel instance."""
         self._lock = lock or LockModel()
         self._waiters: list[str] = []
 
@@ -286,6 +303,7 @@ class ConditionModel:
         self._waiters.clear()
 
     def __enter__(self) -> Self:
+        """Enter."""
         self.acquire()
         return self
 
@@ -295,9 +313,11 @@ class ConditionModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
+        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
+        """Repr."""
         return f"ConditionModel(locked={self ._lock .locked ()})"
 
 
@@ -313,6 +333,7 @@ class BarrierModel:
         action: object = None,
         timeout: float | None = None,
     ) -> None:
+        """Initialize a new BarrierModel instance."""
         if parties < 1:
             raise ValueError("parties must be >= 1")
         self._parties = parties
@@ -363,6 +384,7 @@ class BarrierModel:
         return self._broken
 
     def __repr__(self) -> str:
+        """Repr."""
         return (
             f"BarrierModel(parties={self ._parties }, "
             f"waiting={self ._count }, broken={self ._broken })"

@@ -35,6 +35,8 @@ class IterationResult:
 
     @property
     def has_value(self) -> bool:
+        """Has value."""
+        """Property returning the has_value."""
         return not self.exhausted
 
 
@@ -77,6 +79,8 @@ class SymbolicIterator(ABC):
         """Whether the iterator has a known finite bound."""
 
     def __iter__(self) -> SymbolicIterator:
+        """Iter."""
+        """Return an iterator over the container."""
         return self
 
 
@@ -95,6 +99,7 @@ class SymbolicRange(SymbolicIterator):
     _name: str = field(default="range")
 
     def __post_init__(self):
+        """Post init."""
         self.current = self.start
         if not isinstance(self.start, (int, z3.ArithRef)):
             self.start = self.start.value if hasattr(self.start, "value") else int(self.start)
@@ -116,6 +121,8 @@ class SymbolicRange(SymbolicIterator):
             raise ValueError(f"range() takes 1-3 arguments, got {len (args )}")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         has_next_constraint = self.has_next()
         value = self.current
         if isinstance(value, int):
@@ -215,6 +222,8 @@ class SymbolicRange(SymbolicIterator):
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return True
 
     @property
@@ -241,6 +250,8 @@ class SymbolicRange(SymbolicIterator):
         )
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicRange({self.start}, {self.stop}, {self.step}, current={self.current})"
 
 
@@ -255,10 +266,13 @@ class SymbolicSequenceIterator(SymbolicIterator):
     _name: str = field(default="iter")
 
     def __post_init__(self):
+        """Post init."""
         if isinstance(self.index, SymbolicInt):
             self.index = self.index.value
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         has_next_constraint = self.has_next()
         if isinstance(self.sequence, (list, tuple, str)):
             if isinstance(self.index, int) and 0 <= self.index < len(self.sequence):
@@ -282,6 +296,7 @@ class SymbolicSequenceIterator(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         if isinstance(self.sequence, (list, tuple, str)):
             length = len(self.sequence)
             if isinstance(self.index, int):
@@ -294,6 +309,7 @@ class SymbolicSequenceIterator(SymbolicIterator):
         return z3.BoolVal(True)
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         if isinstance(self.sequence, (list, tuple, str)):
             length = len(self.sequence)
             if isinstance(self.index, int):
@@ -306,8 +322,11 @@ class SymbolicSequenceIterator(SymbolicIterator):
         return z3.Int(f"{self._name}_remaining")
 
     def clone(self) -> SymbolicSequenceIterator:
+        """Clone."""
         return SymbolicSequenceIterator(sequence=self.sequence, index=self.index, _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return True

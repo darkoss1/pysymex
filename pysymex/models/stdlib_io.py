@@ -34,6 +34,7 @@ class CopyModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the copy.copy()."""
     ) -> ModelResult:
         if args:
             return ModelResult(value=args[0])
@@ -49,6 +50,7 @@ class DeepcopyModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the copy.deepcopy()."""
     ) -> ModelResult:
         if args:
             val = args[0]
@@ -82,6 +84,7 @@ class StringIOModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the io.StringIO()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"stringio_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -95,6 +98,7 @@ class BytesIOModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the io.BytesIO()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"bytesio_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -108,6 +112,7 @@ class IOReadModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the file.read() / StringIO.read()."""
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"io_read_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -121,6 +126,7 @@ class IOWriteModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the file.write() / StringIO.write()."""
     ) -> ModelResult:
         if args and isinstance(args[0], SymbolicString):
             return ModelResult(
@@ -146,6 +152,7 @@ class IOGetvalueModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the StringIO.getvalue()."""
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"io_getvalue_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -159,6 +166,7 @@ class HeappushModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.heappush()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -174,6 +182,7 @@ class HeappopModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.heappop()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"heappop_{state .pc }")
         return ModelResult(
@@ -191,6 +200,7 @@ class HeapifyModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.heapify()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -206,6 +216,7 @@ class HeapreplaceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.heapreplace()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"heapreplace_{state .pc }")
         return ModelResult(
@@ -223,6 +234,7 @@ class HeappushpopModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.heappushpop()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"heappushpop_{state .pc }")
         return ModelResult(
@@ -240,6 +252,7 @@ class NlargestModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.nlargest()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"nlargest_{state .pc }")
         if args and isinstance(args[0], int):
@@ -258,6 +271,7 @@ class NsmallestModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the heapq.nsmallest()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"nsmallest_{state .pc }")
         if args and isinstance(args[0], int):
@@ -276,6 +290,7 @@ class BisectLeftModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.bisect_left()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"bisect_left_{state .pc }")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
@@ -294,6 +309,7 @@ class BisectRightModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.bisect_right()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"bisect_right_{state .pc }")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
@@ -312,6 +328,7 @@ class BisectModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.bisect() (alias for bisect_right)."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"bisect_{state .pc }")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
@@ -330,6 +347,7 @@ class InsortLeftModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.insort_left()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -345,6 +363,7 @@ class InsortRightModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.insort_right()."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),
@@ -360,6 +379,7 @@ class InsortModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the bisect.insort() (alias for insort_right)."""
     ) -> ModelResult:
         return ModelResult(
             value=SymbolicNone("none"),

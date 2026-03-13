@@ -71,6 +71,8 @@ class FilterPipeline:
     __slots__ = ("_filters",)
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._filters: list[FilterFn] = []
 
     def add(self, fn: FilterFn) -> None:
@@ -82,6 +84,8 @@ class FilterPipeline:
         return all(f(event) for f in self._filters)
 
     def __len__(self) -> int:
+        """Len."""
+        """Return the number of elements in the container."""
         return len(self._filters)
 
 
@@ -404,6 +408,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
         tv: str = args.touches_var
 
         def _touches_var(e: dict[str, Any], needle: str = tv) -> bool:
+            """Touches var."""
 
             for item in e.get("stack") or []:
                 if needle in str(item):
@@ -428,6 +433,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
         cc: str = args.constraint_contains
 
         def _any_constraint(e: dict[str, Any], needle: str = cc) -> bool:
+            """Any constraint."""
 
             ca = e.get("constraint_added")
             if ca and needle in ca.get("smtlib", ""):
@@ -469,12 +475,15 @@ class SummaryAccumulator:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.total: int = 0
         self.by_type: dict[str, int] = collections.defaultdict(int)
         self.first_seq: dict[str, int] = {}
         self.last_seq: dict[str, int] = {}
 
     def record(self, event: dict[str, Any]) -> None:
+        """Record."""
         et: str = event.get("event_type", "unknown")
         seq: int = event.get("seq", -1)
         self.total += 1
@@ -484,6 +493,7 @@ class SummaryAccumulator:
         self.last_seq[et] = seq
 
     def render(self) -> str:
+        """Render."""
         lines = [
             "# pysymex Trace Summary",
             f"Total matched events: {self.total}",
@@ -1018,6 +1028,7 @@ def print_ai_manual() -> None:
 
 
 def _parse_seq_range(value: str) -> tuple[int, int]:
+    """Parse seq range."""
     parts = value.split(":")
     if len(parts) != 2:
         raise argparse.ArgumentTypeError("seq-range must be in the form START:END (e.g. 100:500)")
@@ -1028,6 +1039,7 @@ def _parse_seq_range(value: str) -> tuple[int, int]:
 
 
 def _parse_pc_range(value: str) -> tuple[int, int]:
+    """Parse pc range."""
     parts = value.split(":")
     if len(parts) != 2:
         raise argparse.ArgumentTypeError("pc-range must be in the form START:END (e.g. 0:200)")
@@ -1038,6 +1050,7 @@ def _parse_pc_range(value: str) -> tuple[int, int]:
 
 
 def _parse_path_id_list(value: str) -> list[int]:
+    """Parse path id list."""
     try:
         return [int(x.strip()) for x in value.split(",") if x.strip()]
     except ValueError as exc:
@@ -1047,6 +1060,7 @@ def _parse_path_id_list(value: str) -> list[int]:
 
 
 def _parse_confidence_range(value: str) -> tuple[float, float]:
+    """Parse confidence range."""
     parts = value.split(":")
     if len(parts) != 2:
         raise argparse.ArgumentTypeError("confidence must be in the form MIN:MAX (e.g. 0.8:1.0)")

@@ -29,6 +29,7 @@ class CounterModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the collections.Counter()."""
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"counter_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -42,6 +43,7 @@ class DefaultdictModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the collections.defaultdict()."""
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"defaultdict_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -55,6 +57,7 @@ class DequeModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the collections.deque()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"deque_{state .pc }")
         if args and isinstance(args[0], (list, tuple)):
@@ -82,6 +85,7 @@ class OrderedDictModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the collections.OrderedDict()."""
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"ordereddict_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -95,6 +99,7 @@ class NamedtupleModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the collections.namedtuple()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"namedtuple_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -108,6 +113,7 @@ class ItertoolsChainModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.chain()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"chain_{state .pc }")
         total_len = z3.IntVal(0)
@@ -130,6 +136,7 @@ class ItertoolsIsliceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.islice()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"islice_{state .pc }")
         if len(args) >= 3:
@@ -159,6 +166,7 @@ class ItertoolsCycleModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.cycle()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"cycle_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -172,6 +180,7 @@ class ItertoolsRepeatModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.repeat()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"repeat_{state .pc }")
         if len(args) >= 2:
@@ -192,6 +201,7 @@ class ItertoolsTakewhileModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.takewhile()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"takewhile_{state .pc }")
         if len(args) >= 2 and isinstance(args[1], SymbolicList):
@@ -214,6 +224,7 @@ class ItertoolsDropwhileModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.dropwhile()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"dropwhile_{state .pc }")
         if len(args) >= 2 and isinstance(args[1], SymbolicList):
@@ -236,6 +247,7 @@ class ItertoolsProductModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.product()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"product_{state .pc }")
         product_len = z3.IntVal(1)
@@ -263,6 +275,7 @@ class ItertoolsPermutationsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.permutations()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"permutations_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 0])
@@ -276,6 +289,7 @@ class ItertoolsCombinationsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the itertools.combinations()."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"combinations_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 0])
@@ -289,6 +303,7 @@ class FunctoolsReduceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the functools.reduce()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"reduce_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -302,6 +317,7 @@ class FunctoolsPartialModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the functools.partial()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"partial_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -315,6 +331,7 @@ class FunctoolsLruCacheModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the functools.lru_cache()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"lru_cache_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])

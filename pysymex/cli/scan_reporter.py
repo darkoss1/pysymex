@@ -20,11 +20,13 @@ class ConsoleScanReporter:
     """
 
     def on_file_start(self, file_path: object) -> None:
+        """On file start."""
         print(f"\n{'=' * 70}")
         print(f"\U0001f50d Scanning: {file_path}")
         print("=" * 70)
 
     def on_file_done(self, _file_path: object, result: object) -> None:
+        """On file done."""
         if result.issues:
             print(f"\n\u26a0\ufe0f  Found {len(result.issues)} potential issues:\n")
             for issue in result.issues:
@@ -42,9 +44,11 @@ class ConsoleScanReporter:
         )
 
     def on_issue(self, issue: dict[str, object]) -> None:
+        """On issue."""
         print(f"   \u2022 [{issue['kind']}] {issue['message']} (Line {issue['line']})")
 
     def on_error(self, _file_path: object, error: str) -> None:
+        """On error."""
         print(f"\n\u274c {error}")
 
     def on_progress(
@@ -54,6 +58,7 @@ class ConsoleScanReporter:
         file_path: object,
         result: object | None,
     ) -> None:
+        """On progress."""
         pct = completed * 100 // total if total else 0
         name = Path(str(file_path)).name if file_path else "?"
         status = "\u2705"
@@ -68,6 +73,7 @@ class ConsoleScanReporter:
         print(message)
 
     def on_summary(self, results: Sequence[object], total_files: int) -> None:
+        """On summary."""
         total_issues = sum(len(r.issues) for r in results)
         files_with_issues = sum(1 for r in results if r.issues)
         errors = sum(1 for r in results if r.error)

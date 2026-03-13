@@ -33,27 +33,45 @@ class StateView(Protocol):
     """
 
     @property
-    def pc(self) -> int: ...
+    def pc(self) -> int:
+        """The current program counter (instruction offset)."""
+        ...
 
     @property
-    def stack(self) -> Sequence[object]: ...
+    def stack(self) -> Sequence[object]:
+        """A read-only view of the operand stack."""
+        ...
 
     @property
-    def path_constraints(self) -> Sequence[object]: ...
+    def path_constraints(self) -> Sequence[object]:
+        """The sequence of symbolic constraints active on the current path."""
+        ...
 
     @property
-    def locals(self) -> Mapping[str, Any]: ...
+    def locals(self) -> Mapping[str, Any]:
+        """A mapping of local variable names to their symbolic or concrete values."""
+        ...
 
     @property
-    def depth(self) -> int: ...
+    def depth(self) -> int:
+        """The current execution depth (number of forks or recursive calls)."""
+        ...
 
-    def peek(self, offset: int = 0) -> object: ...
+    def peek(self, offset: int = 0) -> object:
+        """Return the value on the stack at the given offset from the top."""
+        ...
 
-    def get_local(self, name: str) -> object: ...
+    def get_local(self, name: str) -> object:
+        """Retrieve the value of a local variable by name."""
+        ...
 
-    def fork(self) -> StateView: ...
+    def fork(self) -> StateView:
+        """Create a new state view branching from the current one."""
+        ...
 
-    def add_constraint(self, constraint: object) -> None: ...
+    def add_constraint(self, constraint: object) -> None:
+        """Register a new symbolic constraint on the state's path."""
+        ...
 
 
 @runtime_checkable
@@ -65,7 +83,9 @@ class SolverCheck(Protocol):
         constraints: Sequence[object],
         *,
         timeout_ms: int = ...,
-    ) -> bool: ...
+    ) -> bool:
+        """Check if the provided constraints are satisfiable under a timeout."""
+        ...
 
 
 @runtime_checkable
@@ -84,7 +104,9 @@ class DetectorLike(Protocol):
         state: StateView,
         instruction: dis.Instruction,
         _solver_check: Callable[..., object],
-    ) -> object | None: ...
+    ) -> object | None:
+        """Perform a bug check for the given instruction and state."""
+        ...
 
 
 @runtime_checkable
@@ -95,13 +117,21 @@ class ScanReporter(Protocol):
     depends only on this interface.
     """
 
-    def on_file_start(self, file_path: object) -> None: ...
+    def on_file_start(self, file_path: object) -> None:
+        """Called when analysis begins for a new file."""
+        ...
 
-    def on_file_done(self, file_path: object, result: object) -> None: ...
+    def on_file_done(self, file_path: object, result: object) -> None:
+        """Called when analysis completes for a file."""
+        ...
 
-    def on_issue(self, issue: dict[str, object]) -> None: ...
+    def on_issue(self, issue: dict[str, object]) -> None:
+        """Report a detected issue/bug."""
+        ...
 
-    def on_error(self, file_path: object, error: str) -> None: ...
+    def on_error(self, file_path: object, error: str) -> None:
+        """Report a fatal error encountered during analysis."""
+        ...
 
     def on_progress(
         self,
@@ -109,11 +139,17 @@ class ScanReporter(Protocol):
         total: int,
         file_path: object,
         result: object | None,
-    ) -> None: ...
+    ) -> None:
+        """Update progress metrics (e.g. for progress bars)."""
+        ...
 
-    def on_status(self, message: str) -> None: ...
+    def on_status(self, message: str) -> None:
+        """Update the UI with a status message."""
+        ...
 
-    def on_summary(self, results: Sequence[object], total_files: int) -> None: ...
+    def on_summary(self, results: Sequence[object], total_files: int) -> None:
+        """Report the final analysis summary."""
+        ...
 
 
 @runtime_checkable

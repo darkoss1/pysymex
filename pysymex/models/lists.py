@@ -57,6 +57,7 @@ class ListAppendModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.append(x) - increases list length by 1."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -92,6 +93,7 @@ class ListExtendModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.extend(iterable) - increases length by len(iterable)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -134,6 +136,7 @@ class ListInsertModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.insert(i, x) - increases list length by 1."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -167,6 +170,7 @@ class ListRemoveModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.remove(x) - decreases length by 1 if element exists."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -209,6 +213,7 @@ class ListPopModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.pop([i]) - removes and returns element."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -255,6 +260,7 @@ class ListClearModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.clear() - removes all elements."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -289,6 +295,7 @@ class ListIndexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.index(x) - returns index of first occurrence."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -323,6 +330,7 @@ class ListCountModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.count(x) - returns number of occurrences."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -347,6 +355,7 @@ class ListSortModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.sort() - sorts in place."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -379,6 +388,7 @@ class ListReverseModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.reverse() - reverses in place."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -411,6 +421,7 @@ class ListCopyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list.copy() - returns shallow copy."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -437,6 +448,7 @@ class ListSliceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list[start:end] slicing."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -462,6 +474,7 @@ class ListContainsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the 'x in list' operation."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -484,6 +497,7 @@ class ListLenModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the len(list)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

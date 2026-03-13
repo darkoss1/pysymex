@@ -31,6 +31,7 @@ class OpcodeResult:
 
     @staticmethod
     def _collect_pending(state: VMState) -> list[Issue]:
+        """Collect pending."""
         issues = []
         if hasattr(state, "_pending_taint_issues"):
             issues.extend(state._pending_taint_issues)
@@ -109,6 +110,7 @@ class OpcodeDispatcher:
         """
 
         def decorator(handler: OpcodeHandler) -> OpcodeHandler:
+            """Decorator."""
             for opcode in opcodes:
                 self._handlers[opcode] = handler
             return handler
@@ -175,6 +177,8 @@ class OpcodeDispatcher:
         return len(self._instructions)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"OpcodeDispatcher({len(self._handlers)} handlers)"
 
 
@@ -207,6 +211,7 @@ def opcode_handler(*opcodes: str) -> Callable[[OpcodeHandler], OpcodeHandler]:
     """
 
     def decorator(handler: OpcodeHandler) -> OpcodeHandler:
+        """Decorator."""
         for opcode in opcodes:
             OpcodeDispatcher.register_global(opcode, handler)
         return handler

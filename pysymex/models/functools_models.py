@@ -102,6 +102,7 @@ class LRUCacheModel:
         """Decorate a function with caching."""
 
         def wrapper(*args: object, **kwargs: object) -> object:
+            """Wrapper."""
             from pysymex.core.types import SymbolicValue
 
             result, _ = SymbolicValue.symbolic(f"lru_cached_{func.__name__}")
@@ -164,6 +165,7 @@ def model_wraps(wrapped: Callable[..., object], **kwargs: object) -> Callable[..
     """
 
     def decorator(wrapper: Callable[..., object]) -> Callable[..., object]:
+        """Decorator."""
         wrapper.__name__ = getattr(wrapped, "__name__", wrapper.__name__)
         wrapper.__doc__ = getattr(wrapped, "__doc__", wrapper.__doc__)
         wrapper.__wrapped__ = wrapped
@@ -195,26 +197,33 @@ def model_cmp_to_key(mycmp: Callable[..., object]) -> type:
     """
 
     class K:
+        """Key selector wrapper for comparison functions."""
         __slots__ = ["obj"]
 
         def __init__(self, obj: object) -> None:
+            """Initialize a new K instance."""
             self.obj = obj
 
         def __lt__(self, other: K) -> bool:
+            """Lt."""
             return bool(mycmp(self.obj, other.obj) < 0)
 
         def __gt__(self, other: K) -> bool:
+            """Gt."""
             return bool(mycmp(self.obj, other.obj) > 0)
 
         def __eq__(self, other: object) -> bool:
+            """Eq."""
             if not isinstance(other, K):
                 return NotImplemented
             return bool(mycmp(self.obj, other.obj) == 0)
 
         def __le__(self, other: K) -> bool:
+            """Le."""
             return bool(mycmp(self.obj, other.obj) <= 0)
 
         def __ge__(self, other: K) -> bool:
+            """Ge."""
             return bool(mycmp(self.obj, other.obj) >= 0)
 
     return K

@@ -32,14 +32,17 @@ class NumericProduct(AbstractValue):
 
     @classmethod
     def bottom(cls) -> NumericProduct:
+        """Bottom."""
         return cls(Interval.bottom(), SignValue.bottom(), Congruence.bottom())
 
     @classmethod
     def top(cls) -> NumericProduct:
+        """Top."""
         return cls(Interval.top(), SignValue.top(), Congruence.top())
 
     @classmethod
     def const(cls, value: int) -> NumericProduct:
+        """Const."""
         return cls(
             Interval.const(value),
             SignValue.from_const(value),
@@ -67,9 +70,11 @@ class NumericProduct(AbstractValue):
         return NumericProduct(new_interval, new_sign, self.congruence)
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self.interval.is_bottom() or self.sign.is_bottom() or self.congruence.is_bottom()
 
     def is_top(self) -> bool:
+        """Is top."""
         return self.interval.is_top() and self.sign.is_top() and self.congruence.is_top()
 
     def may_be_zero(self) -> bool:
@@ -85,6 +90,7 @@ class NumericProduct(AbstractValue):
         return self.interval.must_be_non_zero() or self.sign.must_be_non_zero()
 
     def join(self, other: AbstractValue) -> NumericProduct:
+        """Join."""
         if not isinstance(other, NumericProduct):
             return NumericProduct.top()
         return NumericProduct(
@@ -94,6 +100,7 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def meet(self, other: AbstractValue) -> NumericProduct:
+        """Meet."""
         if not isinstance(other, NumericProduct):
             return self
         return NumericProduct(
@@ -103,6 +110,7 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def widen(self, other: AbstractValue) -> NumericProduct:
+        """Widen."""
         if not isinstance(other, NumericProduct):
             return NumericProduct.top()
         return NumericProduct(
@@ -112,6 +120,7 @@ class NumericProduct(AbstractValue):
         )
 
     def narrow(self, other: AbstractValue) -> NumericProduct:
+        """Narrow."""
         if not isinstance(other, NumericProduct):
             return self
         return NumericProduct(
@@ -121,6 +130,7 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def leq(self, other: AbstractValue) -> bool:
+        """Leq."""
         if not isinstance(other, NumericProduct):
             return False
         return (
@@ -130,6 +140,7 @@ class NumericProduct(AbstractValue):
         )
 
     def add(self, other: NumericProduct) -> NumericProduct:
+        """Add."""
         return NumericProduct(
             self.interval.add(other.interval),
             self.sign.add(other.sign),
@@ -137,6 +148,7 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def sub(self, other: NumericProduct) -> NumericProduct:
+        """Sub."""
         return NumericProduct(
             self.interval.sub(other.interval),
             self.sign.sub(other.sign),
@@ -144,6 +156,7 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def mul(self, other: NumericProduct) -> NumericProduct:
+        """Mul."""
         return NumericProduct(
             self.interval.mul(other.interval),
             self.sign.mul(other.sign),
@@ -178,13 +191,16 @@ class AbstractState:
 
     @classmethod
     def bottom(cls) -> AbstractState:
+        """Bottom."""
         return cls(_is_bottom=True)
 
     @classmethod
     def top(cls) -> AbstractState:
+        """Top."""
         return cls()
 
     def copy(self) -> AbstractState:
+        """Copy."""
         if self._is_bottom:
             return AbstractState.bottom()
         return AbstractState(
@@ -194,34 +210,41 @@ class AbstractState:
         )
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self._is_bottom
 
     def get(self, var: str) -> NumericProduct:
+        """Get."""
         if var in self.variables:
             return self.variables[var]
         return NumericProduct.top()
 
     def set(self, var: str, value: NumericProduct) -> None:
+        """Set."""
         if value.is_bottom():
             self._is_bottom = True
         else:
             self.variables[var] = value
 
     def push(self, value: NumericProduct) -> None:
+        """Push."""
         self.stack.append(value)
 
     def pop(self) -> NumericProduct:
+        """Pop."""
         if self.stack:
             return self.stack.pop()
         return NumericProduct.top()
 
     def peek(self, depth: int = 0) -> NumericProduct:
+        """Peek."""
         idx = -(depth + 1)
         if abs(idx) <= len(self.stack):
             return self.stack[idx]
         return NumericProduct.top()
 
     def join(self, other: AbstractState) -> AbstractState:
+        """Join."""
         if self._is_bottom:
             return other.copy()
         if other._is_bottom:
@@ -235,6 +258,7 @@ class AbstractState:
         return result
 
     def widen(self, other: AbstractState) -> AbstractState:
+        """Widen."""
         if self._is_bottom:
             return other.copy()
         if other._is_bottom:
@@ -248,6 +272,7 @@ class AbstractState:
         return result
 
     def leq(self, other: AbstractState) -> bool:
+        """Leq."""
         if self._is_bottom:
             return True
         if other._is_bottom:

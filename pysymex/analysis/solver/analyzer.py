@@ -99,6 +99,8 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
     }
 
     def __init__(self, engine: Z3Engine):
+        """Init."""
+        """Initialize the class instance."""
         self.engine = engine
         self.cfg_builder = CFGBuilder()
         self.current_function = ""
@@ -194,6 +196,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         )
 
     def _annotation_to_sym_type(self, annotation: object | None) -> SymType:
+        """Annotation to sym type."""
         if annotation in (None, inspect.Signature.empty):
             return SymType.UNKNOWN
         if annotation is bool:
@@ -236,6 +239,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         return SymType.UNKNOWN
 
     def _expr_fingerprint(self, expr: object) -> str:
+        """Expr fingerprint."""
         if hasattr(expr, "sexpr"):
             try:
                 return expr.sexpr()
@@ -244,6 +248,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         return repr(expr)
 
     def _symvalue_fingerprint(self, value: SymValue) -> str:
+        """Symvalue fingerprint."""
         pieces = [
             value.name,
             value.sym_type.name,
@@ -257,6 +262,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         return "|".join(pieces)
 
     def _make_visit_key(self, block_id: int, state: SymbolicState) -> tuple[int, str]:
+        """Make visit key."""
         hasher = hashlib.sha256()
         for constraint in state.path_constraints:
             hasher.update(self._expr_fingerprint(constraint).encode())

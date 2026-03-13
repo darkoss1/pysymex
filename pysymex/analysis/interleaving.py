@@ -69,6 +69,8 @@ class DPORExplorer:
         thread_operations: dict[str, list[int]],
         max_interleavings: int = 1000,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._hb_graph = hb_graph
         self._thread_ops = thread_operations
         self._max_interleavings = max_interleavings

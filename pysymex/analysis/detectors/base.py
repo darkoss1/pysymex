@@ -544,6 +544,7 @@ class TypeErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname == "BINARY_OP":
             if len(state.stack) < 2:
                 return None
@@ -588,6 +589,7 @@ class AttributeErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         return None
 
 
@@ -676,6 +678,8 @@ class OverflowDetector(Detector):
     }
 
     def __init__(self, bound_type: str = "64bit"):
+        """Init."""
+        """Initialize the class instance."""
         self.min_val, self.max_val = self.BOUNDS.get(bound_type, self.BOUNDS["64bit"])
 
     def check(
@@ -684,6 +688,7 @@ class OverflowDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname != "BINARY_OP":
             return None
         op = instruction.argrepr
@@ -725,6 +730,7 @@ class ResourceLeakDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         return None
 
 
@@ -748,6 +754,7 @@ class ValueErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname not in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
             return None
         if len(state.stack) < 2:
@@ -864,6 +871,7 @@ class EnhancedIndexErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname != "BINARY_SUBSCR":
             return None
         if len(state.stack) < 2:
@@ -909,6 +917,7 @@ class EnhancedIndexErrorDetector(Detector):
     def _check_symbolic_list(
         self, state: VMState, container: SymbolicList, index: object
     ) -> Issue | None:
+        """Check symbolic list."""
         if isinstance(index, SymbolicValue):
             oob_constraint = [
                 *state.path_constraints,
@@ -948,6 +957,7 @@ class EnhancedIndexErrorDetector(Detector):
         return None
 
     def _check_unbounded_index(self, state: VMState, index: SymbolicValue) -> Issue | None:
+        """Check unbounded index."""
         large_constraint = [
             *state.path_constraints,
             index.is_int,
@@ -1033,6 +1043,7 @@ class NoneDereferenceDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname not in ("LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR"):
             return None
         if len(state.stack) < 1:
@@ -1127,6 +1138,7 @@ class EnhancedTypeErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname == "BINARY_SUBSCR":
             return self._check_subscript_type(state, instruction)
         if instruction.opname == "BINARY_OP":
@@ -1134,6 +1146,7 @@ class EnhancedTypeErrorDetector(Detector):
         return None
 
     def _check_subscript_type(self, state: VMState, _instruction: dis.Instruction) -> Issue | None:
+        """Check subscript type."""
         if len(state.stack) < 2:
             return None
         container = state.stack[-2]
@@ -1142,6 +1155,7 @@ class EnhancedTypeErrorDetector(Detector):
         return None
 
     def _check_binary_op(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
+        """Check binary op."""
         if len(state.stack) < 2:
             return None
         # Removed noisy string-concat FP for generic values
@@ -1163,6 +1177,7 @@ class FormatStringDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
             return self._check_dangerous_call(state, instruction)
         if instruction.opname == "FORMAT_VALUE":
@@ -1170,6 +1185,7 @@ class FormatStringDetector(Detector):
         return None
 
     def _check_dangerous_call(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
+        """Check dangerous call."""
         if not hasattr(state, "taint_tracker") or state.taint_tracker is None:
             return None
         taint_tracker: object = state.taint_tracker
@@ -1187,6 +1203,7 @@ class FormatStringDetector(Detector):
         return None
 
     def _check_format_value(self, state: VMState, _instruction: dis.Instruction) -> Issue | None:
+        """Check format value."""
         if not hasattr(state, "taint_tracker") or state.taint_tracker is None:
             return None
         taint_tracker: object = state.taint_tracker
@@ -1280,6 +1297,7 @@ class UnboundVariableDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if instruction.opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
             var_name = instruction.argval
 
@@ -1317,6 +1335,7 @@ class TaintFlowDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
+        """Check."""
         if not hasattr(state, "_taint_tracker"):
             return None
         taint_tracker: object = state._taint_tracker
@@ -1360,6 +1379,8 @@ class DetectorRegistry:
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._detectors: dict[str, type[Detector]] = {}
         self._instances: dict[str, Detector] = {}
         self._fn_detectors: dict[str, tuple[DetectorFn, DetectorInfo]] = {}

@@ -43,6 +43,7 @@ class PrioritizedState:
 
     @classmethod
     def from_state(cls, state: VMState, priority: float = 0.0) -> PrioritizedState:
+        """From state."""
         return cls(priority=priority, state=state)
 
 
@@ -76,20 +77,26 @@ class DFSPathManager(PathManager[T]):
     """Depth-first search path exploration."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._stack: list[T] = []
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
+        """Add state."""
         self._stack.append(state)
 
     def get_next_state(self) -> T | None:
+        """Get next state."""
         if self._stack:
             return self._stack.pop()
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._stack) == 0
 
     def size(self) -> int:
+        """Size."""
         return len(self._stack)
 
 
@@ -97,20 +104,26 @@ class BFSPathManager(PathManager[T]):
     """Breadth-first search path exploration."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._queue: collections.deque[T] = collections.deque()
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
+        """Add state."""
         self._queue.append(state)
 
     def get_next_state(self) -> T | None:
+        """Get next state."""
         if self._queue:
             return self._queue.popleft()
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._queue) == 0
 
     def size(self) -> int:
+        """Size."""
         return len(self._queue)
 
 
@@ -118,20 +131,26 @@ class PriorityPathManager(PathManager[T]):
     """Priority-based path exploration (for coverage/directed)."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._heap: list[PrioritizedState[T]] = []
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
+        """Add state."""
         heapq.heappush(self._heap, PrioritizedState(priority, state))
 
     def get_next_state(self) -> T | None:
+        """Get next state."""
         if self._heap:
             return heapq.heappop(self._heap).state
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
+        """Size."""
         return len(self._heap)
 
 
@@ -157,16 +176,20 @@ class CoverageGuidedPathManager(PathManager["VMState"]):
     """
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._heap: list[PrioritizedState] = []
         self._covered_pcs: set[int] = set()
         self._covered_branches: set[tuple[int, bool]] = set()
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
+        """Add state."""
         new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
         adjusted_priority = -new_pcs
         heapq.heappush(self._heap, PrioritizedState(adjusted_priority, state))
 
     def get_next_state(self) -> VMState | None:
+        """Get next state."""
         if self._heap:
             state = heapq.heappop(self._heap).state
             self._covered_pcs.update(state.visited_pcs)
@@ -174,9 +197,11 @@ class CoverageGuidedPathManager(PathManager["VMState"]):
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
+        """Size."""
         return len(self._heap)
 
     def get_coverage(self) -> tuple[int, set[int]]:
@@ -192,10 +217,13 @@ class DirectedPathManager(PathManager):
     """
 
     def __init__(self, targets: set[int]):
+        """Init."""
+        """Initialize the class instance."""
         self._heap: list[PrioritizedState] = []
         self._targets = targets
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
+        """Add state."""
         distance = self._estimate_distance(state)
         heapq.heappush(self._heap, PrioritizedState(distance, state))
 
@@ -207,14 +235,17 @@ class DirectedPathManager(PathManager):
         return float(min_dist)
 
     def get_next_state(self) -> VMState | None:
+        """Get next state."""
         if self._heap:
             return heapq.heappop(self._heap).state
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
+        """Size."""
         return len(self._heap)
 
 
@@ -244,6 +275,8 @@ class HybridPathManager(PathManager["VMState"]):
         coverage_weight: float = 0.3,
         random_weight: float = 0.2,
     ):
+        """Init."""
+        """Initialize the class instance."""
         import random
 
         self._random = random
@@ -261,6 +294,7 @@ class HybridPathManager(PathManager["VMState"]):
         self._total_entries = 0
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
+        """Add state."""
         entry = StateEntry(state, next(self._entry_counter))
         self._dfs.add_state(entry)
         
@@ -293,6 +327,7 @@ class HybridPathManager(PathManager["VMState"]):
                 return entry.state
 
     def get_next_state(self) -> VMState | None:
+        """Get next state."""
         if self.is_empty():
             return None
             
@@ -320,9 +355,11 @@ class HybridPathManager(PathManager["VMState"]):
         return None
 
     def is_empty(self) -> bool:
+        """Is empty."""
         return len(self._returned_entry_ids) >= self._total_entries
 
     def size(self) -> int:
+        """Size."""
         return self._total_entries - len(self._returned_entry_ids)
 
 

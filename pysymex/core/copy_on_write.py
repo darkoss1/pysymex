@@ -28,6 +28,8 @@ class CowDict(Generic[K, V]):
     __slots__ = ("_data", "_hash", "_shared")
 
     def __init__(self, data: dict[K, V] | None = None, *, shared: bool = False) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._data: dict[K, V] = data if data is not None else {}
         self._shared = shared
         self._hash: int | None = None
@@ -39,18 +41,24 @@ class CowDict(Generic[K, V]):
             self._shared = False
 
     def __getitem__(self, key: K) -> V:
+        """Retrieve the value associated with the given key from the dictionary."""
         return self._data[key]
 
     def __contains__(self, key: object) -> bool:
+        """Check if the given key exists in the current dictionary view."""
         return key in self._data
 
     def __len__(self) -> int:
+        """Return the number of key-value pairs in the dictionary."""
         return len(self._data)
 
     def __iter__(self) -> Iterator[K]:
+        """Return an iterator over the dictionary's keys."""
         return iter(self._data)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"CowDict({self._data!r}, shared={self._shared})"
 
     def _safe_hash(self, obj: object) -> int:
@@ -94,6 +102,7 @@ class CowDict(Generic[K, V]):
         return h
 
     def __setitem__(self, key: K, value: V) -> None:
+        """Store a key-value pair, ensuring the internal data is writable first."""
         self._ensure_writable()
         # Invalidate the cached hash on any mutation; recompute lazily on next
         # hash_value() call.  Incremental order-sensitive updates are complex
@@ -102,6 +111,7 @@ class CowDict(Generic[K, V]):
         self._data[key] = value
 
     def __delitem__(self, key: K) -> None:
+        """Remove a key and its value, ensuring the internal data is writable first."""
         if key in self._data:
             self._ensure_writable()
             self._hash = None
@@ -171,16 +181,20 @@ class CowSet:
     __slots__ = ("_data", "_hash", "_shared")
 
     def __init__(self, data: set[int] | None = None, *, shared: bool = False) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._data: set[int] = data if data is not None else set()
         self._shared = shared
         self._hash: int | None = None
 
     def _ensure_writable(self) -> None:
+        """Create a private copy of the backing set if it is currently marked as shared."""
         if self._shared:
             self._data = set(self._data)
             self._shared = False
 
     def add(self, item: int) -> None:
+        """Add an element to the set, ensuring it is writable first."""
         if item not in self._data:
             self._ensure_writable()
             # Invalidate the cached hash; recomputed lazily in hash_value().
@@ -190,18 +204,22 @@ class CowSet:
             self._data.add(item)
 
     def discard(self, item: int) -> None:
+        """Remove an element from the set if it is a member."""
         if item in self._data:
             self._ensure_writable()
             self._hash = None
             self._data.discard(item)
 
     def __contains__(self, item: object) -> bool:
+        """Check if an element is present in the set."""
         return item in self._data
 
     def __len__(self) -> int:
+        """Return the number of elements in the set."""
         return len(self._data)
 
     def __iter__(self) -> Iterator[int]:
+        """Return an iterator over the elements in the set."""
         return iter(self._data)
 
     def hash_value(self) -> int:
@@ -258,6 +276,8 @@ class BranchChain:
         record: BranchRecord | None = None,
         parent: BranchChain | None = None,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.record = record
         self.parent = parent
         if parent is None:
@@ -280,6 +300,7 @@ class BranchChain:
         return result
 
     def __len__(self) -> int:
+        """Return the depth (number of records) of the branch chain."""
         return self._length
 
     @staticmethod
@@ -302,6 +323,8 @@ class ConstraintChain:
         constraint: z3.BoolRef | None = None,
         parent: ConstraintChain | None = None,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.constraint = constraint
         self.parent = parent
 
@@ -350,6 +373,7 @@ class ConstraintChain:
         return result
 
     def __len__(self) -> int:
+        """Return the number of constraints in the chain."""
         return self._length
 
     def __iter__(self) -> Iterator[z3.BoolRef]:
@@ -365,6 +389,7 @@ class ConstraintChain:
         return constraints[index]
 
     def __bool__(self) -> bool:
+        """Return True if the chain is non-empty."""
         return self._length > 0
 
     def hash_value(self) -> int:
@@ -385,4 +410,5 @@ class ConstraintChain:
         return chain
 
     def __repr__(self) -> str:
+        """Return a string representation of the constraint chain."""
         return f"ConstraintChain(length={self._length})"

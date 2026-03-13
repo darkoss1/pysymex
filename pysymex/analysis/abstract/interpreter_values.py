@@ -74,10 +74,12 @@ class SignValue(AbstractValue):
 
     @classmethod
     def bottom(cls) -> SignValue:
+        """Bottom."""
         return cls(Sign.BOTTOM)
 
     @classmethod
     def top(cls) -> SignValue:
+        """Top."""
         return cls(Sign.TOP)
 
     @classmethod
@@ -91,9 +93,11 @@ class SignValue(AbstractValue):
             return cls(Sign.ZERO)
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self.sign == Sign.BOTTOM
 
     def is_top(self) -> bool:
+        """Is top."""
         return self.sign == Sign.TOP
 
     def may_be_zero(self) -> bool:
@@ -113,6 +117,7 @@ class SignValue(AbstractValue):
         return self.sign in {Sign.NEGATIVE, Sign.POSITIVE, Sign.NON_ZERO}
 
     def join(self, other: AbstractValue) -> SignValue:
+        """Join."""
         if not isinstance(other, SignValue):
             return SignValue.top()
         s1, s2 = self.sign, other.sign
@@ -147,6 +152,7 @@ class SignValue(AbstractValue):
         return SignValue.top()
 
     def meet(self, other: AbstractValue) -> SignValue:
+        """Meet."""
         if not isinstance(other, SignValue):
             return self
         s1, s2 = self.sign, other.sign
@@ -165,12 +171,15 @@ class SignValue(AbstractValue):
         return SignValue.bottom()
 
     def widen(self, other: AbstractValue) -> SignValue:
+        """Widen."""
         return self.join(other)
 
     def narrow(self, other: AbstractValue) -> SignValue:
+        """Narrow."""
         return self.meet(other)
 
     def leq(self, other: AbstractValue) -> bool:
+        """Leq."""
         if not isinstance(other, SignValue):
             return False
         if self.sign == Sign.BOTTOM:
@@ -252,34 +261,42 @@ class Interval(AbstractValue):
 
     @classmethod
     def bottom(cls) -> Interval:
+        """Bottom."""
         return cls(None, None, _is_bottom=True)
 
     @classmethod
     def top(cls) -> Interval:
+        """Top."""
         return cls(None, None, _is_bottom=False)
 
     @classmethod
     def const(cls, value: int) -> Interval:
+        """Const."""
         return cls(value, value)
 
     @classmethod
     def range(cls, low: int | None, high: int | None) -> Interval:
+        """Range."""
         if low is not None and high is not None and low > high:
             return cls.bottom()
         return cls(low, high)
 
     @classmethod
     def non_negative(cls) -> Interval:
+        """Non negative."""
         return cls(0, None)
 
     @classmethod
     def positive(cls) -> Interval:
+        """Positive."""
         return cls(1, None)
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self._is_bottom
 
     def is_top(self) -> bool:
+        """Is top."""
         return not self._is_bottom and self.low is None and self.high is None
 
     def is_const(self) -> bool:
@@ -321,6 +338,7 @@ class Interval(AbstractValue):
         return not self.contains(0)
 
     def join(self, other: AbstractValue) -> Interval:
+        """Join."""
         if not isinstance(other, Interval):
             return Interval.top()
         if self._is_bottom:
@@ -340,6 +358,7 @@ class Interval(AbstractValue):
         return Interval(new_low, new_high)
 
     def meet(self, other: AbstractValue) -> Interval:
+        """Meet."""
         if not isinstance(other, Interval):
             return self
         if self._is_bottom or other._is_bottom:
@@ -397,6 +416,7 @@ class Interval(AbstractValue):
         return Interval(new_low, new_high)
 
     def leq(self, other: AbstractValue) -> bool:
+        """Leq."""
         if not isinstance(other, Interval):
             return False
         if self._is_bottom:
@@ -538,10 +558,12 @@ class Congruence(AbstractValue):
 
     @classmethod
     def bottom(cls) -> Congruence:
+        """Bottom."""
         return cls(None, 0, _is_bottom=True)
 
     @classmethod
     def top(cls) -> Congruence:
+        """Top."""
         return cls(None, 0)
 
     @classmethod
@@ -557,20 +579,25 @@ class Congruence(AbstractValue):
         return cls(modulus, remainder % modulus)
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self._is_bottom
 
     def is_top(self) -> bool:
+        """Is top."""
         return not self._is_bottom and self.modulus is None
 
     def is_const(self) -> bool:
+        """Is const."""
         return not self._is_bottom and self.modulus == 0
 
     def get_const(self) -> int | None:
+        """Get const."""
         if self.is_const():
             return self.remainder
         return None
 
     def may_be_zero(self) -> bool:
+        """May be zero."""
         if self._is_bottom:
             return False
         if self.modulus is None:
@@ -580,6 +607,7 @@ class Congruence(AbstractValue):
         return self.remainder == 0
 
     def must_be_even(self) -> bool:
+        """Must be even."""
         if self._is_bottom:
             return True
         if self.modulus is None:
@@ -589,6 +617,7 @@ class Congruence(AbstractValue):
         return self.modulus % 2 == 0 and self.remainder % 2 == 0
 
     def join(self, other: AbstractValue) -> Congruence:
+        """Join."""
         if not isinstance(other, Congruence):
             return Congruence.top()
         if self._is_bottom:
@@ -611,6 +640,7 @@ class Congruence(AbstractValue):
         return Congruence(new_mod, new_rem)
 
     def meet(self, other: AbstractValue) -> Congruence:
+        """Meet."""
         if not isinstance(other, Congruence):
             return self
         if self._is_bottom or other._is_bottom:
@@ -627,12 +657,15 @@ class Congruence(AbstractValue):
         return self
 
     def widen(self, other: AbstractValue) -> Congruence:
+        """Widen."""
         return self.join(other)
 
     def narrow(self, other: AbstractValue) -> Congruence:
+        """Narrow."""
         return self.meet(other)
 
     def leq(self, other: AbstractValue) -> bool:
+        """Leq."""
         if not isinstance(other, Congruence):
             return False
         if self._is_bottom:

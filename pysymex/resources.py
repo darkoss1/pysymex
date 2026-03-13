@@ -53,6 +53,8 @@ class LimitExceeded(Exception):
     """
 
     def __init__(self, resource_type: ResourceType, current: object, limit: object):
+        """Init."""
+        """Initialize the class instance."""
         self.resource_type = resource_type
         self.current = current
         self.limit = limit
@@ -67,6 +69,8 @@ class AnalysisTimeoutError(LimitExceeded):
     """
 
     def __init__(self, elapsed: float, limit: float):
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(ResourceType.TIME, elapsed, limit)
 
 
@@ -175,6 +179,8 @@ class ResourceTracker:
     """
 
     def __init__(self, limits: ResourceLimits | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.limits = limits or ResourceLimits()
         self._paths_explored: int = 0
         self._current_depth: int = 0
@@ -456,6 +462,7 @@ def timeout_context(seconds: float, message: str = "Operation timed out"):
         return
 
     def handler(_signum: int, frame: object) -> None:
+        """Handler."""
         raise AnalysisTimeoutError(seconds, seconds)
 
     old_handler = signal.signal(signal.SIGALRM, handler)
@@ -482,6 +489,8 @@ class GracefulDegradation:
     """
 
     def __init__(self, tracker: ResourceTracker):
+        """Init."""
+        """Initialize the class instance."""
         self.tracker = tracker
         self._strategies: list[str] = []
 

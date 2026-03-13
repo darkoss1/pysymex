@@ -43,6 +43,8 @@ class ObjectId:
     __slots__ = ("_id", "_name", "_z3_id", "_z3_lock")
 
     def __init__(self, name: str | None = None):
+        """Init."""
+        """Initialize the class instance."""
         with ObjectId._counter_lock:
             ObjectId._counter += 1
             self._id = ObjectId._counter
@@ -52,10 +54,14 @@ class ObjectId:
 
     @property
     def id(self) -> int:
+        """Id."""
+        """Property returning the id."""
         return self._id
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ArithRef:
@@ -67,17 +73,25 @@ class ObjectId:
         return self._z3_id
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if isinstance(other, ObjectId):
             return self._id == other._id
         return False
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(self._id)
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return self._name
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"ObjectId({self._name})"
 
 
@@ -172,6 +186,7 @@ class SymbolicClass:
     )
 
     def __post_init__(self):
+        """Post init."""
         if not self.qualname:
             self.qualname = self.name
         if self._id is None:
@@ -179,6 +194,8 @@ class SymbolicClass:
 
     @property
     def id(self) -> ObjectId:
+        """Id."""
+        """Property returning the id."""
         if self._id is None:
             self._id = ObjectId(f"class_{self.name}")
         return self._id
@@ -220,9 +237,13 @@ class SymbolicClass:
         return other in self.mro
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return f"<class '{self.qualname}'>"
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicClass({self.name !r})"
 
 
@@ -248,6 +269,7 @@ def compute_mro(cls: SymbolicClass) -> tuple[SymbolicClass, ...]:
         return (cls,)
 
     def merge(seqs: list[list[SymbolicClass]]) -> list[SymbolicClass]:
+        """Merge."""
         result: list[SymbolicClass] = []
         while True:
             seqs = [s for s in seqs if s]
@@ -294,11 +316,14 @@ class SymbolicObject:
     slots: tuple[str, ...] | None = None
 
     def __post_init__(self):
+        """Post init."""
         if self._id is None:
             self._id = ObjectId(f"inst_{self.cls.name}")
 
     @property
     def id(self) -> ObjectId:
+        """Id."""
+        """Property returning the id."""
         if self._id is None:
             self._id = ObjectId(f"inst_{self.cls.name}")
         return self._id
@@ -354,9 +379,13 @@ class SymbolicObject:
         return self.cls.is_subclass_of(other_cls)
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return f"<{self.cls.qualname} object at {self._id}>"
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicObject({self.cls.name !r}, {self._id})"
 
 
@@ -376,14 +405,20 @@ class SymbolicMethod:
 
     @property
     def is_bound(self) -> bool:
+        """Is bound."""
+        """Property returning the is_bound."""
         return self.instance is not None
 
     @property
     def __self__(self) -> SymbolicObject | None:
+        """Self."""
+        """Property returning the __self__."""
         return self.instance
 
     @property
     def __func__(self) -> object:
+        """Func."""
+        """Property returning the __func__."""
         return self.func
 
     def bind(self, instance: SymbolicObject) -> SymbolicMethod:
@@ -395,6 +430,8 @@ class SymbolicMethod:
         )
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         if self.is_bound:
             return f"<bound method {self.func} of {self.instance}>"
         return f"<function {self.func}>"
@@ -473,6 +510,7 @@ class SymbolicSuper:
     obj_type: SymbolicClass | None = None
 
     def __post_init__(self):
+        """Post init."""
         if self.obj is not None and self.obj_type is None:
             object.__setattr__(self, "obj_type", self.obj.cls)
 

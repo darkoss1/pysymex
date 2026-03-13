@@ -121,6 +121,8 @@ class PysymexLogger:
         stream: TextIO | None = None,
         file_path: Path | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.level = level
         self._stream = stream or sys.stdout
         self._color = color and supports_color(self._stream)
@@ -341,6 +343,8 @@ class PythonLoggingBridge(logging.Handler):
     """Bridge PySyMex logger to Python's logging module."""
 
     def __init__(self, shadow_logger: PysymexLogger):
+        """Init."""
+        """Initialize the class instance."""
         super().__init__()
         self.shadow_logger = shadow_logger
         self._level_map = {
@@ -352,6 +356,7 @@ class PythonLoggingBridge(logging.Handler):
         }
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Emit."""
         level = self._level_map.get(record.levelno, LogLevel.NORMAL)
         message = self.format(record)
         if record.levelno >= logging.ERROR:

@@ -128,6 +128,8 @@ class TracingSolverProxy:
         tracer: ExecutionTracer,
         state_getter: Any,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
 
         object.__setattr__(self, "_inner", inner)
         object.__setattr__(self, "_tracer", tracer)
@@ -246,6 +248,8 @@ class ExecutionTracer:
     """
 
     def __init__(self, config: TracerConfig | None = None) -> None:
+        """Init."""
+        """Initialize the class instance."""
 
         self._config: TracerConfig = config if config is not None else TracerConfig.from_env()
         self._registry: Z3SemanticRegistry = Z3SemanticRegistry()
@@ -382,9 +386,13 @@ class ExecutionTracer:
         return self._trace_path
 
     def __enter__(self) -> ExecutionTracer:
+        """Enter."""
+        """Enter the runtime context."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit."""
+        """Exit the runtime context."""
         if exc_type is not None:
             try:
                 self.end_session()

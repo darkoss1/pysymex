@@ -121,6 +121,8 @@ class AnalysisResultBuilder:
     """
 
     def __init__(self, file_path: str) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.file_path = file_path
         self.issues: list[Issue] = []
         self.taint_violations: list[TaintViolation] = []
@@ -131,18 +133,22 @@ class AnalysisResultBuilder:
         self.suppressed_count: int = 0
 
     def add_issue(self, issue: Issue) -> AnalysisResultBuilder:
+        """Add issue."""
         self.issues.append(issue)
         return self
 
     def add_taint_violation(self, violation: TaintViolation) -> AnalysisResultBuilder:
+        """Add taint violation."""
         self.taint_violations.append(violation)
         return self
 
     def add_warning(self, warning: object) -> AnalysisResultBuilder:
+        """Add warning."""
         self.warnings.append(warning)
         return self
 
     def increment_functions(self, n: int = 1) -> AnalysisResultBuilder:
+        """Increment functions."""
         self.functions_analyzed += n
         return self
 

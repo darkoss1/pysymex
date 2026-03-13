@@ -36,6 +36,8 @@ class Definition:
     line: int | None = None
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"Def({self.var_name}@{self.pc})"
 
 
@@ -49,6 +51,8 @@ class Use:
     line: int | None = None
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"Use({self.var_name}@{self.pc})"
 
 
@@ -83,6 +87,8 @@ class Expression:
     operands: tuple[str, ...]
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         if len(self.operands) == 1:
             return f"{self.operator}({self.operands[0]})"
         return f"({self.operands[0]} {self.operator} {self.operands[1]})"
@@ -104,12 +110,15 @@ class NullInfo:
     states: dict[str, NullState] = field(default_factory=dict[str, NullState])
 
     def copy(self) -> NullInfo:
+        """Copy."""
         return NullInfo(states=dict(self.states))
 
     def get_state(self, var_name: str) -> NullState:
+        """Get state."""
         return self.states.get(var_name, NullState.UNKNOWN)
 
     def set_state(self, var_name: str, state: NullState) -> None:
+        """Set state."""
         self.states[var_name] = state
 
     def join(self, other: NullInfo) -> NullInfo:
@@ -130,9 +139,13 @@ class NullInfo:
         return result
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, NullInfo):
             return False
         return self.states == other.states
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(tuple(sorted(self.states.items())))

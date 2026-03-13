@@ -64,6 +64,7 @@ class ExtendedStdlibRegistry:
     """Registry for extended stdlib models."""
 
     def __init__(self):
+        """Initialize a new ExtendedStdlibRegistry instance."""
         self._models: dict[str, FunctionModel] = {}
         self._register_all()
 

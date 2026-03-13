@@ -33,6 +33,8 @@ class PropertyProver:
     """
 
     def __init__(self, timeout_ms: int = 10000):
+        """Init."""
+        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -441,6 +443,8 @@ class ArithmeticVerifier:
     """
 
     def __init__(self, int_bits: int = 64, timeout_ms: int = 5000):
+        """Init."""
+        """Initialize the class instance."""
         self.int_bits = int_bits
         self.int_min = -(2 ** (int_bits - 1))
         self.int_max = 2 ** (int_bits - 1) - 1
@@ -581,6 +585,8 @@ class EquivalenceChecker:
     """
 
     def __init__(self, timeout_ms: int = 10000):
+        """Init."""
+        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)

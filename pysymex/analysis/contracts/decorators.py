@@ -40,6 +40,7 @@ def requires(
     """
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
+        """Decorator."""
         key = f"{func .__module__ }.{func .__qualname__ }"
         if key not in function_contracts:
             function_contracts[key] = FunctionContract(function_name=func.__name__)
@@ -54,6 +55,7 @@ def requires(
 
         @functools.wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:
+            """Wrapper."""
             return func(*args, **kwargs)
 
         wrapper.__contract__ = contract
@@ -76,6 +78,7 @@ def ensures(
     """
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
+        """Decorator."""
         key = f"{func .__module__ }.{func .__qualname__ }"
         if key not in function_contracts:
             function_contracts[key] = FunctionContract(function_name=func.__name__)
@@ -90,6 +93,7 @@ def ensures(
 
         @functools.wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:
+            """Wrapper."""
             return func(*args, **kwargs)
 
         wrapper.__contract__ = contract
@@ -109,6 +113,7 @@ def invariant(condition: str, message: str | None = None):
     """
 
     def decorator(cls: type) -> type:
+        """Decorator."""
         if not hasattr(cls, "__invariants__"):
             cls.__invariants__ = []
         cls.__invariants__.append(

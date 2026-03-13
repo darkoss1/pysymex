@@ -110,6 +110,7 @@ def check_negative_shift(
 
 
 def _is_concrete_zero_divisor(value: SymbolicValue) -> bool:
+    """Is concrete zero divisor."""
     return z3.is_int_value(value.z3_int) and value.z3_int.as_long() == 0
 
 
@@ -538,6 +539,7 @@ def _get_binop_result(
     op_code: str,
     state: VMState,
 ) -> tuple[StackValue | None, list[Issue], bool]:
+    """Get binop result."""
     issues: list[Issue] = []
     terminal = False
     result = None

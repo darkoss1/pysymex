@@ -44,6 +44,8 @@ class FunctionSummaryCache:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._cache: dict[tuple[str, int], Any] = {}
         self._hits = 0
         self._misses = 0
@@ -131,6 +133,8 @@ class CallGraph:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.nodes: dict[str, CallGraphNode] = {}
         self.entry_points: set[str] = set()
 
@@ -236,6 +240,8 @@ class CallGraphBuilder:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.call_graph = CallGraph()
 
     def build_from_module(self, module_code: object) -> CallGraph:
@@ -403,6 +409,8 @@ class EffectAnalyzer:
     }
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.cache: dict[str, EffectSummary] = {}
 
     def analyze_function(self, code: object, name: str = "") -> EffectSummary:
@@ -569,6 +577,8 @@ class ContextSensitiveAnalyzer:
     """
 
     def __init__(self, k: int = 2) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.k = k
         self.summaries: dict[tuple[str, CallContext], ContextSensitiveSummary] = {}
         self.call_graph: CallGraph | None = None
@@ -636,6 +646,8 @@ class CrossFunctionAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.call_graph_builder = CallGraphBuilder()
         self.effect_analyzer = EffectAnalyzer()
         self.escape_analyzer = EscapeAnalyzer()

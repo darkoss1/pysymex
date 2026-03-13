@@ -92,6 +92,8 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
     """
 
     def __init__(self, file_path: str) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.file_path = file_path
         self.warnings: list[ExceptionWarning] = []
         self.try_blocks: list[TryBlock] = []
@@ -588,7 +590,9 @@ class ExceptionChainAnalyzer:
             return warnings
 
         class ChainVisitor(ast.NodeVisitor):
+            """Visitor for analyzing exception causal chains."""
             def visit_Raise(self, node: ast.Raise) -> None:
+                """Visit raise."""
                 if node.exc and not node.cause:
                     pass
                 self.generic_visit(node)
@@ -604,6 +608,8 @@ class ExceptionAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.bytecode_analyzer = ExceptionBytecodeAnalyzer()
         self.uncaught_analyzer = UncaughtExceptionAnalyzer()
         self.chain_analyzer = ExceptionChainAnalyzer()

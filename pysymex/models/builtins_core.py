@@ -423,6 +423,7 @@ class PrintModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the print() - side effect only."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -438,6 +439,7 @@ class TypeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the type()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -456,6 +458,7 @@ class IsinstanceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the isinstance()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -492,6 +495,7 @@ class SortedModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the sorted()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -549,6 +553,7 @@ class EnumerateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the enumerate()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -565,6 +570,7 @@ class ZipModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the zip()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -581,6 +587,7 @@ class MapModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the map()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -597,6 +604,7 @@ class FilterModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the filter()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -613,6 +621,7 @@ class FloatModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the float()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -650,6 +659,7 @@ class ListModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the list()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -680,6 +690,7 @@ class TupleModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the tuple()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -706,6 +717,7 @@ class NoneModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the NoneType/None."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

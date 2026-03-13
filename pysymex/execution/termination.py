@@ -67,6 +67,8 @@ class TerminationAnalyzer:
     """Analyzes loop termination using ranking functions."""
 
     def __init__(self, timeout_ms: int = 5000):
+        """Init."""
+        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)

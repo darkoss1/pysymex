@@ -112,6 +112,7 @@ class FunctionSummary:
     return_var: z3.ExprRef | None = None
 
     def __post_init__(self):
+        """Post init."""
         if not self.qualname:
             self.qualname = self.name
         if self.return_var is None:

@@ -41,6 +41,8 @@ class SymbolicAddress:
         offset: int | z3.BitVecRef = 0,
         type_tag: str = "unknown",
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.region = region
         self.type_tag = type_tag
         if isinstance(base, int):
@@ -96,9 +98,13 @@ class SymbolicAddress:
         return result
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicAddress({self.region.name}, base={self.base}, offset={self.offset})"
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, SymbolicAddress):
             return False
         return (
@@ -108,6 +114,8 @@ class SymbolicAddress:
         )
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash((self.region, str(self.base), str(self.offset)))
 
 

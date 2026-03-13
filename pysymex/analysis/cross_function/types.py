@@ -128,6 +128,8 @@ class CallContext:
         return CallContext(new_string)
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         if not self.call_string:
             return "<entry>"
         return " -> ".join(f"{caller }@{pc }" for caller, pc in self.call_string)

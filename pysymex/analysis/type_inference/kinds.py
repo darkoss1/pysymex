@@ -53,63 +53,78 @@ class TypeKind(Enum):
 
     @classmethod
     def int_type(cls) -> PyType:
+        """Int type."""
         return PyType.int_()
 
     @classmethod
     def str_type(cls) -> PyType:
+        """Str type."""
         return PyType.str_()
 
     @classmethod
     def bool_type(cls) -> PyType:
+        """Bool type."""
         return PyType.bool_()
 
     @classmethod
     def float_type(cls) -> PyType:
+        """Float type."""
         return PyType.float_()
 
     @classmethod
     def list_type(cls, element_type: PyType | None = None) -> PyType:
+        """List type."""
         return PyType.list_(element_type)
 
     @classmethod
     def dict_type(cls, key_type: PyType | None = None, value_type: PyType | None = None) -> PyType:
+        """Dict type."""
         return PyType.dict_(key_type, value_type)
 
     @classmethod
     def tuple_type(cls, *element_types: PyType) -> PyType:
+        """Tuple type."""
         return PyType.tuple_(*element_types)
 
     @classmethod
     def set_type(cls, element_type: PyType | None = None) -> PyType:
+        """Set type."""
         return PyType.set_(element_type)
 
     @classmethod
     def none_type(cls) -> PyType:
+        """None type."""
         return PyType.none()
 
     @classmethod
     def int_(cls) -> PyType:
+        """Int."""
         return PyType(kind=cls.INT, name="int")
 
     @classmethod
     def str_(cls) -> PyType:
+        """Str."""
         return PyType(kind=cls.STR, name="str")
 
     @classmethod
     def bool_(cls) -> PyType:
+        """Bool."""
         return PyType(kind=cls.BOOL, name="bool")
 
     @classmethod
     def float_(cls) -> PyType:
+        """Float."""
         return PyType(kind=cls.FLOAT, name="float")
 
     @classmethod
     def list_(cls, element_type: PyType | None = None) -> PyType:
+        """List."""
         params = (element_type,) if element_type else ()
         return PyType(kind=cls.LIST, name="list", params=params)
 
     @classmethod
     def dict_(cls, key_type: PyType | None = None, value_type: PyType | None = None) -> PyType:
+        """Dict."""
         params = ()
         if key_type and value_type:
             params = (key_type, value_type)
@@ -117,15 +132,18 @@ class TypeKind(Enum):
 
     @classmethod
     def tuple_(cls, *element_types: PyType) -> PyType:
+        """Tuple."""
         return PyType(kind=cls.TUPLE, name="tuple", params=element_types)
 
     @classmethod
     def set_(cls, element_type: PyType | None = None) -> PyType:
+        """Set."""
         params = (element_type,) if element_type else ()
         return PyType(kind=cls.SET, name="set", params=params)
 
     @classmethod
     def none(cls) -> PyType:
+        """None."""
         return PyType(kind=cls.NONE, name="None")
 
     FUNCTION = auto()
@@ -175,6 +193,8 @@ class PyType:
     known_keys: frozenset[object] = frozenset()
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(
             (
                 self.kind,
@@ -191,6 +211,8 @@ class PyType:
         )
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, PyType):
             return False
         return (
@@ -571,6 +593,8 @@ class PyType:
         return False
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         if self.kind == TypeKind.UNION:
             members = " | ".join(repr(m) for m in sorted(self.union_members, key=str))
             return f"({members })"

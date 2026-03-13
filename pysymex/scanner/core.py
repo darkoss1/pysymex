@@ -373,6 +373,7 @@ def scan_file(
         seen: set[str] = set()
 
         def _handle_issue(issue: object) -> None:
+            """Handle issue."""
             import re
             # Check if it's already a dict (from range checker)
             if isinstance(issue, dict):

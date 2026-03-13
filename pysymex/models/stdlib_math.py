@@ -27,6 +27,7 @@ class MathSqrtModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.sqrt()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"sqrt_{state .pc }")
@@ -58,6 +59,7 @@ class MathCeilModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.ceil()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"ceil_{state .pc }")
@@ -88,6 +90,7 @@ class MathFloorModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.floor()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"floor_{state .pc }")
@@ -118,6 +121,7 @@ class MathLogModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.log()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"log_{state .pc }")
@@ -149,6 +153,7 @@ class MathExpModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.exp()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"exp_{state .pc }")
@@ -178,6 +183,7 @@ class MathSinModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.sin()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"sin_{state .pc }")
@@ -205,6 +211,7 @@ class MathCosModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.cos()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"cos_{state .pc }")
@@ -232,6 +239,7 @@ class MathTanModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.tan()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"tan_{state .pc }")
@@ -251,6 +259,7 @@ class MathFabsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.fabs()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"fabs_{state .pc }")
@@ -284,6 +293,7 @@ class MathGcdModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.gcd()."""
     ) -> ModelResult:
         if len(args) < 2:
             result, constraint = SymbolicValue.symbolic(f"gcd_{state .pc }")
@@ -308,6 +318,7 @@ class MathIsfiniteModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.isfinite()."""
     ) -> ModelResult:
         if not args:
             result, constraint = SymbolicValue.symbolic(f"isfinite_{state .pc }")
@@ -333,6 +344,7 @@ class MathIsCloseModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.isclose()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"isclose_{state .pc }")
         if (
@@ -366,6 +378,7 @@ class MathIsinfModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.isinf()."""
     ) -> ModelResult:
         if not args:
             return ModelResult(value=SymbolicValue.from_const(False))
@@ -386,6 +399,7 @@ class MathIsnanModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
+        """Apply the math.isnan()."""
     ) -> ModelResult:
         if not args:
             return ModelResult(value=SymbolicValue.from_const(False))

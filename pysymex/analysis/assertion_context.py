@@ -124,6 +124,7 @@ def analyze_source_context(
         Tuple of (ContextType, confidence)
     """
     def check_content(content: str) -> tuple[ContextType, float] | None:
+        """Check content."""
         for pattern in PRODUCTION_PATTERNS:
             if pattern.search(content):
                 return ContextType.PRODUCTION_CHECK, 0.85

@@ -63,6 +63,7 @@ class DictGetModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.get(key, default) - safe key access, never raises."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -87,6 +88,7 @@ class DictGetitemModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict[key] - may raise KeyError."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -121,6 +123,7 @@ class DictSetitemModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict[key] = value - adds or updates key."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -176,6 +179,7 @@ class DictDelitemModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the del dict[key] - may raise KeyError."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -218,6 +222,7 @@ class DictKeysModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.keys() - returns view of keys."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -240,6 +245,7 @@ class DictValuesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.values() - returns view of values."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -262,6 +268,7 @@ class DictItemsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.items() - returns view of (key, value) pairs."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -287,6 +294,7 @@ class DictPopModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.pop(key, [default]) - remove and return value."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -332,6 +340,7 @@ class DictPopitemModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.popitem() - remove and return (key, value) pair."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -372,6 +381,7 @@ class DictUpdateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.update(other) - merge other into dict."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -410,6 +420,7 @@ class DictClearModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.clear() - remove all items."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -442,6 +453,7 @@ class DictCopyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.copy() - shallow copy."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -467,6 +479,7 @@ class DictSetdefaultModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.setdefault(key, default) - get or set key."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -501,6 +514,7 @@ class DictContainsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the 'key in dict' operation."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -526,6 +540,7 @@ class DictLenModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the len(dict)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -555,6 +570,7 @@ class DictFromkeysModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.fromkeys(iterable, value)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -577,6 +593,7 @@ class DictEqModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.__eq__(other)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -599,6 +616,7 @@ class DictOrModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.__or__(other) - merge operator (Python 3.9+)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -625,6 +643,7 @@ class DictIorModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the dict.__ior__(other) - in-place merge via |=."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

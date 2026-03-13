@@ -33,6 +33,7 @@ class PathModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the pathlib.Path() constructor."""
         if args and isinstance(args[0], str):
             result = SymbolicString.from_const(args[0])
             return ModelResult(value=result)
@@ -51,6 +52,7 @@ class PurePathModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the pathlib.PurePath() constructor."""
         if args and isinstance(args[0], str):
             result = SymbolicString.from_const(args[0])
             return ModelResult(value=result)
@@ -67,6 +69,7 @@ class PathExistsModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.exists()."""
         result, constraint = SymbolicValue.symbolic(f"path_exists_{state .pc }")
         return ModelResult(
             value=result,
@@ -84,6 +87,7 @@ class PathIsFileModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.is_file()."""
         result, constraint = SymbolicValue.symbolic(f"path_is_file_{state .pc }")
         return ModelResult(
             value=result,
@@ -101,6 +105,7 @@ class PathIsDirModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.is_dir()."""
         result, constraint = SymbolicValue.symbolic(f"path_is_dir_{state .pc }")
         return ModelResult(
             value=result,
@@ -118,6 +123,7 @@ class PathIsAbsoluteModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.is_absolute()."""
         result, constraint = SymbolicValue.symbolic(f"path_is_absolute_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
@@ -131,6 +137,7 @@ class PathNameModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.name property (final component)."""
         result, constraint = SymbolicString.symbolic(f"path_name_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -144,6 +151,7 @@ class PathStemModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.stem property (name without suffix)."""
         result, constraint = SymbolicString.symbolic(f"path_stem_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -157,6 +165,7 @@ class PathSuffixModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.suffix property (file extension)."""
         result, constraint = SymbolicString.symbolic(f"path_suffix_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -170,6 +179,7 @@ class PathParentModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.parent property."""
         result, constraint = SymbolicString.symbolic(f"path_parent_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -183,6 +193,7 @@ class PathJoinpathModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.joinpath()."""
         result, constraint = SymbolicString.symbolic(f"path_joined_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
 
@@ -196,6 +207,7 @@ class PathTruedivModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.__truediv__ (the / operator)."""
         result, constraint = SymbolicString.symbolic(f"path_div_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
 
@@ -209,6 +221,7 @@ class PathReadTextModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.read_text()."""
         result, constraint = SymbolicString.symbolic(f"file_content_{state .pc }")
         return ModelResult(
             value=result,
@@ -226,6 +239,7 @@ class PathReadBytesModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.read_bytes()."""
         result, constraint = SymbolicValue.symbolic(f"file_bytes_{state .pc }")
         return ModelResult(
             value=result,
@@ -243,6 +257,7 @@ class PathWriteTextModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.write_text()."""
         result, constraint = SymbolicValue.symbolic(f"bytes_written_{state .pc }")
         return ModelResult(
             value=result,
@@ -260,6 +275,7 @@ class PathWriteBytesModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.write_bytes()."""
         result, constraint = SymbolicValue.symbolic(f"bytes_written_{state .pc }")
         return ModelResult(
             value=result,
@@ -277,6 +293,7 @@ class PathResolveModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.resolve()."""
         result, constraint = SymbolicString.symbolic(f"path_resolved_{state .pc }")
         return ModelResult(
             value=result,
@@ -294,6 +311,7 @@ class PathMkdirModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.mkdir()."""
         return ModelResult(
             value=SymbolicNone("none"),
             side_effects={"io": True, "creates_dir": True},
@@ -309,6 +327,7 @@ class PathUnlinkModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.unlink()."""
         return ModelResult(
             value=SymbolicNone("none"),
             side_effects={"io": True, "deletes_file": True},
@@ -324,6 +343,7 @@ class PathGlobModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.glob()."""
         from pysymex.core.types import SymbolicList
 
         result, constraint = SymbolicList.symbolic(f"glob_results_{state .pc }")
@@ -343,6 +363,7 @@ class PathRglobModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
+        """Apply the Path.rglob() (recursive glob)."""
         from pysymex.core.types import SymbolicList
 
         result, constraint = SymbolicList.symbolic(f"rglob_results_{state .pc }")

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 
 def _raise_incompatible_merge(expected_type: str, other: object) -> None:
+    """Raise incompatible merge."""
     actual_type = type(other).__name__
     raise TypeError(f"cannot conditionally merge {expected_type} with {actual_type}")
 
@@ -40,6 +41,7 @@ class SymbolicString(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
+        """Post init."""
         if self._name:
             ln = self._name.lower()
             if ln == "self" or ln.startswith("self_") or \
@@ -50,39 +52,56 @@ class SymbolicString(SymbolicType):
 
     @property
     def is_int(self) -> z3.BoolRef:
+        """Is int."""
+        """Property returning the is_int."""
         return Z3_FALSE
 
     @property
     def is_bool(self) -> z3.BoolRef:
+        """Is bool."""
+        """Property returning the is_bool."""
         return Z3_FALSE
 
     @property
     def is_str(self) -> z3.BoolRef:
+        """Is str."""
+        """Property returning the is_str."""
         return Z3_TRUE
 
     @property
     def is_none(self) -> z3.BoolRef:
+        """Is none."""
+        """Property returning the is_none."""
         return Z3_FALSE
 
     @property
     def is_obj(self) -> z3.BoolRef:
+        """Is obj."""
+        """Property returning the is_obj."""
         return Z3_FALSE
 
     @property
     def is_path(self) -> z3.BoolRef:
+        """Is path."""
+        """Property returning the is_path."""
         return Z3_FALSE
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_str
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return self.z3_len > 0
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return self.z3_len == 0
 
 
@@ -178,6 +197,7 @@ class SymbolicString(SymbolicType):
         )
 
     def hash_value(self) -> int:
+        """Hash value."""
         return self.z3_str.hash() ^ self.z3_len.hash()
 
     def startswith(self, prefix: str | SymbolicString) -> SymbolicValue:
@@ -200,6 +220,8 @@ class SymbolicString(SymbolicType):
         )
 
     def __eq__(self, other: object) -> SymbolicValue:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, SymbolicString):
             return SymbolicValue.from_const(False)
         return SymbolicValue(
@@ -237,9 +259,12 @@ class SymbolicString(SymbolicType):
         return val_self.conditional_merge(other, condition)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicString({self._name})"
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -278,6 +303,7 @@ class SymbolicList(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
+        """Post init."""
         if self._name:
             ln = self._name.lower()
             if ln == "self" or ln.startswith("self_") or \
@@ -288,18 +314,24 @@ class SymbolicList(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_array
 
     def hash_value(self) -> int:
+        """Hash value."""
         return self.z3_array.hash() ^ self.z3_len.hash()
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return self.z3_len > 0
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return self.z3_len == 0
 
     def with_taint(self, label: str | set[str] | frozenset[str]) -> SymbolicList:
@@ -437,9 +469,12 @@ class SymbolicList(SymbolicType):
         )
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicList({self._name}, len={self.z3_len})"
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -474,6 +509,7 @@ class SymbolicDict(SymbolicType):
     _h_active: bool = field(default=False)
 
     def __post_init__(self):
+        """Post init."""
         if self._name:
             ln = self._name.lower()
             if ln == "self" or ln.startswith("self_") or \
@@ -484,15 +520,20 @@ class SymbolicDict(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_array
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return self.z3_len > 0
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return self.z3_len == 0
 
     def hash_value(self) -> int:
@@ -618,9 +659,12 @@ class SymbolicDict(SymbolicType):
         )
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicDict({self._name})"
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -659,6 +703,7 @@ class SymbolicObject(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
+        """Post init."""
         if not self.potential_addresses and self.address != -1:
             self.potential_addresses = {self.address}
         if self._name:
@@ -669,42 +714,60 @@ class SymbolicObject(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     @property
     def is_int(self) -> z3.BoolRef:
+        """Is int."""
+        """Property returning the is_int."""
         return Z3_FALSE
 
     @property
     def is_bool(self) -> z3.BoolRef:
+        """Is bool."""
+        """Property returning the is_bool."""
         return Z3_FALSE
 
     @property
     def is_str(self) -> z3.BoolRef:
+        """Is str."""
+        """Property returning the is_str."""
         return Z3_FALSE
 
     @property
     def is_none(self) -> z3.BoolRef:
+        """Is none."""
+        """Property returning the is_none."""
         return Z3_FALSE
 
     @property
     def is_obj(self) -> z3.BoolRef:
+        """Is obj."""
+        """Property returning the is_obj."""
         return Z3_TRUE
 
     @property
     def is_path(self) -> z3.BoolRef:
+        """Is path."""
+        """Property returning the is_path."""
         return Z3_FALSE
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return self.z3_addr
 
     def hash_value(self) -> int:
+        """Hash value."""
         return self.z3_addr.hash()
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return self.z3_addr != 0
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return self.z3_addr == 0
 
     @staticmethod
@@ -721,6 +784,8 @@ class SymbolicObject(SymbolicType):
         return SymbolicObject(f"obj_{addr}", addr, z3.IntVal(addr), {addr})
 
     def __eq__(self, other: object) -> SymbolicValue:
+        """Eq."""
+        """Check for equality with another object."""
         if not isinstance(other, SymbolicObject):
             if isinstance(other, SymbolicNone):
                 return SymbolicValue(
@@ -752,6 +817,8 @@ class SymbolicObject(SymbolicType):
         )
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicObject({self._name}, addr={self.address})"
 
     def conditional_merge(
@@ -795,6 +862,7 @@ class SymbolicObject(SymbolicType):
         return val_self.conditional_merge(other, condition)
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(
@@ -834,21 +902,29 @@ class SymbolicIterator(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Name."""
+        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """To z3."""
         return z3.IntVal(0)
 
     def hash_value(self) -> int:
+        """Hash value."""
         return hash(("iterator", id(self.iterable), self.index))
 
     def could_be_truthy(self) -> z3.BoolRef:
+        """Could be truthy."""
         return z3.BoolVal(True)
 
     def could_be_falsy(self) -> z3.BoolRef:
+        """Could be falsy."""
         return z3.BoolVal(False)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"SymbolicIterator(of {self.iterable}, index={self.index})"
 
     def advance(self) -> SymbolicIterator:
@@ -858,6 +934,7 @@ class SymbolicIterator(SymbolicType):
         return dataclasses.replace(self, index=self.index + 1)
 
     def as_unified(self) -> SymbolicValue:
+        """As unified."""
         from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
 
         return SymbolicValue(

@@ -130,6 +130,8 @@ class HavocValue(SymbolicValue):
         return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return f"HavocValue({self._name})"
 
 

@@ -43,6 +43,8 @@ class ClassInvariant:
     class_name: str = ""
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         if self.message:
             return f"{self.condition} ({self.message})"
         return self.condition
@@ -67,6 +69,8 @@ class InvariantViolation:
     counterexample: dict[str, object] | None = None
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return f"Invariant '{self.invariant}' violated at {self.when} of {self.method_name}"
 
 
@@ -87,6 +91,7 @@ def invariant(
     """
 
     def decorator(cls: type) -> type:
+        """Decorator."""
         if not hasattr(cls, "__invariants__"):
             cls.__invariants__ = []
         cls.__invariants__.append(
@@ -128,6 +133,8 @@ class InvariantChecker:
     """
 
     def __init__(self, solver: z3.Solver | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.solver = solver or create_solver()
         self._violations: list[InvariantViolation] = []
         self._checked_invariants: set[tuple[str, str, str]] = set()
@@ -270,6 +277,8 @@ class InvariantState:
 
     @property
     def checker(self) -> InvariantChecker:
+        """Checker."""
+        """Property returning the checker."""
         if self._checker is None:
             self._checker = InvariantChecker()
         return self._checker

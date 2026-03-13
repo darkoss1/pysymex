@@ -58,14 +58,17 @@ class SolverResult:
 
     @staticmethod
     def sat(model: z3.ModelRef | None) -> SolverResult:
+        """Sat."""
         return SolverResult(is_sat=True, is_unsat=False, is_unknown=False, model=model)
 
     @staticmethod
     def unsat() -> SolverResult:
+        """Unsat."""
         return SolverResult(is_sat=False, is_unsat=True, is_unknown=False)
 
     @staticmethod
     def unknown() -> SolverResult:
+        """Unknown."""
         return SolverResult(is_sat=False, is_unsat=False, is_unknown=True)
 
 
@@ -75,10 +78,13 @@ class _StructuralCache:
     _MISSING = object()
 
     def __init__(self, maxsize: int = 512) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._data: OrderedDict[int, object] = OrderedDict()
         self._maxsize = maxsize
 
     def get(self, key: int) -> tuple[bool, object | None]:
+        """Get."""
         value = self._data.get(key, self._MISSING)
         if value is self._MISSING:
             return False, None
@@ -86,16 +92,19 @@ class _StructuralCache:
         return True, value
 
     def put(self, key: int, value: object) -> None:
+        """Put."""
         self._data[key] = value
         self._data.move_to_end(key)
         if len(self._data) > self._maxsize:
             self._data.popitem(last=False)
 
     def clear(self) -> None:
+        """Clear."""
         self._data.clear()
 
 
 class _ClearableCache(Protocol):
+                             """Clear."""
     def clear(self) -> None: ...
 
 
@@ -123,6 +132,8 @@ class IncrementalSolver:
         constraint_cache: object | None = None,
         use_cache: bool = True,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
         self._timeout_ms = timeout_ms
@@ -515,6 +526,8 @@ class IncrementalSolver:
         }
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return (
             f"IncrementalSolver(queries={self._query_count}, "
             f"cache_hits={self._cache_hits}, scope={self._scope_depth})"
@@ -541,6 +554,8 @@ class PortfolioSolver:
         fast_timeout_ms: int = 100,
         max_workers: int | None = None,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._timeout_ms = timeout_ms
         self._fast_timeout_ms = fast_timeout_ms
         self._max_workers = max_workers or min(len(self.TACTICS), os.cpu_count() or 2)

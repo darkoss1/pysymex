@@ -311,6 +311,7 @@ class ReMatchModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.match() - match at beginning of string."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -369,6 +370,7 @@ class ReSearchModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.search() - search anywhere in string."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -412,6 +414,7 @@ class ReFullmatchModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.fullmatch() - match entire string."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -447,6 +450,7 @@ class ReFindallModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.findall() - find all matches."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -487,6 +491,7 @@ class ReSubModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.sub() - substitute matches."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -529,6 +534,7 @@ class ReSplitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.split() - split by pattern."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -565,6 +571,7 @@ class ReCompileModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.compile() - compile pattern."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -589,6 +596,7 @@ class ReEscapeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
+        """Apply the re.escape() - escape special chars."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

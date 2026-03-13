@@ -131,6 +131,8 @@ class ArithmeticSafetyAnalyzer:
         signed: bool = True,
         timeout_ms: int = 5000,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.mode = mode
         self.default_width = default_width
         self.signed = signed
@@ -511,6 +513,7 @@ class ArithmeticSafetyAnalyzer:
         issues: list[ArithmeticIssue] = []
 
         def visit(e: z3.ExprRef) -> None:
+            """Visit."""
             if z3.is_app(e):
                 decl = e.decl()
                 kind = decl.kind()
@@ -573,6 +576,8 @@ class SafeArithmetic:
     """
 
     def __init__(self, analyzer: ArithmeticSafetyAnalyzer | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.analyzer = analyzer or ArithmeticSafetyAnalyzer()
 
     def safe_add(

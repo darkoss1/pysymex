@@ -109,9 +109,11 @@ class MemoryOperation:
     timestamp: int = 0
 
     def is_write(self) -> bool:
+        """Is write."""
         return self.operation in {OperationKind.WRITE, OperationKind.READ_MODIFY_WRITE}
 
     def is_read(self) -> bool:
+        """Is read."""
         return self.operation in {OperationKind.READ, OperationKind.READ_MODIFY_WRITE}
 
     def conflicts_with(self, other: MemoryOperation) -> bool:
@@ -145,6 +147,8 @@ class HappensBeforeGraph:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self._edges: set[tuple[int, int]] = set()
         self._operations: dict[int, MemoryOperation] = {}
         self._op_counter = 0

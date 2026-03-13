@@ -39,6 +39,7 @@ class CallGraphNode:
     _callees: set[str] = field(default_factory=set[str])
 
     def __post_init__(self):
+        """Post init."""
         if not self.qualname:
             self.qualname = self.name
 
@@ -68,9 +69,13 @@ class CallGraphNode:
         self._callees.add(callee)
 
     def __hash__(self) -> int:
+        """Hash."""
+        """Return the hash value of the object."""
         return hash(self.full_name)
 
     def __eq__(self, other: object) -> bool:
+        """Eq."""
+        """Check for equality with another object."""
         if isinstance(other, CallGraphNode):
             return self.full_name == other.full_name
         return False
@@ -119,6 +124,8 @@ class CallGraph:
     """
 
     def __init__(self, name: str = ""):
+        """Init."""
+        """Initialize the class instance."""
         self.name = name
         self._nodes: dict[str, CallGraphNode] = {}
         self._edges: dict[tuple[str, str], CallGraphEdge] = {}
@@ -236,6 +243,7 @@ class CallGraph:
         rec_stack: list[str] = []
 
         def dfs(node: str, path: list[str]) -> None:
+            """Dfs."""
             visited.add(node)
             rec_stack.append(node)
             path = path + [node]
@@ -310,6 +318,7 @@ class CallGraph:
         sccs: list[set[str]] = []
 
         def strongconnect(node: str) -> None:
+            """Strongconnect."""
             index[node] = index_counter[0]
             lowlinks[node] = index_counter[0]
             index_counter[0] += 1
@@ -354,6 +363,7 @@ class CallGraph:
         visited: set[str] = set()
 
         def dfs(node: str, depth: int) -> int:
+            """Dfs."""
             if node in visited:
                 return depth - 1
             visited.add(node)
@@ -396,9 +406,13 @@ class CallGraph:
         return result
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         return f"CallGraph({self .name }, {len (self ._nodes )} nodes, {len (self ._edges )} edges)"
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         return self.__str__()
 
 
@@ -408,6 +422,8 @@ class CallGraphBuilder:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.graph = CallGraph()
 
     def add_function(

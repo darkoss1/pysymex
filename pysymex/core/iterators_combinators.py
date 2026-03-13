@@ -33,6 +33,8 @@ class SymbolicEnumerate(SymbolicIterator):
     _name: str = field(default="enumerate")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         inner_result = next(self.inner)
         if inner_result.exhausted:
             return IterationResult(
@@ -54,16 +56,21 @@ class SymbolicEnumerate(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         return self.inner.has_next()
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         return self.inner.remaining_bound()
 
     def clone(self) -> SymbolicEnumerate:
+        """Clone."""
         return SymbolicEnumerate(inner=self.inner.clone(), counter=self.counter, _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return self.inner.is_bounded
 
 
@@ -78,6 +85,8 @@ class SymbolicZip(SymbolicIterator):
     _name: str = field(default="zip")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         values: list[object] = []
         constraints: list[z3.BoolRef] = []
         new_iterators: list[SymbolicIterator] = []
@@ -102,12 +111,14 @@ class SymbolicZip(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         if not self.iterators:
             return z3.BoolVal(False)
         conditions = [it.has_next() for it in self.iterators]
         return z3.And(*conditions)
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         if not self.iterators:
             return 0
         bounds = [it.remaining_bound() for it in self.iterators]
@@ -124,10 +135,13 @@ class SymbolicZip(SymbolicIterator):
         return result
 
     def clone(self) -> SymbolicZip:
+        """Clone."""
         return SymbolicZip(iterators=[it.clone() for it in self.iterators], _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return all(it.is_bounded for it in self.iterators)
 
 
@@ -143,6 +157,8 @@ class SymbolicMap(SymbolicIterator):
     _name: str = field(default="map")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         inner_result = next(self.inner)
         if inner_result.exhausted:
             return IterationResult(
@@ -162,16 +178,21 @@ class SymbolicMap(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         return self.inner.has_next()
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         return self.inner.remaining_bound()
 
     def clone(self) -> SymbolicMap:
+        """Clone."""
         return SymbolicMap(func=self.func, inner=self.inner.clone(), _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return self.inner.is_bounded
 
 
@@ -191,6 +212,8 @@ class SymbolicFilter(SymbolicIterator):
     _MAX_FILTER_ITERATIONS = 10000
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         current_inner = self.inner
         constraints: list[z3.BoolRef] = []
         for _filter_step in range(self._MAX_FILTER_ITERATIONS):
@@ -236,16 +259,21 @@ class SymbolicFilter(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         return self.inner.has_next()
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         return self.inner.remaining_bound()
 
     def clone(self) -> SymbolicFilter:
+        """Clone."""
         return SymbolicFilter(predicate=self.predicate, inner=self.inner.clone(), _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return self.inner.is_bounded
 
 
@@ -261,6 +289,7 @@ class SymbolicReversed(SymbolicIterator):
     _name: str = field(default="reversed")
 
     def __post_init__(self):
+        """Post init."""
         if isinstance(self.sequence, (list, tuple, str)):
             self.index = len(self.sequence) - 1
         elif isinstance(self.sequence, SymbolicArray):
@@ -269,6 +298,8 @@ class SymbolicReversed(SymbolicIterator):
             self.index = -1
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         has_next_constraint = self.has_next()
         if isinstance(self.index, int) and self.index < 0:
             return IterationResult(
@@ -294,24 +325,29 @@ class SymbolicReversed(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         if isinstance(self.index, int):
             return z3.BoolVal(self.index >= 0)
         else:
             return self.index >= 0
 
     def remaining_bound(self) -> int | z3.ArithRef:
+        """Remaining bound."""
         if isinstance(self.index, int):
             return max(0, self.index + 1)
         else:
             return z3.If(self.index >= 0, self.index + 1, z3.IntVal(0))
 
     def clone(self) -> SymbolicReversed:
+        """Clone."""
         new_rev = SymbolicReversed(sequence=self.sequence, _name=self._name)
         new_rev.index = self.index
         return new_rev
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return True
 
 
@@ -324,6 +360,8 @@ class SymbolicDictKeysIterator(SymbolicIterator):
     _name: str = field(default="dict_keys")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         if self.index >= len(self.keys):
             return IterationResult(
                 value=None, exhausted=True, constraint=z3.BoolVal(True), iterator=self
@@ -335,16 +373,21 @@ class SymbolicDictKeysIterator(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         return z3.BoolVal(self.index < len(self.keys))
 
     def remaining_bound(self) -> int:
+        """Remaining bound."""
         return max(0, len(self.keys) - self.index)
 
     def clone(self) -> SymbolicDictKeysIterator:
+        """Clone."""
         return SymbolicDictKeysIterator(keys=self.keys, index=self.index, _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return True
 
 
@@ -357,6 +400,8 @@ class SymbolicDictItemsIterator(SymbolicIterator):
     _name: str = field(default="dict_items")
 
     def __next__(self) -> IterationResult:
+        """Next."""
+        """Return the next item from the iterator."""
         if self.index >= len(self.items):
             return IterationResult(
                 value=None, exhausted=True, constraint=z3.BoolVal(True), iterator=self
@@ -371,16 +416,21 @@ class SymbolicDictItemsIterator(SymbolicIterator):
         )
 
     def has_next(self) -> z3.BoolRef:
+        """Has next."""
         return z3.BoolVal(self.index < len(self.items))
 
     def remaining_bound(self) -> int:
+        """Remaining bound."""
         return max(0, len(self.items) - self.index)
 
     def clone(self) -> SymbolicDictItemsIterator:
+        """Clone."""
         return SymbolicDictItemsIterator(items=self.items, index=self.index, _name=self._name)
 
     @property
     def is_bounded(self) -> bool:
+        """Is bounded."""
+        """Property returning the is_bounded."""
         return True
 
 

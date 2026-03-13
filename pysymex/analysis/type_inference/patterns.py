@@ -33,6 +33,8 @@ class PatternRecognizer:
     """
 
     def __init__(self, type_engine: TypeInferenceEngine) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.type_engine = type_engine
 
     def is_dict_get_pattern(
@@ -220,6 +222,8 @@ class TypeStateMachine:
         type_engine: TypeInferenceEngine,
         pattern_recognizer: PatternRecognizer,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.type_engine = type_engine
         self.pattern_recognizer = pattern_recognizer
         self.states: dict[int, TypeState] = {}

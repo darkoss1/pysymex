@@ -37,15 +37,18 @@ class StaticDivisionByZeroDetector(StaticDetector):
     DIVISION_ARGREPS = {"/", "//", "%"}
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.DIVISION_BY_ZERO
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         instr = ctx.instruction
         if instr.opname == "BINARY_OP":
             return instr.argrepr in self.DIVISION_ARGREPS
         return False
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         divisor_info = self._get_divisor_info(ctx)
         if divisor_info is None:
             return None
@@ -191,12 +194,15 @@ class StaticKeyErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.KEY_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         return ctx.instruction.opname == "BINARY_SUBSCR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         container_info = self._get_container_info(ctx)
         if container_info is None:
             return None
@@ -329,12 +335,15 @@ class StaticIndexErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.INDEX_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         return ctx.instruction.opname == "BINARY_SUBSCR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         container_info = self._get_container_info(ctx)
         if container_info is None:
             return None
@@ -543,9 +552,11 @@ class StaticTypeErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.TYPE_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         instr = ctx.instruction
         if instr.opname == "BINARY_OP":
             return True
@@ -556,6 +567,7 @@ class StaticTypeErrorDetector(StaticDetector):
         return False
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         instr = ctx.instruction
         if instr.opname == "BINARY_OP":
             return self._check_binary_op(ctx)
@@ -835,12 +847,15 @@ class StaticAttributeErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.ATTRIBUTE_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         return ctx.instruction.opname == "LOAD_ATTR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         instr = ctx.instruction
         attr_name = instr.argval
         obj_info = self._get_object_info(ctx)
@@ -942,12 +957,15 @@ class StaticAssertionErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.ASSERTION_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         return ctx.instruction.opname == "LOAD_ASSERTION_ERROR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         condition_info = self._get_assertion_condition(ctx)
         if condition_info:
             condition_text, is_always_false = condition_info
@@ -990,12 +1008,15 @@ class DeadCodeDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
+        """Issue kind."""
         return IssueKind.DEAD_CODE
 
     def should_check(self, ctx: DetectionContext) -> bool:
+        """Should check."""
         return ctx.flow_context is not None
 
     def check(self, ctx: DetectionContext) -> Issue | None:
+        """Check."""
         if ctx.flow_context is None:
             return None
         if ctx.flow_context.block:

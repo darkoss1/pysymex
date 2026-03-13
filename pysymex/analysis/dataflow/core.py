@@ -53,6 +53,8 @@ class DataFlowAnalysis(ABC, Generic[T]):
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.cfg = cfg
         self.in_facts: dict[int, T] = {}
         self.out_facts: dict[int, T] = {}
@@ -167,6 +169,8 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
         self.all_defs: set[Definition] = set()
         self.defs_by_var: dict[str, set[Definition]] = defaultdict(set)
@@ -188,9 +192,11 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                     self.defs_by_var[var_name].add(defn)
 
     def initial_value(self) -> frozenset[Definition]:
+        """Initial value."""
         return frozenset()
 
     def boundary_value(self) -> frozenset[Definition]:
+        """Boundary value."""
         return frozenset()
 
     def transfer(
@@ -258,15 +264,20 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
 
     def is_forward(self) -> bool:
+        """Is forward."""
         return False
 
     def initial_value(self) -> frozenset[str]:
+        """Initial value."""
         return frozenset()
 
     def boundary_value(self) -> frozenset[str]:
+        """Boundary value."""
         return frozenset()
 
     def transfer(
@@ -323,6 +334,8 @@ class DefUseAnalysis:
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.cfg = cfg
         self.reaching_defs = ReachingDefinitions(cfg)
         self.chains: dict[Definition, DefUseChain] = {}
@@ -390,6 +403,8 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
         self.all_expressions: set[Expression] = set()
         self._collect_expressions()
@@ -444,9 +459,11 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
                         stack.pop()
 
     def initial_value(self) -> frozenset[Expression]:
+        """Initial value."""
         return frozenset(self.all_expressions)
 
     def boundary_value(self) -> frozenset[Expression]:
+        """Boundary value."""
         return frozenset()
 
     def transfer(
@@ -523,15 +540,19 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         type_analyzer: TypeAnalyzer,
         initial_env: TypeEnvironment | None = None,
     ) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
         self.type_analyzer = type_analyzer
         self.initial_env = initial_env or TypeEnvironment()
         self.branch_conditions: dict[int, tuple[str, PyType, bool]] = {}
 
     def initial_value(self) -> TypeEnvironment:
+        """Initial value."""
         return TypeEnvironment()
 
     def boundary_value(self) -> TypeEnvironment:
+        """Boundary value."""
         return self.initial_env.copy()
 
     def transfer(
@@ -630,13 +651,17 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
     """
 
     def __init__(self, cfg: ControlFlowGraph) -> None:
+        """Init."""
+        """Initialize the class instance."""
         super().__init__(cfg)
         self.narrowing_conditions: dict[int, dict[str, NullState]] = {}
 
     def initial_value(self) -> NullInfo:
+        """Initial value."""
         return NullInfo()
 
     def boundary_value(self) -> NullInfo:
+        """Boundary value."""
         return NullInfo()
 
     def transfer(self, block: BasicBlock, in_fact: NullInfo) -> NullInfo:

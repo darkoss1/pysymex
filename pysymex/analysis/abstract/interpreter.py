@@ -82,6 +82,8 @@ class AbstractInterpreter:
     )
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.warnings: list[object] = []
         self._used_fast_path: bool = False
 
@@ -368,6 +370,8 @@ class AbstractAnalyzer:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.interpreter = AbstractInterpreter()
 
     def analyze_function(

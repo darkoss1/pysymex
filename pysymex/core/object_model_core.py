@@ -104,6 +104,7 @@ class ObjectState:
     classes: dict[str, SymbolicClass] = field(default_factory=lambda: dict[str, SymbolicClass]())
 
     def __post_init__(self):
+        """Post init."""
         for name, cls in BUILTIN_CLASSES.items():
             self.classes[name] = cls
 

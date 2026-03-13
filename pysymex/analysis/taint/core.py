@@ -60,6 +60,8 @@ class TaintLabel:
     line_number: int = 0
 
     def __str__(self) -> str:
+        """Str."""
+        """Return a human-readable string representation."""
         if self.origin:
             return f"{self .source .name }({self .origin }@{self .line_number })"
         return self.source.name
@@ -131,6 +133,8 @@ class TaintPolicy:
     """Defines which source-sink combinations are dangerous."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self._dangerous_flows: set[tuple[TaintSource, TaintSink]] = set()
         self._sanitizers: dict[tuple[TaintSource, TaintSink], set[str]] = {}
         self._setup_default_policy()
@@ -231,6 +235,8 @@ class TaintTracker:
     }
 
     def __init__(self, policy: TaintPolicy | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.policy = policy or TaintPolicy()
         self._flows: list[TaintFlow] = []
         self._taint_map: dict[int, TaintedValue] = {}
@@ -294,6 +300,7 @@ class TaintTracker:
         location: str = "",
         line: int = 0,
     ) -> list[TaintFlow]:
+        """Check sink."""
         flows: list[TaintFlow] = []
         for arg in args:
             taint = self.get_taint(arg)
@@ -330,6 +337,8 @@ class TaintAnalyzer:
     """High-level taint analysis interface."""
 
     def __init__(self, policy: TaintPolicy | None = None):
+        """Init."""
+        """Initialize the class instance."""
         self.tracker = TaintTracker(policy)
 
     def analyze_function(

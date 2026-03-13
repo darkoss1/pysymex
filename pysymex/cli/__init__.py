@@ -46,6 +46,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> object:
+    """Getattr."""
     if name in _EXPORTS:
         module_path, attr_name = _EXPORTS[name]
         from importlib import import_module
@@ -56,6 +57,7 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
+    """Dir."""
     return [*__all__, *globals()]
 
 
@@ -144,9 +146,11 @@ def cmd_scan_watch(args: _Namespace) -> int:
     static_results: dict[str, list[object]] = {}
 
     def key_of(file_path: Path) -> str:
+        """Key of."""
         return str(file_path.resolve())
 
     def compute_hash(file_path: Path) -> str | None:
+        """Compute hash."""
         try:
             return hashlib.sha256(file_path.read_bytes()).hexdigest()
         except OSError:

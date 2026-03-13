@@ -84,6 +84,7 @@ class Interval(AbstractValue["Interval"]):
     _is_bottom: bool = False
 
     def __post_init__(self):
+        """Post init."""
         if (
             self.lo is not None
             and self.hi is not None
@@ -97,9 +98,11 @@ class Interval(AbstractValue["Interval"]):
             object.__setattr__(self, "hi", None)
 
     def is_top(self) -> bool:
+        """Is top."""
         return self.lo is None and self.hi is None and not self._is_bottom
 
     def is_bottom(self) -> bool:
+        """Is bottom."""
         return self._is_bottom
 
     def is_constant(self) -> bool:
@@ -211,6 +214,7 @@ class Interval(AbstractValue["Interval"]):
         return cls(None, hi)
 
     def __add__(self, other: Interval) -> Interval:
+        """Add."""
         if self.is_bottom() or other.is_bottom():
             return Interval.bottom()
         new_lo = None
@@ -222,6 +226,7 @@ class Interval(AbstractValue["Interval"]):
         return Interval(new_lo, new_hi)
 
     def __sub__(self, other: Interval) -> Interval:
+        """Sub."""
         if self.is_bottom() or other.is_bottom():
             return Interval.bottom()
         new_lo = None
@@ -233,6 +238,7 @@ class Interval(AbstractValue["Interval"]):
         return Interval(new_lo, new_hi)
 
     def __mul__(self, other: Interval) -> Interval:
+        """Mul."""
         if self.is_bottom() or other.is_bottom():
             return Interval.bottom()
         if self.is_constant() and other.is_constant():
@@ -304,6 +310,7 @@ class Interval(AbstractValue["Interval"]):
         return Interval(min(corners), max(corners))
 
     def __neg__(self) -> Interval:
+        """Neg."""
         if self.is_bottom():
             return Interval.bottom()
         new_lo = None if self.hi is None else -self.hi
@@ -311,6 +318,8 @@ class Interval(AbstractValue["Interval"]):
         return Interval(new_lo, new_hi)
 
     def __repr__(self) -> str:
+        """Repr."""
+        """Return a formal string representation."""
         if self.is_bottom():
             return "⊥"
         lo_str = str(self.lo) if self.lo is not None else "-∞"

@@ -301,6 +301,7 @@ class SymbolicExecutor:
         symbolic_vars: dict[str, str] | None = None,
         initial_globals: dict[str, object] | None = None,
     ) -> VMState:
+        """Create code initial state."""
         initial_state = VMState()
         if initial_globals:
             initial_state.global_vars = CowDict(initial_globals.copy())
@@ -924,6 +925,7 @@ class SymbolicExecutor:
             return
 
     def _get_line_number(self, pc: int, active_instructions: list[dis.Instruction]) -> int | None:
+        """Get line number."""
         if active_instructions is self._instructions:
             return self._pc_to_line.get(pc)
         for i in range(min(pc, len(active_instructions) - 1), -1, -1):

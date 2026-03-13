@@ -28,6 +28,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> object:
+    """Getattr."""
     target = _EXPORTS.get(name)
     if target is None:
         raise AttributeError(f"module 'pysymex.reporting' has no attribute {name!r}")
@@ -39,6 +40,7 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
+    """Dir."""
     return list(_EXPORTS.keys())
 
 

@@ -26,6 +26,7 @@ from pysymex.benchmarks.suite_types import (
 
 
 def _bench_list_factory() -> list[Benchmark]:
+    """Bench list factory."""
     return []
 
 
@@ -78,6 +79,8 @@ class Benchmark:
         category: BenchmarkCategory = BenchmarkCategory.END_TO_END,
         description: str = "",
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.name = name
         self.func = func
         self.category = category
@@ -161,6 +164,7 @@ def benchmark(
     """
 
     def decorator(func: F) -> F:
+        """Decorator."""
         bench_name = name or func.__name__
         func._benchmark = Benchmark(
             name=bench_name, func=func, category=category, description=func.__doc__ or ""

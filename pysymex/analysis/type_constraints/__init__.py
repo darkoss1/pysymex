@@ -34,6 +34,8 @@ class TypeConstraintChecker:
     """
 
     def __init__(self, timeout_ms: int = 5000):
+        """Init."""
+        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self.encoder = TypeEncoder()
         self._solver = z3.Solver()
@@ -216,6 +218,7 @@ class TypeConstraintChecker:
         return None
 
     def _constraints_are_feasible(self, path_constraints: list[z3.BoolRef] | None) -> bool:
+        """Constraints are feasible."""
         if not path_constraints:
             return True
         self._solver.push()
@@ -231,6 +234,7 @@ class TypeConstraintChecker:
         path_constraints: list[z3.BoolRef] | None,
         runtime_type: z3.ExprRef | None,
     ) -> tuple[SymbolicType, ...]:
+        """Possible union members."""
         if union_type.kind != TypeKind.UNION:
             return (union_type,)
         if runtime_type is None:

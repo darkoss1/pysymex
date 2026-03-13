@@ -30,6 +30,8 @@ class ReproductionGenerator:
     """Generates Python scripts to reproduce detected issues."""
 
     def __init__(self, output_dir: str = "."):
+        """Init."""
+        """Initialize the class instance."""
         self.output_dir = output_dir
 
     def generate(
@@ -100,12 +102,16 @@ class ReproductionGenerator:
         all_args: list[tuple[str, str | None]] = []
 
         class FunctionFinder(ast.NodeVisitor):
+            """Visitor for locating function and method definitions in source code."""
             def __init__(self, target_func: str, target_class: str | None = None) -> None:
+                """Init."""
+                """Initialize the class instance."""
                 self.target_func: str = target_func
                 self.target_class: str | None = target_class
                 self.found_args: ast.arguments | None = None
 
             def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                """Visit functiondef."""
                 if self.found_args:
                     return
                 if node.name == self.target_func:
@@ -113,6 +119,7 @@ class ReproductionGenerator:
                 self.generic_visit(node)
 
             def visit_ClassDef(self, node: ast.ClassDef) -> None:
+                """Visit classdef."""
                 if self.target_class and node.name == self.target_class:
                     for item in node.body:
                         if isinstance(item, ast.FunctionDef) and item.name == self.target_func:

@@ -28,6 +28,7 @@ class AnalysisTask:
     dependencies: list[str] = field(default_factory=lambda: [])
 
     def __lt__(self, other: AnalysisTask) -> bool:
+        """Lt."""
         return self.priority > other.priority
 
 
@@ -46,6 +47,8 @@ class ProgressReporter:
     """Reports progress of parallel analysis."""
 
     def __init__(self):
+        """Init."""
+        """Initialize the class instance."""
         self.total = 0
         self.completed = 0
         self.failed = 0
@@ -105,6 +108,8 @@ class ParallelAnalyzer:
         use_processes: bool = False,
         cache: TieredCache | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.max_workers = max_workers or min(os.cpu_count() or 4, 8)
         self.use_processes = use_processes
         self.cache = cache
@@ -195,6 +200,7 @@ class ParallelAnalyzer:
         temp: set[str] = set()
 
         def visit(task_id: str) -> None:
+            """Visit."""
             if task_id in visited:
                 return
             if task_id in temp:
@@ -225,6 +231,8 @@ class CachedAnalysis:
         key_fn: Callable[[object], CacheKey],
         cache: TieredCache | None = None,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.analyze_fn = analyze_fn
         self.key_fn = key_fn
         self.cache = cache or TieredCache()

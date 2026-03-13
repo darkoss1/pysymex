@@ -90,6 +90,8 @@ class Scanner:
     """
 
     def __init__(self, config: ScannerConfig | None = None) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.config = config or ScannerConfig()
         self.phases: list[AnalysisPhase] = [
             TypeInferencePhase(),

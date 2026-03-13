@@ -669,11 +669,14 @@ class UnusedImportDetector:
         used: set[str] = set()
 
         class NameCollector(ast.NodeVisitor):
+            """Visitor for collecting variable names from an AST node."""
             def visit_Name(self, node: ast.Name) -> None:
+                """Visit name."""
                 used.add(node.id)
                 self.generic_visit(node)
 
             def visit_Attribute(self, node: ast.Attribute) -> None:
+                """Visit attribute."""
                 if isinstance(node.value, ast.Name):
                     used.add(node.value.id)
                 self.generic_visit(node)

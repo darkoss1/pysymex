@@ -147,6 +147,7 @@ async def scan_directory_async(
     total = len(files)
 
     async def _scan_one(file_path: Path) -> None:
+        """Scan one."""
         nonlocal completed
         async with semaphore:
             try:

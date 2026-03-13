@@ -31,6 +31,8 @@ class TypeInferenceEngine:
     """
 
     def __init__(self) -> None:
+        """Init."""
+        """Initialize the class instance."""
         self.environments: dict[int, TypeEnvironment] = {}
         self.function_signatures: dict[str, tuple[list[PyType], PyType]] = {}
         self.class_attributes: dict[str, dict[str, PyType]] = {}

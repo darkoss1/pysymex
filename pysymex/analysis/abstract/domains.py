@@ -186,6 +186,8 @@ class AbstractInterpreter:
     """
 
     def __init__(self, widening_threshold: int = 3):
+        """Init."""
+        """Initialize the class instance."""
         self.widening_threshold = widening_threshold
 
     def analyze_assignment(

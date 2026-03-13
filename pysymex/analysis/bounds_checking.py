@@ -92,6 +92,7 @@ class SymbolicArray:
     _array: z3.ArrayRef | None = None
 
     def __post_init__(self):
+        """Post init."""
         if not self.dimensions:
             self.dimensions = [self.length]
         if self._array is None:
@@ -167,6 +168,8 @@ class BoundsChecker:
         check_off_by_one: bool = True,
         strict_slice_bounds: bool = True,
     ):
+        """Init."""
+        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self.check_off_by_one = check_off_by_one
         self.strict_slice_bounds = strict_slice_bounds

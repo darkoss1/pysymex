@@ -204,6 +204,7 @@ def get_safe_builtins() -> dict[str, object]:
         safe[name] = getattr(builtins, name)
 
     def disabled_builtin(*args: object, **kwargs: object) -> None:
+        """Disabled builtin."""
         raise SecurityError("This builtin is disabled in sandbox mode")
 
     for name in DANGEROUS_BUILTINS:
@@ -262,6 +263,7 @@ def make_restricted_import(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
+        """Restricted import."""
         top_level = name.split(".")[0]
         if top_level not in permitted:
             raise SecurityError(
@@ -290,6 +292,7 @@ def timeout_context(seconds: float) -> Generator[None, None, None]:
         timed_out = threading.Event()
 
         def _interrupt() -> None:
+            """Interrupt."""
             timed_out.set()
 
             import ctypes
@@ -311,6 +314,7 @@ def timeout_context(seconds: float) -> Generator[None, None, None]:
         return
 
     def handler(_signum: int, frame: object) -> None:
+        """Handler."""
         raise ExecutionTimeout(f"Execution timed out after {seconds } seconds")
 
     old_handler = signal.signal(signal.SIGALRM, handler)

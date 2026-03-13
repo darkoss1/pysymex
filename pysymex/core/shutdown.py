@@ -61,6 +61,7 @@ def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
     """
 
     def _shutdown(sig_name: str) -> None:
+        """Shutdown."""
         logger.info("Received %s – initiating graceful shutdown", sig_name)
         cancel_all_tasks(loop)
 
@@ -69,6 +70,7 @@ def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
         _original_sigint = signal.getsignal(signal.SIGINT)
 
         def _win_handler(signum: int, frame: object) -> None:
+            """Win handler."""
             _shutdown(signal.Signals(signum).name)
 
             signal.signal(signal.SIGINT, _original_sigint)
@@ -102,6 +104,7 @@ def run_with_shutdown(coro: Coroutine[Any, Any, T]) -> T:
     """
 
     async def _main() -> T:
+        """Main."""
         loop = asyncio.get_running_loop()
         install_signal_handlers(loop)
         return await coro
