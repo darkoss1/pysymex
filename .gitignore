@@ -117,3 +117,7 @@ tmpclaude-*-cwd/
 
 # Comment backup archive (pre-cleanup originals)
 .comment_backups/
+pysymex_docs_experimental/
+tests_repo/
+.pysymex/
+.github/
