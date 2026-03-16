@@ -86,8 +86,6 @@ class FunctionSummarizer:
     """Creates and caches function summaries."""
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.summaries: dict[str, FunctionSummary] = {}
 
     def get_summary(self, name: str) -> FunctionSummary | None:

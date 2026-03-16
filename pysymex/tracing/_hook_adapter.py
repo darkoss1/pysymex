@@ -62,8 +62,6 @@ class TracingHookPlugin(HookPlugin):
     )
 
     def __init__(self, tracer: ExecutionTracer) -> None:
-        """Init."""
-        """Initialize the class instance."""
         super().__init__()
         self._tracer = tracer
 

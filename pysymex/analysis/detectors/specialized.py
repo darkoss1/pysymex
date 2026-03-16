@@ -8,8 +8,7 @@ and unreachable code.
 from __future__ import annotations
 
 import dis
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import z3
 
@@ -165,8 +164,6 @@ class InfiniteLoopDetector(Detector):
     )
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._loop_counters: dict[int, int] = {}
         self._max_iterations = 1000
 
@@ -239,8 +236,6 @@ class ResourceLeakDetector(Detector):
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "RETURN_VALUE", "RETURN_CONST"})
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._open_resources: int = 0
 
     def check(
@@ -251,7 +246,7 @@ class ResourceLeakDetector(Detector):
     ) -> Issue | None:
         """Check for resource leaks."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
-            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
             target = _resolve_target_name(state, argc)
             if target == "open":
                 self._open_resources += 1
@@ -283,8 +278,6 @@ class UseAfterFreeDetector(Detector):
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "LOAD_METHOD", "LOAD_ATTR"})
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._freed_vars: set[str] = set()
 
     def check(
@@ -295,21 +288,21 @@ class UseAfterFreeDetector(Detector):
     ) -> Issue | None:
         """Check for use of freed/closed resources."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
-            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
             target = _resolve_target_name(state, argc)
             if target and target.endswith(".close"):
                 # Mark receiver as closed if possible
                 if len(state.stack) >= argc + 2:
                     receiver = state.stack[-(argc + 2)]
                     if hasattr(receiver, "name"):
-                        self._freed_vars.add(receiver.name)
+                        self._freed_vars.add(receiver.name)  # type: ignore[union-attr]
         elif instruction.opname in ("LOAD_METHOD", "LOAD_ATTR"):
             if state.stack:
                 top = state.peek()
-                if hasattr(top, "name") and top.name in self._freed_vars:
+                if hasattr(top, "name") and top.name in self._freed_vars:  # type: ignore[union-attr]
                     return Issue(
                         kind=IssueKind.ATTRIBUTE_ERROR,
-                        message=f"Use of closed/freed resource: {top.name}",
+                        message=f"Use of closed/freed resource: {top.name}",  # type: ignore[union-attr]
                         pc=state.pc,
                     )
         return None
@@ -333,8 +326,6 @@ class IntegerOverflowDetector(Detector):
     INT64_MAX = 2**63 - 1
 
     def __init__(self, bits: int = 64):
-        """Init."""
-        """Initialize the class instance."""
         self.bits = bits
         self.min_val = -(2 ** (bits - 1))
         self.max_val = 2 ** (bits - 1) - 1
@@ -371,9 +362,9 @@ def _check_taint_in_args(state: VMState, argc: int) -> list[str]:
     for i in range(1, argc + 1):
         if len(state.stack) >= i:
             val = state.stack[-i]
-            labels = getattr(val, "taint_labels", set())
+            labels = getattr(val, "taint_labels", set())  # type: ignore
             if labels:
-                tainted_args.extend(list(labels))
+                tainted_args.extend(list(labels))  # type: ignore
     return tainted_args
 
 
@@ -395,15 +386,15 @@ class FormatStringDetector(Detector):
         if instruction.opname in ("FORMAT_VALUE", "FORMAT_SIMPLE"):
             if state.stack:
                 val = state.peek()
-                labels = getattr(val, "taint_labels", set())
+                labels = getattr(val, "taint_labels", set())  # type: ignore
                 if labels:
                     return Issue(
                         kind=IssueKind.INVALID_ARGUMENT,
-                        message=f"Format string vulnerability: Using tainted data ({', '.join(labels)}) in formatting",
+                        message=f"Format string vulnerability: Using tainted data ({', '.join(labels)}) in formatting",  # type: ignore
                         pc=state.pc,
                     )
         elif instruction.opname == "BUILD_STRING":
-            argc = instruction.argval if instruction.argval is not None else instruction.arg
+            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
             tainted = _check_taint_in_args(state, argc)
             if tainted:
                 return Issue(
@@ -559,11 +550,11 @@ class SQLInjectionDetector(Detector):
         # Check if the query argument (usually args[0]) is tainted
         if len(state.stack) >= argc:
             query_arg = state.stack[-argc]
-            labels = getattr(query_arg, "taint_labels", set())
+            labels = getattr(query_arg, "taint_labels", set())  # type: ignore
             if labels:
                 return Issue(
                     kind=IssueKind.INVALID_ARGUMENT,
-                    message=f"SQL Injection Pattern: Tainted query ({', '.join(labels)}) executed by {target_name}",
+                    message=f"SQL Injection Pattern: Tainted query ({', '.join(labels)}) executed by {target_name}",  # type: ignore
                     pc=state.pc,
                 )
         return None

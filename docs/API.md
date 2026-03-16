@@ -391,12 +391,12 @@ config = ExecutionConfig(
 
 ---
 
-### pysymexConfig
+### PysymexConfig
 
 Load configuration from file.
 
 ```python
-from pysymex import pysymexConfig, load_config
+from pysymex import PysymexConfig, load_config
 
 # Load from pysymex.toml in current directory
 config = load_config()
@@ -565,16 +565,22 @@ from pysymex import (
     analyze_file,
     analyze_code,
     quick_check,
-    
+
+    # Async API
+    analyze_async,
+    analyze_code_async,
+    analyze_file_async,
+
     # Specific checks
     check_division_by_zero,
     check_assertions,
     check_index_errors,
-    
+
     # Scanner
     scan_file,
     scan_directory,
-    
+    scan_directory_async,
+
     # Core classes
     SymbolicExecutor,
     ExecutionConfig,
@@ -583,25 +589,42 @@ from pysymex import (
     SymbolicString,
     SymbolicList,
     SymbolicDict,
+    SymbolicObject,
     SymbolicNone,
     VMState,
     ShadowSolver,
-    
+
+    # Z3 engine (high-level API)
+    Z3Engine,
+    Z3Prover,          # alias for Z3Engine
+    CallGraph,
+    FunctionSummary,
+    BugType,
+    Severity,
+    TaintSource,
+    VerificationResult,
+    CrashCondition,
+    verify_function,
+    verify_code,
+    z3_verify_file,
+    z3_verify_directory,
+    is_z3_available,
+
     # Analysis
     Issue,
     IssueKind,
-    
+
     # Configuration
-    pysymexConfig,
+    PysymexConfig,
     load_config,
     configure_logging,
     get_logger,
     LogLevel,
-    
+
     # Utilities
     format_issues,
     format_result,
-    
+
     # Verified execution
     VerifiedExecutor,
     VerifiedExecutionConfig,

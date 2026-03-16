@@ -365,25 +365,26 @@ def scan_directory_async(*args: object, **kwargs: object) -> object:
 
 def scan_static(
     path: str | Path,
-    recursive: bool = False,
+    recursive: bool = True,
     verbose: bool = False,
     min_confidence: float = 0.7,
     show_suppressed: bool = False,
 ) -> list[ScanIssue]:
-    """Perform static analysis scanning using the Enhanced Scanner.
+    """Perform static vulnerability scanning on a specified file or directory path.
+
+    Utilizes the Enhanced Static Analysis Scanner to identify common bug patterns
+    (e.g., division by zero, null dereference) through fast pattern matching 
+    instead of full symbolic execution.
 
     Args:
         path: File or directory path to scan.
-        recursive: Scan directories recursively.
-        verbose: Print verbose output.
-        min_confidence: Minimum confidence threshold (0.0–1.0).
-        show_suppressed: Include suppressed issues in the result.
+        recursive: Whether to scan directories recursively.
+        verbose: Enable detailed logging during the scan.
+        min_confidence: Minimum confidence score to report an issue (0.0 to 1.0).
+        show_suppressed: If True, include issues marked as suppressed.
 
     Returns:
-        List of :class:`ScanIssue` objects found.
-
-    Raises:
-        ValueError: If *path* does not exist.
+        A list of ScanIssue objects representing detected vulnerabilities.
     """
     config = ScannerConfig(
         verbose=verbose,

@@ -55,7 +55,6 @@ def requires(
 
         @functools.wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:
-            """Wrapper."""
             return func(*args, **kwargs)
 
         wrapper.__contract__ = contract
@@ -93,7 +92,6 @@ def ensures(
 
         @functools.wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:
-            """Wrapper."""
             return func(*args, **kwargs)
 
         wrapper.__contract__ = contract

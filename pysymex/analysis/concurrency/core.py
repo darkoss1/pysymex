@@ -36,8 +36,6 @@ class ConcurrencyAnalyzer:
     """
 
     def __init__(self, timeout_ms: int = 10000):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -654,8 +652,6 @@ class ThreadSafetyChecker:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = ConcurrencyAnalyzer()
 
     def check_locked_access(
@@ -708,8 +704,6 @@ class LockOrderChecker:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._lock_order: list[str] = []
         self._thread_held_locks: dict[str, list[str]] = {}
 

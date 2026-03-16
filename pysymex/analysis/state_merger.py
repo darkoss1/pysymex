@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     import dis
 
     from pysymex.core.state import VMState
+    from pysymex.core.types import SymbolicValue
 
 
 class MergePolicy(Enum):
@@ -53,7 +54,6 @@ class MergeStatistics:
 
     @property
     def reduction_ratio(self) -> float:
-        """Reduction ratio."""
         """Property returning the reduction_ratio."""
         if self.states_before_merge == 0:
             return 0.0
@@ -93,8 +93,6 @@ class StateMerger:
         max_constraints_for_merge: int = 50,
         similarity_threshold: float = 0.7,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.policy = policy
         self.max_constraints_for_merge = max_constraints_for_merge
         self.similarity_threshold = similarity_threshold
@@ -337,10 +335,9 @@ class StateMerger:
                     if v1 is v2:
                         merged_dict[attr] = v1
                         continue
-                    if hasattr(v1, "hash_value") and hasattr(v2, "hash_value"):
-                        if v1.hash_value() == v2.hash_value():
-                            merged_dict[attr] = v1
-                            continue
+                    if self._values_structurally_equal(v1, v2):
+                        merged_dict[attr] = v1
+                        continue
                     merged_val = _merge_pair(v1, v2, condition)
                     if merged_val is None:
                         return None
@@ -363,6 +360,82 @@ class StateMerger:
 
             merged.memory[addr] = wrap_cow_dict(merged_dict)
         return merged
+
+    def _symbolic_values_equal(self, left: "SymbolicValue", right: "SymbolicValue") -> bool:
+        """Check structural equality of SymbolicValue instances."""
+        if left.taint_labels != right.taint_labels:
+            return False
+        if left._h_active != right._h_active:
+            return False
+        if left.affinity_type != right.affinity_type:
+            return False
+        if left.min_val != right.min_val or left.max_val != right.max_val:
+            return False
+
+        if not z3.eq(left.z3_int, right.z3_int):
+            return False
+        if not z3.eq(left.is_int, right.is_int):
+            return False
+        if not z3.eq(left.z3_bool, right.z3_bool):
+            return False
+        if not z3.eq(left.is_bool, right.is_bool):
+            return False
+        if not z3.eq(left.z3_float, right.z3_float):
+            return False
+        if not z3.eq(left.is_float, right.is_float):
+            return False
+        if not z3.eq(left.z3_str, right.z3_str):
+            return False
+        if not z3.eq(left.is_str, right.is_str):
+            return False
+        if not z3.eq(left.z3_addr, right.z3_addr):
+            return False
+        if not z3.eq(left.is_obj, right.is_obj):
+            return False
+        if not z3.eq(left.is_path, right.is_path):
+            return False
+        if not z3.eq(left.is_none, right.is_none):
+            return False
+        if not z3.eq(left.is_list, right.is_list):
+            return False
+        if not z3.eq(left.is_dict, right.is_dict):
+            return False
+        if left.z3_array is None:
+            if right.z3_array is not None:
+                return False
+        else:
+            if right.z3_array is None or not z3.eq(left.z3_array, right.z3_array):
+                return False
+        return True
+
+    def _values_structurally_equal(self, left: object, right: object) -> bool:
+        """Best-effort structural equality without trusting hash collisions."""
+        if left is right:
+            return True
+        if isinstance(left, z3.AstRef):
+            return isinstance(right, z3.AstRef) and z3.eq(left, right)
+
+        from pysymex.core.types import SymbolicValue
+
+        if isinstance(left, SymbolicValue):
+            if not isinstance(right, SymbolicValue):
+                return False
+            if left.hash_value() != right.hash_value():
+                return False
+            return self._symbolic_values_equal(left, right)
+
+        if hasattr(left, "hash_value") and hasattr(right, "hash_value"):
+            try:
+                if left.hash_value() != right.hash_value():
+                    return False
+            except Exception:
+                return False
+
+        try:
+            eq_result = left == right
+        except Exception:
+            return False
+        return isinstance(eq_result, bool) and eq_result
 
     def _constraints_equal(self, c1: z3.BoolRef, c2: z3.BoolRef) -> bool:
         """Check if two constraints are equivalent."""

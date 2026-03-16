@@ -34,7 +34,6 @@ class BytesDecodeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.decode()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -56,7 +55,6 @@ class BytesCountModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.count(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -77,7 +75,6 @@ class BytesFindModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.find(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -98,7 +95,6 @@ class BytesRfindModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rfind(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -119,7 +115,6 @@ class BytesIndexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.index(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -143,7 +138,6 @@ class BytesRindexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rindex(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -167,7 +161,6 @@ class BytesJoinModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.join(iterable)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -185,7 +178,6 @@ class BytesSplitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.split(sep)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -206,7 +198,6 @@ class BytesRsplitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rsplit(sep)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -227,7 +218,6 @@ class BytesReplaceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.replace(old, new)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -245,7 +235,6 @@ class BytesStripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.strip()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -266,7 +255,6 @@ class BytesLstripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.lstrip()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -287,7 +275,6 @@ class BytesRstripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rstrip()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -308,7 +295,6 @@ class BytesStartswithModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.startswith(prefix)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -329,7 +315,6 @@ class BytesEndswithModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.endswith(suffix)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -350,7 +335,6 @@ class BytesUpperModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.upper()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -371,7 +355,6 @@ class BytesLowerModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.lower()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -392,7 +375,6 @@ class BytesTitleModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.title()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -413,7 +395,6 @@ class BytesCapitalizeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.capitalize()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -434,7 +415,6 @@ class BytesSwapcaseModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.swapcase()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -455,7 +435,6 @@ class BytesContainsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.__contains__(sub)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -476,7 +455,6 @@ class BytesLenModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the len(bytes)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -506,7 +484,6 @@ class BytesHexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.hex()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -527,7 +504,6 @@ class BytesPartitionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.partition(sep)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -545,7 +521,6 @@ class BytesRpartitionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rpartition(sep)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -563,7 +538,6 @@ class BytesSplitlinesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.splitlines()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -584,7 +558,6 @@ class BytesCenterModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.center(width)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -608,7 +581,6 @@ class BytesLjustModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.ljust(width)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -632,7 +604,6 @@ class BytesRjustModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.rjust(width)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -656,7 +627,6 @@ class BytesZfillModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.zfill(width)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -680,7 +650,6 @@ class BytesTranslateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.translate(table)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -701,7 +670,6 @@ class BytesMaketransModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.maketrans(from, to)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -719,7 +687,6 @@ class BytesExpandtabsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.expandtabs()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -740,7 +707,6 @@ class BytesIsdigitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.isdigit()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -761,7 +727,6 @@ class BytesIsalphaModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.isalpha()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -782,7 +747,6 @@ class BytesIsalnumModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.isalnum()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -803,7 +767,6 @@ class BytesIsspaceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.isspace()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -824,7 +787,6 @@ class BytesIslowerModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.islower()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -845,7 +807,6 @@ class BytesIsupperModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.isalpha()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -866,7 +827,6 @@ class BytesIstitleModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.istitle()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -887,7 +847,6 @@ class BytesRemovePrefixModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.removeprefix(prefix)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -908,7 +867,6 @@ class BytesRemoveSuffixModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes.removesuffix(suffix)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -929,7 +887,6 @@ class BytearrayAppendModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.append(item)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -953,7 +910,6 @@ class BytearrayExtendModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.extend(iterable)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -977,7 +933,6 @@ class BytearrayInsertModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.insert(index, item)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1001,7 +956,6 @@ class BytearrayPopModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.pop(index=-1)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1032,7 +986,6 @@ class BytearrayRemoveModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.remove(value)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1059,7 +1012,6 @@ class BytearrayClearModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.clear()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1079,7 +1031,6 @@ class BytearrayReverseModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.reverse()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1095,7 +1046,6 @@ class BytearrayCopyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray.copy()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1168,7 +1118,6 @@ class BytesIsasciiModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the BytesIsasciiModel model."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1183,7 +1132,6 @@ class BytearrayIsasciiModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the BytearrayIsasciiModel model."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

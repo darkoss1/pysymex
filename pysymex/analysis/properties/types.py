@@ -79,12 +79,10 @@ class PropertyProof:
 
     @builtins.property
     def is_proven(self) -> bool:
-        """Is proven."""
         return self.status == ProofStatus.PROVEN
 
     @builtins.property
     def is_disproven(self) -> bool:
-        """Is disproven."""
         return self.status == ProofStatus.DISPROVEN
 
     def format(self) -> str:

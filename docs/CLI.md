@@ -8,12 +8,14 @@ Complete guide for using pysymex from the command line.
 
 1. [Quick Start](#quick-start)
 2. [Installation](#installation)
-3. [Basic Usage](#basic-usage)
-4. [Scanner Commands](#scanner-commands)
-5. [Configuration Options](#configuration-options)
-6. [Output Formats](#output-formats)
-7. [Examples](#examples)
-8. [Troubleshooting](#troubleshooting)
+3. [Commands Overview](#commands-overview)
+4. [scan](#scan)
+5. [analyze](#analyze)
+6. [verify](#verify)
+7. [concolic](#concolic)
+8. [benchmark](#benchmark)
+9. [Output Formats](#output-formats)
+10. [Examples](#examples)
 
 ---
 
@@ -21,16 +23,19 @@ Complete guide for using pysymex from the command line.
 
 ```bash
 # Scan a single file
-python -m pysymex.scanner --dir myfile.py
+pysymex scan mycode.py
 
-# Scan a directory
-python -m pysymex.scanner --dir ./src
+# Scan a directory recursively
+pysymex scan src/ -r
 
-# Watch mode (continuous scanning)
-python -m pysymex.scanner --dir ./src --watch
+# Analyze a specific function with typed arguments
+pysymex analyze mycode.py -f risky_func --args x:int y:str
 
-# Use the standalone scanner
-python auto_scanner.py --dir ./src
+# Generate SARIF report for CI/CD
+pysymex scan src/ -r --format sarif -o report.sarif
+
+# Run benchmarks
+pysymex benchmark --format markdown
 ```
 
 ---
@@ -40,222 +45,252 @@ python auto_scanner.py --dir ./src
 ### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/darkoss1/pysymex.git
 cd pysymex
-
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/macOS
-
-# Install dependencies
 pip install -e .
 ```
 
 ### Requirements
 
-- Python 3.10, 3.11, 3.12, or 3.13
-- z3-solver
+- Python 3.11+
+- z3-solver >= 4.12.0
+- pydantic >= 2.0.0
 
 ---
 
-## Basic Usage
+## Commands Overview
 
-### Module Scanner
-
-The primary way to use pysymex CLI:
-
-```bash
-python -m pysymex.scanner [OPTIONS]
-```
-
-### Standalone Scanner
-
-The `auto_scanner.py` file can be copied to any project:
-
-```bash
-python auto_scanner.py [OPTIONS]
-```
+| Command | Description |
+|---------|-------------|
+| `scan` | Scan a file or directory for bugs |
+| `analyze` | Symbolically analyze a specific function |
+| `verify` | Verify function contracts |
+| `concolic` | Generate test cases via concolic execution |
+| `benchmark` | Run the benchmark suite |
 
 ---
 
-## Scanner Commands
+## scan
 
-### Command-Line Arguments
+Scan a Python file or directory for bugs and vulnerabilities.
 
-| Argument | Short | Type | Default | Description |
-|----------|-------|------|---------|-------------|
-| `--dir` | `-d` | PATH | `.` | Directory to scan |
-| `--log` | `-l` | FILE | `scan_log_TIMESTAMP.json` | Log file path |
-| `--watch` | `-w` | FLAG | False | Enable watch mode |
-| `--recursive` | `-r` | FLAG | True | Scan subdirectories |
+```bash
+pysymex scan PATH [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `path` | (required) | File or directory to scan |
+| `--mode {symbolic,static,pipeline}` | `symbolic` | Analysis mode |
+| `--format {text,json,sarif}` | `text` | Output format |
+| `-o OUTPUT` | stdout | Write report to file |
+| `-r` / `--recursive` | False | Scan directories recursively |
+| `-v` / `--verbose` | False | Verbose output |
+| `--max-paths N` | 200 | Max paths per function |
+| `--timeout N` | 30 | Timeout per function in seconds |
+| `--workers N` | 0 (auto) | Worker processes (0 = CPU count, 1 = sequential) |
+| `--watch` | False | Re-scan on file changes |
+| `--auto` | False | Auto-tune analysis configuration |
+| `--no-cache` | False | Disable all caching for fresh analysis |
+| `--max-iterations N` | 0 (auto) | Max iterations per function |
+| `--reproduce` | False | Generate reproduction scripts for findings |
+| `--visualize` | False | Show real-time progress visualization |
+| `--async` | False | Use async scanner (TaskGroup-based concurrency) |
+| `--trace` | False | Emit execution traces for symbolic runs |
+| `--trace-output-dir DIR` | `.pysymex/traces` | Directory for trace JSONL files |
+| `--trace-verbosity` | `delta_only` | Trace detail: `quiet`, `delta_only`, `full` |
+
+### Analysis Modes
+
+| Mode | Description |
+|------|-------------|
+| `symbolic` | Full symbolic execution with Z3 (default) |
+| `static` | Fast static analysis without SMT solving |
+| `pipeline` | Combined static + symbolic pipeline |
 
 ### Examples
 
-#### Scan Current Directory
 ```bash
-python -m pysymex.scanner
-```
+# Scan a single file
+pysymex scan mycode.py
 
-#### Scan Specific Directory
-```bash
-python -m pysymex.scanner --dir ./src
-python -m pysymex.scanner -d C:\projects\myapp
-```
+# Scan a directory recursively
+pysymex scan src/ -r
 
-#### Custom Log File
-```bash
-python -m pysymex.scanner --dir ./src --log results.json
-python -m pysymex.scanner -d ./src -l ./reports/scan.json
-```
+# Static analysis mode (faster)
+pysymex scan src/ --mode static
 
-#### Watch Mode (Continuous)
-```bash
-python -m pysymex.scanner --dir ./src --watch
-python -m pysymex.scanner -d ./src -w
-```
-Press `Ctrl+C` to stop watching and see the summary.
+# Full pipeline mode
+pysymex scan src/ --mode pipeline
 
-#### Non-Recursive Scan
-```bash
-python -m pysymex.scanner --dir ./src --recursive=false
+# Generate SARIF report (GitHub Security tab compatible)
+pysymex scan src/ -r --format sarif -o report.sarif
+
+# JSON output
+pysymex scan src/ --format json -o results.json
+
+# Watch mode — re-scan on file changes
+pysymex scan . --watch
+
+# Parallel workers
+pysymex scan src/ --workers 4
+
+# Fresh analysis (bypass caches)
+pysymex scan src/ --no-cache
 ```
 
 ---
 
-## Configuration Options
+## analyze
 
-### Execution Configuration
+Perform symbolic execution on a specific function.
 
-pysymex uses these default settings (customizable via Python API):
+```bash
+pysymex analyze FILE -f FUNCTION [OPTIONS]
+```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `max_paths` | 100 | Maximum paths to explore per function |
-| `max_depth` | 50 | Maximum recursion depth |
-| `max_iterations` | 5000 | Maximum iterations per function |
-| `timeout_seconds` | 30.0 | Timeout per file |
+### Arguments
 
-### Config File (pysymex.toml)
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `file` | (required) | Python file to analyze |
+| `-f` / `--function` | (required) | Function name to analyze |
+| `--args NAME:TYPE...` | None | Symbolic arguments (e.g., `x:int y:str`) |
+| `--format` | `text` | Output format: `text`, `json`, `sarif`, `html`, `markdown` |
+| `-o OUTPUT` | stdout | Write report to file |
+| `--max-paths N` | 200 | Max paths to explore |
+| `--timeout N` | 30 | Timeout in seconds |
+| `-v` / `--verbose` | False | Verbose output |
 
-Create a `pysymex.toml` file in your project root:
+### Supported Argument Types
 
-```toml
-[execution]
-max_paths = 100
-max_depth = 50
-max_iterations = 5000
-timeout_seconds = 30.0
+| Type | Description |
+|------|-------------|
+| `int` | Symbolic integer |
+| `str` | Symbolic string |
+| `list` | Symbolic list |
+| `bool` | Symbolic boolean |
+| `dict` | Symbolic dictionary |
 
-[detectors]
-division_by_zero = true
-assertion_errors = true
-index_errors = true
-type_errors = true
-null_dereference = true
-resource_leaks = true
+### Examples
 
-[output]
-format = "text"  # text, json, html
-verbose = false
+```bash
+# Analyze a function
+pysymex analyze mycode.py -f risky_divide
+
+# With typed symbolic arguments
+pysymex analyze mycode.py -f process --args items:list index:int
+
+# HTML report
+pysymex analyze mycode.py -f check_input --format html -o report.html
+
+# Markdown report
+pysymex analyze mycode.py -f my_func --format markdown
+```
+
+---
+
+## verify
+
+Verify function contracts and postconditions.
+
+```bash
+pysymex verify FILE [OPTIONS]
+```
+
+---
+
+## concolic
+
+Generate test cases using concolic (concrete + symbolic) execution.
+
+```bash
+pysymex concolic FILE -f FUNCTION [OPTIONS]
+```
+
+### Examples
+
+```bash
+pysymex concolic mycode.py -f my_func -n 50
+```
+
+---
+
+## benchmark
+
+Run the built-in benchmark suite to measure engine performance.
+
+```bash
+pysymex benchmark [OPTIONS]
+```
+
+### Examples
+
+```bash
+# Run benchmarks, print table
+pysymex benchmark
+
+# Markdown output
+pysymex benchmark --format markdown
+
+# JSON output to file
+pysymex benchmark --format json -o benchmarks/baseline.json
+
+# Compare against a baseline
+pysymex benchmark --baseline benchmarks/baseline.json
 ```
 
 ---
 
 ## Output Formats
 
-### Console Output
+### text (default)
+
+Human-readable output printed to stdout.
 
 ```
-======================================================================
-🔍 Scanning: ./src/utils.py
-======================================================================
+══════════════════════════════════════════════════════════════════════
+ PySyMex — Formal Verification Report
+══════════════════════════════════════════════════════════════════════
 
-⚠️  Found 2 potential issues:
+CRASHES PROVEN POSSIBLE (Z3 found counterexamples):
+──────────────────────────────────────────────────────────────────────
 
-   • [DIVISION_BY_ZERO] Division by zero possible (Line 15)
-       └─ y = 0
-   • [INDEX_ERROR] Index may be out of bounds (Line 23)
-       └─ idx = -5
-
-   📊 Stats: 5 code objects | 42 paths explored
+  [DIVISION BY ZERO]
+    mycode.py:12 in unsafe_divide()
+       Division by zero: y can be 0 in //
+       Crash when: y=0
 ```
 
-### JSON Log Output
+### json
 
-```json
-{
-  "session_start": "2026-01-17T12:00:00.000000",
-  "last_update": "2026-01-17T12:01:30.000000",
-  "total_files": 10,
-  "total_issues": 5,
-  "scans": [
-    {
-      "file": "./src/utils.py",
-      "timestamp": "2026-01-17T12:00:05.000000",
-      "issues": [
-        {
-          "kind": "DIVISION_BY_ZERO",
-          "message": "Division by zero possible",
-          "line": 15,
-          "pc": 24,
-          "counterexample": {"y": "0"}
-        }
-      ],
-      "code_objects": 5,
-      "paths_explored": 42,
-      "error": null
-    }
-  ]
-}
+Structured JSON suitable for programmatic processing.
+
+### sarif
+
+SARIF 2.1.0 format, compatible with GitHub Security tab and other SARIF viewers.
+
+```bash
+pysymex scan src/ -r --format sarif -o report.sarif
 ```
 
-### Session Summary
+### html / markdown
 
-```
-======================================================================
-📋 SESSION SUMMARY
-======================================================================
-
-   Files scanned:     10
-   Files with issues: 3
-   Files clean:       6
-   Files with errors: 1
-   
-   Total issues:      5
-
-   Issue breakdown:
-      DIVISION_BY_ZERO            2 ██
-      INDEX_ERROR                 2 ██
-      NULL_DEREFERENCE            1 █
-
-   📁 Log saved to: scan_log_20260117_120000.json
-======================================================================
-```
+Available for the `analyze` subcommand only.
 
 ---
 
 ## Examples
 
-### Example 1: Quick Project Scan
-
-Scan a Python project and save results:
+### Quick Project Scan
 
 ```bash
-# Navigate to project
-cd C:\projects\myapp
-
-# Run scan
-python -m pysymex.scanner --dir . --log security_scan.json
-
-# View results in JSON
-type security_scan.json
+pysymex scan ./src -r --format sarif -o security.sarif
 ```
 
-### Example 2: CI/CD Integration
-
-Add to your CI pipeline:
+### CI/CD Integration
 
 ```yaml
 # .github/workflows/security.yml
@@ -270,99 +305,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pysymex
-      - run: python -m pysymex.scanner --dir ./src --log scan.json
+      - run: pip install -e .
+      - run: pysymex scan ./src -r --format sarif -o report.sarif
       - uses: actions/upload-artifact@v4
         with:
-          name: scan-results
-          path: scan.json
+          name: sarif-report
+          path: report.sarif
 ```
 
-### Example 3: Pre-Commit Hook
-
-Create `.git/hooks/pre-commit`:
+### Watch Mode During Development
 
 ```bash
-#!/bin/bash
-python -m pysymex.scanner --dir . > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-    echo "pysymex found potential issues. Run: python -m pysymex.scanner"
-    exit 1
-fi
-```
-
-### Example 4: Watch During Development
-
-Keep scanner running while developing:
-
-```bash
-# Terminal 1: Start watch mode
-python -m pysymex.scanner --dir ./src --watch
-
-# Terminal 2: Make code changes
-# Scanner will automatically re-analyze modified files
-```
-
----
-
-## Issue Types Detected
-
-| Issue Kind | Description | Example |
-|------------|-------------|---------|
-| `DIVISION_BY_ZERO` | Division where denominator can be 0 | `x / y` where y=0 |
-| `INDEX_ERROR` | List/array access out of bounds | `arr[i]` where i=-1 |
-| `NULL_DEREFERENCE` | Accessing attribute of None | `obj.method()` where obj=None |
-| `TYPE_ERROR` | Type mismatch in operations | `"str" + 5` |
-| `ASSERTION_ERROR` | Assert can fail | `assert x > 0` where x=0 |
-| `KEY_ERROR` | Dictionary key not found | `d[key]` where key missing |
-| `RESOURCE_LEAK` | Unclosed file/resource | `open(f)` without close |
-| `FORMAT_STRING_ERROR` | String formatting issues | `"{} {}".format(x)` |
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### "Module not found" Error
-```bash
-# Ensure you're in the right environment
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/macOS
-
-# Install pysymex
-pip install -e .
-```
-
-#### Slow Analysis
-```bash
-# Reduce analysis depth in pysymex.toml
-[execution]
-max_paths = 50
-max_iterations = 2000
-timeout_seconds = 15.0
-```
-
-#### Out of Memory
-```bash
-# Scan fewer files at once
-python -m pysymex.scanner --dir ./src/module1 --log part1.json
-python -m pysymex.scanner --dir ./src/module2 --log part2.json
-```
-
-#### False Positives
-- pysymex may report issues that cannot happen in practice
-- Review counterexamples to verify if the issue is real
-- Consider the symbolic analysis limitations (no runtime type info)
-
-### Getting Help
-
-```bash
-# Show help
-python -m pysymex.scanner --help
-
-# Version info
-python -c "import pysymex; print(pysymex.__version__)"
+# Keep scanner running while editing
+pysymex scan . --watch
 ```
 
 ---
@@ -371,13 +326,13 @@ python -c "import pysymex; print(pysymex.__version__)"
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success (may have found issues) |
-| 1 | Error (invalid arguments, file not found, etc.) |
+| 0 | No issues found |
+| 1 | Issues found or error |
 
 ---
 
 ## See Also
 
-- [Scanner API Documentation](SCANNER.md) - Python API for scanner
-- [API Reference](API.md) - Full Python API reference
+- [API Reference](API.md) - Python API
+- [Scanner Guide](SCANNER.md) - Scanner module API
 - [Examples](../examples/) - Code examples

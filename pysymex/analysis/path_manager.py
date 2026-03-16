@@ -1,7 +1,7 @@
 """Path exploration strategies for symbolic execution.
 
 Provides pluggable managers (DFS, BFS, coverage-guided, directed,
-hybrid) that determine the order in which states are explored.
+adaptive) that determine the order in which states are explored.
 """
 
 from __future__ import annotations
@@ -9,10 +9,11 @@ from __future__ import annotations
 import collections
 import heapq
 import itertools
+import random as _random_mod
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
@@ -26,25 +27,7 @@ class ExplorationStrategy(Enum):
     RANDOM = auto()
     COVERAGE = auto()
     DIRECTED = auto()
-    HYBRID = auto()
-
-
-@dataclass(frozen=True, slots=True, order=True)
-class PrioritizedState:
-    """VM state paired with a numeric priority for heap-based scheduling.
-
-    Attributes:
-        priority: Lower values are dequeued first.
-        state: The ``VMState`` to explore.
-    """
-
-    priority: float
-    state: VMState = field(compare=False)
-
-    @classmethod
-    def from_state(cls, state: VMState, priority: float = 0.0) -> PrioritizedState:
-        """From state."""
-        return cls(priority=priority, state=state)
+    ADAPTIVE = auto()
 
 
 T = TypeVar("T")
@@ -77,12 +60,9 @@ class DFSPathManager(PathManager[T]):
     """Depth-first search path exploration."""
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._stack: list[T] = []
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
-        """Add state."""
         self._stack.append(state)
 
     def get_next_state(self) -> T | None:
@@ -92,11 +72,9 @@ class DFSPathManager(PathManager[T]):
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
         return len(self._stack) == 0
 
     def size(self) -> int:
-        """Size."""
         return len(self._stack)
 
 
@@ -104,12 +82,9 @@ class BFSPathManager(PathManager[T]):
     """Breadth-first search path exploration."""
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._queue: collections.deque[T] = collections.deque()
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
-        """Add state."""
         self._queue.append(state)
 
     def get_next_state(self) -> T | None:
@@ -119,24 +94,27 @@ class BFSPathManager(PathManager[T]):
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
         return len(self._queue) == 0
 
     def size(self) -> int:
-        """Size."""
         return len(self._queue)
+
+
+@dataclass(frozen=True, order=True)
+class PrioritizedState(Generic[T]):
+    """Priority-wrapped item for heap-based scheduling."""
+
+    priority: float
+    state: T = field(compare=False)
 
 
 class PriorityPathManager(PathManager[T]):
     """Priority-based path exploration (for coverage/directed)."""
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._heap: list[PrioritizedState[T]] = []
 
     def add_state(self, state: T, priority: float = 0.0) -> None:
-        """Add state."""
         heapq.heappush(self._heap, PrioritizedState(priority, state))
 
     def get_next_state(self) -> T | None:
@@ -146,25 +124,10 @@ class PriorityPathManager(PathManager[T]):
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
-        """Size."""
         return len(self._heap)
-
-
-@dataclass(frozen=True, order=True)
-class PrioritizedState(Generic[T]):
-    """VM state paired with a numeric priority for heap-based scheduling.
-
-    Attributes:
-        priority: Lower values are dequeued first.
-        state: The item to explore.
-    """
-
-    priority: float
-    state: T = field(compare=False)
 
 
 class CoverageGuidedPathManager(PathManager["VMState"]):
@@ -176,9 +139,7 @@ class CoverageGuidedPathManager(PathManager["VMState"]):
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
-        self._heap: list[PrioritizedState] = []
+        self._heap: list[PrioritizedState["VMState"]] = []
         self._covered_pcs: set[int] = set()
         self._covered_branches: set[tuple[int, bool]] = set()
 
@@ -197,11 +158,9 @@ class CoverageGuidedPathManager(PathManager["VMState"]):
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
-        """Size."""
         return len(self._heap)
 
     def get_coverage(self) -> tuple[int, set[int]]:
@@ -209,7 +168,7 @@ class CoverageGuidedPathManager(PathManager["VMState"]):
         return len(self._covered_pcs), self._covered_pcs
 
 
-class DirectedPathManager(PathManager):
+class DirectedPathManager(PathManager["VMState"]):
     """Target-directed path exploration prioritising states near target PCs.
 
     Args:
@@ -217,9 +176,7 @@ class DirectedPathManager(PathManager):
     """
 
     def __init__(self, targets: set[int]):
-        """Init."""
-        """Initialize the class instance."""
-        self._heap: list[PrioritizedState] = []
+        self._heap: list[PrioritizedState["VMState"]] = []
         self._targets = targets
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
@@ -241,129 +198,189 @@ class DirectedPathManager(PathManager):
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
         return len(self._heap) == 0
 
     def size(self) -> int:
-        """Size."""
         return len(self._heap)
 
 
 @dataclass(frozen=True)
 class StateEntry:
-    """Wrapper to treat each added state as a unique entry in HybridPathManager."""
+    """Wrapper to treat each added state as a unique entry in AdaptivePathManager."""
 
     state: VMState
     entry_id: int
 
 
-class HybridPathManager(PathManager["VMState"]):
-    """Hybrid path exploration combining DFS, coverage, and random sampling.
+class AdaptivePathManager(PathManager["VMState"]):
+    """Multi-armed bandit path manager using Thompson Sampling.
 
-    Ensures that each state entry is returned exactly once even though multiple
-    strategies are tracked internally (fix for duplication bug).
+    Maintains three sub-strategies (DFS, coverage-guided, random) and
+    uses a conjugate Beta-Bernoulli model per arm to balance
+    exploration vs. exploitation.  The reward signal is based on
+    whether following a strategy leads to new coverage or issue
+    discovery.
 
-    Args:
-        dfs_weight: Probability of choosing DFS next.
-        coverage_weight: Probability of choosing coverage-guided next.
-        random_weight: Probability of choosing a random state.
+    Thompson Sampling has O(sqrt(T log T)) regret and naturally
+    adapts to the project's bug-distribution: projects with many
+    arithmetic bugs reward DFS differently than web frameworks with
+    taint-flow vulnerabilities.
+
+    Attributes:
+        _arms: Per-strategy Beta priors (alpha, beta).
+        _covered_pcs: Global set of covered program counters.
+        _last_arm: Which arm was selected for the most recent state.
+        _total_rewards: Cumulative reward signal for diagnostics.
     """
+
+    # Arm names correspond to sub-strategies
+    ARM_DFS = "dfs"
+    ARM_COVERAGE = "coverage"
+    ARM_RANDOM = "random"
 
     def __init__(
         self,
-        dfs_weight: float = 0.5,
-        coverage_weight: float = 0.3,
-        random_weight: float = 0.2,
+        dfs_prior: tuple[float, float] = (2.0, 1.0),
+        coverage_prior: tuple[float, float] = (2.0, 1.0),
+        random_prior: tuple[float, float] = (1.0, 1.0),
     ):
-        """Init."""
-        """Initialize the class instance."""
-        import random
-
-        self._random = random
         self._entry_counter = itertools.count()
-        self._dfs = DFSPathManager[StateEntry]()
-        self._coverage = PriorityPathManager[StateEntry]()
-        self._weights = {
-            "dfs": dfs_weight,
-            "coverage": coverage_weight,
-            "random": random_weight,
+        self._dfs: list[StateEntry] = []  # stack (LIFO)
+        self._coverage_heap: list[PrioritizedState[StateEntry]] = []
+        self._random_pool: list[StateEntry] = []
+
+        # Beta(alpha, beta) priors for each arm
+        self._arms: dict[str, list[float]] = {
+            self.ARM_DFS: list(dfs_prior),
+            self.ARM_COVERAGE: list(coverage_prior),
+            self.ARM_RANDOM: list(random_prior),
         }
-        self._all_entries: list[StateEntry] = []
-        # Track entry IDs to ensure uniqueness across strategies
-        self._returned_entry_ids: set[int] = set()
+
+        self._covered_pcs: set[int] = set()
+        self._returned_ids: set[int] = set()
         self._total_entries = 0
+        self._last_arm: str | None = None
+        self._total_rewards: float = 0.0
+        self._arm_selections: dict[str, int] = {a: 0 for a in self._arms}
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        """Add state."""
         entry = StateEntry(state, next(self._entry_counter))
-        self._dfs.add_state(entry)
-        
-        # Simple heuristic for coverage: states with more visited PCs are better
-        # Note: True CoverageGuidedPathManager is more complex, but this suffices here
-        self._coverage.add_state(entry, priority=-len(state.visited_pcs))
-        
-        self._all_entries.append(entry)
+        self._dfs.append(entry)
+
+        new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
+        heapq.heappush(self._coverage_heap, PrioritizedState(-new_pcs, entry))
+
+        self._random_pool.append(entry)
         self._total_entries += 1
 
-    def _get_unique(self, manager: PathManager[StateEntry] | list[StateEntry]) -> VMState | None:
-        """Fetch next state entry from sub-manager, skipping already-returned ones."""
-        while True:
-            entry: StateEntry | None = None
-            if isinstance(manager, PathManager):
-                if manager.is_empty():
-                    return None
-                entry = manager.get_next_state()
-            elif isinstance(manager, list):
-                if not manager:
-                    return None
-                idx = self._random.randint(0, len(manager) - 1)
-                entry = manager.pop(idx)
-            
-            if entry is None:
-                return None
-            
-            if entry.entry_id not in self._returned_entry_ids:
-                self._returned_entry_ids.add(entry.entry_id)
+    def record_reward(self, reward: float) -> None:
+        """Feed a reward signal back to update the last-selected arm.
+
+        Call this after the executor processes the state returned by
+        ``get_next_state()``.  Typical reward signals:
+
+        - +10.0 for discovering a new issue (HIGH severity)
+        - +3.0  for covering a new basic block
+        - +1.0  for covering a new branch
+        - -1.0  for hitting a resource limit
+        - -5.0  for immediate UNSAT (infeasible path)
+        """
+        if self._last_arm is None:
+            return
+        arm = self._arms[self._last_arm]
+        if reward > 0:
+            arm[0] += min(reward, 10.0)  # cap alpha increment
+        else:
+            arm[1] += min(abs(reward), 5.0)  # cap beta increment
+        self._total_rewards += reward
+
+    def _thompson_sample(self) -> str:
+        """Select an arm via Thompson Sampling (Beta-Bernoulli)."""
+        best_arm = self.ARM_DFS
+        best_sample = -1.0
+        for arm_name, (alpha, beta) in self._arms.items():
+            sample = _random_mod.betavariate(alpha, beta)
+            if sample > best_sample:
+                best_sample = sample
+                best_arm = arm_name
+        return best_arm
+
+    def _pop_unique_from_stack(self, stack: list[StateEntry]) -> VMState | None:
+        while stack:
+            entry = stack.pop()
+            if entry.entry_id not in self._returned_ids:
+                self._returned_ids.add(entry.entry_id)
+                self._covered_pcs.update(entry.state.visited_pcs)
                 return entry.state
+        return None
+
+    def _pop_unique_from_heap(self) -> VMState | None:
+        while self._coverage_heap:
+            ps = heapq.heappop(self._coverage_heap)
+            entry = ps.state  # PrioritizedState.state is a StateEntry here
+            if entry.entry_id not in self._returned_ids:
+                self._returned_ids.add(entry.entry_id)
+                self._covered_pcs.update(entry.state.visited_pcs)
+                return entry.state
+        return None
+
+    def _pop_unique_random(self) -> VMState | None:
+        while self._random_pool:
+            idx = _random_mod.randint(0, len(self._random_pool) - 1)
+            entry = self._random_pool.pop(idx)
+            if entry.entry_id not in self._returned_ids:
+                self._returned_ids.add(entry.entry_id)
+                self._covered_pcs.update(entry.state.visited_pcs)
+                return entry.state
+        return None
 
     def get_next_state(self) -> VMState | None:
-        """Get next state."""
         if self.is_empty():
             return None
-            
-        choice = self._random.random()
-        
-        if choice < self._weights["dfs"]:
-            state = self._get_unique(self._dfs)
-            if state is not None:
-                return state
-        elif choice < self._weights["dfs"] + self._weights["coverage"]:
-            state = self._get_unique(self._coverage)
-            if state is not None:
-                return state
-        else:
-            state = self._get_unique(self._all_entries)
-            if state is not None:
-                return state
 
-        # Fallback if preferred choice was already returned elsewhere
-        for strategy in [self._dfs, self._coverage, self._all_entries]:
-            state = self._get_unique(strategy)
-            if state is not None:
-                return state
-                
+        arm = self._thompson_sample()
+        self._last_arm = arm
+        self._arm_selections[arm] += 1
+
+        dispatch = {
+            self.ARM_DFS: lambda: self._pop_unique_from_stack(self._dfs),
+            self.ARM_COVERAGE: self._pop_unique_from_heap,
+            self.ARM_RANDOM: self._pop_unique_random,
+        }
+
+        state = dispatch[arm]()
+        if state is not None:
+            return state
+
+        # Fallback through other arms
+        for fallback_arm in [self.ARM_DFS, self.ARM_COVERAGE, self.ARM_RANDOM]:
+            if fallback_arm != arm:
+                state = dispatch[fallback_arm]()
+                if state is not None:
+                    self._last_arm = fallback_arm
+                    return state
         return None
 
     def is_empty(self) -> bool:
-        """Is empty."""
-        return len(self._returned_entry_ids) >= self._total_entries
+        return len(self._returned_ids) >= self._total_entries
 
     def size(self) -> int:
-        """Size."""
-        return self._total_entries - len(self._returned_entry_ids)
+        return self._total_entries - len(self._returned_ids)
+
+    def get_stats(self) -> dict[str, object]:
+        """Diagnostic statistics for the bandit."""
+        return {
+            "arms": {k: {"alpha": v[0], "beta": v[1]} for k, v in self._arms.items()},
+            "selections": dict(self._arm_selections),
+            "total_rewards": self._total_rewards,
+            "covered_pcs": len(self._covered_pcs),
+        }
 
 
-def create_path_manager(strategy: ExplorationStrategy, **kwargs: object) -> PathManager:
+def create_path_manager(  # type: ignore[return]
+    strategy: ExplorationStrategy,
+    **kwargs: object,
+) -> PathManager["VMState"]:
     """Factory function for creating a path manager from a strategy enum.
 
     Args:
@@ -380,9 +397,9 @@ def create_path_manager(strategy: ExplorationStrategy, **kwargs: object) -> Path
     elif strategy == ExplorationStrategy.COVERAGE:
         return CoverageGuidedPathManager()
     elif strategy == ExplorationStrategy.DIRECTED:
-        targets: set[int] = kwargs.get("targets", set())
+        targets: set[int] = kwargs.get("targets", set())  # type: ignore[assignment]
         return DirectedPathManager(targets)
-    elif strategy == ExplorationStrategy.HYBRID:
-        return HybridPathManager(**kwargs)
+    elif strategy == ExplorationStrategy.ADAPTIVE:
+        return AdaptivePathManager(**kwargs)  # type: ignore[arg-type]
     else:
         return DFSPathManager()

@@ -168,8 +168,6 @@ class BoundsChecker:
         check_off_by_one: bool = True,
         strict_slice_bounds: bool = True,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self.check_off_by_one = check_off_by_one
         self.strict_slice_bounds = strict_slice_bounds

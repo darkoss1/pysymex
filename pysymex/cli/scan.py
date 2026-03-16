@@ -491,8 +491,6 @@ def _add_reproduction_info(
             class IssueObj:
                 """Data object representing a detected issue for reproduction."""
                 def __init__(self, data: dict[str, object]) -> None:
-                    """Init."""
-                    """Initialize the class instance."""
                     self.counterexample = data.get("counterexample")
                     self.kind = type("Kind", (), {"name": data.get("kind")})
                     self.message = data.get("message")

@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import dis
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from pysymex.core.solver import IncrementalSolver
 
 __all__ = [
     "ExecutionContext",
@@ -31,7 +34,7 @@ class ExecutionContext(Protocol):
 
     _instructions: Sequence[dis.Instruction]
 
-    solver: Any
+    solver: IncrementalSolver
 
     _paths_explored: int
 
@@ -39,5 +42,4 @@ class ExecutionContext(Protocol):
 
     _issues: Sequence[object]
 
-                                                                                     """Register hook."""
     def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None: ...

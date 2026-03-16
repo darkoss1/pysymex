@@ -8,10 +8,14 @@ in the same module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import z3
 
 from .symbolic_types_base import SymbolicType, TypeTag, fresh_name
+
+if TYPE_CHECKING:
+    from .types import SymbolicValue
 
 _BV_WIDTH: int = 64
 
@@ -28,32 +32,25 @@ class SymbolicBool(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("bool")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.BOOL
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_bool
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return self.z3_bool
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Not(self.z3_bool)
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -65,19 +62,15 @@ class SymbolicBool(SymbolicType):
         return z3.BoolVal(False)
 
     def __and__(self, other: SymbolicBool) -> SymbolicBool:
-        """And."""
         return SymbolicBool(z3.And(self.z3_bool, other.z3_bool))
 
     def __or__(self, other: SymbolicBool) -> SymbolicBool:
-        """Or."""
         return SymbolicBool(z3.Or(self.z3_bool, other.z3_bool))
 
     def __invert__(self) -> SymbolicBool:
-        """Invert."""
         return SymbolicBool(z3.Not(self.z3_bool))
 
     def __xor__(self, other: SymbolicBool) -> SymbolicBool:
-        """Xor."""
         return SymbolicBool(z3.Xor(self.z3_bool, other.z3_bool))
 
     @staticmethod
@@ -113,28 +106,24 @@ class SymbolicInt(SymbolicType):
 
     z3_int: z3.ArithRef
     _name: str = field(default="")
+    _bv_cache: z3.BitVecRef | None = field(default=None, init=False, repr=False, compare=False)
 
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("int")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.INT
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_int
 
     @property
@@ -142,12 +131,17 @@ class SymbolicInt(SymbolicType):
         """Expose the underlying Z3 integer expression."""
         return self.z3_int
 
+    @property
+    def as_bv(self) -> z3.BitVecRef:
+        """Return cached 64-bit BitVec form of this integer."""
+        if self._bv_cache is None:
+            self._bv_cache = z3.Int2BV(self.z3_int, _BV_WIDTH)
+        return self._bv_cache
+
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return self.z3_int != 0
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return self.z3_int == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -161,49 +155,39 @@ class SymbolicInt(SymbolicType):
         return z3.BoolVal(False)
 
     def __add__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicInt | SymbolicFloat:
-        """Add."""
         if isinstance(other, SymbolicFloat):
             return SymbolicFloat(z3.ToReal(self.z3_int) + other.z3_real)
         return SymbolicInt(self.z3_int + other.z3_int)
 
     def __radd__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicInt | SymbolicFloat:
-        """Radd."""
         return self.__add__(other)
 
     def __sub__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicInt | SymbolicFloat:
-        """Sub."""
         if isinstance(other, SymbolicFloat):
             return SymbolicFloat(z3.ToReal(self.z3_int) - other.z3_real)
         return SymbolicInt(self.z3_int - other.z3_int)
 
     def __rsub__(self, other: SymbolicInt) -> SymbolicInt:
-        """Rsub."""
         return SymbolicInt(other.z3_int - self.z3_int)
 
     def __mul__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicInt | SymbolicFloat:
-        """Mul."""
         if isinstance(other, SymbolicFloat):
             return SymbolicFloat(z3.ToReal(self.z3_int) * other.z3_real)
         return SymbolicInt(self.z3_int * other.z3_int)
 
     def __rmul__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicInt | SymbolicFloat:
-        """Rmul."""
         return self.__mul__(other)
 
     def __neg__(self) -> SymbolicInt:
-        """Neg."""
         return SymbolicInt(-self.z3_int)
 
     def __pos__(self) -> SymbolicInt:
-        """Pos."""
         return self
 
     def __abs__(self) -> SymbolicInt:
-        """Abs."""
         return SymbolicInt(z3.If(self.z3_int >= 0, self.z3_int, -self.z3_int))
 
     def __mod__(self, other: SymbolicInt) -> SymbolicInt:
-        """Mod."""
         divisor = other.z3_int
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer modulo by zero")
@@ -211,7 +195,6 @@ class SymbolicInt(SymbolicType):
         return SymbolicInt(self.z3_int % safe_divisor)
 
     def __floordiv__(self, other: SymbolicInt) -> SymbolicInt:
-        """Floordiv."""
         divisor = other.z3_int
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer division by zero")
@@ -219,7 +202,6 @@ class SymbolicInt(SymbolicType):
         return SymbolicInt(self.z3_int / safe_divisor)
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Truediv."""
         if isinstance(other, SymbolicFloat):
             denom = other.z3_real
             if z3.is_rational_value(denom) and denom.numerator_as_long() == 0:
@@ -234,37 +216,29 @@ class SymbolicInt(SymbolicType):
         return SymbolicFloat(z3.ToReal(self.z3_int) / safe_denom)
 
     def __pow__(self, other: SymbolicInt) -> SymbolicInt:
-        """Pow."""
-
-        return SymbolicInt(self.z3_int**other.z3_int, fresh_name(f"pow_{self._name}"))
+        return SymbolicInt(self.z3_int**other.z3_int)
 
     def __lt__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Lt."""
         if isinstance(other, SymbolicFloat):
             return SymbolicBool(z3.ToReal(self.z3_int) < other.z3_real)
         return SymbolicBool(self.z3_int < other.z3_int)
 
     def __le__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Le."""
         if isinstance(other, SymbolicFloat):
             return SymbolicBool(z3.ToReal(self.z3_int) <= other.z3_real)
         return SymbolicBool(self.z3_int <= other.z3_int)
 
     def __gt__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Gt."""
         if isinstance(other, SymbolicFloat):
             return SymbolicBool(z3.ToReal(self.z3_int) > other.z3_real)
         return SymbolicBool(self.z3_int > other.z3_int)
 
     def __ge__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Ge."""
         if isinstance(other, SymbolicFloat):
             return SymbolicBool(z3.ToReal(self.z3_int) >= other.z3_real)
         return SymbolicBool(self.z3_int >= other.z3_int)
 
     def __eq__(self, other: object) -> SymbolicBool:
-        """Eq."""
-        """Check for equality with another object."""
         if isinstance(other, SymbolicInt):
             return SymbolicBool(self.z3_int == other.z3_int)
         elif isinstance(other, SymbolicFloat):
@@ -272,39 +246,32 @@ class SymbolicInt(SymbolicType):
         return SymbolicBool.concrete(False)
 
     def __ne__(self, other: object) -> SymbolicBool:
-        """Ne."""
         eq = self.__eq__(other)
         return SymbolicBool(z3.Not(eq.z3_bool))
 
     def __and__(self, other: SymbolicInt) -> SymbolicInt:
-        """And."""
-        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) & z3.Int2BV(other.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"and_{self._name}"))
+        bv_result = self.as_bv & other.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     def __or__(self, other: SymbolicInt) -> SymbolicInt:
-        """Or."""
-        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) | z3.Int2BV(other.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"or_{self._name}"))
+        bv_result = self.as_bv | other.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     def __xor__(self, other: SymbolicInt) -> SymbolicInt:
-        """Xor."""
-        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) ^ z3.Int2BV(other.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"xor_{self._name}"))
+        bv_result = self.as_bv ^ other.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     def __invert__(self) -> SymbolicInt:
-        """Invert."""
-        bv_result = ~z3.Int2BV(self.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"inv_{self._name}"))
+        bv_result = ~self.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     def __lshift__(self, other: SymbolicInt) -> SymbolicInt:
-        """Lshift."""
-        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) << z3.Int2BV(other.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"lshift_{self._name}"))
+        bv_result = self.as_bv << other.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     def __rshift__(self, other: SymbolicInt) -> SymbolicInt:
-        """Rshift."""
-        bv_result = z3.Int2BV(self.z3_int, _BV_WIDTH) >> z3.Int2BV(other.z3_int, _BV_WIDTH)
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True), fresh_name(f"rshift_{self._name}"))
+        bv_result = self.as_bv >> other.as_bv
+        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
 
     @staticmethod
     def symbolic(name: str | None = None) -> SymbolicInt:
@@ -344,32 +311,25 @@ class SymbolicFloat(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("float")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.FLOAT
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_real
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return self.z3_real != 0
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return self.z3_real == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -381,39 +341,32 @@ class SymbolicFloat(SymbolicType):
         return z3.BoolVal(False)
 
     def __add__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Add."""
         if isinstance(other, SymbolicInt):
             return SymbolicFloat(self.z3_real + z3.ToReal(other.z3_int))
         return SymbolicFloat(self.z3_real + other.z3_real)
 
     def __radd__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Radd."""
         return self.__add__(other)
 
     def __sub__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Sub."""
         if isinstance(other, SymbolicInt):
             return SymbolicFloat(self.z3_real - z3.ToReal(other.z3_int))
         return SymbolicFloat(self.z3_real - other.z3_real)
 
     def __rsub__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Rsub."""
         if isinstance(other, SymbolicInt):
             return SymbolicFloat(z3.ToReal(other.z3_int) - self.z3_real)
         return SymbolicFloat(other.z3_real - self.z3_real)
 
     def __mul__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Mul."""
         if isinstance(other, SymbolicInt):
             return SymbolicFloat(self.z3_real * z3.ToReal(other.z3_int))
         return SymbolicFloat(self.z3_real * other.z3_real)
 
     def __rmul__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Rmul."""
         return self.__mul__(other)
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
-        """Truediv."""
         if isinstance(other, SymbolicInt):
             denom = other.z3_int
             if z3.is_int_value(denom) and denom.as_long() == 0:
@@ -425,44 +378,35 @@ class SymbolicFloat(SymbolicType):
         return SymbolicFloat(self.z3_real / denom)
 
     def __neg__(self) -> SymbolicFloat:
-        """Neg."""
         return SymbolicFloat(-self.z3_real)
 
     def __pos__(self) -> SymbolicFloat:
-        """Pos."""
         return self
 
     def __abs__(self) -> SymbolicFloat:
-        """Abs."""
         return SymbolicFloat(z3.If(self.z3_real >= 0, self.z3_real, -self.z3_real))
 
     def __lt__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Lt."""
         if isinstance(other, SymbolicInt):
             return SymbolicBool(self.z3_real < z3.ToReal(other.z3_int))
         return SymbolicBool(self.z3_real < other.z3_real)
 
     def __le__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Le."""
         if isinstance(other, SymbolicInt):
             return SymbolicBool(self.z3_real <= z3.ToReal(other.z3_int))
         return SymbolicBool(self.z3_real <= other.z3_real)
 
     def __gt__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Gt."""
         if isinstance(other, SymbolicInt):
             return SymbolicBool(self.z3_real > z3.ToReal(other.z3_int))
         return SymbolicBool(self.z3_real > other.z3_real)
 
     def __ge__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicBool:
-        """Ge."""
         if isinstance(other, SymbolicInt):
             return SymbolicBool(self.z3_real >= z3.ToReal(other.z3_int))
         return SymbolicBool(self.z3_real >= other.z3_real)
 
     def __eq__(self, other: object) -> SymbolicBool:
-        """Eq."""
-        """Check for equality with another object."""
         if isinstance(other, SymbolicFloat):
             return SymbolicBool(self.z3_real == other.z3_real)
         elif isinstance(other, SymbolicInt):
@@ -470,7 +414,6 @@ class SymbolicFloat(SymbolicType):
         return SymbolicBool.concrete(False)
 
     def __ne__(self, other: object) -> SymbolicBool:
-        """Ne."""
         eq = self.__eq__(other)
         return SymbolicBool(z3.Not(eq.z3_bool))
 

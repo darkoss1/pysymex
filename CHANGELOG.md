@@ -2,6 +2,40 @@
 
 All notable changes to PySyMex will be documented in this file.
 
+## [0.1.0-alpha.1] - 2026-03-15
+
+### Path Explosion Mitigation (CHTD)
+
+- **Constraint Interaction Graph & Treewidth Decomposition**: New `core/treewidth.py` module implements CHTD (Constraint Hypergraph Treewidth Decomposition) — builds a primal graph of variable-sharing between branches, computes tree decompositions via min-degree elimination, and extracts skeleton branch sets. Reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs.
+- **Constraint Independence Optimization**: KLEE-style constraint slicing in `core/constraint_independence.py` partitions path constraints into independent clusters via Union-Find, enabling per-cluster caching and 60-90% solver query reduction.
+- **Adaptive Path Manager (Thompson Sampling)**: New `AdaptivePathManager` in `analysis/path_manager.py` uses a Beta-Bernoulli multi-armed bandit to dynamically balance DFS, coverage-guided, and random exploration strategies based on reward feedback. Removed legacy `HybridPathManager`.
+- **Theory-Aware Solver Dispatch**: `IncrementalSolver` in `core/solver.py` now auto-detects dominant constraint theories (QF_LIA, QF_S, QF_BV, nonlinear) and tunes Z3 solver parameters per query for optimal performance. Auto-escalates to portfolio solver on mixed-theory queries.
+- **Exception Forking**: Arithmetic operations inside try/except blocks now fork into dual paths (normal + exception) using Python 3.12+ exception table entries via `dis.Bytecode(func).exception_entries`. Implemented in `execution/opcodes/arithmetic.py` and `execution/dispatcher.py`.
+- **Branch Affinity Fast Path**: `get_truthy_expr()` in `execution/opcodes/control.py` bypasses full disjunctive encoding when `affinity_type` is known, emitting single-sort Z3 expressions that reduce treewidth in the constraint interaction graph.
+- **Interaction Graph Wired in Executor**: `execution/executor_core.py` feeds branch conditions into the constraint interaction graph and pipes treewidth/solver stats into `ExecutionResult`.
+
+### Bug Fixes (13 pre-existing)
+
+- Fixed infinite recursion in `plugins/base.py` `enabled` property (missing `_enabled` backing field)
+- Fixed `plugins/base.py` `initialize()` requiring positional `api` argument (now optional)
+- Fixed missing `constraint_discriminator` default in `core/parallel_types.py` `StateSignature`
+- Fixed missing `max_queue_size` field in `core/parallel_types.py` `ExplorationConfig`
+- Fixed `execution/opcodes/functions.py` `_dispatch_call` passing string to `_apply_model` instead of `func_obj` (root cause of SimpleNamespace test failures)
+- Fixed `execution/opcodes/functions.py` `LOAD_ATTR` missing `CowDict` in isinstance check
+- Fixed taint label propagation in `core/types.py` comparison operators (`__lt__`, `__le__`, `__gt__`, `__ge__`)
+- Added missing `with_taint()`, `length()`, `substring()` methods to `core/types.py` `SymbolicString`
+- Fixed `SymbolicString.__add__` using wrong field names (`z3_str` -> `_z3_str`, `z3_len` -> `_z3_len`)
+- Fixed `SymbolicString.conditional_merge` returning wrong type (now returns `SymbolicValue`)
+- Fixed positional argument order in `execution/opcodes/collections.py` `_format_value_symbolic`
+- Fixed off-by-one in `resources.py` `check_all_limits` (`>` -> `>=`)
+- Added `SymbolicFloat` handling to `tests/test_function_models.py` `get_concrete()` helper
+
+### Test Suite
+
+- **2723 tests passing** (up from 2583), 0 failures
+- Added standalone integration tests (`verify_features.py`) covering treewidth, adaptive path manager, theory-aware solver, taint propagation, and full pipeline
+- Added extreme stress tests (`stress_test.py`) with 12 path-explosion scenarios up to 2^13 theoretical paths
+
 ## [0.1.0-alpha] - 2026-03-01
 
 ### Initial Release

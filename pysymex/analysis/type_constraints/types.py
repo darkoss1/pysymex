@@ -64,52 +64,42 @@ class SymbolicType:
 
     @classmethod
     def int_type(cls) -> SymbolicType:
-        """Int type."""
         return cls(TypeKind.INT, "int")
 
     @classmethod
     def float_type(cls) -> SymbolicType:
-        """Float type."""
         return cls(TypeKind.FLOAT, "float")
 
     @classmethod
     def bool_type(cls) -> SymbolicType:
-        """Bool type."""
         return cls(TypeKind.BOOL, "bool")
 
     @classmethod
     def str_type(cls) -> SymbolicType:
-        """Str type."""
         return cls(TypeKind.STR, "str")
 
     @classmethod
     def none_type(cls) -> SymbolicType:
-        """None type."""
         return cls(TypeKind.NONE, "None")
 
     @classmethod
     def any_type(cls) -> SymbolicType:
-        """Any type."""
         return cls(TypeKind.ANY, "Any")
 
     @classmethod
     def never_type(cls) -> SymbolicType:
-        """Never type."""
         return cls(TypeKind.NEVER, "Never")
 
     @classmethod
     def list_of(cls, element_type: SymbolicType) -> SymbolicType:
-        """List of."""
         return cls(TypeKind.LIST, "list", (element_type,))
 
     @classmethod
     def dict_of(cls, key_type: SymbolicType, value_type: SymbolicType) -> SymbolicType:
-        """Dict of."""
         return cls(TypeKind.DICT, "dict", (key_type, value_type))
 
     @classmethod
     def tuple_of(cls, *element_types: SymbolicType) -> SymbolicType:
-        """Tuple of."""
         return cls(TypeKind.TUPLE, "tuple", element_types)
 
     @classmethod
@@ -134,28 +124,23 @@ class SymbolicType:
 
     @classmethod
     def callable_type(cls, params: list[SymbolicType], return_type: SymbolicType) -> SymbolicType:
-        """Callable type."""
         return cls(TypeKind.CALLABLE, "Callable", tuple(params) + (return_type,))
 
     @classmethod
     def type_var(
         cls, name: str, *bounds: SymbolicType, variance: Variance = Variance.INVARIANT
     ) -> SymbolicType:
-        """Type var."""
         return cls(TypeKind.TYPE_VAR, name, bounds=bounds if bounds else None, variance=variance)
 
     @classmethod
     def literal(cls, *values: object) -> SymbolicType:
-        """Literal."""
         return cls(TypeKind.LITERAL, "Literal", literal_values=frozenset(values))
 
     @classmethod
     def class_type(cls, name: str, bases: tuple[SymbolicType, ...] = ()) -> SymbolicType:
-        """Class type."""
         return cls(TypeKind.CLASS, name, bases)
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         if self.kind == TypeKind.UNION:
             return " | ".join(str(t) for t in self.args)

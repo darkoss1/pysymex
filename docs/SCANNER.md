@@ -1,6 +1,6 @@
 # pysymex Scanner - Complete Guide
 
-Detailed documentation for the pysymex Scanner module and standalone auto-scanner.
+Detailed documentation for the pysymex Scanner module.
 
 ---
 
@@ -8,11 +8,10 @@ Detailed documentation for the pysymex Scanner module and standalone auto-scanne
 
 1. [Overview](#overview)
 2. [Python API](#python-api)
-3. [Auto-Scanner Usage](#auto-scanner-usage)
-4. [Watch Mode](#watch-mode)
-5. [Session Logging](#session-logging)
-6. [Integration Examples](#integration-examples)
-7. [API Reference](#api-reference)
+3. [Watch Mode](#watch-mode)
+4. [Session Logging](#session-logging)
+5. [Integration Examples](#integration-examples)
+6. [API Reference](#api-reference)
 
 ---
 
@@ -20,12 +19,12 @@ Detailed documentation for the pysymex Scanner module and standalone auto-scanne
 
 pysymex provides two ways to scan Python files:
 
-| Method | File | Use Case |
-|--------|------|----------|
-| **Module Scanner** | `pysymex/scanner.py` | Integrated with pysymex package |
-| **Standalone Scanner** | `auto_scanner.py` | Copy to any project, no installation |
+| Method | Use Case |
+|--------|----------|
+| **CLI** (`pysymex scan PATH`) | Primary interface — scan files and directories |
+| **Python API** (`scan_file` / `scan_directory`) | Programmatic use in your own scripts |
 
-Both provide identical functionality:
+Both provide identical scanning capabilities:
 - Single file and directory scanning
 - Watch mode for continuous monitoring
 - JSON session logging
@@ -132,7 +131,7 @@ class ScanResult:
     code_objects: int                   # Number of functions/classes
     paths_explored: int                 # Symbolic paths analyzed
     error: str                          # Error message or None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         ...
@@ -157,43 +156,6 @@ Each issue in `ScanResult.issues` is a dictionary:
 
 ---
 
-## Auto-Scanner Usage
-
-The `auto_scanner.py` file is a standalone scanner you can copy to any project.
-
-### Setup
-
-1. Copy `auto_scanner.py` to your project root
-2. Ensure pysymex is installed: `pip install pysymex`
-3. Run the scanner
-
-### Command Line
-
-```bash
-# Basic scan (current directory)
-python auto_scanner.py
-
-# Scan specific directory
-python auto_scanner.py --dir ./src
-
-# Custom log file
-python auto_scanner.py --dir ./src --log results.json
-
-# Watch mode
-python auto_scanner.py --dir ./src --watch
-```
-
-### Arguments
-
-| Argument | Short | Default | Description |
-|----------|-------|---------|-------------|
-| `--dir` | `-d` | `.` | Directory to scan |
-| `--log` | `-l` | auto-generated | Log file path |
-| `--watch` | `-w` | False | Enable continuous monitoring |
-| `--recursive` | `-r` | True | Scan subdirectories |
-
----
-
 ## Watch Mode
 
 Watch mode continuously monitors for file changes and re-scans modified files.
@@ -201,11 +163,11 @@ Watch mode continuously monitors for file changes and re-scans modified files.
 ### Starting Watch Mode
 
 ```bash
-# CLI
-python -m pysymex.scanner --dir ./src --watch
+# CLI (primary)
+pysymex scan ./src --watch
 
-# Or with standalone scanner
-python auto_scanner.py --dir ./src --watch
+# Or via module
+python -m pysymex.scanner --dir ./src --watch
 ```
 
 ### Watch Mode Output
@@ -215,52 +177,26 @@ python auto_scanner.py --dir ./src --watch
 ║                   pysymex Scanner - Watch Mode                     ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  Watching: ./src                                                     ║
-║  Log:      scan_log_20260117_120000.json                            ║
 ║  Press Ctrl+C to stop and see summary.                               ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
-👁️  Watching for file changes...
+Watching for file changes...
 
 ======================================================================
-🔍 Scanning: ./src/utils.py
+Scanning: ./src/utils.py
 ======================================================================
 
-⚠️  Found 1 potential issues:
+Found 1 potential issues:
 
    • [DIVISION_BY_ZERO] Division by zero possible (Line 15)
        └─ y = 0
 
-   📊 Stats: 5 code objects | 42 paths explored
+   Stats: 5 code objects | 42 paths explored
 ```
 
 ### Stopping Watch Mode
 
-Press `Ctrl+C` to stop. The session summary will be displayed:
-
-```
-Stopping watcher...
-
-======================================================================
-📋 SESSION SUMMARY
-======================================================================
-
-   Files scanned:     15
-   Files with issues: 3
-   Files clean:       11
-   Files with errors: 1
-   
-   Total issues:      7
-
-   Issue breakdown:
-      DIVISION_BY_ZERO            3 ███
-      INDEX_ERROR                 2 ██
-      NULL_DEREFERENCE            2 ██
-
-   📁 Log saved to: scan_log_20260117_120000.json
-======================================================================
-
-Done.
-```
+Press `Ctrl+C` to stop. The session summary will be displayed.
 
 ---
 
@@ -297,14 +233,6 @@ Custom: Use `--log` argument or set in code
       ],
       "code_objects": 5,
       "paths_explored": 42,
-      "error": null
-    },
-    {
-      "file": "./src/parser.py",
-      "timestamp": "2026-01-17T12:00:10.000000",
-      "issues": [],
-      "code_objects": 12,
-      "paths_explored": 156,
       "error": null
     }
   ]
@@ -346,7 +274,7 @@ import json
 def generate_report(project_dir: str, output_file: str):
     """Generate a detailed security report."""
     results = scan_directory(project_dir, verbose=False)
-    
+
     report = {
         "project": project_dir,
         "summary": {
@@ -355,24 +283,22 @@ def generate_report(project_dir: str, output_file: str):
             "total_issues": sum(len(r.issues) for r in results),
         },
         "by_severity": {
-            "high": [],    # Division by zero, null deref
-            "medium": [],  # Index errors, type errors
-            "low": [],     # Others
+            "high": [],
+            "medium": [],
+            "low": [],
         },
         "files": []
     }
-    
+
     HIGH_SEVERITY = {"DIVISION_BY_ZERO", "NULL_DEREFERENCE"}
     MEDIUM_SEVERITY = {"INDEX_ERROR", "TYPE_ERROR", "KEY_ERROR"}
-    
+
     for result in results:
         if result.issues:
-            file_entry = {
+            report["files"].append({
                 "path": result.file_path,
                 "issues": result.issues
-            }
-            report["files"].append(file_entry)
-            
+            })
             for issue in result.issues:
                 kind = issue["kind"]
                 if kind in HIGH_SEVERITY:
@@ -381,10 +307,10 @@ def generate_report(project_dir: str, output_file: str):
                     report["by_severity"]["medium"].append(issue)
                 else:
                     report["by_severity"]["low"].append(issue)
-    
+
     with open(output_file, "w") as f:
         json.dump(report, f, indent=2)
-    
+
     return report
 
 # Usage
@@ -413,23 +339,23 @@ def main():
     files = get_staged_files()
     if not files:
         return 0
-    
+
     print(f"pysymex: Scanning {len(files)} staged files...")
-    
+
     total_issues = 0
     for filepath in files:
         result = scan_file(filepath)
         if result.issues:
-            print(f"\n⚠️  {filepath}: {len(result.issues)} issues")
+            print(f"\n  {filepath}: {len(result.issues)} issues")
             for issue in result.issues:
                 print(f"    Line {issue['line']}: [{issue['kind']}] {issue['message']}")
             total_issues += len(result.issues)
-    
+
     if total_issues > 0:
-        print(f"\n❌ Found {total_issues} potential issues. Please review.")
+        print(f"\nFound {total_issues} potential issues. Please review.")
         return 1
-    
-    print("✅ No issues found.")
+
+    print("No issues found.")
     return 0
 
 if __name__ == "__main__":
@@ -452,10 +378,6 @@ def pysymex_results():
         results[str(py_file)] = scan_file(py_file)
     return results
 
-def pytest_collection_modifyitems(session, config, items):
-    """Add pysymex marker to tests."""
-    pass
-
 # test_security.py
 def test_no_division_by_zero(pysymex_results):
     """Ensure no division by zero issues."""
@@ -469,31 +391,6 @@ def test_no_high_severity_issues(pysymex_results):
     for filepath, result in pysymex_results.items():
         high = [i for i in result.issues if i["kind"] in HIGH_SEVERITY]
         assert not high, f"{filepath} has high severity issues: {high}"
-```
-
-### Example 4: Flask/Django Middleware
-
-```python
-# middleware.py
-from pysymex import scan_file
-import logging
-
-logger = logging.getLogger("pysymex.middleware")
-
-def analyze_on_import(filepath):
-    """Analyze a module when it's imported (development only)."""
-    try:
-        result = scan_file(filepath, verbose=False, timeout=5.0)
-        if result.issues:
-            logger.warning(
-                f"pysymex found {len(result.issues)} issues in {filepath}"
-            )
-            for issue in result.issues:
-                logger.warning(
-                    f"  [{issue['kind']}] Line {issue['line']}: {issue['message']}"
-                )
-    except Exception as e:
-        logger.debug(f"pysymex analysis failed for {filepath}: {e}")
 ```
 
 ---
@@ -573,24 +470,27 @@ Tracks all scans in a session with automatic logging.
 | Kind | Description | Severity |
 |------|-------------|----------|
 | `DIVISION_BY_ZERO` | Division where denominator can be zero | High |
+| `MODULO_BY_ZERO` | Modulo where divisor can be zero | High |
 | `NULL_DEREFERENCE` | Accessing attribute/method of None | High |
 | `INDEX_ERROR` | Array/list index out of bounds | Medium |
 | `KEY_ERROR` | Dictionary key not found | Medium |
 | `TYPE_ERROR` | Type mismatch in operation | Medium |
 | `ASSERTION_ERROR` | Assertion can fail | Medium |
-| `FORMAT_STRING_ERROR` | String formatting issues | Low |
-| `RESOURCE_LEAK` | Unclosed file/resource | Low |
+| `ATTRIBUTE_ERROR` | Missing attribute access | Medium |
+| `NEGATIVE_SHIFT` | Bit shift with negative amount | Medium |
+| `TAINT_VIOLATION` | Untrusted data flows to dangerous sink | High |
+| `INTEGER_OVERFLOW` | Arithmetic overflow | Low |
+| `UNREACHABLE_CODE` | Dead code paths | Low |
 
 ---
 
 ## Best Practices
 
-1. **Start with default settings** - They work well for most codebases
-2. **Review counterexamples** - They show the inputs that cause issues
-3. **Use watch mode during development** - Catch issues early
-4. **Integrate with CI/CD** - Prevent issues from reaching production
-5. **Handle timeouts gracefully** - Large functions may need more time
-6. **Check log files** - Full details are saved in JSON format
+1. **Start with default settings** — They work well for most codebases
+2. **Review counterexamples** — They show the inputs that cause issues
+3. **Use watch mode during development** — Catch issues early
+4. **Integrate with CI/CD** — Prevent issues from reaching production
+5. **Handle timeouts gracefully** — Large functions may need more time
 
 ---
 

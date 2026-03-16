@@ -113,8 +113,6 @@ class Z3Engine:
         track_taint: bool = True,
         max_workers: int | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
         if not Z3_AVAILABLE:
             if Z3_IMPORT_ERROR is not None:
                 raise RuntimeError(str(Z3_IMPORT_ERROR)) from Z3_IMPORT_ERROR

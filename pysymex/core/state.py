@@ -23,7 +23,7 @@ from __future__ import annotations
 import copy
 import itertools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -39,7 +39,7 @@ _EMPTY_TAINT: frozenset[str] = frozenset()
 UNBOUND = object()
 
 
-def wrap_cow_dict(val: dict[Any, Any] | CowDict[Any, Any] | None) -> CowDict[Any, Any]:
+def wrap_cow_dict(val: dict[str, object] | CowDict[str, object] | None) -> CowDict[str, object]:
     """Wrap a dict in CowDict if it isn't already."""
     if isinstance(val, CowDict):
         return val
@@ -63,9 +63,9 @@ def _copy_summary_builder(builder: object) -> object:
     inside those lists are immutable and safe to share.
     """
     try:
-        new: Any = copy.copy(builder)
+        new: object = copy.copy(builder)
 
-        builder_any: Any = builder
+        builder_any: object = builder
         if hasattr(builder_any, "summary"):
             new.summary = copy.copy(builder_any.summary)
             for attr in (
@@ -126,7 +126,12 @@ class CallFrame:
     summary_builder: object | None = None
 
     def hash_value(self) -> int:
-        """Stable hash of the call frame."""
+        """Stable content-aware hash of the call frame.
+
+        Calculates a hash using the function name, rejoin point (return_pc),
+        current operand-stack level, and a structural hash of the caller's
+        local variables. Used for inter-procedural path deduplication.
+        """
         return (
             hash((self.function_name, self.return_pc, self.stack_depth))
             ^ self.local_vars.hash_value()
@@ -134,20 +139,32 @@ class CallFrame:
 
 
 class VMState:
-    """Virtual Machine execution state for symbolic execution.
+    """Symbolic Virtual Machine execution state for PySyMex.
 
-    **Fluent API** — mutation helpers (``push``, ``set_local``, …) mutate
-    *self* and return *self* so callers can write either style:
+    Coordinates the complete architectural state of a single execution path,
+    providing a fluent interface for bytecode emulation and an optimized
+    Copy-on-Write (CoW) mechanism for path branching.
 
-    - ``state.push(val)``   — traditional fire-and-forget
-    - ``state = state.push(val)`` — explicit reassignment (preferred)
+    **Architectural Components:**
+    - **Operand Stack**: Last-in-first-out storage for symbolic values.
+    - **Variable Stores**: `local_vars` and `global_vars` using `CowDict` for 
+      state isolation with O(1) forking.
+    - **Control Flow Control**: `block_stack` (loops/exceptions) and `call_stack`
+      (inter-procedural analysis).
+    - **Path Constraints**: A `ConstraintChain` of Z3 boolean expressions 
+      defining the reachability conditions for this specific state.
+    - **Memory Model**: A `CowDict` mapping symbolic addresses to values.
 
-    For *branching* (two+ successors), use ``fork()`` or ``replace()``
-    which always create a new, independent ``VMState``.
+    **Evolution Patterns:**
+    1. **Single-Path Mutation**: Fluent helpers like `push()`, `pop()`, and 
+       `set_local()` modify the current state and return `self` for chaining.
+    2. **Branching (State Splitting)**: The `fork()` method creates a new, 
+       independent `VMState` that shares underlying immutable data structures 
+       until a mutation occurs (CoW).
 
-    Uses copy-on-write data structures for efficient forking:
-    - CowDict for local_vars, global_vars, memory (O(1) fork, copy on mutation)
-    - CowSet for visited_pcs (O(1) fork)
+    **State Hashing & Deduplication:**
+    The `hash_value()` method provides a stable, content-based hash used for 
+    detecting path convergence and mitigating infinite loop depth.
     """
 
     __slots__ = (
@@ -197,8 +214,28 @@ class VMState:
         branch_trace: BranchChain | None = None,
         _path_counter: int = 0,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize a fresh VM state.
+
+        Args:
+            stack: Initial operand stack.
+            local_vars: Initial local variables (wrapped in CowDict for efficiency).
+            global_vars: Initial global variables (wrapped in CowDict).
+            path_constraints: Sequence of Z3 reachability constraints.
+            pc: Initial program counter.
+            block_stack: Saved control flow blocks (loops/tries).
+            call_stack: Return-path saved states for function calls.
+            visited_pcs: Set of bytecode offsets already explored in this path.
+            memory: Symbolic memory store.
+            path_id: Unique identifier for this execution path.
+            depth: Number of symbolic steps taken from the root.
+            taint_tracker: Optional engine for tracking data-dependent vulnerabilities.
+            current_instructions: List of bytecode instructions for the current scope.
+            control_taint: Set of labels affecting current control flow.
+            pending_constraint_count: Count of constraints added since the last Z3 check.
+            loop_iterations: Tracks iteration counts for loop-bounding.
+            prev_loop_states: Snapshots of prior loop entry points for state merging.
+            branch_trace: A historical log of branch decisions (O(1) chain).
+        """
         self.stack = stack if stack is not None else []
         self.local_vars = wrap_cow_dict(local_vars)
         self.global_vars = wrap_cow_dict(global_vars)
@@ -289,10 +326,14 @@ class VMState:
         return self
 
     def mark_visited(self) -> bool:
-        """Mark current ``pc`` as visited.
+        """Record the current ``pc`` in the path's visitation log.
+
+        Uses the internal `CowSet` to efficiently track whether this program 
+        counter has been reached before on the current path. Essential for
+        detecting infinite loops during symbolic exploration.
 
         Returns:
-            ``True`` if the PC was *already* visited (loop detected).
+            ``True`` if the current ``pc`` was already present in `visited_pcs`.
         """
         if self.pc in self.visited_pcs:
             return True
@@ -336,7 +377,7 @@ class VMState:
         return self.global_vars.get(name)
 
     @property
-    def locals(self) -> CowDict[Any, Any]:
+    def locals(self) -> CowDict[str, object]:
         """Alias for local_vars (used by some callers)."""
         return self.local_vars  # type: ignore[return-value]
 
@@ -378,7 +419,7 @@ class VMState:
         h ^= self.visited_pcs.hash_value() * 12345
 
         for v in self.stack:
-            v_any: Any = v
+            v_any: object = v
             if hasattr(v_any, "hash_value") and callable(v_any.hash_value):
                 h = (h * 31) ^ cast("int", v_any.hash_value())
             else:
@@ -387,7 +428,7 @@ class VMState:
                 except TypeError:
                     h = (h * 31) ^ 0
 
-        return h
+        return h & 0xFFFFFFFFFFFFFFFF
 
     def fork(self) -> VMState:
         """Create a copy-on-write fork of this state for branching.
@@ -437,7 +478,7 @@ class VMState:
             path_id=new_path_id,
             depth=self.depth,
             taint_tracker=(
-                cast("Any", self.taint_tracker).fork() if self.taint_tracker is not None else None
+                self.taint_tracker.fork() if self.taint_tracker is not None else None  # type: ignore[union-attr]
             ),
             current_instructions=self.current_instructions,
             control_taint=self.control_taint,
@@ -474,8 +515,6 @@ class VMState:
         return self._replace(**changes)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return (
             f"VMState(path={self.path_id}, pc={self.pc}, "
             f"stack_depth={len(self.stack)}, "

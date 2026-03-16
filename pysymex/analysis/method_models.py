@@ -7,13 +7,30 @@ from .type_inference import PyType, TypeKind
 
 
 class MethodModels:
-    """Pre-defined models for methods of common types."""
+    """Pre-defined models for methods of common types.
+    
+    **Architectural Role:**
+    Providing logical summaries for all built-in methods (e.g., `list.append`, 
+    `str.upper`) allows the engine to skip expensive bytecode exploration of
+    the C-implemented standard library. 
+    
+    **Semantic Mapping:**
+    Each model specifies:
+    - **Purity**: Whether the method has side-effects.
+    - **Readonly**: Whether it modifies internal state.
+    - **Return Type**: The inferred type of the result (e.g., `PyType.str_type()`).
+    - **Exceptions**: Documented sets of possible SMT-driven exceptions (e.g. `KeyError`).
+    """
 
     _models: dict[tuple[TypeKind, str], FunctionSummary] = {}
 
     @classmethod
     def get(cls, type_kind: TypeKind, method_name: str) -> FunctionSummary | None:
-        """Get model for a method."""
+        """Get the logical summary model for a specific method.
+        
+        Forces initialization of the registry on the first call. If no model
+        exists, the engine typically falls back to a sound 'Top' approximation.
+        """
         if not cls._models:
             cls._init_models()
         return cls._models.get((type_kind, method_name))

@@ -83,7 +83,6 @@ class SymbolicClass:
     _mro: list[SymbolicClass] | None = None
 
     def __post_init__(self):
-        """Post init."""
         self._compute_mro()
 
     def _compute_mro(self) -> None:
@@ -93,7 +92,6 @@ class SymbolicClass:
             return
 
         def merge(seqs: list[list[SymbolicClass]]) -> list[SymbolicClass]:
-            """Merge."""
             result: list[SymbolicClass] = []
             while True:
                 seqs = [s for s in seqs if s]
@@ -349,7 +347,6 @@ class SymbolicDescriptor:
     """Base class for symbolic descriptors (property, classmethod, etc.)."""
 
     def __get__(self, instance: SymbolicInstance | None, owner: SymbolicClass) -> object:
-        """Get."""
         raise NotImplementedError
 
     def __set__(self, instance: SymbolicInstance, value: object) -> None:

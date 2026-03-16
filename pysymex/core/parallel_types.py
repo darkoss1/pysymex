@@ -35,6 +35,7 @@ class ExplorationConfig:
     enable_state_merging: bool = True
     merge_threshold: int = 10
     timeout_seconds: float = 60.0
+    max_queue_size: int = 0
 
 
 T = TypeVar("T")
@@ -106,15 +107,27 @@ class StateSignature:
     stack_depth: int
     local_keys: frozenset[str]
     constraint_hash: int
+    constraint_discriminator: tuple[int, ...] = ()
 
     def __hash__(self) -> int:
-        """Hash."""
-        """Return the hash value of the object."""
-        return hash((self.pc, self.stack_depth, self.local_keys, self.constraint_hash))
+        """Compute a hash for the signature, incorporating all structural components.
+
+        The discriminator is included to ensure that hash collisions in the
+        structural_hash do not lead to incorrect state merges.
+        """
+        return hash(
+            (
+                self.pc,
+                self.stack_depth,
+                self.local_keys,
+                self.constraint_hash,
+                self.constraint_discriminator,
+            )
+        )
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
+        """Perform full structural equality check between two state signatures."""
+
         if not isinstance(other, StateSignature):
             return False
         return (
@@ -122,6 +135,7 @@ class StateSignature:
             and self.stack_depth == other.stack_depth
             and self.local_keys == other.local_keys
             and self.constraint_hash == other.constraint_hash
+            and self.constraint_discriminator == other.constraint_discriminator
         )
 
 

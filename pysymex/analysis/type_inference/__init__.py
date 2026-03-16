@@ -148,8 +148,6 @@ class TypeAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.type_engine = TypeInferenceEngine()
         self.pattern_recognizer = PatternRecognizer(self.type_engine)
         self.state_machine = TypeStateMachine(self.type_engine, self.pattern_recognizer)
@@ -191,7 +189,7 @@ class TypeAnalyzer:
                     ):
                         initial_env.set_type(param_name, param_type)
                 except (ValueError, TypeError):
-                    pass  # Used as expected type-check or feature fallback
+                    pass
 
             if initial_types:
                 for name, typ in initial_types.items():

@@ -37,8 +37,6 @@ class SymbolicHeap:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._next_address = 1000
         self._heap: dict[int, HeapObject] = {}
         self._address_map: dict[int, SymbolicAddress] = {}
@@ -225,8 +223,6 @@ class SymbolicHeap:
         self._next_address = snapshot.next_address_value
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicHeap({len (self._heap )} objects, next_addr={self._next_address})"
 
 
@@ -239,8 +235,6 @@ class HeapSnapshot:
     _next_address: int
 
     def __init__(self, heap: SymbolicHeap):
-        """Init."""
-        """Initialize the class instance."""
         self._heap = {
             k: HeapObject(
                 address=v.address,
@@ -277,8 +271,6 @@ class MemoryState:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self.heap = SymbolicHeap()
         self.globals: dict[str, object] = {}
         self.stack: list[StackFrame] = []
@@ -377,8 +369,6 @@ class MemorySnapshot:
     stack_copies: list[dict[str, object]]
 
     def __init__(self, state: MemoryState):
-        """Init."""
-        """Initialize the class instance."""
         self.heap_snapshot = state.heap.snapshot()
         self.globals = dict(state.globals)
         self.stack_copies = []
@@ -399,8 +389,6 @@ class AliasingAnalyzer:
     """
 
     def __init__(self, heap: SymbolicHeap):
-        """Init."""
-        """Initialize the class instance."""
         self.heap = heap
         self._alias_sets: dict[int, set[SymbolicAddress]] = {}
 
@@ -444,9 +432,9 @@ class SymbolicArray:
     - Element constraints
     """
 
-    def __init__(self, name: str, element_sort: z3.SortRef = z3.IntSort()):
-        """Init."""
-        """Initialize the class instance."""
+    def __init__(self, name: str, element_sort: z3.SortRef | None = None):
+        if element_sort is None:
+            element_sort = z3.IntSort()
         self.name = name
         self.element_sort = element_sort
         self._array = z3.Array(f"{name}_data", z3.IntSort(), element_sort)
@@ -525,11 +513,13 @@ class SymbolicMap:
     def __init__(
         self,
         name: str,
-        key_sort: z3.SortRef = z3.IntSort(),
-        value_sort: z3.SortRef = z3.IntSort(),
+        key_sort: z3.SortRef | None = None,
+        value_sort: z3.SortRef | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
+        if key_sort is None:
+            key_sort = z3.IntSort()
+        if value_sort is None:
+            value_sort = z3.IntSort()
         self.name = name
         self.key_sort = key_sort
         self.value_sort = value_sort

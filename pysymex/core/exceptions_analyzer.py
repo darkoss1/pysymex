@@ -5,7 +5,6 @@ exception catalog.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
 
 import z3
 
@@ -28,8 +27,6 @@ class ExceptionAnalyzer:
     """
 
     def __init__(self, solver: z3.Solver | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.solver = solver or create_solver()
         self._exception_paths: list[ExceptionPath] = []
         self._potential_exceptions: list[SymbolicException] = []
@@ -139,9 +136,8 @@ class ExceptionAnalyzer:
                 )
             return None
         if hasattr(divisor, "to_z3"):
-            divisor_any: Any = divisor
-            z3_val: Any = divisor_any.to_z3()
-            condition: Any = z3_val == 0
+            z3_val: z3.ExprRef = divisor.to_z3()  # type: ignore[union-attr]
+            condition: z3.BoolRef = z3_val == 0
             return SymbolicException.symbolic(
                 f"div_zero_{pc}",
                 ZeroDivisionError,
@@ -163,13 +159,11 @@ class ExceptionAnalyzer:
     ) -> SymbolicException | None:
         """Analyze index access for potential IndexError."""
         if hasattr(container, "length"):
-            container_any: Any = container
-            length: Any = container_any.length
+            length: object = container.length  # type: ignore[union-attr]
             if isinstance(index, int):
                 if hasattr(length, "to_z3"):
-                    length_any: Any = length
-                    z3_len: Any = length_any.to_z3()
-                    condition_i: Any = z3.Or(
+                    z3_len: z3.ExprRef = length.to_z3()  # type: ignore[union-attr]
+                    condition_i: z3.BoolRef = z3.Or(
                         z3.IntVal(index) >= z3_len,
                         z3.IntVal(index) < -z3_len,
                     )
@@ -188,12 +182,10 @@ class ExceptionAnalyzer:
                         )
                     return None
             if hasattr(index, "to_z3"):
-                index_any: Any = index
-                z3_idx: Any = index_any.to_z3()
+                z3_idx: z3.ExprRef = index.to_z3()  # type: ignore[union-attr]
                 if hasattr(length, "to_z3"):
-                    length_any2: Any = length
-                    z3_len2: Any = length_any2.to_z3()
-                    condition_s: Any = z3.Or(z3_idx >= z3_len2, z3_idx < -z3_len2)
+                    z3_len2: z3.ExprRef = length.to_z3()  # type: ignore[union-attr]
+                    condition_s: z3.BoolRef = z3.Or(z3_idx >= z3_len2, z3_idx < -z3_len2)
                 else:
                     condition_s = z3.Or(
                         z3_idx >= z3.IntVal(int(length)),
@@ -216,8 +208,7 @@ class ExceptionAnalyzer:
         """Analyze key access for potential KeyError."""
         if hasattr(container, "contains"):
             if hasattr(container, "contains_key"):
-                container_any2: Any = container
-                contains_result: Any = container_any2.contains_key(key)
+                contains_result: object = container.contains_key(key)  # type: ignore[union-attr]
                 if isinstance(contains_result, bool):
                     if not contains_result:
                         return SymbolicException.concrete(
@@ -247,8 +238,7 @@ class ExceptionAnalyzer:
                 raised_at=pc,
             )
         if hasattr(obj, "has_attribute"):
-            obj_any: Any = obj
-            has_attr: Any = obj_any.has_attribute(attr)
+            has_attr: bool = obj.has_attribute(attr)  # type: ignore[union-attr]
             if isinstance(has_attr, bool):
                 if not has_attr:
                     type_name = type(obj).__name__
@@ -276,8 +266,7 @@ class ExceptionAnalyzer:
                 )
             return None
         if hasattr(condition, "could_be_falsy"):
-            cond_any: Any = condition
-            falsy_cond: Any = cond_any.could_be_falsy()
+            falsy_cond: z3.BoolRef = condition.could_be_falsy()  # type: ignore[union-attr]
             return SymbolicException.symbolic(
                 f"assertion_{pc}",
                 AssertionError,

@@ -24,8 +24,16 @@ class MemoryRegion(Enum):
 class SymbolicAddress:
     """
     A symbolic memory address.
-    Uses Z3 bitvectors for precise address arithmetic while maintaining
-    region information for isolation analysis.
+    
+    **Mathematical Representation:**
+    Modeled as an algebraic triple: `(Region, Base, Offset)`. 
+    - `Base` and `Offset` are Z3 BitVectors (typically 64-bit).
+    - `Region` provides coarse-grained isolation (e.g., Stack vs Heap).
+    
+    **Arithmetic Semantics:**
+    Supports precise address arithmetic (addition/subtraction) using bitvector
+    theory. This allows modeling pointer arithmetic, buffer overflows, and
+    struct/array indexing with high fidelity.
     """
 
     region: MemoryRegion
@@ -41,8 +49,6 @@ class SymbolicAddress:
         offset: int | z3.BitVecRef = 0,
         type_tag: str = "unknown",
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.region = region
         self.type_tag = type_tag
         if isinstance(base, int):
@@ -74,7 +80,12 @@ class SymbolicAddress:
     def may_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
         """
         Check if two addresses may refer to the same location.
-        Uses Z3 to check satisfiability of address equality.
+        
+        **Aliasing Constraint:**
+        Returns SAT if there exists a model where `addr1.effective == addr2.effective`
+        AND they reside in the same memory region. 
+        Regions provide a sound optimization for non-aliasing; addresses in 
+        different regions (e.g. Stack and Const) are assumed never to alias.
         """
         if not self.same_region(other):
             return False
@@ -98,13 +109,9 @@ class SymbolicAddress:
         return result
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicAddress({self.region.name}, base={self.base}, offset={self.offset})"
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
         if not isinstance(other, SymbolicAddress):
             return False
         return (
@@ -114,7 +121,6 @@ class SymbolicAddress:
         )
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash((self.region, str(self.base), str(self.offset)))
 

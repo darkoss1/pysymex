@@ -41,7 +41,6 @@ class ThreadModel:
 
     @property
     def thread_id(self) -> str:
-        """Thread id."""
         return self._thread_id
 
     def start(self) -> None:
@@ -60,7 +59,6 @@ class ThreadModel:
         return self._alive
 
     def __repr__(self) -> str:
-        """Repr."""
         status = "started" if self._started else "not started"
         alive = "alive" if self._alive else "dead"
         return f"ThreadModel({self .name }, {status }, {alive })"
@@ -80,7 +78,6 @@ class LockModel:
 
     @property
     def name(self) -> str:
-        """Name."""
         return self._name
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
@@ -100,9 +97,7 @@ class LockModel:
     def locked(self) -> bool:
         """Check if the lock is held."""
         return self._locked
-
     def __enter__(self) -> Self:
-        """Enter."""
         self.acquire()
         return self
 
@@ -112,11 +107,9 @@ class LockModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
-        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
-        """Repr."""
         status = "locked" if self._locked else "unlocked"
         return f"LockModel({self ._name }, {status })"
 
@@ -157,7 +150,6 @@ class RLockModel(LockModel):
             self._owner = None
 
     def __repr__(self) -> str:
-        """Repr."""
         status = f"locked(count={self ._count })" if self._locked else "unlocked"
         return f"RLockModel({self ._name }, {status })"
 
@@ -190,7 +182,6 @@ class SemaphoreModel:
         self._value += n
 
     def __enter__(self) -> Self:
-        """Enter."""
         self.acquire()
         return self
 
@@ -200,11 +191,9 @@ class SemaphoreModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
-        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
-        """Repr."""
         return f"SemaphoreModel(value={self ._value })"
 
 
@@ -250,7 +239,6 @@ class EventModel:
         return self._flag
 
     def __repr__(self) -> str:
-        """Repr."""
         return f"EventModel(set={self ._flag })"
 
 
@@ -303,7 +291,6 @@ class ConditionModel:
         self._waiters.clear()
 
     def __enter__(self) -> Self:
-        """Enter."""
         self.acquire()
         return self
 
@@ -313,11 +300,9 @@ class ConditionModel:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
-        """Exit."""
         self.release()
 
     def __repr__(self) -> str:
-        """Repr."""
         return f"ConditionModel(locked={self ._lock .locked ()})"
 
 
@@ -384,7 +369,6 @@ class BarrierModel:
         return self._broken
 
     def __repr__(self) -> str:
-        """Repr."""
         return (
             f"BarrierModel(parties={self ._parties }, "
             f"waiting={self ._count }, broken={self ._broken })"

@@ -29,8 +29,6 @@ class SummaryBuilder:
     """
 
     def __init__(self, name: str):
-        """Init."""
-        """Initialize the class instance."""
         self.summary = FunctionSummary(name=name)
         self._param_index = 0
 
@@ -155,8 +153,6 @@ class SummaryRegistry:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._summaries: dict[str, FunctionSummary] = {}
         self._by_module: dict[str, list[str]] = {}
         self._lock = threading.RLock()
@@ -363,8 +359,6 @@ class SummaryAnalyzer:
     """
 
     def __init__(self, registry: SummaryRegistry | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.registry = registry or SUMMARY_REGISTRY
 
     def is_pure(self, name: str) -> bool:

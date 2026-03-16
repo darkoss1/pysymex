@@ -23,9 +23,12 @@ import inspect
 import logging
 import types
 from collections.abc import Callable
-from typing import get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import z3
+
+if TYPE_CHECKING:
+    from pysymex.plugins.base import PluginManager
 
 import pysymex.core.solver as solver_mod
 from pysymex._compat import get_starts_line
@@ -42,6 +45,7 @@ from pysymex.analysis.detectors import (
 from pysymex.analysis.false_positive_filter import deduplicate_issues, filter_issues
 from pysymex.analysis.loops import LoopDetector, LoopWidening
 from pysymex.analysis.path_manager import (
+    AdaptivePathManager,
     PathManager,
     create_path_manager,
 )
@@ -52,6 +56,7 @@ from pysymex.core.addressing import next_address
 from pysymex.core.copy_on_write import CowDict
 from pysymex.core.solver import IncrementalSolver
 from pysymex.core.state import VMState
+from pysymex.core.treewidth import ConstraintInteractionGraph
 from pysymex.core.types import (
     SymbolicDict,
     SymbolicList,
@@ -59,7 +64,7 @@ from pysymex.core.types import (
     SymbolicValue,
     SymbolicObject,
 )
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.execution.dispatcher import OpcodeDispatcher, OpcodeHandler, OpcodeResult
 from pysymex.execution.executor_types import (
     BRANCH_OPCODES,
     ExecutionConfig,
@@ -96,14 +101,6 @@ class SymbolicExecutor:
         config: ExecutionConfig | None = None,
         detector_registry: DetectorRegistry | None = None,
     ):
-        """Initialise the symbolic executor.
-
-        Args:
-            config: Execution configuration.  Uses sensible defaults
-                when ``None``.
-            detector_registry: Registry of bug detectors to run.
-                Falls back to the built-in default registry.
-        """
         self.config = config or ExecutionConfig()
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
@@ -117,7 +114,7 @@ class SymbolicExecutor:
         self._issues: list[Issue] = []
         self._abstract_hints: list[tuple[str, int, int]] = []
         self._coverage: set[int] = set()
-        self._visited_states: set[int] = set()
+        self._visited_states: set[tuple[int, ...]] = set()
         self._paths_explored: int = 0
         self._paths_completed: int = 0
         self._paths_pruned: int = 0
@@ -133,6 +130,7 @@ class SymbolicExecutor:
         self._abstract_analyzer: AbstractAnalyzer | None = None
         self._effect_summaries: dict[str, object] = {}
         self._prev_loop_states: dict[int, VMState] = {}
+        self._interaction_graph = ConstraintInteractionGraph(self.solver._optimizer)
         if self.config.enable_taint_tracking:
             self._taint_tracker = TaintTracker()
         if self.config.enable_caching:
@@ -168,10 +166,10 @@ class SymbolicExecutor:
 
         self._active_detectors: list[Detector] = self._build_active_detectors()
 
-        self._plugin_manager = None
-        self._hooks: dict[str, list[object]] = {}
+        self._plugin_manager: PluginManager | None = None
+        self._hooks: dict[str, list[Callable[..., object]]] = {}
 
-    def add_detector(self, detector: object) -> None:
+    def add_detector(self, detector: Detector) -> None:
         """Add a detector dynamically (used by plugins)."""
         self._active_detectors.append(detector)
 
@@ -185,15 +183,15 @@ class SymbolicExecutor:
 
         return get_instructions(code)
 
-    def register_handler(self, opcode: str, handler: object) -> None:
+    def register_handler(self, opcode: str, handler: OpcodeHandler) -> None:
         """Register an opcode handler dynamically (used by plugins)."""
         self.dispatcher.register_handler(opcode, handler)
 
-    def register_hook(self, hook_name: str, handler: object) -> None:
+    def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None:
         """Register a hook handler (used by plugins)."""
         self._hooks.setdefault(hook_name, []).append(handler)
 
-    def load_plugins(self, plugin_manager: object) -> None:
+    def load_plugins(self, plugin_manager: PluginManager) -> None:
         """Activate all plugins from the given plugin manager."""
         self._plugin_manager = plugin_manager
         plugin_manager.activate(self)
@@ -219,6 +217,15 @@ class SymbolicExecutor:
         Returns:
             An :class:`ExecutionResult` summarising detected issues,
             path statistics, and bytecode coverage.
+
+        **Execution Algorithm:**
+        1. **Reset**: Clears caches and resets solvers for a clean slate.
+        2. **Compile**: Retrieves cached bytecode instructions.
+        3. **Initialize**: Creates a `VMState` with symbolic arguments based on hints.
+        4. **Explore**: Enters the worklist-driven exploration loop until path limits or
+           time budget is exhausted.
+        5. **Finalize**: Reconciles abstract hints with symbolic findings to produce
+           the final issue report.
         """
         import time
 
@@ -234,6 +241,10 @@ class SymbolicExecutor:
         code = func.__code__
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
+        try:
+            self.dispatcher.set_exception_entries(list(dis.Bytecode(func).exception_entries))
+        except (AttributeError, TypeError):
+            self.dispatcher.set_exception_entries([])
         self._build_line_mapping(code)
         initial_state = self._create_initial_state(func, symbolic_args or {}, initial_values)
         if self._taint_tracker is not None:
@@ -290,6 +301,8 @@ class SymbolicExecutor:
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
             branches=getattr(self, "_last_branches", []),
+            treewidth_stats=self._interaction_graph.get_stats(),
+            solver_stats=self.solver.get_stats(),
         )
         if cache_key is not None and self._result_cache is not None:
             self._result_cache.put(cache_key, result)
@@ -301,7 +314,6 @@ class SymbolicExecutor:
         symbolic_vars: dict[str, str] | None = None,
         initial_globals: dict[str, object] | None = None,
     ) -> VMState:
-        """Create code initial state."""
         initial_state = VMState()
         if initial_globals:
             initial_state.global_vars = CowDict(initial_globals.copy())
@@ -354,6 +366,10 @@ class SymbolicExecutor:
         self._reset()
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
+        try:
+            self.dispatcher.set_exception_entries(list(dis.Bytecode(code).exception_entries))
+        except (AttributeError, TypeError):
+            self.dispatcher.set_exception_entries([])
         self._build_line_mapping(code)
 
         initial_state = self._create_code_initial_state(code, symbolic_vars, initial_globals)
@@ -395,6 +411,8 @@ class SymbolicExecutor:
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
             branches=getattr(self, "_last_branches", []),
+            treewidth_stats=self._interaction_graph.get_stats(),
+            solver_stats=self.solver.get_stats(),
         )
 
     def _reset(self) -> None:
@@ -427,6 +445,7 @@ class SymbolicExecutor:
             self._resource_tracker.reset()
 
         self.solver.reset()
+        self._interaction_graph.reset()
 
         from pysymex.core.types import FROM_CONST_CACHE, SYMBOLIC_CACHE
 
@@ -557,8 +576,7 @@ class SymbolicExecutor:
             # Apply Noise Reduction Heuristic: Assume 'self'/'cls' is non-None
             if self.config and self.config.heuristic_assume_non_null_self:
                 ln_name = name.lower()
-                if ln_name == "self" or ln_name.startswith("self_") or \
-                   ln_name == "cls" or ln_name.startswith("cls_"):
+                if ln_name in ("self", "cls") or ln_name.startswith(("self_", "cls_")):
                     import z3
                     if hasattr(sym_val, "is_none"):
                         state = state.add_constraint(z3.Not(sym_val.is_none))
@@ -575,7 +593,7 @@ class SymbolicExecutor:
                         state = state.add_constraint(sym_val.z3_bool == val)
         return state
 
-    def _hint_to_type_str(self, hint: object) -> str:
+    def _hint_to_type_str(self, hint: type) -> str:
         """Convert a type hint to a type string for symbolic creation."""
         hint_str = str(hint).lower()
         if hint is int or "int" in hint_str:
@@ -594,7 +612,9 @@ class SymbolicExecutor:
             return "path"
         return "int"
 
-    def _create_symbolic_for_type(self, name: str, type_hint: str) -> tuple[object, z3.BoolRef]:
+    def _create_symbolic_for_type(
+        self, name: str, type_hint: str
+    ) -> tuple[SymbolicValue | SymbolicString | SymbolicList | SymbolicDict | SymbolicObject, z3.BoolRef]:
         """Create a symbolic value and its type constraint."""
         type_hint = type_hint.lower()
 
@@ -632,7 +652,21 @@ class SymbolicExecutor:
             return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
 
     def _execute_loop(self) -> None:
-        """Main execution loop."""
+        """Main execution engine heartbeat.
+
+        **Orchestration Logic:**
+        Uses a `PathManager` (Worklist) to manage the exploration queue. In each
+        iteration, it pops a `VMState`, checks resource bounds, and executes
+        exactly one bytecode instruction via `_execute_step`.
+
+        If an instruction (like a conditional jump) result in multiple states
+        (forking), they are re-added to the worklist provided they are satisfiable
+        and haven't exceeded the depth limit.
+
+        The loop terminates when:
+        - The worklist is empty (all paths explored).
+        - A global limit (time, path count, iterations) is hit.
+        """
         if self._worklist is None:
             return
         if self._resource_tracker is not None:
@@ -650,7 +684,25 @@ class SymbolicExecutor:
                 state = self._worklist.get_next_state()
                 if state is None:
                     break
+
+                coverage_before = len(self._coverage)
+                issues_before = len(self._issues)
+
                 self._execute_step(state)
+
+                # Feed reward signals to the adaptive path manager
+                if isinstance(self._worklist, AdaptivePathManager):
+                    new_coverage = len(self._coverage) - coverage_before
+                    new_issues = len(self._issues) - issues_before
+                    reward = 0.0
+                    if new_issues > 0:
+                        reward += 10.0 * new_issues
+                    if new_coverage > 0:
+                        reward += 3.0 * new_coverage
+                    elif new_coverage == 0 and new_issues == 0:
+                        reward -= 0.5
+                    self._worklist.record_reward(reward)
+
                 try:
                     if self._resource_tracker is not None:
                         self._resource_tracker.check_time_limit()
@@ -782,7 +834,7 @@ class SymbolicExecutor:
         return True
 
     def _process_execution_result(
-        self, result: object, state: VMState, active_instructions: list[dis.Instruction]
+        self, result: OpcodeResult, state: VMState, active_instructions: list[dis.Instruction]
     ) -> None:
         """Process the result of an opcode execution."""
         if result.issues:
@@ -813,7 +865,7 @@ class SymbolicExecutor:
                 first_state.depth = state.depth + 1
                 if self._worklist:
                     self._worklist.add_state(first_state)
-            
+
             # Additional states are new paths, check limits before adding
             for new_state in result.new_states[1:]:
                 can_add = True
@@ -823,13 +875,23 @@ class SymbolicExecutor:
                     except LimitExceeded:
                         self._paths_pruned += 1
                         can_add = False
-                
+
                 if can_add:
                     if self._check_path_feasibility(new_state):
                         new_state.depth = state.depth + 1
                         if self._worklist:
                             self._worklist.add_state(new_state)
                         self._paths_explored += 1
+
+        # Register branch conditions in the interaction graph for CHTD
+        if len(result.new_states) >= 2:
+            for ns in result.new_states:
+                if ns.path_constraints:
+                    last_constraint = list(ns.path_constraints)[-1]
+                    try:
+                        self._interaction_graph.add_branch(ns.pc, last_constraint)
+                    except Exception:
+                        pass  # best-effort — never block execution
         if len(result.new_states) >= 2:
             for _hook in self._hooks.get("on_fork", ()):
                 try:
@@ -840,15 +902,13 @@ class SymbolicExecutor:
     def _execute_step(self, state: VMState) -> None:
         """Execute a single step (one instruction).
 
-        Uses lazy constraint evaluation: skips the expensive Z3 feasibility
-        check on straight-line code and only checks when:
-        1. A conditional branch opcode is reached.
-        2. The pending constraint count exceeds the lazy_eval_threshold.
-        3. Detectors need to verify a property.
+        **Lazy Evaluation Logic:**
+        Uses lazy constraint evaluation to minimize solver overhead. It only
+        queries Z3 for path feasibility when:
+        1. A conditional branch opcode (controlled by `BRANCH_OPCODES`) is reached.
+        2. The cumulative pending constraint count exceeds `lazy_eval_threshold`.
+        3. A detector needs to verify a security or correctness property.
         """
-        # Optimization: removed redundant _check_path_feasibility call here.
-        # Feasibility is already checked when states are added to the worklist
-        # or at the end of constraints-modifying opcodes.
         for hook in self._hooks.get("pre_step", ()):
             hook(self, state)
 
@@ -860,6 +920,7 @@ class SymbolicExecutor:
             self._last_locals = state.local_vars
             self._last_branches = state.branch_trace.to_list()
             return
+
 
         if not self._check_resource_limits(state):
             return
@@ -875,8 +936,8 @@ class SymbolicExecutor:
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_hash = self._hash_state(state)
-        if state_hash in self._visited_states:
+        state_key = self._state_key(state)
+        if state_key in self._visited_states:
             self._paths_pruned += 1
             for _hook in self._hooks.get("on_prune", ()):
                 try:
@@ -884,7 +945,7 @@ class SymbolicExecutor:
                 except Exception:
                     logger.exception("Plugin hook execution failed")
             return
-        self._visited_states.add(state_hash)
+        self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)
@@ -1017,3 +1078,19 @@ class SymbolicExecutor:
         Delegates to VMState.hash_value() for content-based hashing.
         """
         return state.hash_value()
+
+    def _state_key(self, state: VMState) -> tuple[int, ...]:
+        """Composite state key to avoid hash-only collisions."""
+        return (
+            state.hash_value(),
+            state.constraint_hash(),
+            len(state.path_constraints),
+            state.local_vars.hash_value(),
+            state.global_vars.hash_value(),
+            state.memory.hash_value(),
+            state.visited_pcs.hash_value(),
+            state.pc,
+            len(state.stack),
+            len(state.call_stack),
+            len(state.block_stack),
+        )

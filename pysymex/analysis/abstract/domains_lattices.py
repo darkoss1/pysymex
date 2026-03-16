@@ -46,11 +46,9 @@ class Sign(AbstractValue["Sign"]):
     value: SignValue = SignValue.TOP
 
     def is_top(self) -> bool:
-        """Is top."""
         return self.value == SignValue.TOP
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self.value == SignValue.BOTTOM
 
     def join(self, other: Sign) -> Sign:
@@ -155,47 +153,37 @@ class Sign(AbstractValue["Sign"]):
 
     @classmethod
     def top(cls) -> Sign:
-        """Top."""
         return cls(SignValue.TOP)
 
     @classmethod
     def bottom(cls) -> Sign:
-        """Bottom."""
         return cls(SignValue.BOTTOM)
 
     @classmethod
     def positive(cls) -> Sign:
-        """Positive."""
         return cls(SignValue.POS)
 
     @classmethod
     def negative(cls) -> Sign:
-        """Negative."""
         return cls(SignValue.NEG)
 
     @classmethod
     def zero(cls) -> Sign:
-        """Zero."""
         return cls(SignValue.ZERO)
 
     @classmethod
     def non_negative(cls) -> Sign:
-        """Non negative."""
         return cls(SignValue.NON_NEG)
 
     @classmethod
     def non_positive(cls) -> Sign:
-        """Non positive."""
         return cls(SignValue.NON_POS)
 
     @classmethod
     def non_zero(cls) -> Sign:
-        """Non zero."""
         return cls(SignValue.NON_ZERO)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"Sign({self .value .name })"
 
 
@@ -223,11 +211,9 @@ class Parity(AbstractValue["Parity"]):
     value: ParityValue = ParityValue.TOP
 
     def is_top(self) -> bool:
-        """Is top."""
         return self.value == ParityValue.TOP
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self.value == ParityValue.BOTTOM
 
     def join(self, other: Parity) -> Parity:
@@ -251,7 +237,6 @@ class Parity(AbstractValue["Parity"]):
         return Parity(ParityValue.BOTTOM)
 
     def widen(self, other: Parity) -> Parity:
-        """Widen."""
         return self.join(other)
 
     def to_z3_constraint(self, var: z3.ExprRef) -> z3.BoolRef:
@@ -275,26 +260,21 @@ class Parity(AbstractValue["Parity"]):
 
     @classmethod
     def top(cls) -> Parity:
-        """Top."""
         return cls(ParityValue.TOP)
 
     @classmethod
     def bottom(cls) -> Parity:
-        """Bottom."""
         return cls(ParityValue.BOTTOM)
 
     @classmethod
     def even(cls) -> Parity:
-        """Even."""
         return cls(ParityValue.EVEN)
 
     @classmethod
     def odd(cls) -> Parity:
-        """Odd."""
         return cls(ParityValue.ODD)
 
     def __add__(self, other: Parity) -> Parity:
-        """Add."""
         if self.is_bottom() or other.is_bottom():
             return Parity.bottom()
         if self.is_top() or other.is_top():
@@ -304,7 +284,6 @@ class Parity(AbstractValue["Parity"]):
         return Parity.odd()
 
     def __mul__(self, other: Parity) -> Parity:
-        """Mul."""
         if self.is_bottom() or other.is_bottom():
             return Parity.bottom()
 
@@ -315,8 +294,6 @@ class Parity(AbstractValue["Parity"]):
         return Parity.odd()
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"Parity({self .value .name })"
 
 
@@ -344,23 +321,18 @@ class Null(AbstractValue["Null"]):
     value: NullValue = NullValue.TOP
 
     def is_top(self) -> bool:
-        """Is top."""
         return self.value == NullValue.TOP
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self.value == NullValue.BOTTOM
 
     def is_null(self) -> bool:
-        """Is null."""
         return self.value == NullValue.NULL
 
     def is_non_null(self) -> bool:
-        """Is non null."""
         return self.value == NullValue.NON_NULL
 
     def may_be_null(self) -> bool:
-        """May be null."""
         return self.value in (NullValue.NULL, NullValue.TOP)
 
     def join(self, other: Null) -> Null:
@@ -384,7 +356,6 @@ class Null(AbstractValue["Null"]):
         return Null(NullValue.BOTTOM)
 
     def widen(self, other: Null) -> Null:
-        """Widen."""
         return self.join(other)
 
     def to_z3_constraint(self, var: z3.ExprRef) -> z3.BoolRef:
@@ -408,25 +379,19 @@ class Null(AbstractValue["Null"]):
 
     @classmethod
     def top(cls) -> Null:
-        """Top."""
         return cls(NullValue.TOP)
 
     @classmethod
     def bottom(cls) -> Null:
-        """Bottom."""
         return cls(NullValue.BOTTOM)
 
     @classmethod
     def null(cls) -> Null:
-        """Null."""
         return cls(NullValue.NULL)
 
     @classmethod
     def non_null(cls) -> Null:
-        """Non null."""
         return cls(NullValue.NON_NULL)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"Null({self .value .name })"

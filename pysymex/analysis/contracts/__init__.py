@@ -47,8 +47,6 @@ class ContractVerifier:
     """
 
     def __init__(self, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -266,8 +264,6 @@ class ContractAnalyzer:
     """
 
     def __init__(self, verifier: ContractVerifier | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.verifier = verifier or ContractVerifier()
         self._reports: dict[str, VerificationReport] = {}
 
@@ -421,6 +417,7 @@ __all__ = [
     "VerificationReport",
     "VerificationResult",
     "ensures",
+    "function_contracts",
     "get_function_contract",
     "invariant",
     "loop_invariant",

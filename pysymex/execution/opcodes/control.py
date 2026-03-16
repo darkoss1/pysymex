@@ -10,8 +10,8 @@ import z3
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.core.copy_on_write import CowDict
 from pysymex.core.solver import get_model, is_satisfiable
-from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicNone, SymbolicValue
-from pysymex.core.types_containers import SymbolicIterator, SymbolicList
+from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicNone, SymbolicValue, fresh_name
+from pysymex.core.types_containers import SymbolicIterator, SymbolicList, SymbolicDict, SymbolicObject, SymbolicString
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
 if TYPE_CHECKING:
@@ -27,10 +27,36 @@ def handle_no_op(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) 
 
 
 def get_truthy_expr(value: object) -> z3.BoolRef:
-    """Get Z3 expression for when a value is truthy."""
+    """Get Z3 expression for when a value is truthy.
+
+    **Truthiness Mapping:**
+    PySyMex models Python's `bool()` semantics using Z3 propositional logic:
+    - **SymbolicValue**: A union of `(val.is_bool ∧ val.z3_bool) ∨ (val.is_int ∧ val.z3_int != 0)`.
+    - **Concrete**: Standard Python truthiness (e.g., `bool(42) == True`).
+    - **Containers**: Evaluated via `len(container) != 0`.
+
+    When ``affinity_type`` is known (e.g. ``"int"`` or ``"bool"``), we
+    bypass the full disjunctive encoding and emit a single-sort
+    expression.  This eliminates type-discriminator variables from branch
+    conditions and dramatically reduces treewidth in the constraint
+    interaction graph — a key enabler for CHTD.
+
+    Returns:
+        A Z3 boolean expression representing the truthiness of the value.
+    """
     if hasattr(value, "could_be_truthy"):
         return value.could_be_truthy()
     if isinstance(value, SymbolicValue):
+        aff = value.affinity_type
+        if aff == "bool" and value.z3_bool is not None:
+            return value.z3_bool
+        if aff == "int" and value.z3_int is not None:
+            return value.z3_int != 0
+        if aff == "float" and value.z3_float is not None:
+            return value.z3_float != 0
+        if aff == "str" and value.z3_str is not None:
+            return z3.Length(value.z3_str) != 0
+        # General case — full discriminator encoding
         return z3.Or(
             z3.And(value.is_bool, value.z3_bool),
             z3.And(value.is_int, value.z3_int != 0),
@@ -146,7 +172,6 @@ def handle_return_const(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Return a constant (Python 3.13+) with inter-procedural support."""
-    print(f"DEBUG: handle_return_const PC={state.pc}")
     const_val = instr.argval
     if const_val is None:
         return_value = SymbolicNone("return_None")
@@ -169,7 +194,19 @@ def handle_return_const(
 def handle_pop_jump_if_false(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Conditional jump if top of stack is false, with implicit flow tracking."""
+    """Conditional jump if top of stack is false.
+
+    **Branching Logic:**
+    1. **Evaluation**: Converts the TOS to a Z3 boolean expression via `get_truthy_expr`.
+    2. **Forking**: Clones the current `VMState` into two identical branches.
+    3. **Constraint Injection**: 
+       - The *True* branch (PC → PC+1) receives the constraint `value != 0`.
+       - The *False* branch (PC → target) receives the constraint `value == 0`.
+    4. **Path Pruning**: Queries Z3 to check satisfiability of both branches. Only
+       feasible paths are returned to the executor's worklist.
+    5. **Taint Propagation**: If the condition is tainted, labels are propagated
+       to the `control_taint` of derived states (implicit flow tracking).
+    """
     cond = state.pop()
     cond_expr = get_truthy_expr(cond)
     target_index = ctx.offset_to_index(int(instr.argval))
@@ -206,7 +243,16 @@ def handle_pop_jump_if_false(
 def handle_pop_jump_if_true(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Conditional jump if top of stack is true, with implicit flow tracking."""
+    """Conditional jump if top of stack is true.
+
+    **Branching Logic:**
+    1. **Evaluation**: Converts the TOS to a Z3 boolean expression.
+    2. **Forking**: Clones the state into *True* and *False* iterations.
+    3. **Constraint Injection**: 
+       - The *True* branch (PC → target) receives the constraint `value != 0`.
+       - The *False* branch (PC → PC+1) receives the constraint `value == 0`.
+    4. **Pruning**: Only returns satisfiable branches to the executor.
+    """
     cond = state.pop()
     cond_expr = get_truthy_expr(cond)
     target_index = ctx.offset_to_index(int(instr.argval))
@@ -435,7 +481,18 @@ def handle_load_assertion_error(
 
 @opcode_handler("FOR_ITER")
 def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Iterate over a sequence."""
+    """Iterate over a sequence with symbolic index tracking.
+
+    **Iteration Mechanics:**
+    1. **Iterator Retrieval**: Peeks at the TOS (expecting a `SymbolicIterator`).
+    2. **Branching**:
+       - **Continue Branch**: Assumes `iterator.index < len(iterable)`. Pushes the
+         symbolic element at the current index.
+       - **Exit Branch**: Assumes `iterator.index >= len(iterable)`. Pops the iterator
+         and jumps to the end of the loop.
+    3. **Container Bridge**: Successfully handles `SymbolicList` (Z3 arrays) by 
+       linking the yielded `SymbolicValue` to the result of `z3.Select(array, index)`.
+    """
     target_index = ctx.offset_to_index(int(instr.argval))
     if target_index is None:
         target_index = state.pc + 2
@@ -641,14 +698,22 @@ def handle_call_intrinsic_2(
 def handle_match_mapping(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Check if subject is a mapping (dict) for pattern matching."""
-    is_mapping = z3.Bool(f"is_mapping_{state.pc}")
+    subject = state.peek() if state.stack else None
+    if isinstance(subject, (SymbolicDict, SymbolicObject)):
+        is_mapping = getattr(subject, "is_dict", Z3_TRUE)
+    elif isinstance(subject, SymbolicValue):
+        is_mapping = subject.is_dict
+    elif subject is not None:
+        is_mapping = z3.BoolVal(isinstance(subject, dict))
+    else:
+        is_mapping = Z3_FALSE
+
     result = SymbolicValue(
         _name=f"is_mapping_{state.pc}",
-        z3_int=z3.IntVal(0),
-        is_int=z3.BoolVal(False),
+        z3_int=z3.If(is_mapping, z3.IntVal(1), z3.IntVal(0)),
+        is_int=Z3_FALSE,
         z3_bool=is_mapping,
-        is_bool=z3.BoolVal(True),
+        is_bool=Z3_TRUE,
     )
     state = state.push(result)
     state = state.advance_pc()
@@ -659,14 +724,22 @@ def handle_match_mapping(
 def handle_match_sequence(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Check if subject is a sequence (list/tuple) for pattern matching."""
-    is_sequence = z3.Bool(f"is_sequence_{state.pc}")
+    subject = state.peek() if state.stack else None
+    if isinstance(subject, SymbolicList):
+        is_sequence = Z3_TRUE
+    elif isinstance(subject, (SymbolicValue, SymbolicObject)):
+        is_sequence = getattr(subject, "is_list", Z3_TRUE)
+    elif subject is not None:
+        is_sequence = z3.BoolVal(isinstance(subject, (list, tuple)))
+    else:
+        is_sequence = Z3_FALSE
+
     result = SymbolicValue(
         _name=f"is_sequence_{state.pc}",
-        z3_int=z3.IntVal(0),
-        is_int=z3.BoolVal(False),
+        z3_int=z3.If(is_sequence, z3.IntVal(1), z3.IntVal(0)),
+        is_int=Z3_FALSE,
         z3_bool=is_sequence,
-        is_bool=z3.BoolVal(True),
+        is_bool=Z3_TRUE,
     )
     state = state.push(result)
     state = state.advance_pc()
@@ -678,17 +751,35 @@ def handle_match_keys(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Check if mapping has required keys for pattern matching."""
-    if state.stack:
-        state.pop()
-    success = z3.Bool(f"match_keys_success_{state.pc}")
+    keys_tuple = state.pop() if state.stack else None
+    subject = state.peek() if state.stack else None
+
+    success_expr = Z3_TRUE
+    if (
+        isinstance(subject, SymbolicDict)
+        and hasattr(keys_tuple, "_concrete_items")
+        and keys_tuple._concrete_items is not None
+    ):
+        for key in keys_tuple._concrete_items:
+            if not isinstance(key, SymbolicString):
+                str_key = SymbolicString.from_const(str(key))
+            else:
+                str_key = key
+            success_expr = z3.And(success_expr, subject.contains_key(str_key).z3_bool)
+    else:
+        # Fallback to fresh variable if subject is complex or keys are symbolic
+        success_expr = z3.Bool(fresh_name("match_keys_success"))
+
     success_result = SymbolicValue(
         _name=f"match_keys_success_{state.pc}",
-        z3_int=z3.IntVal(0),
-        is_int=z3.BoolVal(False),
-        z3_bool=success,
-        is_bool=z3.BoolVal(True),
+        z3_int=z3.If(success_expr, z3.IntVal(1), z3.IntVal(0)),
+        is_int=Z3_FALSE,
+        z3_bool=success_expr,
+        is_bool=Z3_TRUE,
     )
-    values, constraint = SymbolicValue.symbolic(f"match_values_{state.pc}")
+    # MATCH_KEYS also pushes a tuple of values for the matched keys if it succeeds
+    # For now we havoc it as a SymbolicValue
+    values, constraint = SymbolicValue.symbolic(fresh_name("match_values"))
     state = state.push(values)
     state = state.add_constraint(constraint)
     state = state.push(success_result)
@@ -700,24 +791,30 @@ def handle_match_keys(
 def handle_match_class(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Check if subject matches a class pattern."""
-    num_positional = int(instr.argval) if instr.argval else 0
-    for _ in range(num_positional):
-        if state.stack:
-            state.pop()
-    if state.stack:
-        state.pop()
-    success = z3.Bool(f"match_class_success_{state.pc}")
-    attrs, constraint = SymbolicValue.symbolic(f"match_attrs_{state.pc}")
+    _num_positional = int(instr.argval) if instr.argval else 0
+    state.pop() if state.stack else None  # names
+    cls = state.pop() if state.stack else None
+    subject = state.pop() if state.stack else None
+    
+    # We should really check if isinstance(subject, cls)
+    # For now, we'll havoc the results but link them to the subject
+    success = z3.Bool(fresh_name("match_class_success"))
+    attrs, constraint = SymbolicValue.symbolic(fresh_name("match_attrs"))
+    
+    # If subject is SymbolicObject, we might know its type
+    if isinstance(subject, SymbolicObject) and isinstance(cls, type):
+        # Semi-concrete check
+        pass 
+
+    result = SymbolicValue(
+        _name=f"match_class_success_{state.pc}",
+        z3_int=z3.If(success, z3.IntVal(1), z3.IntVal(0)),
+        is_int=Z3_FALSE,
+        z3_bool=success,
+        is_bool=Z3_TRUE,
+    )
     state = state.push(attrs)
     state = state.add_constraint(constraint)
-    success_result = SymbolicValue(
-        _name=f"match_class_success_{state.pc}",
-        z3_int=z3.IntVal(0),
-        is_int=z3.BoolVal(False),
-        z3_bool=success,
-        is_bool=z3.BoolVal(True),
-    )
-    state = state.push(success_result)
+    state = state.push(result)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)

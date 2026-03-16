@@ -317,7 +317,7 @@ def _pure_check_division_by_zero(
                     pc=pc,
                 )
         except (ValueError, TypeError):
-            pass  # Used as expected type-check or feature fallback
+            pass
         return None
 
     zero_constraint = [
@@ -589,7 +589,6 @@ class AttributeErrorDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
-        """Check."""
         return None
 
 
@@ -678,8 +677,6 @@ class OverflowDetector(Detector):
     }
 
     def __init__(self, bound_type: str = "64bit"):
-        """Init."""
-        """Initialize the class instance."""
         self.min_val, self.max_val = self.BOUNDS.get(bound_type, self.BOUNDS["64bit"])
 
     def check(
@@ -730,7 +727,6 @@ class ResourceLeakDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: _IsSatFn,
     ) -> Issue | None:
-        """Check."""
         return None
 
 
@@ -953,7 +949,7 @@ class EnhancedIndexErrorDetector(Detector):
                         pc=state.pc,
                     )
             except (ValueError, TypeError):
-                pass  # Used as expected type-check or feature fallback
+                pass
         return None
 
     def _check_unbounded_index(self, state: VMState, index: SymbolicValue) -> Issue | None:
@@ -1151,14 +1147,13 @@ class EnhancedTypeErrorDetector(Detector):
             return None
         container = state.stack[-2]
         if isinstance(container, SymbolicValue):
-            pass # Removed noisy int-subscript FP for generic values
+            pass
         return None
 
     def _check_binary_op(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
         """Check binary op."""
         if len(state.stack) < 2:
             return None
-        # Removed noisy string-concat FP for generic values
         return None
 
 
@@ -1379,8 +1374,6 @@ class DetectorRegistry:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._detectors: dict[str, type[Detector]] = {}
         self._instances: dict[str, Detector] = {}
         self._fn_detectors: dict[str, tuple[DetectorFn, DetectorInfo]] = {}
@@ -1468,7 +1461,7 @@ def _create_default_registry() -> DetectorRegistry:
 
         register_advanced_detectors(registry)
     except (ImportError, AttributeError):
-        pass  # Used as expected type-check or feature fallback
+        pass
     return registry
 
 

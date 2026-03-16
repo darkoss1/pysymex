@@ -111,6 +111,7 @@ class ExecutionConfig:
     dpor_enabled: bool = True
     enable_solver_cache: bool = True
     heuristic_assume_non_null_self: bool = True
+    enable_interaction_graph: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +147,8 @@ class ExecutionResult:
     final_globals: dict[str, object] = field(default_factory=dict[str, object])
     final_locals: dict[str, object] = field(default_factory=dict[str, object])
     branches: list[object] = field(default_factory=list[object])
+    treewidth_stats: dict[str, object] = field(default_factory=dict[str, object])
+    solver_stats: dict[str, object] = field(default_factory=dict[str, object])
 
     def has_issues(self) -> bool:
         """Check if any issues were found."""

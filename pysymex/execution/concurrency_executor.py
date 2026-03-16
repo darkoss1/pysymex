@@ -35,8 +35,6 @@ class SharedVariableTracker:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._accesses: dict[str, set[str]] = {}
         self._writes: dict[str, set[str]] = {}
 
@@ -115,8 +113,6 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         config: ExecutionConfig | None = None,
         **kwargs: object,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
         super().__init__(config=config, **kwargs)
         self._concurrency_analyzer = ConcurrencyAnalyzer(timeout_ms=self.config.solver_timeout_ms)
         self._shared_tracker = SharedVariableTracker()
@@ -166,12 +162,12 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_hash = self._hash_state(state)
-        if state_hash in self._visited_states:
+        state_key = self._state_key(state)
+        if state_key in self._visited_states:
             self._paths_pruned += 1
             return
         else:
-            self._visited_states.add(state_hash)
+            self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)

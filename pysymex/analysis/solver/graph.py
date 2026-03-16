@@ -22,8 +22,6 @@ class CallGraph:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.calls: dict[str, set[str]] = defaultdict(set[str])
         self.callers: dict[str, set[str]] = defaultdict(set[str])
         self.call_sites: dict[str, list[CallSite]] = defaultdict(list[CallSite])
@@ -222,8 +220,6 @@ class SymbolicState:
     """
 
     def __init__(self, parent: SymbolicState | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.parent = parent
         self.variables: dict[str, SymValue] = {}
         self.stack: list[SymValue] = []

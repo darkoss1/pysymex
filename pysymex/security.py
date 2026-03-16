@@ -204,7 +204,6 @@ def get_safe_builtins() -> dict[str, object]:
         safe[name] = getattr(builtins, name)
 
     def disabled_builtin(*args: object, **kwargs: object) -> None:
-        """Disabled builtin."""
         raise SecurityError("This builtin is disabled in sandbox mode")
 
     for name in DANGEROUS_BUILTINS:
@@ -314,7 +313,6 @@ def timeout_context(seconds: float) -> Generator[None, None, None]:
         return
 
     def handler(_signum: int, frame: object) -> None:
-        """Handler."""
         raise ExecutionTimeout(f"Execution timed out after {seconds } seconds")
 
     old_handler = signal.signal(signal.SIGALRM, handler)

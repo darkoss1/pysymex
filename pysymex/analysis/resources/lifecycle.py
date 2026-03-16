@@ -34,8 +34,6 @@ class ResourceLifecycleChecker:
     """
 
     def __init__(self, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -535,8 +533,6 @@ class LockResourceChecker(ResourceLifecycleChecker):
     """Specialized checker for lock resources."""
 
     def __init__(self, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         super().__init__(timeout_ms)
         self._lock_order: list[str] = []
         self._held_locks: set[str] = set()

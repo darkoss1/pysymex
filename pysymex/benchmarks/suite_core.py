@@ -79,8 +79,6 @@ class Benchmark:
         category: BenchmarkCategory = BenchmarkCategory.END_TO_END,
         description: str = "",
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.name = name
         self.func = func
         self.category = category

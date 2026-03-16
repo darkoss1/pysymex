@@ -17,8 +17,6 @@ class TypeEncoder:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self.TypeSort = z3.DeclareSort("Type")
         self.int_t = z3.Const("int_t", self.TypeSort)
         self.float_t = z3.Const("float_t", self.TypeSort)

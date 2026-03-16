@@ -32,8 +32,6 @@ class ProtocolChecker:
     """Checks if types satisfy protocols."""
 
     def __init__(self, type_checker: TypeConstraintChecker):
-        """Init."""
-        """Initialize the class instance."""
         self.type_checker = type_checker
 
     def check_protocol_satisfaction(

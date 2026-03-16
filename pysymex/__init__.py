@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from importlib import import_module
-from importlib.metadata import PackageNotFoundError, version
 
 from pysymex._deps import ensure_z3_ready
 

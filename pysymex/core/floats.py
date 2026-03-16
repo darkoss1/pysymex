@@ -7,8 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import TYPE_CHECKING
 
 import z3
+
+if TYPE_CHECKING:
+    from pysymex.core.types import AnySymbolic
 
 
 class FloatPrecision(Enum):
@@ -33,8 +37,7 @@ def get_fp_sort(precision: FloatPrecision) -> z3.FPSortRef:
         return z3.FPSort(15, 64)
     elif precision == FloatPrecision.QUAD:
         return z3.FPSort(15, 113)
-    else:
-        return z3.Float64()
+    raise ValueError(f"unknown precision: {precision}")
 
 
 @dataclass
@@ -79,8 +82,6 @@ class SymbolicFloat:
         z3_expr: z3.FPRef | None = None,
         config: FloatConfig | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.config = config or FloatConfig()
         self._sort = get_fp_sort(self.config.precision)
         self._rm = self.config.get_rounding_mode()
@@ -101,7 +102,6 @@ class SymbolicFloat:
         return self._expr
 
     def __add__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Add."""
         other_expr = self._to_fp(other)
         return SymbolicFloat(
             z3_expr=z3.fpAdd(self._rm, self._expr, other_expr),
@@ -109,11 +109,9 @@ class SymbolicFloat:
         )
 
     def __radd__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Radd."""
         return self.__add__(other)
 
     def __sub__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Sub."""
         other_expr = self._to_fp(other)
         return SymbolicFloat(
             z3_expr=z3.fpSub(self._rm, self._expr, other_expr),
@@ -121,7 +119,6 @@ class SymbolicFloat:
         )
 
     def __rsub__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Rsub."""
         other_fp = self._to_fp(other)
         return SymbolicFloat(
             z3_expr=z3.fpSub(self._rm, other_fp, self._expr),
@@ -129,7 +126,6 @@ class SymbolicFloat:
         )
 
     def __mul__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Mul."""
         other_expr = self._to_fp(other)
         return SymbolicFloat(
             z3_expr=z3.fpMul(self._rm, self._expr, other_expr),
@@ -137,11 +133,9 @@ class SymbolicFloat:
         )
 
     def __rmul__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Rmul."""
         return self.__mul__(other)
 
     def __truediv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
-        """Truediv."""
         other_expr = self._to_fp(other)
         return SymbolicFloat(
             z3_expr=z3.fpDiv(self._rm, self._expr, other_expr),
@@ -157,49 +151,40 @@ class SymbolicFloat:
         )
 
     def __neg__(self) -> SymbolicFloat:
-        """Neg."""
         return SymbolicFloat(
             z3_expr=z3.fpNeg(self._expr),
             config=self.config,
         )
 
     def __abs__(self) -> SymbolicFloat:
-        """Abs."""
         return SymbolicFloat(
             z3_expr=z3.fpAbs(self._expr),
             config=self.config,
         )
 
     def __lt__(self, other: SymbolicFloat | float) -> z3.BoolRef:
-        """Lt."""
         other_expr = self._to_fp(other)
         return z3.fpLT(self._expr, other_expr)
 
     def __le__(self, other: SymbolicFloat | float) -> z3.BoolRef:
-        """Le."""
         other_expr = self._to_fp(other)
         return z3.fpLEQ(self._expr, other_expr)
 
     def __gt__(self, other: SymbolicFloat | float) -> z3.BoolRef:
-        """Gt."""
         other_expr = self._to_fp(other)
         return z3.fpGT(self._expr, other_expr)
 
     def __ge__(self, other: SymbolicFloat | float) -> z3.BoolRef:
-        """Ge."""
         other_expr = self._to_fp(other)
         return z3.fpGEQ(self._expr, other_expr)
 
     def __eq__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
-        """Eq."""
-        """Check for equality with another object."""
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.fpEQ(self._expr, other_expr)
         return NotImplemented
 
     def __ne__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
-        """Ne."""
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.Not(z3.fpEQ(self._expr, other_expr))
@@ -298,9 +283,9 @@ class SymbolicFloat:
 
     def as_unified(self) -> object:
         """Convert to unified SymbolicValue."""
-        from pysymex.core.types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
+        from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicValue
         return SymbolicValue(
-            _name=self._name,
+            _name=self.name,
             z3_int=self.to_int(),
             is_int=Z3_FALSE,
             z3_bool=Z3_FALSE,
@@ -309,7 +294,7 @@ class SymbolicFloat:
             is_float=Z3_TRUE,
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
-            taint_labels=self.taint_labels,
+            taint_labels=getattr(self, "taint_labels", None),
         )
 
     def _to_fp(self, value: SymbolicFloat | float | int) -> z3.FPRef:
@@ -319,8 +304,6 @@ class SymbolicFloat:
         return z3.FPVal(float(value), self._sort)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicFloat({self.name})"
 
 
@@ -328,8 +311,6 @@ class FloatAnalyzer:
     """Analyzer for floating-point issues."""
 
     def __init__(self, config: FloatConfig | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.config = config or FloatConfig()
         self._issues: list[dict[str, object]] = []
 
@@ -417,8 +398,6 @@ class AccuracyAnalyzer:
     """Analyzes numerical accuracy and error propagation."""
 
     def __init__(self, precision: FloatPrecision = FloatPrecision.DOUBLE):
-        """Init."""
-        """Initialize the class instance."""
         self.precision = precision
         self._sort = get_fp_sort(precision)
         if precision == FloatPrecision.SINGLE:

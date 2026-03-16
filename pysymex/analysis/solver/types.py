@@ -133,7 +133,7 @@ class SymValue:
         constraints: Additional Z3 constraints specific to this value.
     """
 
-    expr: Any
+    expr: object
     name: str = ""
     sym_type: SymType = SymType.UNKNOWN
     is_none: bool = False
@@ -145,7 +145,6 @@ class SymValue:
 
     @property
     def is_tainted(self) -> bool:
-        """Is tainted."""
         """Property returning the is_tainted."""
         return self.taint.is_tainted
 
@@ -186,7 +185,7 @@ class CrashCondition:
     """
 
     bug_type: BugType
-    condition: Any
+    condition: object
     path_constraints: list[object]
     line: int
     function: str

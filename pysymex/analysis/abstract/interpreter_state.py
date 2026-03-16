@@ -32,17 +32,14 @@ class NumericProduct(AbstractValue):
 
     @classmethod
     def bottom(cls) -> NumericProduct:
-        """Bottom."""
         return cls(Interval.bottom(), SignValue.bottom(), Congruence.bottom())
 
     @classmethod
     def top(cls) -> NumericProduct:
-        """Top."""
         return cls(Interval.top(), SignValue.top(), Congruence.top())
 
     @classmethod
     def const(cls, value: int) -> NumericProduct:
-        """Const."""
         return cls(
             Interval.const(value),
             SignValue.from_const(value),
@@ -70,11 +67,9 @@ class NumericProduct(AbstractValue):
         return NumericProduct(new_interval, new_sign, self.congruence)
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self.interval.is_bottom() or self.sign.is_bottom() or self.congruence.is_bottom()
 
     def is_top(self) -> bool:
-        """Is top."""
         return self.interval.is_top() and self.sign.is_top() and self.congruence.is_top()
 
     def may_be_zero(self) -> bool:
@@ -140,7 +135,6 @@ class NumericProduct(AbstractValue):
         )
 
     def add(self, other: NumericProduct) -> NumericProduct:
-        """Add."""
         return NumericProduct(
             self.interval.add(other.interval),
             self.sign.add(other.sign),
@@ -148,7 +142,6 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def sub(self, other: NumericProduct) -> NumericProduct:
-        """Sub."""
         return NumericProduct(
             self.interval.sub(other.interval),
             self.sign.sub(other.sign),
@@ -156,7 +149,6 @@ class NumericProduct(AbstractValue):
         ).reduce()
 
     def mul(self, other: NumericProduct) -> NumericProduct:
-        """Mul."""
         return NumericProduct(
             self.interval.mul(other.interval),
             self.sign.mul(other.sign),
@@ -191,12 +183,10 @@ class AbstractState:
 
     @classmethod
     def bottom(cls) -> AbstractState:
-        """Bottom."""
         return cls(_is_bottom=True)
 
     @classmethod
     def top(cls) -> AbstractState:
-        """Top."""
         return cls()
 
     def copy(self) -> AbstractState:
@@ -210,7 +200,6 @@ class AbstractState:
         )
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self._is_bottom
 
     def get(self, var: str) -> NumericProduct:
@@ -220,14 +209,12 @@ class AbstractState:
         return NumericProduct.top()
 
     def set(self, var: str, value: NumericProduct) -> None:
-        """Set."""
         if value.is_bottom():
             self._is_bottom = True
         else:
             self.variables[var] = value
 
     def push(self, value: NumericProduct) -> None:
-        """Push."""
         self.stack.append(value)
 
     def pop(self) -> NumericProduct:

@@ -23,7 +23,11 @@ from pysymex.reporting.sarif_types import (
 
 
 def severity_to_level(severity: Severity) -> str:
-    """Convert PySyMex severity to SARIF level."""
+    """Map the internal PySyMex severity enum to standard SARIF notification levels.
+
+    SARIF levels (error, warning, note, none) determine how the result is
+    rendered in IDEs and GHAS dashboards.
+    """
     mapping = {
         Severity.CRITICAL: "error",
         Severity.HIGH: "error",
@@ -238,7 +242,11 @@ SECURITY_RULES: dict[str, ReportingDescriptor] = {
 
 
 def vuln_type_to_rule_id(vuln_type: str) -> str:
-    """Map vulnerability type to SARIF rule ID."""
+    """Map a dynamic vulnerability type string to a stable SARIF rule identifier.
+
+    This ensures that findings are grouped under the correct CWE-mapped rule
+    in security dashboards. Defaults to SVM999 for unknown issue types.
+    """
     v = str(vuln_type).lower().replace(" ", "_")
     mapping = {
         "command_injection": "SVM001",
@@ -360,15 +368,26 @@ def issue_to_sarif_result(issue: dict[str, object]) -> SARIFResult:
 
 
 class SARIFGenerator:
-    """Generates SARIF reports from PySyMex analysis results."""
+    """Orchestrator for transforming PySyMex internal results into SARIF 2.1.0 JSON.
+
+    **Mapping Strategy:**
+    Transforms internal engine artifacts into the standard Static Analysis
+    Results Interchange Format (SARIF). 
+    - **Vulnerabilities**: Mapped to SARIF `result` objects with associated rule IDs.
+    - **Path Constraints**: Encoded in the `codeFlows` property to allow
+      step-by-step path reproduction in SARIF viewers.
+    - **Taint Analysis**: Mapped to `codeFlows` for data-flow visualization from
+      source to sink.
+
+    The generated output is compatible with GitHub Advanced Security (GHAS)
+    code scanning and other SARIF-aware tools.
+    """
 
     def __init__(
         self,
         tool_name: str = "pysymex",
         tool_version: str = "1.0.0",
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.tool_name = tool_name
         self.tool_version = tool_version
 

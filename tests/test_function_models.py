@@ -54,6 +54,17 @@ def get_concrete(value):
     if isinstance(value, (int, float, bool, str)):
         return value
 
+    # Handle SymbolicFloat from pysymex.core.floats
+    try:
+        from pysymex.core.floats import SymbolicFloat as CoreSymbolicFloat
+        if isinstance(value, CoreSymbolicFloat):
+            import z3 as _z3
+            if _z3.is_fp_value(value.z3_expr):
+                return float(_z3.simplify(_z3.fpToReal(value.z3_expr)).as_fraction())
+            return value
+    except ImportError:
+        pass
+
     # Handle SymbolicValue from pysymex.core.types
     if isinstance(value, SymbolicValue):
         # Try to get concrete value

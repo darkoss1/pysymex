@@ -2,14 +2,27 @@
 
 ## Released
 
+### v0.1.0-alpha.1 ✅
+**Released:** March 2026
+
+- [x] CHTD: Constraint Hypergraph Treewidth Decomposition (O(N*2^w) path exploration)
+- [x] Constraint independence optimization (KLEE-style query slicing)
+- [x] Adaptive path selection via Thompson Sampling (Beta-Bernoulli bandit)
+- [x] Theory-aware solver dispatch (QF_LIA, QF_S, QF_BV auto-detection)
+- [x] Exception forking for try/except dual-path exploration (Python 3.12+)
+- [x] Branch affinity fast path (single-sort Z3 expressions)
+- [x] 13 pre-existing bug fixes across core engine
+- [x] 2723 tests passing, 0 failures
+- [x] Stress-tested with 12 path-explosion scenarios (up to 2^13 theoretical paths)
+
 ### v0.1.0-alpha ✅
 **Released:** March 2026
 
-- [x] Full symbolic execution engine (CPython 3.11–3.13 bytecodes)
+- [x] Full symbolic execution engine (CPython 3.11-3.13 bytecodes)
 - [x] Z3 SMT solver integration with incremental/portfolio solving
 - [x] 12+ bug detectors with counterexample generation
 - [x] Interprocedural analysis with call graph and function summaries
-- [x] Taint tracking (source → sink)
+- [x] Taint tracking (source -> sink)
 - [x] Abstract interpretation (Interval, Sign, Parity domains)
 - [x] False positive reduction pipeline
 - [x] CLI with scan, analyze, verify, benchmark commands
@@ -80,4 +93,4 @@
 
 ---
 
-*Last updated: March 13, 2026*
+*Last updated: March 15, 2026*

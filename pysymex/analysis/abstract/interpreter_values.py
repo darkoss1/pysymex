@@ -74,12 +74,10 @@ class SignValue(AbstractValue):
 
     @classmethod
     def bottom(cls) -> SignValue:
-        """Bottom."""
         return cls(Sign.BOTTOM)
 
     @classmethod
     def top(cls) -> SignValue:
-        """Top."""
         return cls(Sign.TOP)
 
     @classmethod
@@ -93,11 +91,9 @@ class SignValue(AbstractValue):
             return cls(Sign.ZERO)
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self.sign == Sign.BOTTOM
 
     def is_top(self) -> bool:
-        """Is top."""
         return self.sign == Sign.TOP
 
     def may_be_zero(self) -> bool:
@@ -171,11 +167,9 @@ class SignValue(AbstractValue):
         return SignValue.bottom()
 
     def widen(self, other: AbstractValue) -> SignValue:
-        """Widen."""
         return self.join(other)
 
     def narrow(self, other: AbstractValue) -> SignValue:
-        """Narrow."""
         return self.meet(other)
 
     def leq(self, other: AbstractValue) -> bool:
@@ -261,17 +255,14 @@ class Interval(AbstractValue):
 
     @classmethod
     def bottom(cls) -> Interval:
-        """Bottom."""
         return cls(None, None, _is_bottom=True)
 
     @classmethod
     def top(cls) -> Interval:
-        """Top."""
         return cls(None, None, _is_bottom=False)
 
     @classmethod
     def const(cls, value: int) -> Interval:
-        """Const."""
         return cls(value, value)
 
     @classmethod
@@ -283,20 +274,16 @@ class Interval(AbstractValue):
 
     @classmethod
     def non_negative(cls) -> Interval:
-        """Non negative."""
         return cls(0, None)
 
     @classmethod
     def positive(cls) -> Interval:
-        """Positive."""
         return cls(1, None)
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self._is_bottom
 
     def is_top(self) -> bool:
-        """Is top."""
         return not self._is_bottom and self.low is None and self.high is None
 
     def is_const(self) -> bool:
@@ -558,12 +545,10 @@ class Congruence(AbstractValue):
 
     @classmethod
     def bottom(cls) -> Congruence:
-        """Bottom."""
         return cls(None, 0, _is_bottom=True)
 
     @classmethod
     def top(cls) -> Congruence:
-        """Top."""
         return cls(None, 0)
 
     @classmethod
@@ -579,15 +564,12 @@ class Congruence(AbstractValue):
         return cls(modulus, remainder % modulus)
 
     def is_bottom(self) -> bool:
-        """Is bottom."""
         return self._is_bottom
 
     def is_top(self) -> bool:
-        """Is top."""
         return not self._is_bottom and self.modulus is None
 
     def is_const(self) -> bool:
-        """Is const."""
         return not self._is_bottom and self.modulus == 0
 
     def get_const(self) -> int | None:
@@ -657,11 +639,9 @@ class Congruence(AbstractValue):
         return self
 
     def widen(self, other: AbstractValue) -> Congruence:
-        """Widen."""
         return self.join(other)
 
     def narrow(self, other: AbstractValue) -> Congruence:
-        """Narrow."""
         return self.meet(other)
 
     def leq(self, other: AbstractValue) -> bool:

@@ -57,8 +57,18 @@ __all__ = [
 class AbstractInterpreter:
     """
     Abstract interpreter for Python bytecode.
-    Uses abstract interpretation to analyze program behavior
-    and detect potential errors.
+    
+    **Theoretical Foundation:**
+    Implements classic abstract interpretation over multiple domains (Interval, 
+    Sign, Congruence). It soundly approximates program behavior by evaluating
+    bytecode effects on an abstract lattice where each point represents a 
+    set of possible concrete states.
+
+    **Convergence Mechanics:**
+    - uses a worklist-driven fixed-point iteration.
+    - employs **Widening** at loop headers to ensure termination on infinite
+      integer domains.
+    - performs **Joining** (Least Upper Bound) at control-flow merge points.
     """
 
     _TRIVIAL_MAX_INSTRUCTIONS = 15
@@ -82,8 +92,6 @@ class AbstractInterpreter:
     )
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.warnings: list[object] = []
         self._used_fast_path: bool = False
 
@@ -175,7 +183,16 @@ class AbstractInterpreter:
         code: object,
         file_path: str,
     ) -> dict[int, AbstractState]:
-        """Interpret the CFG abstractly."""
+        """Interpret the CFG abstractly to reach a fixed-point.
+
+        **Algorithm:**
+        Iteratively propagates abstract states through the CFG until the 
+        least fixed-point is reached or the iteration limit is hit. 
+        
+        Uses a widening operator after a small number of iterations per block
+        to force convergence in domains with infinite ascending chains (like 
+        literal integer intervals).
+        """
         states: dict[int, AbstractState] = {}
         if cfg.entry:
             states[cfg.entry.block_id] = entry_state
@@ -231,7 +248,16 @@ class AbstractInterpreter:
         code: object,
         file_path: str,
     ) -> None:
-        """Transfer function for a single instruction."""
+        """Transfer function for a single instruction.
+
+        **Semantics Modeling:**
+        Maps a concrete bytecode instruction to its abstract effect on the
+        `AbstractState` (stack and environment). 
+        - **Numerical Ops**: Evaluated via interval/sign arithmetic.
+        - **Flow Tracking**: Tracks type-tags and simple constant propagation.
+        - **Approximation**: Opcodes with complex heap effects (e.g. `CALL`)
+          result in a transition to `Top` (unknown state) to maintain soundness.
+        """
         opname = instr.opname
         arg = instr.argval
         if opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
@@ -361,7 +387,7 @@ class AbstractInterpreter:
                     for _ in range(effect):
                         state.push(NumericProduct.top())
             except (ValueError, TypeError):
-                pass  # Used as expected type-check or feature fallback
+                pass
 
 
 class AbstractAnalyzer:
@@ -370,8 +396,6 @@ class AbstractAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.interpreter = AbstractInterpreter()
 
     def analyze_function(

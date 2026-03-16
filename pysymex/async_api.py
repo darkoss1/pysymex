@@ -14,11 +14,14 @@ Requires Python 3.11+ for native ``TaskGroup`` support.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
 
 from pysymex.execution.executor import ExecutionResult
+
+logger = logging.getLogger(__name__)
 
 
 async def analyze_async(
@@ -188,15 +191,9 @@ async def scan_directory_async(
             tg.create_task(_scan_one(file_path))
 
     if errors:
-        try:
-            raise ExceptionGroup(
-                f"async scan: {len(errors)} file(s) had errors",
-                errors,
-            )
-        except* OSError:
-            pass
-        except* Exception:
-            pass
+        logger.warning("async scan: %d file(s) had errors", len(errors))
+        for err in errors:
+            logger.debug("  %s: %s", type(err).__name__, err)
 
     return results
 

@@ -15,8 +15,6 @@ from pysymex.core.types import (
     Z3_FALSE,
     SymbolicString,
     SymbolicValue,
-    bv_to_int,
-    int_to_bv,
     merge_taint,
 )
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
@@ -36,7 +34,26 @@ def check_division_by_zero(
     op_name: str,
     left: SymbolicValue,
 ) -> list[Issue]:
-    """Check if division by zero is possible and return issues."""
+    """Verify if the current path constraints allow the divisor to be zero.
+
+    **Verification Semantics:**
+    This check executes a specialized Z3 satisfiability query: 
+    `PC ∧ ((right is int ∧ right == 0) ∨ (right is float ∧ right == 0.0))`.
+    
+    If the solver returns `SAT`, it indicates a feasible execution path where 
+    a `ZeroDivisionError` would occur in a concrete Python VM. The check 
+    is performed *before* the engine's self-preservation constraints are 
+    added, ensuring the reported Z3 model is a valid application counterexample.
+
+    Args:
+        right: The symbolic divisor to be validated.
+        state: VM state providing the global path constraints.
+        op_name: Human-readable operator (e.g., "/", "%", "//").
+        left: The dividend (used for issue localization/reporting).
+
+    Returns:
+        A list of `Issue` objects representing detected vulnerabilities.
+    """
     issues: list[Issue] = []
 
     if is_overloaded_arithmetic(left, right):
@@ -56,8 +73,10 @@ def check_division_by_zero(
 
     zero_check = [
         *state.path_constraints,
-        right.is_int,
-        right.z3_int == 0,
+        z3.Or(
+            z3.And(right.is_int, right.z3_int == 0),
+            z3.And(right.is_float, z3.fpIsZero(right.z3_float)),
+        ),
     ]
     if is_satisfiable(zero_check):
         logger.debug("Division by zero SAT for %s at PC %d", right.name, state.pc)
@@ -79,7 +98,21 @@ def check_negative_shift(
     op_name: str,
     left: SymbolicValue,
 ) -> list[Issue]:
-    """Check if a negative shift count is possible and return issues."""
+    """Check if the bitwise shift count could be negative.
+
+    **Verification Semantics:**
+    Python's `<<` and `>>` operators raise `ValueError` for negative shift 
+    counts. This method queries Z3 for `PC ∧ right is int ∧ right < 0`.
+
+    Args:
+        right: Symbolic shift count to test.
+        state: Current VM state with path constraints.
+        op_name: Operator string ("<<" or ">>").
+        left: Value being shifted, used for the error message.
+
+    Returns:
+        List of Issue objects if a negative shift is satisfiable.
+    """
     issues: list[Issue] = []
 
     if z3.is_int_value(right.z3_int):
@@ -110,19 +143,29 @@ def check_negative_shift(
 
 
 def _is_concrete_zero_divisor(value: SymbolicValue) -> bool:
-    """Is concrete zero divisor."""
     return z3.is_int_value(value.z3_int) and value.z3_int.as_long() == 0
+
+
+def _py_floor_div(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:
+    """Python-compatible floor division for Z3 integers."""
+    return z3.If(b >= 0, a / b, (-a) / (-b))
+
+
+def _pow2(shift: z3.ArithRef) -> z3.ArithRef:
+    """Compute 2**shift as a Z3 integer (shift must be >= 0)."""
+    return z3.ToInt(z3.IntVal(2) ** shift)
 
 
 @opcode_handler("UNARY_POSITIVE")
 def handle_unary_positive(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Unary positive — pop TOS, push +TOS (identity for numeric types).
+    """Implement the ``+x`` unary operator.
 
-    BUG-009 fix: the previous implementation advanced PC without touching
-    the stack, leaving TOS in place instead of popping and re-pushing it.
-    For numeric types +x == x, so we simply pop and push back unchanged.
+    **Emulation Logic:**
+    While numeric identity holds for `int` and `float`, the opcode must still
+    obey Python's stack semantics—popping the operand and re-pushing it. 
+    This ensures functional consistency with the Python VM's object model.
     """
     top = state.pop()
     state = state.push(top)
@@ -134,7 +177,7 @@ def handle_unary_positive(
 def handle_unary_negative(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Unary negation."""
+    """Implement the ``-x`` unary negation operator."""
     top = state.pop()
     if isinstance(top, SymbolicValue):
         state = state.push(-top)
@@ -146,7 +189,10 @@ def handle_unary_negative(
 
 @opcode_handler("UNARY_NOT")
 def handle_unary_not(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Boolean NOT."""
+    """Implement the ``not x`` boolean negation operator.
+
+    Calculates the logical inversion based on the object's potential truthiness.
+    """
     top = state.pop()
     if isinstance(top, SymbolicValue):
         result = top.logical_not()
@@ -167,7 +213,7 @@ def handle_unary_not(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
 def handle_unary_invert(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Bitwise NOT."""
+    """Implement the ``~x`` bitwise NOT (inversion) operator."""
     top = state.pop()
     if isinstance(top, SymbolicValue):
         state = state.push(~top)
@@ -181,7 +227,7 @@ def handle_unary_invert(
 def handle_binary_add(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary addition."""
+    """Implement the ``+`` binary addition operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, (SymbolicValue, SymbolicString)):
@@ -232,7 +278,7 @@ def handle_binary_add(
 def handle_binary_subtract(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary subtraction."""
+    """Implement the ``-`` binary subtraction operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, (SymbolicValue, SymbolicString)):
@@ -273,7 +319,7 @@ def handle_binary_subtract(
 def handle_binary_multiply(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary multiplication."""
+    """Implement the ``*`` binary multiplication operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, (SymbolicValue, SymbolicString)):
@@ -314,7 +360,13 @@ def handle_binary_multiply(
 def handle_binary_divide(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary division with zero check."""
+    """Implement division (``/``, ``//``) with safety checks.
+
+    When the divisor could be zero and the instruction is inside a
+    try/except block, forks into two paths: one where the divisor is
+    non-zero (normal continuation) and one where it is zero (jumps to
+    the exception handler).
+    """
     right = state.pop()
     left = state.pop()
     issues = []
@@ -328,7 +380,42 @@ def handle_binary_divide(
         if any(i.kind == IssueKind.DIVISION_BY_ZERO and not i.constraints for i in issues):
             return OpcodeResult(new_states=[], issues=issues, terminal=True)
 
-        state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+        # Check if we're inside a try/except that can handle this exception.
+        # If so, fork: normal path (divisor!=0) + exception path (divisor==0 -> handler).
+        has_div_zero_issue = any(i.kind == IssueKind.DIVISION_BY_ZERO for i in issues)
+        handler_pc = None
+        if has_div_zero_issue:
+            # Python 3.11+: check exception table
+            handler_pc = ctx.find_exception_handler(instr.offset)
+            # Fallback: check block stack (older Python / SETUP_FINALLY)
+            if handler_pc is None:
+                block = state.current_block()
+                if block and block.block_type in ("finally", "except", "cleanup") and block.handler_pc is not None:
+                    handler_pc = block.handler_pc
+
+        if handler_pc is not None:
+            zero_cond = z3.Or(
+                z3.And(right.is_int, right.z3_int == 0),
+                z3.And(right.is_float, z3.fpIsZero(right.z3_float)),
+            )
+
+            exc_state = state.fork()
+            exc_state = exc_state.add_constraint(zero_cond)
+            exc_state = exc_state.set_pc(handler_pc)
+
+            normal_state = state.add_constraint(z3.Not(zero_cond))
+            result = left / right if instr.opname == "BINARY_TRUE_DIVIDE" else left // right
+            normal_state = normal_state.push(result)
+            normal_state = normal_state.advance_pc()
+
+            return OpcodeResult(new_states=[normal_state, exc_state], issues=issues)
+
+        state = state.add_constraint(
+            z3.And(
+                z3.Or(z3.Not(right.is_int), right.z3_int != 0),
+                z3.Or(z3.Not(right.is_float), z3.Not(z3.fpIsZero(right.z3_float))),
+            )
+        )
         result = left / right if instr.opname == "BINARY_TRUE_DIVIDE" else left // right
     else:
         type_error_cond = [
@@ -361,13 +448,9 @@ def handle_binary_divide(
 def handle_binary_modulo(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary modulo with zero check.
-
-    Handles both mathematical modulo (n % d) and string formatting (s % args).
-    """
+    """Implement bitwise modulo (``%``) or string formatting."""
     right = state.pop()
     left = state.pop()
-    issues = []
 
     if not isinstance(left, (SymbolicValue, SymbolicString)):
         left = SymbolicValue.from_const(left)
@@ -403,7 +486,12 @@ def handle_binary_modulo(
                     return OpcodeResult(new_states=[], issues=m_issues, terminal=True)
                 # If there are other paths (like the string one), just don't add this one
             else:
-                m_state = m_state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+                m_state = m_state.add_constraint(
+                    z3.And(
+                        z3.Or(z3.Not(right.is_int), right.z3_int != 0),
+                        z3.Or(z3.Not(right.is_float), z3.Not(z3.fpIsZero(right.z3_float))),
+                    )
+                )
                 result = left % right
                 m_state = m_state.push(result)
                 m_state = m_state.advance_pc()
@@ -431,7 +519,7 @@ def handle_binary_modulo(
 def handle_binary_power(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary exponentiation."""
+    """Implement the ``**`` binary exponentiation operator."""
     right = state.pop()
     left = state.pop()
     if isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue):
@@ -449,7 +537,7 @@ def handle_binary_power(
 def handle_binary_shift(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Binary shift operations with overflow and negative-shift checks."""
+    """Implement bitwise shift (``<<``, ``>>``) with negative count checks."""
     right = state.pop()
     left = state.pop()
     op = "<<" if instr.opname == "BINARY_LSHIFT" else ">>"
@@ -461,14 +549,36 @@ def handle_binary_shift(
 
     issues = check_negative_shift(right, state, op, left)
 
-    state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int >= 0))
+    type_error_cond = [
+        *state.path_constraints,
+        z3.Or(z3.Not(left.is_int), z3.Not(right.is_int)),
+    ]
+    if is_satisfiable(type_error_cond):
+        issues.append(
+            Issue(
+                kind=IssueKind.TYPE_ERROR,
+                message=f"TypeError: unsupported operand type(s) for {op}: '{left.name}' and '{right.name}'",
+                constraints=type_error_cond,
+                model=get_model(type_error_cond),
+                pc=state.pc,
+            )
+        )
 
-    left_bv = int_to_bv(left.z3_int)
-    right_bv = int_to_bv(right.z3_int)
-    result_bv = left_bv << right_bv if instr.opname == "BINARY_LSHIFT" else left_bv >> right_bv
+    int_path = [*state.path_constraints, left.is_int, right.is_int]
+    if not is_satisfiable(int_path):
+        return OpcodeResult(new_states=[], issues=issues, terminal=True)
+
+    state = state.add_constraint(z3.And(left.is_int, right.is_int, right.z3_int >= 0))
+
+    shift_pow = _pow2(right.z3_int)
+    result_int = (
+        left.z3_int * shift_pow
+        if instr.opname == "BINARY_LSHIFT"
+        else _py_floor_div(left.z3_int, shift_pow)
+    )
     result = SymbolicValue(
         _name=f"({left.name}{op}{right.name})",
-        z3_int=bv_to_int(result_bv),
+        z3_int=result_int,
         is_int=z3.And(left.is_int, right.is_int),
         z3_bool=Z3_FALSE,
         is_bool=Z3_FALSE,
@@ -485,7 +595,7 @@ def handle_binary_shift(
 def handle_binary_and(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Bitwise/logical AND."""
+    """Implement the ``&`` bitwise/logical AND operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, SymbolicValue):
@@ -501,7 +611,7 @@ def handle_binary_and(
 
 @opcode_handler("BINARY_OR")
 def handle_binary_or(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Bitwise/logical OR."""
+    """Implement the ``|`` bitwise/logical OR operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, SymbolicValue):
@@ -519,7 +629,7 @@ def handle_binary_or(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
 def handle_binary_xor(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Bitwise XOR."""
+    """Implement the ``^`` bitwise XOR operator."""
     right = state.pop()
     left = state.pop()
     if not isinstance(left, SymbolicValue):
@@ -539,7 +649,7 @@ def _get_binop_result(
     op_code: str,
     state: VMState,
 ) -> tuple[StackValue | None, list[Issue], bool]:
-    """Get binop result."""
+    """Calculate the result of a binary operation for unified handling."""
     issues: list[Issue] = []
     terminal = False
     result = None
@@ -568,7 +678,12 @@ def _get_binop_result(
                 issues = check_division_by_zero(right, state, op, left)
                 if _is_concrete_zero_divisor(right):
                     return None, issues, True
-                state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int != 0))
+                state = state.add_constraint(
+                    z3.And(
+                        z3.Or(z3.Not(right.is_int), right.z3_int != 0),
+                        z3.Or(z3.Not(right.is_float), z3.Not(z3.fpIsZero(right.z3_float))),
+                    )
+                )
                 if op == "/":
                     result = left / right
                 elif op == "//":
@@ -586,13 +701,35 @@ def _get_binop_result(
                 result = left ^ right
         elif op_code in {"<<", "<<=", ">>", ">>="}:
             issues = check_negative_shift(right, state, op_code, left)
-            state = state.add_constraint(z3.Or(z3.Not(right.is_int), right.z3_int >= 0))
-            left_bv = int_to_bv(left.z3_int)
-            right_bv = int_to_bv(right.z3_int)
-            res_bv = left_bv << right_bv if op_code.startswith("<<") else left_bv >> right_bv
+            type_error_cond = [
+                *state.path_constraints,
+                z3.Or(z3.Not(left.is_int), z3.Not(right.is_int)),
+            ]
+            if is_satisfiable(type_error_cond):
+                issues.append(
+                    Issue(
+                        kind=IssueKind.TYPE_ERROR,
+                        message=f"TypeError: unsupported operand type(s) for {op_code}: '{left.name}' and '{right.name}'",
+                        constraints=type_error_cond,
+                        model=get_model(type_error_cond),
+                        pc=state.pc,
+                    )
+                )
+
+            int_path = [*state.path_constraints, left.is_int, right.is_int]
+            if not is_satisfiable(int_path):
+                return None, issues, True
+
+            state = state.add_constraint(z3.And(left.is_int, right.is_int, right.z3_int >= 0))
+            shift_pow = _pow2(right.z3_int)
+            res_int = (
+                left.z3_int * shift_pow
+                if op_code.startswith("<<")
+                else _py_floor_div(left.z3_int, shift_pow)
+            )
             result = SymbolicValue(
                 _name=f"({left.name}{op_code}{right.name})",
-                z3_int=bv_to_int(res_bv),
+                z3_int=res_int,
                 is_int=z3.And(left.is_int, right.is_int),
                 z3_bool=Z3_FALSE,
                 is_bool=Z3_FALSE,
@@ -631,13 +768,48 @@ def _get_binop_result(
 
 @opcode_handler("BINARY_OP")
 def handle_binary_op(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Unified binary operation (Python 3.11+)."""
+    """Unified binary operation handler (Python 3.11+).
+
+    For division ops inside try/except, forks into normal + exception paths.
+    """
     right = state.pop()
     left = state.pop()
     if not isinstance(left, (SymbolicValue, SymbolicString)):
         left = SymbolicValue.from_const(left)
     if not isinstance(right, (SymbolicValue, SymbolicString)):
         right = SymbolicValue.from_const(right)
+
+    # Check for exception forking BEFORE _get_binop_result modifies state
+    is_div_op = instr.argrepr in {"/", "/=", "//", "//=", "%", "%="}
+    has_div_zero_issue = False
+    handler_pc = None
+
+    if is_div_op and isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue):
+        pre_issues = check_division_by_zero(right, state, instr.argrepr.replace("=", ""), left)
+        has_div_zero_issue = any(i.kind == IssueKind.DIVISION_BY_ZERO for i in pre_issues)
+        if has_div_zero_issue:
+            handler_pc = ctx.find_exception_handler(instr.offset)
+            if handler_pc is None:
+                block = state.current_block()
+                if block and block.block_type in ("finally", "except", "cleanup") and block.handler_pc is not None:
+                    handler_pc = block.handler_pc
+
+    if handler_pc is not None:
+        zero_cond = z3.Or(
+            z3.And(right.is_int, right.z3_int == 0),
+            z3.And(right.is_float, z3.fpIsZero(right.z3_float)),
+        )
+        exc_state = state.fork()
+        exc_state = exc_state.add_constraint(zero_cond)
+        exc_state = exc_state.set_pc(handler_pc)
+
+        normal_state = state.add_constraint(z3.Not(zero_cond))
+        result, issues, terminal = _get_binop_result(left, right, instr.argrepr, normal_state)
+        if terminal or result is None:
+            return OpcodeResult(new_states=[exc_state], issues=issues)
+        normal_state = normal_state.push(result)
+        normal_state = normal_state.advance_pc()
+        return OpcodeResult(new_states=[normal_state, exc_state], issues=issues)
 
     result, issues, terminal = _get_binop_result(left, right, instr.argrepr, state)
     if terminal:

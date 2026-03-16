@@ -11,11 +11,11 @@ Provides:
 from __future__ import annotations
 
 import dis
+import types
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import Any
 
 from pysymex.analysis.flow_sensitive import FlowContext
 from pysymex.analysis.patterns import (
@@ -107,7 +107,7 @@ class DetectionContext:
     Contains all available analysis information.
     """
 
-    code: Any
+    code: types.CodeType
     instructions: Sequence[dis.Instruction]
     pc: int
     instruction: dis.Instruction
@@ -161,8 +161,6 @@ class StaticDetector(ABC):
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.name = self.__class__.__name__
         self.issues: list[Issue] = []
 

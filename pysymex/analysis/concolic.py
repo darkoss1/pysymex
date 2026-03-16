@@ -24,13 +24,10 @@ class ConcreteInput:
     branch_flipped: int | None = None
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash(frozenset(self.values.items()))
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
         if not isinstance(other, ConcreteInput):
             return False
         return self.values == other.values
@@ -90,8 +87,6 @@ class ConcolicExecutor:
         max_time_seconds: float = 300.0,
         strategy: str = "dfs",
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.max_iterations = max_iterations
         self.max_time_seconds = max_time_seconds
         self.strategy = strategy
@@ -315,8 +310,6 @@ class GenerationalSearch:
     """
 
     def __init__(self, max_generations: int = 10):
-        """Init."""
-        """Initialize the class instance."""
         self.max_generations = max_generations
         self._generations: list[list[ConcreteInput]] = []
 

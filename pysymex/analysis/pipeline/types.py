@@ -11,9 +11,9 @@ Contains the shared data structures used across the scanner pipeline:
 
 from __future__ import annotations
 
+import types
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 from ..taint.checker import TaintKind
 
@@ -215,7 +215,7 @@ class AnalysisContext:
 
     file_path: str
     source: str
-    code: Any
+    code: types.CodeType
     types: dict[str, object] = field(default_factory=dict[str, object])
     patterns: object = None
     ranges: dict[str, object] = field(default_factory=dict[str, object])

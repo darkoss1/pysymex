@@ -74,8 +74,6 @@ class SymbolicEventLoop:
     """
 
     def __init__(self, max_interleavings: int = 1000) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._ready: list[SymbolicCoroutine] = []
         self._suspended: dict[str, SymbolicCoroutine] = {}
         self._completed: dict[str, SymbolicCoroutine] = {}
@@ -264,8 +262,6 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
         config: ExecutionConfig | None = None,
         **kwargs: object,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
         super().__init__(config=config, **kwargs)
         self._event_loop = SymbolicEventLoop(max_interleavings=self.config.max_interleavings)
         self._coroutine_states: dict[str, VMState] = {}
@@ -319,12 +315,12 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_hash = self._hash_state(state)
-        if state_hash in self._visited_states:
+        state_key = self._state_key(state)
+        if state_key in self._visited_states:
             self._paths_pruned += 1
             return
         else:
-            self._visited_states.add(state_hash)
+            self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)

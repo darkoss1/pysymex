@@ -13,8 +13,12 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import TYPE_CHECKING
 
 import z3
+
+if TYPE_CHECKING:
+    from pysymex.core.types import SymbolicValue
 
 
 class TypeTag(Enum):
@@ -91,8 +95,6 @@ class SymbolicType(ABC):
         """Convert this specialized type to a unified SymbolicValue representation."""
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"{self.__class__.__name__}({self.name})"
 
 
@@ -107,30 +109,23 @@ class SymbolicNoneType(SymbolicType):
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.NONE
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return z3.IntVal(0)
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return z3.BoolVal(False)
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.BoolVal(True)
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
-        """Symbolic eq."""
         return z3.BoolVal(isinstance(other, SymbolicNoneType))
 
     def as_unified(self) -> SymbolicValue:

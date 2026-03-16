@@ -74,8 +74,6 @@ class AnalysisPipeline:
     """
 
     def __init__(self, config: AnalysisConfig | None = None) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.config = config or AnalysisConfig()
         self.type_analyzer = TypeAnalyzer()
         self.flow_analyzer: FlowSensitiveAnalyzer | None = None
@@ -375,8 +373,6 @@ class ReportGenerator:
     """Generate analysis reports in various formats."""
 
     def __init__(self, results: dict[str, AnalysisResult]) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.results = results
         self.summary = AnalysisSummary.from_results(results)
 

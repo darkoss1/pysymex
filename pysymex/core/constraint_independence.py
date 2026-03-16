@@ -64,8 +64,6 @@ class UnionFind:
     __slots__ = ("_parent", "_rank")
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._parent: dict[str, str] = {}
         self._rank: dict[str, int] = {}
 
@@ -181,11 +179,9 @@ class ConstraintIndependenceOptimizer:
     )
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._uf = UnionFind()
 
-        self._var_cache: dict[int, frozenset[str]] = {}
+        self._var_cache: dict[int, list[tuple[_z3.ExprRef, frozenset[str]]]] = {}
 
         self._extract_full: int = 0
         self._extract_cached: int = 0
@@ -208,10 +204,12 @@ class ConstraintIndependenceOptimizer:
     def _extract_variables(self, expr: z3.ExprRef) -> frozenset[str]:
         """Extract free variables from Z3 expression, with caching."""
         key = expr.hash()
-        cached = self._var_cache.get(key)
-        if cached is not None:
-            self._extract_cached += 1
-            return cached
+        cached_bucket = self._var_cache.get(key)
+        if cached_bucket is not None:
+            for cached_expr, cached_vars in cached_bucket:
+                if _z3.eq(expr, cached_expr):
+                    self._extract_cached += 1
+                    return cached_vars
 
         self._extract_full += 1
 
@@ -237,7 +235,10 @@ class ConstraintIndependenceOptimizer:
                     worklist.append(child)
 
         result = frozenset(names)
-        self._var_cache[key] = result
+        if cached_bucket is None:
+            self._var_cache[key] = [(expr, result)]
+        else:
+            cached_bucket.append((expr, result))
         return result
 
     def register_constraint(self, constraint: z3.BoolRef) -> frozenset[str]:

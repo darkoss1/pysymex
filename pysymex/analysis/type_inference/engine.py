@@ -31,8 +31,6 @@ class TypeInferenceEngine:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.environments: dict[int, TypeEnvironment] = {}
         self.function_signatures: dict[str, tuple[list[PyType], PyType]] = {}
         self.class_attributes: dict[str, dict[str, PyType]] = {}
@@ -120,17 +118,17 @@ class TypeInferenceEngine:
         if annotation.startswith("List[") and annotation.endswith("]"):
             inner = annotation[5:-1]
             return PyType.list_(self._parse_string_annotation(inner))
-        if annotation.startswith("dict[") or annotation.startswith("Dict["):
-            inner = annotation[5:-1] if annotation.startswith("dict[") else annotation[5:-1]
+        if annotation.startswith(("dict[", "Dict[")):
+            inner = annotation[5:-1]
             parts = inner.split(",", 1)
             if len(parts) == 2:
                 key_type = self._parse_string_annotation(parts[0].strip())
                 val_type = self._parse_string_annotation(parts[1].strip())
                 return PyType.dict_(key_type, val_type)
-        if annotation.startswith("set[") or annotation.startswith("Set["):
+        if annotation.startswith(("set[", "Set[")):
             inner = annotation[4:-1]
             return PyType.set_(self._parse_string_annotation(inner))
-        if annotation.startswith("tuple[") or annotation.startswith("Tuple["):
+        if annotation.startswith(("tuple[", "Tuple[")):
             inner = annotation[6:-1]
             parts = [p.strip() for p in inner.split(",")]
             elem_types = [self._parse_string_annotation(p) for p in parts]
@@ -160,7 +158,7 @@ class TypeInferenceEngine:
                 try:
                     stub_func = self.stub_resolver.repository.get_function_type(module, name)
                 except (AttributeError, KeyError, TypeError):
-                    pass  # Used as expected type-check or feature fallback
+                    pass
         sig = inspect.signature(func)
         param_types: list[PyType] = []
         for param_name, param in sig.parameters.items():
@@ -488,7 +486,7 @@ class TypeInferenceEngine:
                 if stub_type is not None and hasattr(stub_type, "to_pytype"):
                     return stub_type.to_pytype()
             except (AttributeError, KeyError, TypeError):
-                pass  # Used as expected type-check or feature fallback
+                pass
         return PyType.any_()
 
     def infer_call_result(

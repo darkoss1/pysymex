@@ -33,7 +33,6 @@ class EnumModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the enum.Enum class construction."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"enum_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
@@ -47,7 +46,6 @@ class IntEnumModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the enum.IntEnum class construction."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"intenum_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
@@ -61,7 +59,6 @@ class EnumAutoModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the enum.auto() to generate enum values."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"enum_auto_{state .pc }")
         return ModelResult(
@@ -77,7 +74,6 @@ class EnumValueModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the accessing Enum.value property."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"enum_value_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -91,7 +87,6 @@ class EnumNameModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the accessing Enum.name property."""
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"enum_name_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -105,7 +100,6 @@ class DataclassModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the @dataclass decorator."""
     ) -> ModelResult:
         if args:
             return ModelResult(value=args[0])
@@ -121,7 +115,6 @@ class DataclassFieldModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the dataclasses.field() function."""
     ) -> ModelResult:
         default = kwargs.get("default")
         default_factory = kwargs.get("default_factory")
@@ -142,7 +135,6 @@ class AsDataclassModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the dataclasses.asdict() function."""
     ) -> ModelResult:
         result, constraint = SymbolicDict.symbolic(f"asdict_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -156,7 +148,6 @@ class AstupleModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the dataclasses.astuple() function."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"astuple_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -170,7 +161,6 @@ class FieldsModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the dataclasses.fields() function."""
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"fields_{state .pc }")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 0])
@@ -184,7 +174,6 @@ class ReplaceModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the dataclasses.replace() function."""
     ) -> ModelResult:
         if args:
             addr = next_address()
@@ -207,7 +196,6 @@ class OperatorItemgetterModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.itemgetter()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"itemgetter_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -221,7 +209,6 @@ class OperatorAttrgetterModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.attrgetter()."""
     ) -> ModelResult:
         result, constraint = SymbolicValue.symbolic(f"attrgetter_{state .pc }")
         return ModelResult(value=result, constraints=[constraint])
@@ -235,7 +222,6 @@ class OperatorAddModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.add()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -255,7 +241,6 @@ class OperatorSubModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.sub()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -275,7 +260,6 @@ class OperatorMulModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.mul()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -295,7 +279,6 @@ class OperatorTruedivModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.truediv()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -313,7 +296,6 @@ class OperatorFloordivModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.floordiv()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -331,7 +313,6 @@ class OperatorModModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.mod()."""
     ) -> ModelResult:
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -349,7 +330,6 @@ class OperatorNegModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the operator.neg()."""
     ) -> ModelResult:
         if args and isinstance(args[0], SymbolicValue):
             return ModelResult(value=-args[0])

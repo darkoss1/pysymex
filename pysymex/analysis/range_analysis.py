@@ -295,7 +295,6 @@ class Range:
         return Range.full(), may_div_by_zero
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         if self.is_empty:
             return "∅"
@@ -314,12 +313,10 @@ class RangeState:
 
     @classmethod
     def bottom(cls) -> RangeState:
-        """Bottom."""
         return cls(is_bottom=True)
 
     @classmethod
     def top(cls) -> RangeState:
-        """Top."""
         return cls()
 
     def copy(self) -> RangeState:
@@ -332,15 +329,12 @@ class RangeState:
         )
 
     def get(self, var: str) -> Range:
-        """Get."""
         return self.variables.get(var, Range.full())
 
     def set(self, var: str, range_val: Range) -> None:
-        """Set."""
         self.variables[var] = range_val
 
     def push(self, range_val: Range) -> None:
-        """Push."""
         self.stack.append(range_val)
 
     def pop(self) -> Range:
@@ -627,7 +621,7 @@ class RangeAnalyzer:
                 is_type_sub = False
                 if hasattr(container, "_name"):
                     container_name = str(getattr(container, "name", ""))
-                if container_name.startswith("global_") or container_name.startswith("import_"):
+                if container_name.startswith(("global_", "import_")):
                     from pysymex.core.type_checks import BUILTIN_TYPE_NAMES
 
                     base = container_name.split("_", 1)[1] if "_" in container_name else ""
@@ -692,8 +686,6 @@ class ValueRangeChecker:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = RangeAnalyzer()
 
     def check_function(

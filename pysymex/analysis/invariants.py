@@ -43,7 +43,6 @@ class ClassInvariant:
     class_name: str = ""
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         if self.message:
             return f"{self.condition} ({self.message})"
@@ -69,7 +68,6 @@ class InvariantViolation:
     counterexample: dict[str, object] | None = None
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         return f"Invariant '{self.invariant}' violated at {self.when} of {self.method_name}"
 
@@ -133,8 +131,6 @@ class InvariantChecker:
     """
 
     def __init__(self, solver: z3.Solver | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.solver = solver or create_solver()
         self._violations: list[InvariantViolation] = []
         self._checked_invariants: set[tuple[str, str, str]] = set()
@@ -277,7 +273,6 @@ class InvariantState:
 
     @property
     def checker(self) -> InvariantChecker:
-        """Checker."""
         """Property returning the checker."""
         if self._checker is None:
             self._checker = InvariantChecker()
@@ -365,11 +360,11 @@ def _parse_value(s: str, self_attrs: dict[str, z3.ExprRef]) -> z3.ExprRef:
     try:
         return z3.IntVal(int(s))
     except ValueError:
-        pass  # Used as expected type-check or feature fallback
+        pass
     try:
         return z3.RealVal(float(s))
     except ValueError:
-        pass  # Used as expected type-check or feature fallback
+        pass
     return z3.Int(s)
 
 

@@ -18,7 +18,6 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import cast
 
-from pysymex import __version__ as version
 from pysymex._deps import ensure_z3_ready
 
 logger = logging.getLogger(__name__)
@@ -146,11 +145,9 @@ def cmd_scan_watch(args: _Namespace) -> int:
     static_results: dict[str, list[object]] = {}
 
     def key_of(file_path: Path) -> str:
-        """Key of."""
         return str(file_path.resolve())
 
     def compute_hash(file_path: Path) -> str | None:
-        """Compute hash."""
         try:
             return hashlib.sha256(file_path.read_bytes()).hexdigest()
         except OSError:

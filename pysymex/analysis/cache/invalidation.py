@@ -45,8 +45,6 @@ class SmartInvalidator:
     """
 
     def __init__(self, cache: TieredCache):
-        """Init."""
-        """Initialize the class instance."""
         self.cache = cache
         self.rules: list[InvalidationRule] = []
         self._stale: set[str] = set()
@@ -113,8 +111,6 @@ class FileCache:
     """
 
     def __init__(self, cache: TieredCache | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.cache = cache or TieredCache()
         self._file_hashes: dict[str, str] = {}
 

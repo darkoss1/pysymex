@@ -194,7 +194,7 @@ def _model_involves_havoc(issue: Issue) -> bool:
             if decl.name().startswith("havoc_"):
                 return True
     except Exception:
-        pass  # Used as expected type-check or feature fallback
+        pass
     return False
 
 
@@ -338,7 +338,7 @@ def deduplicate_issues(issues: list[Issue]) -> list[Issue]:
     result: list[Issue] = []
 
     for issue in issues:
-        message_key = hash(issue.message) if issue.message else 0
+        message_key = issue.message or ""
         key = (
             issue.kind,
             issue.line_number,

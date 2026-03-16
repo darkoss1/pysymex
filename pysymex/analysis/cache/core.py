@@ -58,8 +58,6 @@ class _CacheIntegrity:
     """
 
     def __init__(self, key_path: Path) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._key_path = key_path
         self._key: bytes | None = None
 
@@ -132,7 +130,6 @@ class CacheKey:
     version: str = "1.0"
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash((self.key_type, self.identifier, self.version))
 
@@ -182,8 +179,6 @@ class LRUCache(Generic[K, V]):
     """
 
     def __init__(self, maxsize: int = 1000):
-        """Init."""
-        """Initialize the class instance."""
         self.maxsize = maxsize
         self._cache: OrderedDict[K, V] = OrderedDict()
         self._lock = threading.RLock()
@@ -230,7 +225,6 @@ class LRUCache(Generic[K, V]):
             return key in self._cache
 
     def __len__(self) -> int:
-        """Len."""
         """Return the number of elements in the container."""
         with self._lock:
             return len(self._cache)
@@ -307,8 +301,6 @@ class PersistentCache:
         max_entries: int = 10000,
         max_age_days: int = 30,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.db_path = db_path or Path.home() / ".pysymex" / "cache.db"
         self.max_entries = max_entries
         self.max_age_days = max_age_days
@@ -546,7 +538,6 @@ class PersistentCache:
             return cursor.fetchone() is not None
 
     def __len__(self) -> int:
-        """Len."""
         """Return the number of elements in the container."""
         with self._lock:
             conn = self._get_connection()
@@ -564,8 +555,6 @@ class TieredCache:
         memory_size: int = 1000,
         db_path: Path | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.memory = LRUCache[str, Any](maxsize=memory_size)
         self.persistent = PersistentCache(db_path=db_path)
 

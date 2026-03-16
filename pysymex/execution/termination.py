@@ -32,11 +32,16 @@ class TerminationStatus(Enum):
 
 @dataclass
 class RankingFunction:
-    """A ranking function for termination proofs.
+    """A mathematical ranking function used to candidate termination proofs.
 
-    A loop terminates if we can find a function r(state) such that:
-    1. r(state) >= 0 (bounded below)
-    2. r(state') < r(state) for each iteration (strictly decreasing)
+    In symbolic execution, a loop is proven to terminate if we can synthesize
+    or verify a function `r(state)` that satisfies the following properties:
+    1. Boundedness: `r(state) >= 0` for all states satisfying the loop condition.
+    2. Strict Monotonicity: `r(state') < r(state)` where `state'` is the state
+       after exactly one iteration of the loop body.
+
+    If such a function exists, the loop cannot execute infinitely because the
+    well-ordered nature of the ranking prevents an infinite descending chain.
     """
 
     name: str
@@ -64,11 +69,15 @@ class TerminationProof:
 
 
 class TerminationAnalyzer:
-    """Analyzes loop termination using ranking functions."""
+    """Formal verification engine for loop termination and ranking synthesis.
+
+    This analyzer uses Z3 to either verify a user-provided ranking function
+    or attempt to automatically synthesize one from the symbolic effects of
+    a loop body. It handles linear arithmetic ranking functions and supports
+    interrogation of counterexamples when a proof attempt fails.
+    """
 
     def __init__(self, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)

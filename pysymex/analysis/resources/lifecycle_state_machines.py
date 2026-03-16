@@ -25,8 +25,6 @@ class ResourceStateMachine:
     """
 
     def __init__(self, resource_kind: ResourceKind):
-        """Init."""
-        """Initialize the class instance."""
         self.resource_kind = resource_kind
         self._transitions: dict[tuple[ResourceState, str], StateTransition] = {}
         self._invariants: list[Callable[[ResourceState], bool]] = []
@@ -199,7 +197,6 @@ class ResourceStateMachine:
 
     @property
     def initial_state(self) -> ResourceState:
-        """Initial state."""
         """Property returning the initial_state."""
         return self._initial_state
 

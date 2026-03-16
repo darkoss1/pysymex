@@ -38,7 +38,6 @@ class OpResult:
 
     @property
     def success(self) -> bool:
-        """Success."""
         """Property returning the success."""
         return self.error is None
 
@@ -217,7 +216,7 @@ class SymbolicListOps:
             if index is None:
                 pop_idx: int | z3.ArithRef = lst.length - 1
             else:
-                pop_idx = index if isinstance(index, int) else index
+                pop_idx = index
                 if isinstance(pop_idx, int):
                     pop_idx = z3.IntVal(pop_idx)
                 constraints.append(z3.And(pop_idx >= 0, pop_idx < lst.length))

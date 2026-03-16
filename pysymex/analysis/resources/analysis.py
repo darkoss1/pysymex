@@ -128,8 +128,6 @@ class ResourceLeakDetector:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.resources: dict[str, Resource] = {}
         self.warnings: list[ResourceWarning] = []
         self.context_stack: list[str] = []
@@ -487,8 +485,6 @@ class ResourceAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.leak_detector = ResourceLeakDetector()
         self.context_analyzer = ContextManagerAnalyzer()
         self.cycle_detector = ReferenceCycleDetector()

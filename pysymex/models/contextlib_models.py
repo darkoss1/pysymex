@@ -141,7 +141,6 @@ class ContextDecoratorModel:
         """Decorate a function to run within the context."""
 
         def wrapper(*args: object, **kwargs: object) -> object:
-            """Wrapper."""
             with self:
                 return func(*args, **kwargs)
 
@@ -158,7 +157,6 @@ class ExitStackModel:
         ] = []
 
     def __enter__(self) -> Self:
-        """Enter."""
         return self
 
     def __exit__(
@@ -244,7 +242,6 @@ class AsyncExitStackModel:
         """Register an async callback to be called on exit."""
 
         async def wrapper() -> object:
-            """Wrapper."""
             return await callback(*args, **kwargs)
 
         self._exit_callbacks.append((wrapper, (), {}))

@@ -34,72 +34,58 @@ class StubType:
 
     @classmethod
     def any_type(cls) -> StubType:
-        """Any type."""
         return cls("Any", "typing")
 
     @classmethod
     def none_type(cls) -> StubType:
-        """None type."""
         return cls("None", "builtins")
 
     @classmethod
     def int_type(cls) -> StubType:
-        """Int type."""
         return cls("int", "builtins")
 
     @classmethod
     def str_type(cls) -> StubType:
-        """Str type."""
         return cls("str", "builtins")
 
     @classmethod
     def bool_type(cls) -> StubType:
-        """Bool type."""
         return cls("bool", "builtins")
 
     @classmethod
     def float_type(cls) -> StubType:
-        """Float type."""
         return cls("float", "builtins")
 
     @classmethod
     def bytes_type(cls) -> StubType:
-        """Bytes type."""
         return cls("bytes", "builtins")
 
     @classmethod
     def object_type(cls) -> StubType:
-        """Object type."""
         return cls("object", "builtins")
 
     @classmethod
     def list_of(cls, element_type: StubType) -> StubType:
-        """List of."""
         return cls("list", "builtins", (element_type,))
 
     @classmethod
     def dict_of(cls, key_type: StubType, value_type: StubType) -> StubType:
-        """Dict of."""
         return cls("dict", "builtins", (key_type, value_type))
 
     @classmethod
     def set_of(cls, element_type: StubType) -> StubType:
-        """Set of."""
         return cls("set", "builtins", (element_type,))
 
     @classmethod
     def tuple_of(cls, *element_types: StubType) -> StubType:
-        """Tuple of."""
         return cls("tuple", "builtins", element_types)
 
     @classmethod
     def optional(cls, inner: StubType) -> StubType:
-        """Optional."""
         return cls("Optional", "typing", (inner,), is_optional=True)
 
     @classmethod
     def union(cls, *members: StubType) -> StubType:
-        """Union."""
         return cls("Union", "typing", members, is_union=True, union_members=members)
 
     @classmethod
@@ -108,7 +94,6 @@ class StubType:
         param_types: Sequence[StubType],
         return_type: StubType,
     ) -> StubType:
-        """Callable."""
         return cls(
             "Callable",
             "typing",
@@ -119,12 +104,10 @@ class StubType:
 
     @classmethod
     def literal(cls, *values: object) -> StubType:
-        """Literal."""
         return cls("Literal", "typing", is_literal=True, literal_values=values)
 
     @classmethod
     def typevar(cls, name: str) -> StubType:
-        """Typevar."""
         return cls(name, "typing", is_typevar=True)
 
     def to_pytype(self) -> PyType:
@@ -157,7 +140,6 @@ class StubType:
         return PyType(kind=kind, name=self.name)
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         if self.is_callable:
             params = ", ".join(str(p) for p in self.param_types)

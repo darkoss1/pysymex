@@ -58,17 +58,24 @@ class SolverResult:
 
     @staticmethod
     def sat(model: z3.ModelRef | None) -> SolverResult:
-        """Sat."""
+        """Create a successful satisfiability result.
+
+        Includes the Z3 model found by the solver, which describes a concrete
+        witness for the symbolic path. Use this to extract counterexamples or
+        guide further execution.
+        """
         return SolverResult(is_sat=True, is_unsat=False, is_unknown=False, model=model)
 
     @staticmethod
     def unsat() -> SolverResult:
-        """Unsat."""
+        """Create a result indicating the constraints are mathematically impossible.
+        """
         return SolverResult(is_sat=False, is_unsat=True, is_unknown=False)
 
     @staticmethod
     def unknown() -> SolverResult:
-        """Unknown."""
+        """Create a result indicating that Z3 could not decide within the timeout.
+        """
         return SolverResult(is_sat=False, is_unsat=False, is_unknown=True)
 
 
@@ -78,13 +85,16 @@ class _StructuralCache:
     _MISSING = object()
 
     def __init__(self, maxsize: int = 512) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._data: OrderedDict[int, object] = OrderedDict()
         self._maxsize = maxsize
 
     def get(self, key: int) -> tuple[bool, object | None]:
-        """Get."""
+        """Retrieve a cached solver result for a given structural hash.
+
+        Returns a tuple of (cache_hit, value). If hit, the item is moved to the
+        end of the access list to maintain LRU semantics. The key should be
+        the structural hash of the constraint set.
+        """
         value = self._data.get(key, self._MISSING)
         if value is self._MISSING:
             return False, None
@@ -92,19 +102,19 @@ class _StructuralCache:
         return True, value
 
     def put(self, key: int, value: object) -> None:
-        """Put."""
+        """Insert a result into the cache and maintain LRU order."""
         self._data[key] = value
         self._data.move_to_end(key)
         if len(self._data) > self._maxsize:
             self._data.popitem(last=False)
 
     def clear(self) -> None:
-        """Clear."""
+        """Empty the cache to reclaim memory."""
         self._data.clear()
 
 
 class _ClearableCache(Protocol):
-                             """Clear."""
+    """Clear."""
     def clear(self) -> None: ...
 
 
@@ -132,13 +142,22 @@ class IncrementalSolver:
         constraint_cache: object | None = None,
         use_cache: bool = True,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the incremental solver.
+
+        Args:
+            timeout_ms: Global Z3 solver timeout per query.
+            cache_size: Maximum number of entries in the structural cache.
+            warm_start: If True, uses models from previous SAT results as logic hints.
+            constraint_cache: Optional shared cache for cross-instance reuse.
+            use_cache: Master toggle for the internal structural-hash cache.
+        """
+
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
         self._timeout_ms = timeout_ms
         self._scope_depth = 0
-        self._cache: OrderedDict[int, SolverResult] = OrderedDict()
+        self._cache: OrderedDict[tuple[int, tuple[int, ...]], SolverResult] = OrderedDict()
+        self._cache_index: dict[int, set[tuple[int, ...]]] = {}
         self._cache_context_stack: list[int] = [0]
         self._cache_size = cache_size
         self._query_count = 0
@@ -150,14 +169,25 @@ class IncrementalSolver:
         self._constraint_cache = constraint_cache
         self._use_cache = use_cache
         self._is_unsat_context: set[int] = set()
+        self._portfolio: PortfolioSolver | None = None
+        self._escalation_threshold_ms: float = 500.0
+        self._theory_hits: dict[str, int] = {"qflia": 0, "qfs": 0, "mixed": 0}
+        self._escalations: int = 0
 
     def reset(self) -> None:
-        """Reset the solver state."""
+        """Reset the solver state and clear all caches.
+
+        This effectively starts a fresh Z3 session by popping all scopes,
+        clearing the model history, and wiping the structural cache indices.
+        Used between independent analysis runs or during resource recovery.
+        """
+
         while self._scope_depth > 0:
             self._solver.pop()
             self._scope_depth -= 1
         self._solver.reset()
         self._cache.clear()
+        self._cache_index.clear()
         self._cache_context_stack = [0]
         self._last_models.clear()
         self._optimizer.reset()
@@ -175,6 +205,56 @@ class IncrementalSolver:
     def _make_cache_key(self, constraints: list[z3.BoolRef]) -> int:
         """Create a scope-aware cache key for a constraint set."""
         return self._mix_cache_context(self._current_cache_context(), structural_hash(constraints))
+
+    @staticmethod
+    def _constraints_discriminator(constraints: list[z3.BoolRef]) -> tuple[int, ...]:
+        """Secondary discriminator to safely resolve potential structural hash collisions.
+
+        While structural_hash is fast, it is theoretically possible for different
+        expressions to share a hash. This discriminator uses the built-in Z3 hashes
+        of individual constraints, which are based on internal expression pointers,
+        to provide a secondary layer of identity verification.
+        """
+        if not constraints:
+            return ()
+        return tuple(sorted(c.hash() for c in constraints))
+
+    def _cache_lookup(self, primary: int, discriminator: tuple[int, ...]) -> SolverResult | None:
+        """Lookup a cached result, verifying the secondary discriminator."""
+        if not self._use_cache:
+            return None
+        bucket = self._cache_index.get(primary)
+        if bucket is None:
+            return None
+        if discriminator not in bucket:
+            logger.debug("SAT cache collision detected")
+            return None
+        key = (primary, discriminator)
+        result = self._cache.get(key)
+        if result is None:
+            return None
+        self._cache_hits += 1
+        self._cache.move_to_end(key)
+        return result
+
+    def _cache_store(self, primary: int, discriminator: tuple[int, ...], result: SolverResult) -> None:
+        """Store a cache entry, maintaining LRU order and index."""
+        key = (primary, discriminator)
+        if key in self._cache:
+            self._cache[key] = result
+            self._cache.move_to_end(key)
+            self._cache_index.setdefault(primary, set()).add(discriminator)
+            return
+        while len(self._cache) >= self._cache_size:
+            old_key, _ = self._cache.popitem(last=False)
+            old_primary, old_discriminator = old_key
+            bucket = self._cache_index.get(old_primary)
+            if bucket is not None:
+                bucket.discard(old_discriminator)
+                if not bucket:
+                    del self._cache_index[old_primary]
+        self._cache[key] = result
+        self._cache_index.setdefault(primary, set()).add(discriminator)
 
     def push(self) -> None:
         """Push a new constraint scope."""
@@ -297,10 +377,10 @@ class IncrementalSolver:
 
         # Try full-query cache first
         cache_key = self._make_cache_key(constraints)
-        if self._use_cache and cache_key in self._cache:
-            self._cache_hits += 1
-            self._cache.move_to_end(cache_key)
-            return self._cache[cache_key].is_sat
+        cache_disc = self._constraints_discriminator(constraints)
+        cached = self._cache_lookup(cache_key, cache_disc)
+        if cached is not None:
+            return cached.is_sat
 
         # Try cluster-level caching for multi-constraint queries
         if len(constraints) >= 2:
@@ -309,15 +389,13 @@ class IncrementalSolver:
                 # Check each cluster independently
                 for cluster in clusters:
                     cluster_key = self._make_cache_key(cluster)
-                    if self._use_cache and cluster_key in self._cache:
-                        self._cache_hits += 1
-                        self._cache.move_to_end(cluster_key)
-                        if not self._cache[cluster_key].is_sat:
+                    cluster_disc = self._constraints_discriminator(cluster)
+                    cached_cluster = self._cache_lookup(cluster_key, cluster_disc)
+                    if cached_cluster is not None:
+                        if not cached_cluster.is_sat:
                             # One cluster UNSAT → whole thing UNSAT
                             result = SolverResult.unsat()
-                            if len(self._cache) >= self._cache_size:
-                                self._cache.popitem(last=False)
-                            self._cache[cache_key] = result
+                            self._cache_store(cache_key, cache_disc, result)
                             return False
                     else:
                         # Cluster not cached — solve it
@@ -328,34 +406,43 @@ class IncrementalSolver:
                             cluster_result = self.check()
                         finally:
                             self._solver.pop()
-                        if len(self._cache) >= self._cache_size:
-                            self._cache.popitem(last=False)
-                        self._cache[cluster_key] = cluster_result
+                        self._cache_store(cluster_key, cluster_disc, cluster_result)
                         if not cluster_result.is_sat:
                             result = SolverResult.unsat()
-                            if len(self._cache) >= self._cache_size:
-                                self._cache.popitem(last=False)
-                            self._cache[cache_key] = result
+                            self._cache_store(cache_key, cache_disc, result)
                             return False
                 # All clusters SAT
                 result = SolverResult.sat(None)
-                if len(self._cache) >= self._cache_size:
-                    self._cache.popitem(last=False)
-                self._cache[cache_key] = result
+                self._cache_store(cache_key, cache_disc, result)
                 return True
 
         # Single cluster or single constraint — solve directly
+        # Theory-aware configuration: detect the dominant theory and
+        # tune Z3 parameters before the solve to get the fastest path.
+        # NOTE: We configure before push/solve and reset after to avoid
+        # leaking theory-specific params into subsequent queries.
+        theory = self._detect_theory(constraints)
+        self._configure_for_theory(theory)
+
         self._solver.push()
+        start_ns = time.perf_counter()
         try:
             for c in constraints:
                 self._solver.add(c)
             result = self.check()
         finally:
             self._solver.pop()
+            self._reset_theory_config()
+        elapsed_ms = (time.perf_counter() - start_ns) * 1000
 
-        if len(self._cache) >= self._cache_size:
-            self._cache.popitem(last=False)
-        self._cache[cache_key] = result
+        # Auto-escalate slow/unknown queries to portfolio solver
+        if result.is_unknown or elapsed_ms >= self._escalation_threshold_ms:
+            escalated = self._try_escalate(constraints, elapsed_ms)
+            if escalated is not None and not escalated.is_unknown:
+                self._cache_store(cache_key, cache_disc, escalated)
+                return escalated.is_sat
+
+        self._cache_store(cache_key, cache_disc, result)
         return result.is_sat
 
     def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
@@ -370,10 +457,10 @@ class IncrementalSolver:
             SolverResult with sat/unsat/unknown and optional model.
         """
         cache_key = self._make_cache_key(constraints)
-        if self._use_cache and cache_key in self._cache:
-            self._cache_hits += 1
-            self._cache.move_to_end(cache_key)
-            return self._cache[cache_key]
+        cache_disc = self._constraints_discriminator(constraints)
+        cached = self._cache_lookup(cache_key, cache_disc)
+        if cached is not None:
+            return cached
 
         self._solver.push()
         try:
@@ -382,9 +469,7 @@ class IncrementalSolver:
         finally:
             self._solver.pop()
 
-        if len(self._cache) >= self._cache_size:
-            self._cache.popitem(last=False)
-        self._cache[cache_key] = result_obj
+        self._cache_store(cache_key, cache_disc, result_obj)
         return result_obj
 
     def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
@@ -514,6 +599,134 @@ class IncrementalSolver:
         """
         return extract_unsat_core(constraints, timeout_ms=self._timeout_ms)
 
+    # ------------------------------------------------------------------
+    # Theory detection and auto-escalation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_theory(constraints: list[z3.BoolRef]) -> str:
+        """Classify the dominant SMT theory of *constraints*.
+
+        Walks the Z3 AST (depth-limited) and returns one of:
+
+        - ``"qflia"`` – quantifier-free linear integer arithmetic only
+        - ``"qfs"``   – string / sequence theory present
+        - ``"qfbv"``  – bit-vector operations present
+        - ``"mixed"``  – multiple theories or unrecognisable ops
+
+        The result drives :meth:`_configure_for_theory` which sets
+        theory-specific Z3 parameters before solving.
+        """
+        has_string = False
+        has_bv = False
+        has_nonlinear = False
+
+        # Budget — cap tree-walk to avoid blowup on huge formulas
+        budget = 2000
+        stack: list[z3.ExprRef] = list(constraints)
+        visited: set[int] = set()
+
+        while stack and budget > 0:
+            expr = stack.pop()
+            eid = expr.get_id()
+            if eid in visited:
+                continue
+            visited.add(eid)
+            budget -= 1
+
+            sort = expr.sort()
+            sort_kind = sort.kind()
+            if sort_kind == z3.Z3_SEQ_SORT or sort_kind == z3.Z3_RE_SORT:
+                has_string = True
+            elif sort_kind == z3.Z3_BV_SORT:
+                has_bv = True
+
+            if z3.is_app(expr):
+                decl = expr.decl()
+                dk = decl.kind()
+                # z3.Z3_OP_MUL between two non-constant args → nonlinear
+                if dk == z3.Z3_OP_MUL and expr.num_args() >= 2:
+                    non_const = sum(
+                        1
+                        for i in range(expr.num_args())
+                        if not z3.is_int_value(expr.arg(i))
+                        and not z3.is_rational_value(expr.arg(i))
+                    )
+                    if non_const >= 2:
+                        has_nonlinear = True
+
+                for i in range(expr.num_args()):
+                    child = expr.arg(i)
+                    if child.get_id() not in visited:
+                        stack.append(child)
+
+        if has_string:
+            return "qfs"
+        if has_bv:
+            return "qfbv"
+        if has_nonlinear:
+            return "mixed"
+        return "qflia"
+
+    def _configure_for_theory(self, theory: str) -> None:
+        """Set Z3 solver parameters optimal for *theory*.
+
+        Called once per query (not per constraint) — cheap because
+        Z3 parameter changes on an existing Solver are O(1).
+        """
+        self._theory_hits[theory] = self._theory_hits.get(theory, 0) + 1
+
+        if theory == "qflia":
+            # Simplex with Gomory cuts — fastest for pure linear integer
+            try:
+                self._solver.set("smt.arith.solver", 6)
+            except z3.Z3Exception:
+                pass
+        elif theory == "qfs":
+            # Use the 'seq' solver for string-heavy queries
+            try:
+                self._solver.set("smt.string_solver", "seq")
+            except z3.Z3Exception:
+                pass
+        else:
+            # Default — reset arith solver to auto
+            try:
+                self._solver.set("smt.arith.solver", 2)
+            except z3.Z3Exception:
+                pass
+
+    def _reset_theory_config(self) -> None:
+        """Reset solver params to defaults after a theory-specific solve."""
+        try:
+            self._solver.set("smt.arith.solver", 2)
+        except z3.Z3Exception:
+            pass
+
+    def _try_escalate(self, constraints: list[z3.BoolRef], elapsed_ms: float) -> SolverResult | None:
+        """Escalate to :class:`PortfolioSolver` when a query is too slow.
+
+        Called by :meth:`is_sat` when a single-solver ``check()`` returns
+        ``unknown`` or exceeds :attr:`_escalation_threshold_ms`.
+
+        Returns a definitive result, or ``None`` if escalation also fails.
+        """
+        if elapsed_ms < self._escalation_threshold_ms:
+            return None
+
+        self._escalations += 1
+        if self._portfolio is None:
+            self._portfolio = PortfolioSolver(
+                timeout_ms=self._timeout_ms * 2,
+                fast_timeout_ms=int(self._escalation_threshold_ms),
+            )
+
+        logger.debug(
+            "Auto-escalating to portfolio solver (elapsed=%.1fms, threshold=%.1fms)",
+            elapsed_ms,
+            self._escalation_threshold_ms,
+        )
+        return self._portfolio.check_hard(constraints)
+
     def get_stats(self) -> dict[str, object]:
         """Get solver statistics."""
         return {
@@ -523,11 +736,11 @@ class IncrementalSolver:
             "scope_depth": self._scope_depth,
             "solver_time_ms": round(self._solver_time_ms, 2),
             "warm_start_models": len(self._last_models),
+            "theory_hits": dict(self._theory_hits),
+            "escalations": self._escalations,
         }
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return (
             f"IncrementalSolver(queries={self._query_count}, "
             f"cache_hits={self._cache_hits}, scope={self._scope_depth})"
@@ -554,8 +767,6 @@ class PortfolioSolver:
         fast_timeout_ms: int = 100,
         max_workers: int | None = None,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._timeout_ms = timeout_ms
         self._fast_timeout_ms = fast_timeout_ms
         self._max_workers = max_workers or min(len(self.TACTICS), os.cpu_count() or 2)
@@ -658,7 +869,6 @@ def _portfolio_worker(smt_str: str, tactic_name: str, timeout_ms: int) -> Solver
 
 
 DEFAULT_SOLVER_TIMEOUT_MS: int = 5000
-"""Default timeout in milliseconds applied to all Z3 solver instances."""
 
 
 def create_solver(timeout_ms: int = DEFAULT_SOLVER_TIMEOUT_MS) -> z3.Solver:

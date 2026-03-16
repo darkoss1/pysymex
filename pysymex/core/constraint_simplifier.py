@@ -146,10 +146,26 @@ def remove_subsumed(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     if len(constraints) <= 1:
         return constraints
 
-    seen: dict[int, z3.BoolRef] = {}
+    seen: dict[int, list[z3.BoolRef]] = {}
+    result: list[z3.BoolRef] = []
     for c in constraints:
         h = c.hash()
-        if h not in seen:
-            seen[h] = c
+        bucket = seen.get(h)
+        if bucket is None:
+            seen[h] = [c]
+            result.append(c)
+            continue
+        is_dup = False
+        for existing in bucket:
+            try:
+                if z3.eq(c, existing):
+                    is_dup = True
+                    break
+            except z3.Z3Exception:
+                continue
+        if is_dup:
+            continue
+        bucket.append(c)
+        result.append(c)
 
-    return list(seen.values())
+    return result

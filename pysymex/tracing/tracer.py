@@ -128,9 +128,7 @@ class TracingSolverProxy:
         tracer: ExecutionTracer,
         state_getter: Any,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
-
+        """Initialize the proxy with a solver, tracer, and state provider."""
         object.__setattr__(self, "_inner", inner)
         object.__setattr__(self, "_tracer", tracer)
         object.__setattr__(self, "_state_getter", state_getter)
@@ -248,9 +246,7 @@ class ExecutionTracer:
     """
 
     def __init__(self, config: TracerConfig | None = None) -> None:
-        """Init."""
-        """Initialize the class instance."""
-
+        """Initialize session-level tracing infrastructure and registries."""
         self._config: TracerConfig = config if config is not None else TracerConfig.from_env()
         self._registry: Z3SemanticRegistry = Z3SemanticRegistry()
         self._serializer: Z3Serializer = Z3Serializer(self._registry)
@@ -386,13 +382,9 @@ class ExecutionTracer:
         return self._trace_path
 
     def __enter__(self) -> ExecutionTracer:
-        """Enter."""
-        """Enter the runtime context."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Exit."""
-        """Exit the runtime context."""
         if exc_type is not None:
             try:
                 self.end_session()

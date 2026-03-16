@@ -38,7 +38,6 @@ class IterModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the iter()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -61,7 +60,6 @@ class NextModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the next()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -78,7 +76,6 @@ class SuperModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the super()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -95,7 +92,6 @@ class IssubclassModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the issubclass()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -112,7 +108,6 @@ class GlobalsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the globals()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -129,7 +124,6 @@ class LocalsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the locals()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -146,7 +140,6 @@ class DictModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the dict()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -169,7 +162,6 @@ class SetModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the set()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -200,7 +192,6 @@ class ReversedModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the reversed()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -228,7 +219,6 @@ class AllModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the all()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -261,7 +251,6 @@ class AnyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the any()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -294,7 +283,6 @@ class OrdModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the ord()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -328,7 +316,6 @@ class ChrModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the chr()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -362,7 +349,6 @@ class PowModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the pow()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -388,7 +374,6 @@ class RoundModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the round()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -413,7 +398,6 @@ class DivmodModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the divmod()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -456,7 +440,6 @@ class HasattrModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the hasattr()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -479,7 +462,6 @@ class GetattrModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the getattr()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -507,7 +489,6 @@ class SetattrModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the setattr()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -523,7 +504,6 @@ class IdModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the id()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -545,7 +525,6 @@ class HashModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the hash()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -575,7 +554,6 @@ class CallableModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the callable()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -596,7 +574,6 @@ class ReprModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the repr()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -617,7 +594,6 @@ class FormatModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the format()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -639,7 +615,6 @@ class InputModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the input()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -656,7 +631,6 @@ class OpenModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the open()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -673,7 +647,6 @@ class ExecModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the exec() - code injection taint sink."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -701,7 +674,6 @@ class EvalModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the eval() - code injection taint sink."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -731,7 +703,6 @@ class CompileModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the compile()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -752,7 +723,6 @@ class BinModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bin()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -774,7 +744,6 @@ class OctModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the oct()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -796,7 +765,6 @@ class HexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the hex()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -818,7 +786,6 @@ class BytesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytes() constructor."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -843,7 +810,6 @@ class BytearrayModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the bytearray() constructor."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -868,7 +834,6 @@ class FrozensetModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the frozenset() constructor."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -889,7 +854,6 @@ class MemoryviewModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the memoryview()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -906,7 +870,6 @@ class ObjectModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the object()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -923,7 +886,6 @@ class PropertyModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the property()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -940,7 +902,6 @@ class ClassmethodModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the classmethod()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -956,7 +917,6 @@ class StaticmethodModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the staticmethod()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -972,7 +932,6 @@ class VarsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the vars()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -989,7 +948,6 @@ class DirModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the dir()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1006,7 +964,6 @@ class AsciiModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the ascii()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1023,7 +980,6 @@ class BreakpointModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the breakpoint()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1039,7 +995,6 @@ class __import__Model(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the __import__()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

@@ -75,7 +75,6 @@ def dataclass_model(
         if init and "__init__" not in cls.__dict__:
 
             def __init__(self: object, *args: object, **kwargs: object) -> None:
-                """Init."""
                 for k, v in kwargs.items():
                     setattr(self, k, v)
 
@@ -84,7 +83,6 @@ def dataclass_model(
         if repr and "__repr__" not in cls.__dict__:
 
             def __repr__(self):
-                """Repr."""
                 return f"{cls .__name__ }(...)"
 
             cls.__repr__ = __repr__
@@ -92,7 +90,6 @@ def dataclass_model(
         if eq and "__eq__" not in cls.__dict__:
 
             def __eq__(self, other):
-                """Eq."""
                 if not isinstance(other, cls):
                     return NotImplemented
                 return True

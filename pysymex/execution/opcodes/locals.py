@@ -26,6 +26,12 @@ def handle_load_const(
         sym_val = SymbolicString.from_const(value)
     else:
         sym_val = SymbolicValue.from_const(value)
+        # Ensure collection constants (like keys tuples) carry their data.
+        # SymbolicValue is a dataclass with frozen=False by default, so we can set attributes.
+        if isinstance(value, (tuple, list, dict)):
+            sym_val._enhanced_object = value
+            sym_val._constant_value = value
+    
     state = state.push(sym_val)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -41,7 +47,7 @@ def handle_load_fast(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
         state = state.set_local(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val
-
+    
     state = state.push(value)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -257,9 +263,6 @@ def handle_cell_ops(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
     """Cell creation - mostly no-op for symbolic execution."""
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("DELETE_DEREF")
 def handle_delete_deref(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:

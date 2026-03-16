@@ -228,7 +228,6 @@ class SymbolicException:
         return bool(result)
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         cond = f" when {self.condition}" if self.condition and not self.is_unconditional() else ""
         return f"{self.type_name}({self.message or ''}){cond}"
@@ -447,7 +446,6 @@ class RaisesContract:
 
     @property
     def type_name(self) -> str:
-        """Type name."""
         """Property returning the type_name."""
         if isinstance(self.exc_type, type):
             return self.exc_type.__name__

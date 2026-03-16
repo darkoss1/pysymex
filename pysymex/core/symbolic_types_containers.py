@@ -13,12 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import z3
 
 from .symbolic_types_base import SymbolicType, TypeTag, fresh_name
 from .symbolic_types_numeric import SymbolicBool, SymbolicInt
+
+if TYPE_CHECKING:
+    from .types import SymbolicValue
 
 
 @dataclass
@@ -33,32 +36,25 @@ class SymbolicString(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("str")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.STRING
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_str
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return z3.Length(self.z3_str) > 0
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Length(self.z3_str) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -123,26 +119,20 @@ class SymbolicString(SymbolicType):
         return SymbolicBool(self.z3_str < other.z3_str)
 
     def __le__(self, other: SymbolicString) -> SymbolicBool:
-        """Le."""
         return SymbolicBool(self.z3_str <= other.z3_str)
 
     def __gt__(self, other: SymbolicString) -> SymbolicBool:
-        """Gt."""
         return SymbolicBool(self.z3_str > other.z3_str)
 
     def __ge__(self, other: SymbolicString) -> SymbolicBool:
-        """Ge."""
         return SymbolicBool(self.z3_str >= other.z3_str)
 
     def __eq__(self, other: object) -> SymbolicBool:
-        """Eq."""
-        """Check for equality with another object."""
         if isinstance(other, SymbolicString):
             return SymbolicBool(self.z3_str == other.z3_str)
         return SymbolicBool.concrete(False)
 
     def __ne__(self, other: object) -> SymbolicBool:
-        """Ne."""
         eq = self.__eq__(other)
         return SymbolicBool(z3.Not(eq.z3_bool))
 
@@ -185,32 +175,25 @@ class SymbolicBytes(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("bytes")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.BYTES
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_bytes
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return z3.Length(self.z3_bytes) > 0
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Length(self.z3_bytes) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -271,7 +254,6 @@ class SymbolicTuple(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("tuple")
 
@@ -282,14 +264,11 @@ class SymbolicTuple(SymbolicType):
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.TUPLE
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
@@ -299,11 +278,9 @@ class SymbolicTuple(SymbolicType):
         return z3.IntVal(0)
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return z3.BoolVal(len(self.elements) > 0)
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.BoolVal(len(self.elements) == 0)
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -324,12 +301,10 @@ class SymbolicTuple(SymbolicType):
         return SymbolicInt.concrete(len(self.elements))
 
     def __len__(self) -> int:
-        """Len."""
         """Return the number of elements in the container."""
         return len(self.elements)
 
     def __getitem__(self, index: int | SymbolicInt) -> SymbolicType:
-        """Getitem."""
         """Retrieve an item from the container."""
         if isinstance(index, int):
             return self.elements[index]
@@ -337,7 +312,6 @@ class SymbolicTuple(SymbolicType):
         return SymbolicInt(z3.Int(result_name), result_name)
 
     def __iter__(self) -> Iterator[SymbolicType]:
-        """Iter."""
         """Return an iterator over the container."""
         return iter(self.elements)
 
@@ -382,32 +356,25 @@ class SymbolicList(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("list")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.LIST
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_seq
 
     def is_truthy(self) -> z3.BoolRef:
-        """Is truthy."""
         return z3.Length(self.z3_seq) > 0
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Length(self.z3_seq) == 0
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -503,18 +470,14 @@ class SymbolicDict(SymbolicType):
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.DICT
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_array
 
     def is_truthy(self) -> z3.BoolRef:
@@ -524,7 +487,6 @@ class SymbolicDict(SymbolicType):
         return self._cached_truthy
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Not(self.is_truthy())
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
@@ -608,24 +570,19 @@ class SymbolicSet(SymbolicType):
     __hash__ = object.__hash__
 
     def __post_init__(self):
-        """Post init."""
         if not self._name:
             self._name = fresh_name("set")
 
     @property
     def type_tag(self) -> TypeTag:
-        """Type tag."""
         """Property returning the type_tag."""
         return TypeTag.SET
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_set
 
     def is_truthy(self) -> z3.BoolRef:
@@ -635,7 +592,6 @@ class SymbolicSet(SymbolicType):
         return self._cached_truthy
 
     def is_falsy(self) -> z3.BoolRef:
-        """Is falsy."""
         return z3.Not(self.is_truthy())
 
     @property

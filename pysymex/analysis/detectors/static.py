@@ -21,6 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import dis
+import types
 from collections.abc import Sequence
 
 from pysymex.analysis.flow_sensitive import (
@@ -49,8 +50,6 @@ from .static_detectors import (
 from .static_types import (
     DetectionContext,
     Issue,
-    IssueKind,
-    Severity,
     StaticDetector,
 )
 
@@ -62,8 +61,6 @@ class DetectorRegistry:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.detectors: list[StaticDetector] = []
         self._register_default_detectors()
 
@@ -100,8 +97,6 @@ class StaticAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.registry = DetectorRegistry()
         self.type_analyzer = TypeAnalyzer()
         self.pattern_analyzer = PatternAnalyzer()
@@ -109,7 +104,7 @@ class StaticAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: types.CodeType,
         file_path: str = "<unknown>",
         type_env: TypeEnvironment | dict[int, TypeEnvironment] | None = None,
         pattern_info: FunctionPatternInfo | None = None,
@@ -136,7 +131,7 @@ class StaticAnalyzer:
             try:
                 flow_analyzer = FlowSensitiveAnalyzer(code)
             except (ValueError, TypeError):
-                pass  # Used as expected type-check or feature fallback
+                pass
 
         for instr in instructions:
             line_no = self._extract_line_number(instr, code)
@@ -156,10 +151,10 @@ class StaticAnalyzer:
             issues.extend(self._run_detectors(ctx))
         return issues
 
-    def _extract_line_number(self, instr: dis.Instruction, code: object) -> int | None:
+    def _extract_line_number(self, instr: dis.Instruction, code: types.CodeType) -> int | None:
         """Extract line number from instruction."""
         is_start = instr.starts_line
-        if is_start is None or is_start is False:
+        if not is_start:
             return None
 
         if type(is_start) is int:
@@ -170,7 +165,7 @@ class StaticAnalyzer:
 
     def _create_detection_context(
         self,
-        code: object,
+        code: types.CodeType,
         instructions: Sequence[dis.Instruction],
         instr: dis.Instruction,
         line_no: int,

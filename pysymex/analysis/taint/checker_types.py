@@ -424,8 +424,6 @@ class TaintState:
         return result
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
         if not isinstance(other, TaintState):
             return False
         return self.variables == other.variables

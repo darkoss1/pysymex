@@ -39,7 +39,6 @@ class CallGraphNode:
     _callees: set[str] = field(default_factory=set[str])
 
     def __post_init__(self):
-        """Post init."""
         if not self.qualname:
             self.qualname = self.name
 
@@ -69,13 +68,10 @@ class CallGraphNode:
         self._callees.add(callee)
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash(self.full_name)
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
         if isinstance(other, CallGraphNode):
             return self.full_name == other.full_name
         return False
@@ -124,8 +120,6 @@ class CallGraph:
     """
 
     def __init__(self, name: str = ""):
-        """Init."""
-        """Initialize the class instance."""
         self.name = name
         self._nodes: dict[str, CallGraphNode] = {}
         self._edges: dict[tuple[str, str], CallGraphEdge] = {}
@@ -406,13 +400,10 @@ class CallGraph:
         return result
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         return f"CallGraph({self .name }, {len (self ._nodes )} nodes, {len (self ._edges )} edges)"
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return self.__str__()
 
 
@@ -422,8 +413,6 @@ class CallGraphBuilder:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.graph = CallGraph()
 
     def add_function(

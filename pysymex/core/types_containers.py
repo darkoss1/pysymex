@@ -1,6 +1,6 @@
 """Container and compound symbolic types for pysymex.
 
-Provides SymbolicString, SymbolicList, SymbolicDict, SymbolicObject.
+Provides SymbolicList, SymbolicDict, SymbolicObject.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pysymex.core.types import (
     Z3_TRUE,
     Z3_ZERO,
     SymbolicNone,
+    SymbolicString,
     SymbolicType,
     SymbolicValue,
     fresh_name,
@@ -31,263 +32,18 @@ def _raise_incompatible_merge(expected_type: str, other: object) -> None:
 
 
 @dataclass
-class SymbolicString(SymbolicType):
-    """Symbolic string using Z3 string theory."""
-
-    _name: str
-    z3_str: z3.SeqRef
-    z3_len: z3.ArithRef
-    taint_labels: frozenset[str] | None = field(default=None, compare=False)
-    _h_active: bool = field(default=False)
-
-    def __post_init__(self):
-        """Post init."""
-        if self._name:
-            ln = self._name.lower()
-            if ln == "self" or ln.startswith("self_") or \
-               ln == "cls" or ln.startswith("cls_"):
-                object.__setattr__(self, "_h_active", True)
-
-    __hash__ = object.__hash__
-
-    @property
-    def is_int(self) -> z3.BoolRef:
-        """Is int."""
-        """Property returning the is_int."""
-        return Z3_FALSE
-
-    @property
-    def is_bool(self) -> z3.BoolRef:
-        """Is bool."""
-        """Property returning the is_bool."""
-        return Z3_FALSE
-
-    @property
-    def is_str(self) -> z3.BoolRef:
-        """Is str."""
-        """Property returning the is_str."""
-        return Z3_TRUE
-
-    @property
-    def is_none(self) -> z3.BoolRef:
-        """Is none."""
-        """Property returning the is_none."""
-        return Z3_FALSE
-
-    @property
-    def is_obj(self) -> z3.BoolRef:
-        """Is obj."""
-        """Property returning the is_obj."""
-        return Z3_FALSE
-
-    @property
-    def is_path(self) -> z3.BoolRef:
-        """Is path."""
-        """Property returning the is_path."""
-        return Z3_FALSE
-
-    @property
-    def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
-        return self._name
-
-    def to_z3(self) -> z3.ExprRef:
-        """To z3."""
-        return self.z3_str
-
-    def could_be_truthy(self) -> z3.BoolRef:
-        """Could be truthy."""
-        return self.z3_len > 0
-
-    def could_be_falsy(self) -> z3.BoolRef:
-        """Could be falsy."""
-        return self.z3_len == 0
-
-
-    def with_taint(self, label: str | set[str] | frozenset[str]) -> SymbolicString:
-        """Return a copy with added taint."""
-        import dataclasses
-
-        new_labels = set(self.taint_labels or set())
-        if isinstance(label, str):
-            new_labels.add(label)
-        else:
-            new_labels.update(label)
-        return dataclasses.replace(self, taint_labels=frozenset(new_labels))
-
-    @staticmethod
-    def symbolic(name: str) -> tuple[SymbolicString, z3.BoolRef]:
-        """Create a fresh symbolic string."""
-        z3_str = z3.String(f"{name}_str")
-        z3_len = z3.Length(z3_str)
-        constraint = z3_len >= 0
-        return SymbolicString(name, z3_str, z3_len), constraint
-
-    @staticmethod
-    def from_const(value: str) -> SymbolicString:
-        """Create a concrete symbolic string."""
-        z3_str = z3.StringVal(value)
-        z3_len = z3.IntVal(len(value))
-        return SymbolicString(repr(value), z3_str, z3_len)
-
-    def __add__(self, other: SymbolicString) -> SymbolicString:
-        """String concatenation."""
-        return SymbolicString(
-            _name=f"({self._name}+{other.name})",
-            z3_str=z3.Concat(self.z3_str, other.z3_str),
-            z3_len=self.z3_len + other.z3_len,
-            taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
-        )
-
-    def __getitem__(self, index: SymbolicValue) -> SymbolicString:
-        """String indexing with negative wrap-around support."""
-
-        real_idx = z3.If(index.z3_int < 0, index.z3_int + self.z3_len, index.z3_int)
-        return SymbolicString(
-            _name=f"{self._name}[{index.name}]",
-            z3_str=z3.SubString(self.z3_str, real_idx, z3.IntVal(1)),
-            z3_len=z3.IntVal(1),
-            taint_labels=(self.taint_labels or frozenset()) | (index.taint_labels or frozenset()),
-        )
-
-    def substring(self, start: SymbolicValue, length: SymbolicValue) -> SymbolicString:
-        """Extract substring."""
-        return SymbolicString(
-            _name=f"{self._name}[{start.name}:{start.name}+{length.name}]",
-            z3_str=z3.SubString(self.z3_str, start.z3_int, length.z3_int),
-            z3_len=length.z3_int,
-            taint_labels=(self.taint_labels or frozenset())
-            | (start.taint_labels or frozenset())
-            | (length.taint_labels or frozenset()),
-        )
-
-    def contains(self, other: SymbolicString) -> SymbolicValue:
-        """Check if string contains another string."""
-        result = z3.Contains(self.z3_str, other.z3_str)
-        return SymbolicValue(
-            _name=f"({other.name} in {self._name})",
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=result,
-            is_bool=Z3_TRUE,
-            taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
-        )
-
-    def index_of(self, other: SymbolicString) -> SymbolicValue:
-        """Find index of substring."""
-        idx = z3.IndexOf(self.z3_str, other.z3_str, z3.IntVal(0))
-        return SymbolicValue(
-            _name=f"{self._name}.index({other.name})",
-            z3_int=idx,
-            is_int=Z3_TRUE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
-        )
-
-    def length(self) -> SymbolicValue:
-        """Get string length."""
-        return SymbolicValue(
-            _name=f"len({self._name})",
-            z3_int=self.z3_len,
-            is_int=Z3_TRUE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-        )
-
-    def hash_value(self) -> int:
-        """Hash value."""
-        return self.z3_str.hash() ^ self.z3_len.hash()
-
-    def startswith(self, prefix: str | SymbolicString) -> SymbolicValue:
-        """Check if string starts with prefix."""
-        if isinstance(prefix, str):
-            prefix_z3 = z3.StringVal(prefix)
-            prefix_name = repr(prefix)
-        else:
-            prefix_z3 = prefix.z3_str
-            prefix_name = prefix.name
-
-        result = z3.PrefixOf(prefix_z3, self.z3_str)
-        return SymbolicValue(
-            _name=f"{self._name}.startswith({prefix_name})",
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=result,
-            is_bool=Z3_TRUE,
-            taint_labels=self.taint_labels,
-        )
-
-    def __eq__(self, other: object) -> SymbolicValue:
-        """Eq."""
-        """Check for equality with another object."""
-        if not isinstance(other, SymbolicString):
-            return SymbolicValue.from_const(False)
-        return SymbolicValue(
-            _name=f"({self._name}=={other.name})",
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=self.z3_str == other.z3_str,
-            is_bool=Z3_TRUE,
-            taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
-        )
-
-    def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
-        """Merge with another value based on condition."""
-        if isinstance(other, SymbolicString):
-            new_str = z3.If(condition, self.z3_str, other.z3_str)
-            new_len = z3.If(condition, self.z3_len, other.z3_len)
-            return SymbolicString(
-                _name=f"If({condition}, {self._name}, {other.name})",
-                z3_str=new_str,
-                z3_len=new_len,
-                taint_labels=(self.taint_labels or frozenset())
-                | (other.taint_labels or frozenset()),
-            )
-
-        val_self = SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            z3_str=self.z3_str,
-            is_str=Z3_TRUE,
-            taint_labels=self.taint_labels,
-        )
-        return val_self.conditional_merge(other, condition)
-
-    def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
-        return f"SymbolicString({self._name})"
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            z3_str=self.z3_str,
-            is_str=Z3_TRUE,
-            is_obj=Z3_FALSE,
-            is_list=Z3_FALSE,
-            is_dict=Z3_FALSE,
-            is_path=Z3_FALSE,
-            is_none=Z3_FALSE,
-            _h_active=self._h_active,
-            taint_labels=self.taint_labels,
-        )
-
-
-@dataclass
 class SymbolicList(SymbolicType):
     """Symbolic list using Z3 arrays and explicit length tracking.
+
+    **Mathematical Model:**
+    A Python list is modeled as a Z3 Array mapping integers (indices) to 
+    integers (symbolic values). 
+
+    **Key Constraints:**
+    - `length`: A Z3 integer `len >= 0`.
+    - `bounds`: Operations like `__getitem__` inject constraints `0 <= index < len`.
+    - `negative indices`: Resolved via `z3.If(idx < 0, idx + len, idx)`.
+
     Attributes:
         _name: Debugging name
         z3_array: Z3 array from Int to symbolic elements
@@ -301,37 +57,30 @@ class SymbolicList(SymbolicType):
     element_type: str = "int"
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
     _h_active: bool = field(default=False)
+    _concrete_items: list[object] | None = field(default=None, compare=False)
 
     def __post_init__(self):
-        """Post init."""
         if self._name:
             ln = self._name.lower()
-            if ln == "self" or ln.startswith("self_") or \
-               ln == "cls" or ln.startswith("cls_"):
+            if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
                 object.__setattr__(self, "_h_active", True)
 
     __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_array
 
     def hash_value(self) -> int:
-        """Hash value."""
         return self.z3_array.hash() ^ self.z3_len.hash()
 
     def could_be_truthy(self) -> z3.BoolRef:
-        """Could be truthy."""
         return self.z3_len > 0
 
     def could_be_falsy(self) -> z3.BoolRef:
-        """Could be falsy."""
         return self.z3_len == 0
 
     def with_taint(self, label: str | set[str] | frozenset[str]) -> SymbolicList:
@@ -397,6 +146,16 @@ class SymbolicList(SymbolicType):
         if not isinstance(value, SymbolicValue):
             value = SymbolicValue.from_const(value)
         new_array = z3.Store(self.z3_array, index.z3_int, value.z3_int)
+        new_concrete = list(self._concrete_items) if self._concrete_items is not None else None
+        if new_concrete is not None and z3.is_int_value(index.z3_int):
+            idx = index.z3_int.as_long()
+            if 0 <= idx < len(new_concrete):
+                new_concrete[idx] = value
+            else:
+                new_concrete = None # Out of bounds or symbolic-like index
+        else:
+            new_concrete = None
+
         return SymbolicList(
             _name=f"{self._name}[{index.name}]={value.name}",
             z3_array=new_array,
@@ -405,18 +164,46 @@ class SymbolicList(SymbolicType):
             taint_labels=(self.taint_labels or frozenset())
             | (index.taint_labels or frozenset())
             | (value.taint_labels or frozenset()),
+            _concrete_items=new_concrete,
         )
 
     def append(self, value: SymbolicValue) -> SymbolicList:
         """Append element - returns new list."""
-        new_array = z3.Store(self.z3_array, self.z3_len, value.z3_int)
+        new_array = z3.Store(self.z3_array, self.z3_len, (value.z3_int if hasattr(value, "z3_int") else z3.IntVal(0)) if value is not None else z3.IntVal(0))
+        new_concrete = list(self._concrete_items) if self._concrete_items is not None else None
+        if new_concrete is not None:
+            new_concrete.append(value)
         return SymbolicList(
-            _name=f"{self._name}.append({value.name})",
+            _name=f"{self._name}.append({getattr(value, 'name', 'None')})",
             z3_array=new_array,
             z3_len=self.z3_len + 1,
             element_type=self.element_type,
-            taint_labels=(self.taint_labels or frozenset()) | (value.taint_labels or frozenset()),
+            taint_labels=(self.taint_labels or frozenset()) | (getattr(value, 'taint_labels', frozenset()) or frozenset()),
+            _concrete_items=new_concrete,
         )
+
+    def extend(self, other: SymbolicList | list | tuple) -> SymbolicList:
+        """Extend list - returns new list."""
+        if isinstance(other, (list, tuple)):
+            res = self
+            for item in other:
+                s_item = item if hasattr(item, "z3_int") else SymbolicValue.from_const(item)
+                res = res.append(s_item)
+            return res
+        elif isinstance(other, SymbolicList):
+            if other._concrete_items is not None:
+                res = self
+                for item in other._concrete_items:
+                    s_item = item if hasattr(item, "z3_int") else SymbolicValue.from_const(item)
+                    res = res.append(s_item)
+                return res
+            else:
+                new_name = fresh_name("extended_list")
+                new_arr, _ = SymbolicList.symbolic(new_name)
+                # We at least know the new length
+                new_arr.z3_len = self.z3_len + other.z3_len
+                return new_arr
+        return self
 
     def length(self) -> SymbolicValue:
         """Get list length."""
@@ -428,7 +215,7 @@ class SymbolicList(SymbolicType):
             is_bool=Z3_FALSE,
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
-            is_list=Z3_FALSE,
+            is_list=Z3_TRUE, # Fix affinity
             is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
@@ -441,21 +228,7 @@ class SymbolicList(SymbolicType):
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicList:
         """Merge with another list based on condition."""
         if not isinstance(other, SymbolicList):
-            val_self = SymbolicValue(
-                _name=self._name,
-                z3_int=Z3_ZERO,
-                is_int=Z3_FALSE,
-                z3_bool=Z3_FALSE,
-                is_bool=Z3_FALSE,
-                is_str=Z3_FALSE,
-                z3_array=self.z3_array,
-                is_list=Z3_TRUE,
-                is_obj=Z3_FALSE,
-                is_dict=Z3_FALSE,
-                is_path=Z3_FALSE,
-                is_none=Z3_FALSE,
-                taint_labels=self.taint_labels,
-            )
+            val_self = self.as_unified()
             return val_self.conditional_merge(other, condition)
 
         new_array = z3.If(condition, self.z3_array, other.z3_array)
@@ -469,14 +242,11 @@ class SymbolicList(SymbolicType):
         )
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicList({self._name}, len={self.z3_len})"
 
     def as_unified(self) -> SymbolicValue:
         """As unified."""
-        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
+        from .types import SymbolicValue
         return SymbolicValue(
             _name=self._name,
             z3_int=Z3_ZERO,
@@ -497,8 +267,18 @@ class SymbolicList(SymbolicType):
 
 @dataclass
 class SymbolicDict(SymbolicType):
-    """Symbolic dictionary using Z3 arrays.
-    For simplicity, we model string-keyed dicts with int values.
+    """Symbolic dictionary modeling Python's mapping semantics.
+
+    **Heap Representation:**
+    Modeled as a Z3 Array mapping Z3 Strings (keys) to Z3 Integers (values).
+
+    **Key Management:**
+    Uses a `z3.SeqRef` (sequence theory) to track "known keys". This enables
+    checking for key existence without requiring the solver to reason about 
+    arbitrarily-sized set theory.
+
+    **Limitations:**
+    Currently optimized for string keys and integer values.
     """
 
     _name: str
@@ -507,33 +287,27 @@ class SymbolicDict(SymbolicType):
     z3_len: z3.ArithRef
     taint_labels: set[str] | frozenset[str] | None = field(default=None, compare=False)
     _h_active: bool = field(default=False)
+    _concrete_items: dict[str, object] | None = field(default=None, compare=False)
 
     def __post_init__(self):
-        """Post init."""
         if self._name:
             ln = self._name.lower()
-            if ln == "self" or ln.startswith("self_") or \
-               ln == "cls" or ln.startswith("cls_"):
+            if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
                 object.__setattr__(self, "_h_active", True)
 
     __hash__ = object.__hash__
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_array
 
     def could_be_truthy(self) -> z3.BoolRef:
-        """Could be truthy."""
         return self.z3_len > 0
 
     def could_be_falsy(self) -> z3.BoolRef:
-        """Could be falsy."""
         return self.z3_len == 0
 
     def hash_value(self) -> int:
@@ -573,7 +347,7 @@ class SymbolicDict(SymbolicType):
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
             is_list=Z3_FALSE,
-            is_dict=Z3_FALSE,
+            is_dict=Z3_TRUE, # Fix affinity
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
@@ -593,6 +367,12 @@ class SymbolicDict(SymbolicType):
             self.known_keys,
             z3.Concat(self.known_keys, key_unit),
         )
+        new_concrete = dict(self._concrete_items) if self._concrete_items is not None else None
+        if new_concrete is not None and z3.is_string_value(key.z3_str):
+            new_concrete[key.z3_str.as_string()] = value
+        else:
+            new_concrete = None
+
         return SymbolicDict(
             _name=f"{self._name}[{key.name}]={value.name}",
             z3_array=new_array,
@@ -601,7 +381,27 @@ class SymbolicDict(SymbolicType):
             taint_labels=(self.taint_labels or frozenset())
             | (key.taint_labels or frozenset())
             | (value.taint_labels or frozenset()),
+            _concrete_items=new_concrete,
         )
+
+    def update(self, other: SymbolicDict | dict) -> SymbolicDict:
+        """Update dict - returns new dict."""
+        if isinstance(other, dict):
+            res = self
+            for k, v in other.items():
+                res = res.__setitem__(k, v)
+            return res
+        elif isinstance(other, SymbolicDict):
+            if other._concrete_items is not None:
+                res = self
+                for k, v in other._concrete_items.items():
+                    res = res.__setitem__(k, v)
+                return res
+            else:
+                new_name = fresh_name("updated_dict")
+                new_dict, _ = SymbolicDict.symbolic(new_name)
+                return new_dict
+        return self
 
     def contains_key(self, key: SymbolicString) -> SymbolicValue:
         """Check if key exists."""
@@ -615,7 +415,7 @@ class SymbolicDict(SymbolicType):
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
             is_list=Z3_FALSE,
-            is_dict=Z3_FALSE,
+            is_dict=Z3_TRUE, # Fix affinity
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
@@ -623,28 +423,12 @@ class SymbolicDict(SymbolicType):
 
     def __contains__(self, key: object) -> bool:
         """Dict membership check (concrete). Returns False for symbolic keys to avoid iteration."""
-        # This prevents Python from falling back to __getitem__(0), __getitem__(1)...
-        # when 'in' is used on a SymbolicDict.
         return False
 
-    def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
+    def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicDict:
         """Merge with another dict based on condition."""
         if not isinstance(other, SymbolicDict):
-            val_self = SymbolicValue(
-                _name=self._name,
-                z3_int=Z3_ZERO,
-                is_int=Z3_FALSE,
-                z3_bool=Z3_FALSE,
-                is_bool=Z3_FALSE,
-                is_str=Z3_FALSE,
-                z3_array=self.z3_array,
-                is_dict=Z3_TRUE,
-                is_list=Z3_FALSE,
-                is_obj=Z3_FALSE,
-                is_none=Z3_FALSE,
-                is_path=Z3_FALSE,
-                taint_labels=self.taint_labels,
-            )
+            val_self = self.as_unified()
             return val_self.conditional_merge(other, condition)
 
         new_array = z3.If(condition, self.z3_array, other.z3_array)
@@ -659,14 +443,11 @@ class SymbolicDict(SymbolicType):
         )
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicDict({self._name})"
 
     def as_unified(self) -> SymbolicValue:
         """As unified."""
-        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
+        from .types import SymbolicValue
         return SymbolicValue(
             _name=self._name,
             z3_int=Z3_ZERO,
@@ -708,72 +489,56 @@ class SymbolicObject(SymbolicType):
             self.potential_addresses = {self.address}
         if self._name:
             ln = self._name.lower()
-            if ln == "self" or ln.startswith("self_") or \
-               ln == "cls" or ln.startswith("cls_"):
+            if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
                 object.__setattr__(self, "_h_active", True)
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     @property
     def is_int(self) -> z3.BoolRef:
-        """Is int."""
         """Property returning the is_int."""
         return Z3_FALSE
 
     @property
     def is_bool(self) -> z3.BoolRef:
-        """Is bool."""
         """Property returning the is_bool."""
         return Z3_FALSE
 
     @property
     def is_str(self) -> z3.BoolRef:
-        """Is str."""
         """Property returning the is_str."""
         return Z3_FALSE
 
     @property
     def is_none(self) -> z3.BoolRef:
-        """Is none."""
         """Property returning the is_none."""
         return Z3_FALSE
 
     @property
     def is_obj(self) -> z3.BoolRef:
-        """Is obj."""
         """Property returning the is_obj."""
         return Z3_TRUE
 
     @property
     def is_path(self) -> z3.BoolRef:
-        """Is path."""
         """Property returning the is_path."""
         return Z3_FALSE
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return self.z3_addr
 
-    def hash_value(self) -> int:
-        """Hash value."""
-        return self.z3_addr.hash()
-
     def could_be_truthy(self) -> z3.BoolRef:
-        """Could be truthy."""
         return self.z3_addr != 0
 
     def could_be_falsy(self) -> z3.BoolRef:
-        """Could be falsy."""
         return self.z3_addr == 0
 
     @staticmethod
     def symbolic(name: str, address: int) -> tuple[SymbolicObject, z3.BoolRef]:
-        """Create a fresh symbolic object pointer."""
-        z3_addr = z3.IntVal(address)
+        """Create a fresh symbolic object."""
+        z3_addr = z3.Int(f"{name}_addr")
         constraint = Z3_TRUE
         return SymbolicObject(name, address, z3_addr, {address}), constraint
 
@@ -784,8 +549,6 @@ class SymbolicObject(SymbolicType):
         return SymbolicObject(f"obj_{addr}", addr, z3.IntVal(addr), {addr})
 
     def __eq__(self, other: object) -> SymbolicValue:
-        """Eq."""
-        """Check for equality with another object."""
         if not isinstance(other, SymbolicObject):
             if isinstance(other, SymbolicNone):
                 return SymbolicValue(
@@ -817,16 +580,12 @@ class SymbolicObject(SymbolicType):
         )
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicObject({self._name}, addr={self.address})"
 
     def conditional_merge(
         self, other: AnySymbolic, condition: z3.BoolRef
     ) -> SymbolicObject | SymbolicValue:
         """Merge with another object.
-        If address is same, we assume object identity is same (merging state handled by caller/heap).
-        If address differs, we create a symbolic pointer: If(cond, addr1, addr2).
         """
         if isinstance(other, SymbolicNone):
             new_addr = z3.If(condition, self.z3_addr, z3.IntVal(0))
@@ -844,27 +603,12 @@ class SymbolicObject(SymbolicType):
                 z3_addr=new_addr,
                 potential_addresses=self.potential_addresses.union(other.potential_addresses),
             )
-        # If other is not SymbolicObject or SymbolicNone, merge into a SymbolicValue
-        val_self = SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_str=Z3_FALSE,
-            z3_addr=self.z3_addr,
-            is_obj=Z3_TRUE,
-            is_list=Z3_FALSE,
-            is_dict=Z3_FALSE,
-            is_path=Z3_FALSE,
-            is_none=Z3_FALSE,
-        )
+        val_self = self.as_unified()
         return val_self.conditional_merge(other, condition)
 
     def as_unified(self) -> SymbolicValue:
         """As unified."""
-        from .types import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
+        from .types import SymbolicValue
         return SymbolicValue(
             _name=self._name,
             z3_int=Z3_ZERO,
@@ -886,7 +630,6 @@ class SymbolicObject(SymbolicType):
         """Stable hash based on address."""
         h = hash(self.address)
         h = (h * 31) ^ self.z3_addr.hash()
-        # potential_addresses is a set, need stable iteration or frozenset
         if self.potential_addresses:
             h = (h * 31) ^ hash(frozenset(self.potential_addresses))
         return h
@@ -902,29 +645,21 @@ class SymbolicIterator(SymbolicType):
 
     @property
     def name(self) -> str:
-        """Name."""
-        """Property returning the name."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
-        """To z3."""
         return z3.IntVal(0)
 
     def hash_value(self) -> int:
-        """Hash value."""
         return hash(("iterator", id(self.iterable), self.index))
 
     def could_be_truthy(self) -> z3.BoolRef:
-        """Could be truthy."""
         return z3.BoolVal(True)
 
     def could_be_falsy(self) -> z3.BoolRef:
-        """Could be falsy."""
         return z3.BoolVal(False)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"SymbolicIterator(of {self.iterable}, index={self.index})"
 
     def advance(self) -> SymbolicIterator:
@@ -934,9 +669,8 @@ class SymbolicIterator(SymbolicType):
         return dataclasses.replace(self, index=self.index + 1)
 
     def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .types import Z3_FALSE, Z3_ZERO, SymbolicValue
-
+        """As unified representation."""
+        from .types import SymbolicValue
         return SymbolicValue(
             _name=self._name,
             z3_int=Z3_ZERO,

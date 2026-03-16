@@ -80,7 +80,6 @@ class BasicBlock:
         return self.id
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash(self.id)
 
@@ -120,8 +119,6 @@ class BasicBlock:
         return False
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"BasicBlock({self .id }, pc={self .start_pc }-{self .end_pc })"
 
 
@@ -312,7 +309,7 @@ class CFGBuilder:
     def _find_leaders(
         self, 
         instructions: Sequence[dis.Instruction],
-        exception_entries: list[dis.ExceptionTableEntry] = None
+        exception_entries: list[dis.ExceptionTableEntry] | None = None
     ) -> set[int]:
         """Find leader instructions that start basic blocks."""
         leaders: set[int] = set()
@@ -387,7 +384,7 @@ class CFGBuilder:
         self,
         cfg: ControlFlowGraph,
         instructions: Sequence[dis.Instruction],
-        exception_entries: list[dis.ExceptionTableEntry] = None,
+        exception_entries: list[dis.ExceptionTableEntry] | None = None,
     ) -> None:
         """Add edges between basic blocks."""
         pc_to_idx = {instr.offset: i for i, instr in enumerate(instructions)}

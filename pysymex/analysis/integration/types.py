@@ -5,9 +5,9 @@ Type definitions used by the scanner integration pipeline.
 
 from __future__ import annotations
 
+import types
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 from ..detectors.static import (
     Issue,
@@ -121,8 +121,6 @@ class AnalysisResultBuilder:
     """
 
     def __init__(self, file_path: str) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.file_path = file_path
         self.issues: list[Issue] = []
         self.taint_violations: list[TaintViolation] = []
@@ -181,7 +179,7 @@ class FunctionContext:
         parent: Parent function context for nesting.
     """
 
-    code: Any
+    code: types.CodeType
     name: str
     file_path: str
     module_name: str

@@ -22,7 +22,7 @@ class OpcodeResult:
     Attributes:
         new_states: List of new VM states to explore.
         issues: List of issues detected during execution.
-        terminal: Whether this opcode terminates execution.
+        terminal: bool: Whether this opcode terminates execution.
     """
 
     new_states: list[VMState]
@@ -31,13 +31,11 @@ class OpcodeResult:
 
     @staticmethod
     def _collect_pending(state: VMState) -> list[Issue]:
-        """Collect pending."""
         issues = []
         if hasattr(state, "_pending_taint_issues"):
             issues.extend(state._pending_taint_issues)
             state._pending_taint_issues = []
         return issues
-
 
     @classmethod
     def continue_with(cls, state: VMState) -> OpcodeResult:
@@ -50,6 +48,16 @@ class OpcodeResult:
         all_issues = list(issues) if issues is not None else []
         for s in states:
             all_issues.extend(cls._collect_pending(s))
+        return cls(new_states=states, issues=all_issues)
+
+    @classmethod
+    def fork(cls, states: list[VMState], issues: list[Issue | None]) -> OpcodeResult:
+        """Fork into multiple states with specific issues for some states."""
+        all_issues = []
+        for state, issue in zip(states, issues, strict=False):
+            all_issues.extend(cls._collect_pending(state))
+            if issue is not None:
+                all_issues.append(issue)
         return cls(new_states=states, issues=all_issues)
 
     @staticmethod
@@ -96,6 +104,7 @@ class OpcodeDispatcher:
         self._offset_to_index: dict[int, int] = {}
         self._fallback_handler: OpcodeHandler | None = None
         self.cross_function: object | None = None
+        self._exception_entries: list[object] = []
 
     def register(self, *opcodes: str) -> Callable[[OpcodeHandler], OpcodeHandler]:
         """Decorator to register a handler for one or more opcodes.
@@ -110,7 +119,6 @@ class OpcodeDispatcher:
         """
 
         def decorator(handler: OpcodeHandler) -> OpcodeHandler:
-            """Decorator."""
             for opcode in opcodes:
                 self._handlers[opcode] = handler
             return handler
@@ -137,6 +145,27 @@ class OpcodeDispatcher:
         """
         self._instructions = instructions
         self._offset_to_index = {instr.offset: idx for idx, instr in enumerate(instructions)}
+
+    def set_exception_entries(self, entries: list[object]) -> None:
+        """Store exception table entries for handler lookup."""
+        self._exception_entries = list(entries)
+
+    def find_exception_handler(self, offset: int) -> int | None:
+        """Find the exception handler index covering a bytecode offset.
+
+        Returns the instruction index of the handler, or None.
+        """
+        for entry in self._exception_entries:
+            start = getattr(entry, "start", None)
+            end = getattr(entry, "end", None)
+            target = getattr(entry, "target", None)
+            if start is not None and end is not None and target is not None:
+                if start <= offset < end:
+                    idx = self._offset_to_index.get(target)
+                    if idx is not None:
+                        return idx
+        # Fallback: check block stack approach (SETUP_FINALLY)
+        return None
 
     def get_instruction(self, index: int) -> dis.Instruction | None:
         """Get instruction by index."""
@@ -177,8 +206,6 @@ class OpcodeDispatcher:
         return len(self._instructions)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"OpcodeDispatcher({len(self._handlers)} handlers)"
 
 
@@ -211,7 +238,6 @@ def opcode_handler(*opcodes: str) -> Callable[[OpcodeHandler], OpcodeHandler]:
     """
 
     def decorator(handler: OpcodeHandler) -> OpcodeHandler:
-        """Decorator."""
         for opcode in opcodes:
             OpcodeDispatcher.register_global(opcode, handler)
         return handler

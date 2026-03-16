@@ -16,6 +16,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 if TYPE_CHECKING:
@@ -73,15 +74,17 @@ class Plugin(ABC):
     metadata: PluginMetadata
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
-        self._enabled: bool = True
-        self._config: dict[str, object] = {}
+        self._enabled = True
+        self.context: dict[str, Any] = {}
 
     @property
     def enabled(self) -> bool:
         """Check if plugin is enabled."""
         return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._enabled = value
 
     def enable(self) -> None:
         """Enable the plugin."""
@@ -93,11 +96,11 @@ class Plugin(ABC):
 
     def configure(self, **options: object) -> None:
         """Configure plugin options."""
-        self._config.update(options)
+        self.context.update(options)
 
     def get_option(self, key: str, default: object = None) -> object:
         """Get a configuration option."""
-        return self._config.get(key, default)
+        return self.context.get(key, default)
 
     @abstractmethod
     def activate(self, engine: SymbolicEngine) -> None:
@@ -190,8 +193,6 @@ class PluginRegistry:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._plugins: dict[str, Plugin] = {}
         self._plugin_types: dict[PluginType, list[Plugin]] = {pt: [] for pt in PluginType}
         self._hooks: dict[str, list[Callable[..., object]]] = {name: [] for name in HOOKS}
@@ -275,8 +276,6 @@ class PluginLoader:
     """Loads plugins from various sources."""
 
     def __init__(self, registry: PluginRegistry):
-        """Init."""
-        """Initialize the class instance."""
         self.registry = registry
         self._search_paths: list[Path] = []
 
@@ -372,15 +371,13 @@ class PluginManager:
     """
 
     def __init__(self, config: PluginManagerConfig | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.config = config or PluginManagerConfig()
         self.registry = PluginRegistry()
         self.loader = PluginLoader(self.registry)
         for path_str in self.config.search_paths:
             self.loader.add_search_path(Path(path_str))
 
-    def initialize(self) -> None:
+    def initialize(self, api: Any = None) -> None:
         """Initialize the plugin system."""
         if self.config.auto_discover:
             self.loader.discover_plugins()

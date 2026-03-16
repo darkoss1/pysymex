@@ -46,8 +46,6 @@ class QuantifierParser:
     IN_PATTERN = re.compile(r"(\w+)\s+in\s+(\w+)")
 
     def __init__(self, context: dict[str, z3.ExprRef] | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.context = context or {}
 
     def parse(self, text: str) -> Quantifier | None:
@@ -146,8 +144,6 @@ class ConditionTranslator(ast.NodeVisitor):
     """Translates a Python AST condition node to an equivalent Z3 expression."""
 
     def __init__(self, context: dict[str, z3.ExprRef]):
-        """Init."""
-        """Initialize the class instance."""
         self.context = context
 
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
@@ -380,8 +376,6 @@ class QuantifierInstantiator:
     """
 
     def __init__(self, max_instantiations: int = 100):
-        """Init."""
-        """Initialize the class instance."""
         self.max_instantiations = max_instantiations
 
     def instantiate_bounded(
@@ -471,8 +465,6 @@ class QuantifierVerifier:
     """
 
     def __init__(self, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         self.timeout_ms = timeout_ms
 
     def verify_forall(

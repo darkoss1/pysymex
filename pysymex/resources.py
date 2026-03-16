@@ -18,7 +18,6 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +43,20 @@ class ResourceType(Enum):
 
 
 class LimitExceeded(Exception):
-    """Raised when a resource limit is exceeded during analysis.
+    """Raised when an elective or mandatory resource limit is reached during analysis.
+
+    This exception signals the path exploration engine to stop the current
+    path and either backtrack or terminate the analysis, depending on the
+    global configuration.
 
     Attributes:
-        resource_type: Which resource was exhausted.
-        current: Current usage value at the time of the exception.
-        limit: Hard limit that was breached.
+        resource_type: The category of resource that was exhausted.
+        current: The usage level at the moment of exhaustion.
+        limit: The threshold that was exceeded.
     """
 
     def __init__(self, resource_type: ResourceType, current: object, limit: object):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the limit violation record and format the error message."""
         self.resource_type = resource_type
         self.current = current
         self.limit = limit
@@ -69,8 +71,6 @@ class AnalysisTimeoutError(LimitExceeded):
     """
 
     def __init__(self, elapsed: float, limit: float):
-        """Init."""
-        """Initialize the class instance."""
         super().__init__(ResourceType.TIME, elapsed, limit)
 
 
@@ -166,21 +166,20 @@ class ResourceLimits:
 
 
 class ResourceTracker:
-    """Tracks and enforces resource limits during analysis.
+    """Central monitor for system resources and analysis depth.
 
-    Provides:
+    Tracks wall-clock time, memory consumption, call depth, and the total
+    number of paths explored. It enforces bounds to prevent the engine from
+    hanging on infinite loops or consuming excessive system memory.
 
-    * Resource usage tracking (paths, depth, iterations, time, memory).
-    * Hard limit enforcement via :class:`LimitExceeded` exceptions.
-    * Soft limit warnings via registered callbacks.
-    * Graceful degradation support for partial results.
-
-    Thread-safe: counters are protected by an ``RLock`` where needed.
+    Features:
+    - High-resolution timing using `perf_counter`.
+    - Cross-platform memory monitoring (RSS).
+    - Thread-safe counter management using shared RLocks.
+    - Tiered limit checking to minimize monitoring overhead.
     """
 
     def __init__(self, limits: ResourceLimits | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.limits = limits or ResourceLimits()
         self._paths_explored: int = 0
         self._current_depth: int = 0
@@ -191,7 +190,7 @@ class ResourceTracker:
         self._solver_calls: int = 0
         self._cache_hits: int = 0
         self._cache_misses: int = 0
-        self._warning_callbacks: list[Callable[[ResourceType, Any, Any], None]] = []
+        self._warning_callbacks: list[Callable[[ResourceType, object, object], None]] = []
         self._warnings_issued: set[ResourceType] = set()
         self._degraded: bool = False
         self._degradation_reason: str | None = None
@@ -270,7 +269,7 @@ class ResourceTracker:
 
     def add_warning_callback(
         self,
-        callback: Callable[[ResourceType, Any, Any], None],
+        callback: Callable[[ResourceType, object, object], None],
     ) -> None:
         """Add a callback for soft limit warnings."""
         self._warning_callbacks.append(callback)
@@ -311,7 +310,6 @@ class ResourceTracker:
             )
 
     def check_depth_limit(self) -> None:
-        """Check depth limit."""
         with self._lock:
             if self._current_depth >= self.limits.max_depth:
                 raise LimitExceeded(
@@ -321,7 +319,6 @@ class ResourceTracker:
                 )
 
     def check_iteration_limit(self) -> None:
-        """Check iteration limit."""
         with self._lock:
             if self._iterations >= self.limits.max_iterations:
                 raise LimitExceeded(
@@ -367,7 +364,7 @@ class ResourceTracker:
             raise LimitExceeded(ResourceType.DEPTH, self._current_depth, self.limits.max_depth)
         if iters >= self.limits.max_iterations:
             raise LimitExceeded(ResourceType.ITERATIONS, iters, self.limits.max_iterations)
-        if self.limits.max_paths > 0 and self._paths_explored > self.limits.max_paths:
+        if self.limits.max_paths > 0 and self._paths_explored >= self.limits.max_paths:
             raise LimitExceeded(ResourceType.PATHS, self._paths_explored, self.limits.max_paths)
 
         self.check_time_limit()
@@ -453,16 +450,18 @@ class ResourceTracker:
 
 @contextmanager
 def timeout_context(seconds: float, message: str = "Operation timed out"):
-    """Context manager that raises TimeoutError after specified seconds.
-    Note: Only works on Unix-like systems with SIGALRM.
-    On Windows, this is a no-op.
+    """Context manager that enforces a hard wall-clock timeout using SIGALRM.
+
+    Warning:
+        This implementation relies on POSIX signals and will only function
+        on Unix-like systems. On Windows, this context manager acts as a no-op
+        and will not interrupt the underlying operation.
     """
     if sys.platform == "win32":
         yield
         return
 
     def handler(_signum: int, frame: object) -> None:
-        """Handler."""
         raise AnalysisTimeoutError(seconds, seconds)
 
     old_handler = signal.signal(signal.SIGALRM, handler)
@@ -475,22 +474,14 @@ def timeout_context(seconds: float, message: str = "Operation timed out"):
 
 
 class GracefulDegradation:
-    """Manages graceful degradation when resource limits are approached.
+    """Orchestrator for engine self-preservation strategies.
 
-    When the :class:`ResourceTracker` signals that limits are close,
-    this class decides whether to:
-
-    * Skip complex paths (high branching factor).
-    * Approximate constraints instead of solving exactly.
-    * Return partial results and stop early.
-
-    Args:
-        tracker: The resource tracker to consult.
+    When resources approach their limits, this component consults the
+    `ResourceTracker` and advises the engine on when to switch from
+    exhaustive search to approximation or early termination.
     """
 
     def __init__(self, tracker: ResourceTracker):
-        """Init."""
-        """Initialize the class instance."""
         self.tracker = tracker
         self._strategies: list[str] = []
 

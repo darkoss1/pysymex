@@ -135,7 +135,7 @@ class ExceptionHandlerAnalyzer:
                     )
 
         except (ValueError, IndexError):
-            pass  # Used as expected type-check or feature fallback
+            pass
 
         return handlers
 

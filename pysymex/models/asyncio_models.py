@@ -186,7 +186,6 @@ class SemaphoreModel:
     _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
 
     def __post_init__(self) -> None:
-        """Post init."""
         self._initial = self._value
 
     def locked(self) -> bool:
@@ -315,7 +314,6 @@ class QueueModel(Generic[T]):
         """Block until all items in the queue have been processed."""
 
         async def waiter() -> None:
-            """Waiter."""
             pass
 
         return waiter()

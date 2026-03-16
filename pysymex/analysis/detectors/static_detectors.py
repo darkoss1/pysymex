@@ -37,7 +37,6 @@ class StaticDivisionByZeroDetector(StaticDetector):
     DIVISION_ARGREPS = {"/", "//", "%"}
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.DIVISION_BY_ZERO
 
     def should_check(self, ctx: DetectionContext) -> bool:
@@ -194,11 +193,9 @@ class StaticKeyErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.KEY_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
-        """Should check."""
         return ctx.instruction.opname == "BINARY_SUBSCR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
@@ -335,11 +332,9 @@ class StaticIndexErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.INDEX_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
-        """Should check."""
         return ctx.instruction.opname == "BINARY_SUBSCR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
@@ -552,7 +547,6 @@ class StaticTypeErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.TYPE_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
@@ -847,11 +841,9 @@ class StaticAttributeErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.ATTRIBUTE_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
-        """Should check."""
         return ctx.instruction.opname == "LOAD_ATTR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
@@ -957,11 +949,9 @@ class StaticAssertionErrorDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.ASSERTION_ERROR
 
     def should_check(self, ctx: DetectionContext) -> bool:
-        """Should check."""
         return ctx.instruction.opname == "LOAD_ASSERTION_ERROR"
 
     def check(self, ctx: DetectionContext) -> Issue | None:
@@ -1008,11 +998,9 @@ class DeadCodeDetector(StaticDetector):
     """
 
     def issue_kind(self) -> IssueKind:
-        """Issue kind."""
         return IssueKind.DEAD_CODE
 
     def should_check(self, ctx: DetectionContext) -> bool:
-        """Should check."""
         return ctx.flow_context is not None
 
     def check(self, ctx: DetectionContext) -> Issue | None:

@@ -50,7 +50,11 @@ class Colors:
 
 
 def supports_color(stream: TextIO) -> bool:
-    """Check if the stream supports ANSI colors."""
+    """Check if the given stream supports ANSI color codes.
+
+    On Windows, this checks for TERM or ANSICON environment variables to
+    determine if the terminal emulator is modern enough to handle escapre sequences.
+    """
     if not hasattr(stream, "isatty"):
         return False
     if not stream.isatty():
@@ -112,7 +116,18 @@ class LogEntry:
 
 
 class PysymexLogger:
-    """Main logger for pysymex."""
+    """Centralized logging coordinator for the PySyMex engine.
+
+    Handles structured log emission, progress tracking, and manages dual-bank
+    logging to both the console and an optional trace file. This class is
+    designed to be used globally via `get_logger()`.
+
+    Features:
+    - Hierarchical log levels (Quiet to Trace)
+    - ANSI terminal coloring with auto-detection
+    - In-place progress bars for long-running analyses
+    - High-resolution timing and counters for performance auditing
+    """
 
     def __init__(
         self,
@@ -121,8 +136,6 @@ class PysymexLogger:
         stream: TextIO | None = None,
         file_path: Path | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
         self.level = level
         self._stream = stream or sys.stdout
         self._color = color and supports_color(self._stream)
@@ -245,7 +258,16 @@ class PysymexLogger:
             self._stream.flush()
 
     def progress(self, current: int, total: int, message: str = "") -> None:
-        """Show a progress indicator."""
+        """Render a terminal-based progress bar.
+
+        Uses carriage returns and ANSI erasure codes to maintain a single-line
+        progress indicator that automatically clears when complete.
+
+        Args:
+            current: Current completion count.
+            total: Total expected items.
+            message: Optional status message to display alongside the bar.
+        """
         if not self._should_log(LogLevel.NORMAL):
             return
         self._progress_active = True
@@ -340,11 +362,15 @@ def configure_logging(
 
 
 class PythonLoggingBridge(logging.Handler):
-    """Bridge PySyMex logger to Python's logging module."""
+    """Bridge that routes standard Python `logging` calls into the PySyMex logger.
+
+    This allows external libraries or internal Z3 debug messages that use the
+    standard library's logging module to participate in the PySyMex
+    structured output stream.
+    """
 
     def __init__(self, shadow_logger: PysymexLogger):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the bridge with a target PySyMex logger instance."""
         super().__init__()
         self.shadow_logger = shadow_logger
         self._level_map = {

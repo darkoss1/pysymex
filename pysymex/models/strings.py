@@ -41,7 +41,6 @@ class StrLowerModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.lower() - preserves string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -65,7 +64,6 @@ class StrUpperModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.upper() - preserves string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -86,7 +84,6 @@ class StrCapitalizeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.capitalize() - preserves string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -107,7 +104,6 @@ class StrTitleModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.title() - preserves string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -128,7 +124,6 @@ class StrSwapcaseModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.swapcase() - preserves string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -151,7 +146,6 @@ class StrStripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.strip() - result length <= original length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -173,7 +167,6 @@ class StrLstripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.lstrip() - result length <= original length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -196,7 +189,6 @@ class StrRstripModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rstrip() - result length <= original length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -226,7 +218,6 @@ class StrSplitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.split() - relationship between parts and original."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -262,7 +253,6 @@ class StrJoinModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.join() - result length based on separator and parts."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -287,7 +277,6 @@ class StrReplaceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.replace() - result length relationship."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -313,7 +302,6 @@ class StrStartswithModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.startswith() - uses Z3 PrefixOf."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -345,7 +333,6 @@ class StrEndswithModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.endswith() - uses Z3 SuffixOf."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -382,7 +369,6 @@ class StrFindModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.find() - uses Z3 IndexOf with proper bounds."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -420,7 +406,6 @@ class StrIndexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.index() - like find but raises ValueError if not found."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -472,7 +457,6 @@ class StrCountModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.count() - count bounded by string length."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -506,7 +490,6 @@ class StrFormatModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.format() - result length relationship."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -524,7 +507,6 @@ class StrIsdigitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isdigit() - true only if non-empty and all digits."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -545,7 +527,6 @@ class StrIsalphaModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isalpha() - true only if non-empty and all alphabetic."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -566,7 +547,6 @@ class StrIsalnumModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isalnum() - true only if non-empty and all alphanumeric."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -587,7 +567,6 @@ class StrIsspaceModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isspace() - true only if non-empty and all whitespace."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -610,7 +589,6 @@ class StrIslowerModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.islower()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -633,7 +611,6 @@ class StrIsupperModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isupper()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -656,7 +633,6 @@ class StrCenterModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.center(width) - pads string to width."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -686,7 +662,6 @@ class StrLjustModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.ljust(width) - left justify."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -708,7 +683,6 @@ class StrRjustModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rjust(width) - right justify."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -730,7 +704,6 @@ class StrZfillModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.zfill(width) - zero-pad on left."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -750,7 +723,6 @@ class StrRemovePrefixModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the str.removeprefix()."""
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         prefix = _get_symbolic_string(args[1]) if len(args) > 1 else None
@@ -775,7 +747,6 @@ class StrRemoveSuffixModel(FunctionModel):
 
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
-        """Apply the str.removesuffix()."""
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         suffix = _get_symbolic_string(args[1]) if len(args) > 1 else None
@@ -801,7 +772,6 @@ class StrContainsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the 'in' operator on strings - uses Z3 Contains."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -830,7 +800,6 @@ class StrRsplitModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rsplit() - like split but from right."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -853,7 +822,6 @@ class StrRfindModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rfind() - like find but searches from right."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -875,7 +843,6 @@ class StrRindexModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rindex() - like rfind but raises ValueError if not found."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -899,7 +866,6 @@ class StrPartitionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.partition(sep) - returns (before, sep, after) 3-tuple."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -917,7 +883,6 @@ class StrRpartitionModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.rpartition(sep) - like partition but from right."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -935,7 +900,6 @@ class StrSplitlinesModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.splitlines() - splits on line boundaries."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -957,7 +921,6 @@ class StrEncodeModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.encode() - returns bytes."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -980,7 +943,6 @@ class StrCasefoldModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.casefold() - aggressive lowercase."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1001,7 +963,6 @@ class StrExpandtabsModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.expandtabs() - replaces tabs with spaces."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1022,7 +983,6 @@ class StrMaketransModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.maketrans() - static method returning translation table."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1043,7 +1003,6 @@ class StrTranslateModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.translate(table) - applies translation table."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1065,7 +1024,6 @@ class StrIstitleModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.istitle()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1088,7 +1046,6 @@ class StrIsprintableModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isprintable()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1109,7 +1066,6 @@ class StrIsidentifierModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isidentifier()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1130,7 +1086,6 @@ class StrIsdecimalModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isdecimal()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1151,7 +1106,6 @@ class StrIsnumericModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.isnumeric()."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1172,7 +1126,6 @@ class StrFormatMapModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the str.format_map(mapping)."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
@@ -1238,7 +1191,6 @@ class StrIsasciiModel(FunctionModel):
     def apply(
         self,
         args: list[StackValue],
-        """Apply the StrIsasciiModel model."""
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:

@@ -92,8 +92,6 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
     """
 
     def __init__(self, file_path: str) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.file_path = file_path
         self.warnings: list[ExceptionWarning] = []
         self.try_blocks: list[TryBlock] = []
@@ -393,7 +391,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
             tree = ast.parse(source)
             self.visit(tree)
         except SyntaxError:
-            pass  # Used as expected type-check or feature fallback
+            pass
         return self.warnings
 
 
@@ -414,38 +412,7 @@ class ExceptionBytecodeAnalyzer:
         warnings from bytecode patterns alone.  The AST-based analyzer
         handles the bulk of exception analysis.
         """
-        warnings: list[ExceptionWarning] = []
-        instructions = _cached_get_instructions(code)
-        in_except = False
-        has_meaningful_handler = False
-        for _i, instr in enumerate(instructions):
-            line = get_starts_line(instr)
-            if line is not None:
-                pass
-            opname = instr.opname
-            if opname == "PUSH_EXC_INFO":
-                in_except = True
-                has_meaningful_handler = False
-            elif opname == "POP_EXCEPT":
-                if in_except and not has_meaningful_handler:
-                    pass
-                in_except = False
-            elif in_except:
-                if opname in {
-                    "CALL",
-                    "CALL_FUNCTION",
-                    "CALL_METHOD",
-                    "STORE_FAST",
-                    "STORE_NAME",
-                    "RAISE_VARARGS",
-                }:
-                    has_meaningful_handler = True
-            if opname == "RERAISE":
-                pass
-            elif opname == "RAISE_VARARGS" and in_except:
-                if instr.arg == 1:
-                    pass
-        return warnings
+        return []
 
 
 class UncaughtExceptionAnalyzer:
@@ -582,24 +549,11 @@ class ExceptionChainAnalyzer:
         source: str,
         file_path: str = "<unknown>",
     ) -> list[ExceptionWarning]:
-        """Analyze exception chaining in source."""
-        warnings: list[ExceptionWarning] = []
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return warnings
+        """Analyze exception chaining in source.
 
-        class ChainVisitor(ast.NodeVisitor):
-            """Visitor for analyzing exception causal chains."""
-            def visit_Raise(self, node: ast.Raise) -> None:
-                """Visit raise."""
-                if node.exc and not node.cause:
-                    pass
-                self.generic_visit(node)
-
-        visitor = ChainVisitor()
-        visitor.visit(tree)
-        return warnings
+        Note: Chain analysis is not yet implemented. Returns empty list.
+        """
+        return []
 
 
 class ExceptionAnalyzer:
@@ -608,8 +562,6 @@ class ExceptionAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.bytecode_analyzer = ExceptionBytecodeAnalyzer()
         self.uncaught_analyzer = UncaughtExceptionAnalyzer()
         self.chain_analyzer = ExceptionChainAnalyzer()

@@ -21,8 +21,7 @@ from typing import (
 import z3
 
 from pysymex.core.constraint_hash import structural_hash
-
-logger = logging.getLogger(__name__)
+from pysymex.core.constraint_independence import ConstraintIndependenceOptimizer
 from pysymex.core.parallel_types import (
     ExplorationConfig,
     ExplorationResult,
@@ -31,6 +30,8 @@ from pysymex.core.parallel_types import (
     StateSignature,
     WorkItem,
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -47,8 +48,11 @@ class WorkQueue(Generic[T]):
     """
 
     def __init__(self, maxsize: int = 0):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the work queue.
+
+        Args:
+            maxsize: Maximum number of items the queue can hold. 0 means unbounded.
+        """
         self._queue: queue.PriorityQueue[WorkItem[T]] = queue.PriorityQueue(maxsize)
         self._lock = threading.Lock()
         self._item_count = 0
@@ -119,59 +123,75 @@ class StateMerger(Generic[T]):
     """
 
     def __init__(self, merge_threshold: int = 10):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the state merger.
+
+        Args:
+            merge_threshold: Minimum number of states with identical signatures
+                required to trigger an automated merge operation.
+        """
         self._pending: dict[StateSignature, list[T]] = {}
         self._merge_threshold = merge_threshold
         self._lock = threading.Lock()
         self._merge_count = 0
 
     def get_signature(self, state: object) -> StateSignature:
-        """Compute signature for a state."""
+        """Compute a structural signature for the given symbolic state.
+
+        The signature includes:
+        - pc: The current program counter offset.
+        - stack_depth: Current size of the symbolic stack.
+        - local_keys: Names of all variables currently in scope.
+        - constraint_hash: A fast structural hash of the first few path constraints.
+        - constraint_discriminator: A collision-resistant tuple of Z3 expression hashes.
+
+        This signature is used to identify execution paths that have converged
+        on the same symbolic state, allowing them to be merged to mitigate
+        path explosion.
+        """
         pc = getattr(state, "pc", 0)
         stack = getattr(state, "stack", [])
         locals_dict = getattr(state, "locals", {})
         constraints = getattr(state, "constraints", [])
 
         try:
-            constraint_hash_val = structural_hash(constraints[:5])
+            head = constraints[:5]
+            constraint_hash_val = structural_hash(head)
+            constraint_disc = (len(constraints),) + tuple(sorted(c.hash() for c in head))
         except (TypeError, RecursionError):
             constraint_hash_val = hash(len(constraints))
+            constraint_disc = (len(constraints),)
         return StateSignature(
             pc=pc,
             stack_depth=len(stack),
             local_keys=frozenset(locals_dict.keys()),
             constraint_hash=constraint_hash_val,
+            constraint_discriminator=constraint_disc,
         )
 
     def should_merge(self, state: T) -> list[T] | None:
-        """Check if state should be merged with pending states.
-        Returns list of states to merge with, or None if not ready.
-        """
+        """Check if the given state should be merged."""
         sig = self.get_signature(state)
         with self._lock:
             if sig not in self._pending:
                 self._pending[sig] = []
             self._pending[sig].append(state)
             if len(self._pending[sig]) >= self._merge_threshold:
-                states = self._pending.pop(sig)
-                self._merge_count += 1
-                return states
+                return self._pending.pop(sig)
         return None
 
     def merge_states(self, states: list[T]) -> T:
-        """Merge multiple states into one.
-        Default implementation returns first state.
-        Subclasses should implement proper merging.
-        """
+        """Merge multiple states into one. Default implementation returns the first state."""
+        with self._lock:
+            self._merge_count += 1
         return states[0]
 
     def get_merge_count(self) -> int:
-        """Get the number of merges performed."""
-        return self._merge_count
+        """Get the total number of merges performed."""
+        with self._lock:
+            return self._merge_count
 
     def flush_pending(self) -> list[T]:
-        """Flush all pending states."""
+        """Return all pending states that haven't been merged yet."""
         with self._lock:
             all_states: list[T] = []
             for states in self._pending.values():
@@ -181,16 +201,16 @@ class StateMerger(Generic[T]):
 
 
 class ParallelExplorer(Generic[T]):
-    """Parallel symbolic execution engine.
+    """Parallel path exploration engine for symbolic execution.
 
-    Distributes path exploration across a :class:`ThreadPoolExecutor`
-    with work-stealing and result aggregation.  Supports DFS, BFS,
-    coverage-guided, and random exploration strategies.
+    Coordinates multiple worker threads to explore paths in parallel,
+    leveraging a thread-safe work queue and state merging to optimize
+    exploration efficiency.
 
     Args:
-        config: Exploration parameters (workers, timeout, strategy, etc.).
-        step_function: Callable that advances a state to its successor(s).
-        check_function: Callable that inspects a state for issues.
+        config: Configuration parameters for exploration limits and strategy.
+        step_function: Callback to generate successor states from a given state.
+        check_function: Optional callback to inspect states for bugs/vulnerabilities.
     """
 
     def __init__(
@@ -199,12 +219,11 @@ class ParallelExplorer(Generic[T]):
         step_function: Callable[[T], list[T]] | None = None,
         check_function: Callable[[T], list[dict[str, object]]] | None = None,
     ):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the parallel explorer."""
         self.config = config or ExplorationConfig()
         self._step_fn = step_function
         self._check_fn = check_function
-        self._work_queue: WorkQueue[T] = WorkQueue()
+        self._work_queue: WorkQueue[T] = WorkQueue(self.config.max_queue_size)
         self._result = ExplorationResult()
         self._result_lock = threading.Lock()
         self._merger = StateMerger[T](self.config.merge_threshold)
@@ -372,62 +391,32 @@ class ConstraintPartitioner:
     Two constraints are considered *dependent* if they share at least
     one free variable.  The partitioner uses a union-find structure to
     group dependent constraints, so each resulting partition can be
-    solved independently — and therefore in parallel.
+    solved independently - and therefore in parallel.
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._variable_graph: dict[str, set[str]] = {}
 
     def partition(self, constraints: list[z3.BoolRef]) -> list[list[z3.BoolRef]]:
         """Partition constraints into independent sets."""
         if not constraints:
             return []
-        constraint_vars: list[set[str]] = []
+        # Delegate clustering to ConstraintIndependenceOptimizer for cached UF grouping.
+        optimizer = ConstraintIndependenceOptimizer()
+        constraint_vars: list[frozenset[str]] = []
         for c in constraints:
-            vars_set = self._extract_variables(c)
-            constraint_vars.append(vars_set)
-        parent = list(range(len(constraints)))
+            constraint_vars.append(optimizer.register_constraint(c))
 
-        def find(x: int) -> int:
-            """Find."""
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
-
-        def union(x: int, y: int) -> None:
-            """Union."""
-            px, py = find(x), find(y)
-            if px != py:
-                parent[px] = py
-
-        for i in range(len(constraints)):
-            for j in range(i + 1, len(constraints)):
-                if constraint_vars[i] & constraint_vars[j]:
-                    union(i, j)
-        partitions: dict[int, list[z3.BoolRef]] = {}
-        for i, c in enumerate(constraints):
-            root = find(i)
+        partitions: dict[str, list[z3.BoolRef]] = {}
+        for c, var_names in zip(constraints, constraint_vars):
+            if not var_names:
+                root = "CONST"
+            else:
+                root = optimizer._uf.find(next(iter(var_names)))  # type: ignore[protected-access]
             if root not in partitions:
                 partitions[root] = []
             partitions[root].append(c)
         return list(partitions.values())
-
-    def _extract_variables(self, expr: z3.ExprRef) -> set[str]:
-        """Extract variable names from a Z3 expression."""
-        variables: set[str] = set()
-
-        def visit(e: z3.ExprRef) -> None:
-            """Visit."""
-            if z3.is_const(e) and e.decl().kind() == z3.Z3_OP_UNINTERPRETED:
-                variables.add(e.decl().name())
-            else:
-                for child in e.children():
-                    visit(child)
-
-        visit(expr)
-        return variables
 
 
 class ParallelSolver:
@@ -443,8 +432,6 @@ class ParallelSolver:
     """
 
     def __init__(self, max_workers: int = 4, timeout_ms: int = 5000):
-        """Init."""
-        """Initialize the class instance."""
         self.max_workers = max_workers
         self.timeout_ms = timeout_ms
         self._partitioner = ConstraintPartitioner()
@@ -526,8 +513,6 @@ class ProcessParallelVerifier:
         max_workers: int | None = None,
         timeout_ms: int = 5000,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._max_workers = max_workers or min(os.cpu_count() or 2, 8)
         self._timeout_ms = timeout_ms
 

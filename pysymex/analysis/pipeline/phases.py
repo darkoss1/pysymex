@@ -60,8 +60,6 @@ class TypeInferencePhase(AnalysisPhase):
     name = "type_inference"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = TypeAnalyzer()
 
     def analyze(
@@ -83,8 +81,6 @@ class PatternRecognitionPhase(AnalysisPhase):
     name = "pattern_recognition"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = PatternAnalyzer()
 
     def analyze(
@@ -104,11 +100,6 @@ class FlowAnalysisPhase(AnalysisPhase):
     """Phase 3: Build flow-sensitive analyser and populate ``ctx.flow_analyzer``."""
 
     name = "flow_analysis"
-
-    def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
-        pass
 
     def analyze(
         self,
@@ -131,8 +122,6 @@ class BugDetectionPhase(AnalysisPhase):
     name = "bug_detection"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = StaticAnalyzer()
 
     def analyze(
@@ -198,8 +187,6 @@ class BugDetectionPhase(AnalysisPhase):
         class MockIssue:
             """Mock issue object for testing suppression logic."""
             def __init__(self, kind: str, line: int, message: str, function_name: str) -> None:
-                """Init."""
-                """Initialize the class instance."""
                 from ..detectors.static import IssueKind
 
                 try:
@@ -378,7 +365,7 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             param_name = parts[1].split("'")[0] if len(parts) > 1 else ""
 
         func_name = issue.function_name or ctx.code.co_name
-        if func_name.startswith("_op_") or func_name.startswith("_handle_"):
+        if func_name.startswith(("_op_", "_handle_")):
             issue.suppression_reasons.append("Dispatcher method with fixed interface")
             issue.confidence *= 0.0
             return
@@ -553,7 +540,6 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
             self.generic_visit(node)
 
         def visit_AsyncFunctionDef(self, node: _ast.AsyncFunctionDef) -> None:
-            """Visit asyncfunctiondef."""
             self.visit_FunctionDef(cast("_ast.FunctionDef", node))
 
         def visit_AnnAssign(self, node: _ast.AnnAssign) -> None:
@@ -613,8 +599,6 @@ class DeadCodePhase(AnalysisPhase):
     name = "dead_code"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = DeadCodeAnalyzer()
 
     def analyze(
@@ -655,8 +639,6 @@ class ResourcePhase(AnalysisPhase):
     name = "resource_analysis"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = ResourceAnalyzer()
 
     def analyze(
@@ -696,8 +678,6 @@ class SecurityPhase(AnalysisPhase):
     name = "security"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.taint_checker = TaintChecker()
         self.string_analyzer = StringAnalyzer()
 
@@ -763,8 +743,6 @@ class ExceptionPhase(AnalysisPhase):
     name = "exception"
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.analyzer = ExceptionAnalyzer()
 
     def analyze(

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 import z3
 
-from pysymex.core.types import Z3_FALSE, SymbolicValue
+from pysymex.core.types import SymbolicValue
 
 
 @dataclass(slots=True)
@@ -130,8 +130,6 @@ class HavocValue(SymbolicValue):
         return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
 
     def __repr__(self) -> str:
-        """Repr."""
-        """Return a formal string representation."""
         return f"HavocValue({self._name})"
 
 

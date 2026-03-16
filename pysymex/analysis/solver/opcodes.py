@@ -8,7 +8,7 @@ Mixed into FunctionAnalyzer to keep file sizes manageable.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -44,7 +44,6 @@ class OpcodeHandlersMixin:
         current_line: int
         current_file: str
 
-                                                                                """Make const."""
         def _make_const(self, value: object, state: SymbolicState) -> SymValue: ...
         def _add_crash(
             self,
@@ -56,11 +55,9 @@ class OpcodeHandlersMixin:
             variables: dict[str, object],
             severity: Severity = ...,
             taint_info: TaintInfo | None = ...,
-                   """Add crash."""
         ) -> None: ...
         def _do_binary_op(
             self, left: SymValue, right: SymValue, op: str, state: SymbolicState
-                       """Do binary op."""
         ) -> SymValue: ...
         def _check_division(
             self,
@@ -68,14 +65,12 @@ class OpcodeHandlersMixin:
             op: str,
             state: SymbolicState,
             crashes: list[CrashCondition],
-                   """Check division."""
         ) -> None: ...
         def _check_modulo(
             self,
             divisor: SymValue,
             state: SymbolicState,
             crashes: list[CrashCondition],
-                   """Check modulo."""
         ) -> None: ...
         def _check_shift(
             self,
@@ -83,7 +78,6 @@ class OpcodeHandlersMixin:
             op: str,
             state: SymbolicState,
             crashes: list[CrashCondition],
-                   """Check shift."""
         ) -> None: ...
         def _check_index_bounds(
             self,
@@ -91,7 +85,6 @@ class OpcodeHandlersMixin:
             container: SymValue,
             state: SymbolicState,
             crashes: list[CrashCondition],
-                   """Check index bounds."""
         ) -> None: ...
 
     def _op_LOAD_CONST(
@@ -102,7 +95,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load const."""
-        """Handler for the LOAD_CONST opcode."""
         state.push(self._make_const(arg, state))
         return None
 
@@ -114,7 +106,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load fast."""
-        """Handler for the LOAD_FAST opcode."""
         name = str(arg)
         val = state.get_var(name)
         if val is None:
@@ -131,10 +122,9 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load fast load fast."""
-        """Handler for the LOAD_FAST_LOAD_FAST opcode."""
         if isinstance(arg, tuple):
-            for name in arg:
-                self._op_LOAD_FAST(name, state, crashes, call_sites)
+            for raw_name in cast("tuple[str, ...]", arg):
+                self._op_LOAD_FAST(raw_name, state, crashes, call_sites)
         return None
 
     def _op_LOAD_GLOBAL(
@@ -145,7 +135,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load global."""
-        """Handler for the LOAD_GLOBAL opcode."""
         name = str(arg)
         val = SymValue(
             z3.Int(state.fresh_name(name)), name, SymType.UNKNOWN, origin=f"global:{name}"
@@ -161,7 +150,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load name."""
-        """Handler for the LOAD_NAME opcode."""
         return self._op_LOAD_GLOBAL(arg, state, crashes, call_sites)
 
     def _op_LOAD_ATTR(
@@ -172,7 +160,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load attr."""
-        """Handler for the LOAD_ATTR opcode."""
         obj = state.pop()
         obj_is_none = getattr(obj, "is_none", False)
 
@@ -212,7 +199,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op load deref."""
-        """Handler for the LOAD_DEREF opcode."""
         return self._op_LOAD_GLOBAL(arg, state, crashes, call_sites)
 
     def _op_STORE_FAST(
@@ -223,7 +209,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store fast."""
-        """Handler for the STORE_FAST opcode."""
         if state.stack:
             val = state.pop()
             if val is not None:
@@ -238,7 +223,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store name."""
-        """Handler for the STORE_NAME opcode."""
         return self._op_STORE_FAST(arg, state, crashes, call_sites)
 
     def _op_STORE_FAST_STORE_FAST(
@@ -249,13 +233,12 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store fast store fast."""
-        """Handler for the STORE_FAST_STORE_FAST opcode."""
         if isinstance(arg, tuple):
-            for name in reversed(arg):
+            for name in reversed(cast("tuple[str, ...]", arg)):
                 if state.stack:
                     val = state.pop()
                     if val is not None:
-                        state.set_var(str(name), val)
+                        state.set_var(name, val)
         return None
 
     def _op_STORE_GLOBAL(
@@ -266,7 +249,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store global."""
-        """Handler for the STORE_GLOBAL opcode."""
         if state.stack:
             state.pop()
         state.globals_modified.add(str(arg))
@@ -280,7 +262,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store attr."""
-        """Handler for the STORE_ATTR opcode."""
         if len(state.stack) >= 2:
             obj = state.pop()
             state.pop()
@@ -304,7 +285,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store subscr."""
-        """Handler for the STORE_SUBSCR opcode."""
         if len(state.stack) >= 3:
             index = state.pop()
             container = state.pop()
@@ -329,7 +309,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op store deref."""
-        """Handler for the STORE_DEREF opcode."""
         if state.stack:
             state.pop()
         return None
@@ -342,7 +321,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op binary op."""
-        """Handler for the BINARY_OP opcode."""
         if len(state.stack) < 2:
             return None
         right = state.pop()
@@ -360,9 +338,8 @@ class OpcodeHandlersMixin:
         elif base_op in ("<<", ">>"):
             self._check_shift(right, base_op, state, crashes)
 
-        result: SymValue | None = self._do_binary_op(left, right, base_op, state)
-        if result is not None and isinstance(result, SymValue):
-            state.push(result)
+        result = self._do_binary_op(left, right, base_op, state)
+        state.push(result)
         return None
 
     def _op_BINARY_SUBSCR(
@@ -373,7 +350,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op binary subscr."""
-        """Handler for the BINARY_SUBSCR opcode."""
         if len(state.stack) < 2:
             return None
         index = state.pop()
@@ -411,7 +387,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op compare op."""
-        """Handler for the COMPARE_OP opcode."""
         if len(state.stack) < 2:
             return None
         right = state.pop()
@@ -444,7 +419,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op is op."""
-        """Handler for the IS_OP opcode."""
         if len(state.stack) < 2:
             return None
         right = state.pop()
@@ -475,7 +449,7 @@ class OpcodeHandlersMixin:
             try:
                 result = SymValue(z3.Not(result.expr), sym_type=SymType.BOOL)
             except z3.Z3Exception:
-                pass  # Used as expected type-check or feature fallback
+                pass
 
         state.push(result)
         return result
@@ -488,7 +462,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op contains op."""
-        """Handler for the CONTAINS_OP opcode."""
         if len(state.stack) >= 2:
             state.pop()
             state.pop()
@@ -504,7 +477,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op to bool."""
-        """Handler for the TO_BOOL opcode."""
         if not state.stack:
             return None
         val = state.pop()
@@ -516,8 +488,8 @@ class OpcodeHandlersMixin:
             if val_expr is not None and z3.is_bool(val_expr):
                 state.push(val)
             elif val_expr is not None:
-                val_name = getattr(val, "name", None)
-                val_taint = getattr(val, "taint", None)
+                val_name: str = getattr(val, "name", None) or ""
+                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
                 result = SymValue(val_expr != 0, val_name, SymType.BOOL, taint=val_taint)
                 state.push(result)
             else:
@@ -535,7 +507,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op pop jump if false."""
-        """Handler for the POP_JUMP_IF_FALSE opcode."""
         if state.stack:
             return state.pop()
         return None
@@ -548,7 +519,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op pop jump if true."""
-        """Handler for the POP_JUMP_IF_TRUE opcode."""
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
 
     def _op_POP_JUMP_IF_NONE(
@@ -559,7 +529,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op pop jump if none."""
-        """Handler for the POP_JUMP_IF_NONE opcode."""
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
 
     def _op_POP_JUMP_IF_NOT_NONE(
@@ -570,7 +539,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op pop jump if not none."""
-        """Handler for the POP_JUMP_IF_NOT_NONE opcode."""
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
 
     def _op_UNARY_NEGATIVE(
@@ -581,7 +549,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op unary negative."""
-        """Handler for the UNARY_NEGATIVE opcode."""
         if state.stack:
             val = state.pop()
             if val is None:
@@ -589,7 +556,7 @@ class OpcodeHandlersMixin:
             try:
                 val_expr = getattr(val, "expr", None)
                 val_name = getattr(val, "name", "unknown")
-                val_taint = getattr(val, "taint", None)
+                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
                 if val_expr is not None:
                     state.push(SymValue(-val_expr, f"-{val_name}", SymType.INT, taint=val_taint))
                 else:
@@ -607,7 +574,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op unary not."""
-        """Handler for the UNARY_NOT opcode."""
         if state.stack:
             val = state.pop()
             if val is None:
@@ -633,7 +599,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op unary invert."""
-        """Handler for the UNARY_INVERT opcode."""
         if state.stack:
             val = state.pop()
             if val is None:
@@ -641,7 +606,7 @@ class OpcodeHandlersMixin:
             try:
                 val_expr = getattr(val, "expr", None)
                 val_name = getattr(val, "name", "unknown")
-                val_taint = getattr(val, "taint", None)
+                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
                 if val_expr is not None:
                     state.push(SymValue(~val_expr, f"~{val_name}", SymType.INT, taint=val_taint))
                 else:
@@ -659,7 +624,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op call."""
-        """Handler for the CALL opcode."""
         n = arg if isinstance(arg, int) else 0
         args: list[SymValue] = []
 
@@ -716,7 +680,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op call function ex."""
-        """Handler for the CALL_FUNCTION_EX opcode."""
         flags = arg if isinstance(arg, int) else 0
         has_kwargs = (flags & 0x01) == 0x01
 
@@ -740,7 +703,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op push null."""
-        """Handler for the PUSH_NULL opcode."""
         state.push(SymValue(z3.IntVal(0), "NULL", SymType.NONE, is_none=True))
         return None
 
@@ -752,7 +714,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build list."""
-        """Handler for the BUILD_LIST opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
@@ -775,7 +736,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build tuple."""
-        """Handler for the BUILD_TUPLE opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
@@ -793,7 +753,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build set."""
-        """Handler for the BUILD_SET opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
@@ -809,7 +768,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build map."""
-        """Handler for the BUILD_MAP opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n * 2):
             if state.stack:
@@ -825,7 +783,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build const key map."""
-        """Handler for the BUILD_CONST_KEY_MAP opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n + 1):
             if state.stack:
@@ -841,7 +798,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op build string."""
-        """Handler for the BUILD_STRING opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
@@ -857,7 +813,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op list extend."""
-        """Handler for the LIST_EXTEND opcode."""
         if state.stack:
             state.pop()
         return None
@@ -870,7 +825,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op set update."""
-        """Handler for the SET_UPDATE opcode."""
         if state.stack:
             state.pop()
         return None
@@ -883,7 +837,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op dict update."""
-        """Handler for the DICT_UPDATE opcode."""
         if state.stack:
             state.pop()
         return None
@@ -896,7 +849,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op dict merge."""
-        """Handler for the DICT_MERGE opcode."""
         if state.stack:
             state.pop()
         return None
@@ -909,7 +861,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op pop top."""
-        """Handler for the POP_TOP opcode."""
         if state.stack:
             state.pop()
         return None
@@ -922,11 +873,9 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op copy."""
-        """Handler for the COPY opcode."""
         n = arg if isinstance(arg, int) else 1
         if state.stack and len(state.stack) >= n:
-            if state.stack[-n] is not None:
-                state.push(state.stack[-n])
+            state.push(state.stack[-n])
         return None
 
     def _op_SWAP(
@@ -937,11 +886,9 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op swap."""
-        """Handler for the SWAP opcode."""
         n = arg if isinstance(arg, int) else 2
         if len(state.stack) >= n:
-            if all(state.stack[-i] is not None for i in range(1, n + 1)):
-                state.stack[-1], state.stack[-n] = state.stack[-n], state.stack[-1]
+            state.stack[-1], state.stack[-n] = state.stack[-n], state.stack[-1]
         return None
 
     def _op_DUP_TOP(
@@ -952,10 +899,8 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op dup top."""
-        """Handler for the DUP_TOP opcode."""
         if state.stack:
-            if state.stack[-1] is not None:
-                state.push(state.stack[-1])
+            state.push(state.stack[-1])
         return None
 
     def _op_ROT_TWO(
@@ -966,10 +911,8 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op rot two."""
-        """Handler for the ROT_TWO opcode."""
         if len(state.stack) >= 2:
-            if state.stack[-1] is not None and state.stack[-2] is not None:
-                state.stack[-1], state.stack[-2] = state.stack[-2], state.stack[-1]
+            state.stack[-1], state.stack[-2] = state.stack[-2], state.stack[-1]
         return None
 
     def _op_ROT_THREE(
@@ -980,14 +923,12 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op rot three."""
-        """Handler for the ROT_THREE opcode."""
         if len(state.stack) >= 3:
-            if all(s is not None for s in state.stack[-3:]):
-                state.stack[-1], state.stack[-2], state.stack[-3] = (
-                    state.stack[-2],
-                    state.stack[-3],
-                    state.stack[-1],
-                )
+            state.stack[-1], state.stack[-2], state.stack[-3] = (
+                state.stack[-2],
+                state.stack[-3],
+                state.stack[-1],
+            )
         return None
 
     def _op_GET_ITER(
@@ -998,7 +939,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op get iter."""
-        """Handler for the GET_ITER opcode."""
         container = state.pop() if state.stack else None
         container_taint = getattr(container, "taint", None)
 
@@ -1019,7 +959,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op for iter."""
-        """Handler for the FOR_ITER opcode."""
         state.push(SymValue(z3.Int(state.fresh_name("item")), sym_type=SymType.UNKNOWN))
         return None
 
@@ -1031,7 +970,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op end for."""
-        """Handler for the END_FOR opcode."""
         for _ in range(2):
             if state.stack:
                 state.pop()
@@ -1045,7 +983,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op return value."""
-        """Handler for the RETURN_VALUE opcode."""
         if state.stack:
             state.pop()
         return None
@@ -1058,7 +995,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op return const."""
-        """Handler for the RETURN_CONST opcode."""
         return None
 
     def _op_YIELD_VALUE(
@@ -1069,7 +1005,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op yield value."""
-        """Handler for the YIELD_VALUE opcode."""
         if state.stack:
             state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("sent")), sym_type=SymType.UNKNOWN))
@@ -1083,7 +1018,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op resume."""
-        """Handler for the RESUME opcode."""
         return None
 
     def _op_NOP(
@@ -1094,7 +1028,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op nop."""
-        """Handler for the NOP opcode."""
         return None
 
     def _op_PRECALL(
@@ -1105,7 +1038,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op precall."""
-        """Handler for the PRECALL opcode."""
         return None
 
     def _op_KW_NAMES(
@@ -1116,7 +1048,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op kw names."""
-        """Handler for the KW_NAMES opcode."""
         return None
 
     def _op_MAKE_FUNCTION(
@@ -1127,7 +1058,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op make function."""
-        """Handler for the MAKE_FUNCTION opcode."""
         if state.stack:
             state.pop()
         state.push(SymValue(z3.Int(state.fresh_name("func")), sym_type=SymType.CALLABLE))
@@ -1141,7 +1071,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op format value."""
-        """Handler for the FORMAT_VALUE opcode."""
         flags = arg if isinstance(arg, int) else 0
         has_fmt_spec = (flags & 0x04) == 0x04
 
@@ -1174,7 +1103,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op unpack sequence."""
-        """Handler for the UNPACK_SEQUENCE opcode."""
         seq = state.pop() if state.stack else None
         n = arg if isinstance(arg, int) else 1
         seq_taint = getattr(seq, "taint", None)
@@ -1197,7 +1125,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op delete fast."""
-        """Handler for the DELETE_FAST opcode."""
         name = str(arg)
         if name in state.variables:
             del state.variables[name]
@@ -1211,7 +1138,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op raise varargs."""
-        """Handler for the RAISE_VARARGS opcode."""
         n = arg if isinstance(arg, int) else 0
         for _ in range(n):
             if state.stack:
@@ -1226,7 +1152,6 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op reraise."""
-        """Handler for the RERAISE opcode."""
         return None
 
     def _op_unknown(

@@ -77,8 +77,6 @@ class Z3SemanticRegistry:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._lock = Lock()
 
         self._auto: dict[str, str] = {}
@@ -185,8 +183,6 @@ class Z3Serializer:
     """
 
     def __init__(self, registry: Z3SemanticRegistry) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._registry = registry
 
     def safe_sexpr(self, expr: Any) -> str:

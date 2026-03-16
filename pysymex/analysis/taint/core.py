@@ -60,7 +60,6 @@ class TaintLabel:
     line_number: int = 0
 
     def __str__(self) -> str:
-        """Str."""
         """Return a human-readable string representation."""
         if self.origin:
             return f"{self .source .name }({self .origin }@{self .line_number })"
@@ -133,8 +132,6 @@ class TaintPolicy:
     """Defines which source-sink combinations are dangerous."""
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self._dangerous_flows: set[tuple[TaintSource, TaintSink]] = set()
         self._sanitizers: dict[tuple[TaintSource, TaintSink], set[str]] = {}
         self._setup_default_policy()
@@ -157,7 +154,18 @@ class TaintPolicy:
         self._dangerous_flows.add((TaintSource.NETWORK, TaintSink.DESERIALIZE))
 
     def is_dangerous(self, source: TaintSource, sink: TaintSink) -> bool:
-        """Check if a source-sink flow is dangerous."""
+        """Evaluate if a specific source-sink flow is prohibited by this policy.
+
+        **Policy Evaluation:**
+        A flow is considered dangerous if its `TaintSource` (where data entered
+        the system) is associated with the `TaintSink` (where data is consumed)
+        in the internal threat model. PySyMex defaults to a conservative
+        policy, blocking flows from volatile sources (User Input, Network)
+        to execution-class sinks (SQL, Shell, Eval).
+
+        Returns:
+            True if the flow represents a potential security vulnerability.
+        """
         return (source, sink) in self._dangerous_flows
 
     def add_sanitizer(
@@ -235,8 +243,6 @@ class TaintTracker:
     }
 
     def __init__(self, policy: TaintPolicy | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.policy = policy or TaintPolicy()
         self._flows: list[TaintFlow] = []
         self._taint_map: dict[int, TaintedValue] = {}
@@ -283,7 +289,21 @@ class TaintTracker:
         result: object,
         *operands: object,
     ) -> TaintedValue:
-        """Propagate taint from operands to result."""
+        """Propagate taint labels from operands to a derivation result.
+
+        **Propagation Algebra:**
+        The result of an operation inherits the union of all taint labels
+        associated with its operands: `Labels(Result) = ∪ Labels(Operand_i)`.
+        This enables 'tracking through' transformations like string
+        concatenation or numeric arithmetic.
+
+        Args:
+            result: The new object representing the result of the operation.
+            operands: The source objects involved in the operation.
+
+        Returns:
+            A `TaintedValue` wrapper for the result (also cached internally).
+        """
         labels: set[TaintLabel] = set()
         for op in operands:
             taint = self.get_taint(op)
@@ -337,8 +357,6 @@ class TaintAnalyzer:
     """High-level taint analysis interface."""
 
     def __init__(self, policy: TaintPolicy | None = None):
-        """Init."""
-        """Initialize the class instance."""
         self.tracker = TaintTracker(policy)
 
     def analyze_function(

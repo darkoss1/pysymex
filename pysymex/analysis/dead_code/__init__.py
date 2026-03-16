@@ -56,8 +56,6 @@ class DeadCodeAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.unreachable_detector = UnreachableCodeDetector()
         self.unused_var_detector = UnusedVariableDetector()
         self.dead_store_detector = DeadStoreDetector()

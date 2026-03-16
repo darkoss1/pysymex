@@ -16,12 +16,12 @@ from pysymex.core.types import (
     Z3_FALSE,
     SymbolicNone,
     SymbolicValue,
+    SymbolicString,
 )
 from pysymex.core.types_containers import (
     SymbolicDict,
     SymbolicList,
     SymbolicObject,
-    SymbolicString,
 )
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
@@ -122,17 +122,14 @@ def handle_build_map(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
             items.append((key, val))
     items.reverse()
     sym_dict, constraint = SymbolicDict.symbolic(f"dict_{state.pc}")
+    sym_dict._concrete_items = {}
     for key, val in items:
-        if isinstance(key, SymbolicString):
-            s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-            sym_dict = sym_dict.__setitem__(key, s_val)
+        s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
+        s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+        sym_dict = sym_dict.__setitem__(s_key, cast("SymbolicValue", s_val))
     sym_dict.z3_len = z3.IntVal(count)
 
-    addr = next_address()
-    state.memory[addr] = sym_dict
-    obj_handle = SymbolicObject(f"dict_{addr}", addr, z3.IntVal(addr), {addr})
-
-    state = state.push(obj_handle)
+    state = state.push(sym_dict)
     state = state.add_constraint(constraint)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -144,33 +141,35 @@ def handle_build_const_key_map(
 ) -> OpcodeResult:
     """Build a dict with constant keys, preserving key-value pairs."""
     count = int(instr.argval) if instr.argval else 0
-    keys_tuple = state.pop() if state.stack else None
-    values: list[object] = []
-    for _ in range(count):
-        if state.stack:
-            values.insert(0, state.pop())
+    
+    keys_tuple = state.pop()
+    
+    values = []
+    for i in range(count):
+        val = state.pop()
+        values.append(val)
+    values.reverse()
+
     sym_dict, constraint = SymbolicDict.symbolic(f"dict_{state.pc}")
-    concrete_keys: list[object] | None = (
-        getattr(keys_tuple, "_concrete_items", None) if keys_tuple else None
-    )
+    sym_dict._concrete_items = {}
+    
+    concrete_keys: list[object] | None = None
+    if keys_tuple:
+        if hasattr(keys_tuple, "_enhanced_object") and isinstance(keys_tuple._enhanced_object, (list, tuple)):
+             concrete_keys = list(keys_tuple._enhanced_object)
+        elif hasattr(keys_tuple, "_constant_value") and isinstance(keys_tuple._constant_value, (list, tuple)):
+             concrete_keys = list(keys_tuple._constant_value)
+
     if concrete_keys and len(concrete_keys) == len(values):
         for key, val in zip(concrete_keys, values, strict=False):
-            if isinstance(key, SymbolicString):
-                s_val: object = (
-                    val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-                )
-                sym_dict = sym_dict.__setitem__(key, cast("SymbolicValue", s_val))
-            elif isinstance(key, str):
-                str_key = SymbolicString.from_const(key)
-                s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-                sym_dict = sym_dict.__setitem__(str_key, cast("SymbolicValue", s_val))
+            s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
+            s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+            sym_dict = sym_dict.__setitem__(s_key, cast("SymbolicValue", s_val))
+    else:
+        pass
     sym_dict.z3_len = z3.IntVal(count)
 
-    addr = next_address()
-    state.memory[addr] = sym_dict
-    obj_handle = SymbolicObject(f"dict_{addr}", addr, z3.IntVal(addr), {addr})
-
-    state = state.push(obj_handle)
+    state = state.push(sym_dict)
     state = state.add_constraint(constraint)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -203,7 +202,7 @@ def handle_build_string(
             )
             new_z3_str = z3.IntToStr(z3_expr)
             part = SymbolicString(
-                f"str({item.name})", new_z3_str, z3.Length(new_z3_str), item.taint_labels
+                _name=f"str({item.name})", _z3_str=new_z3_str, _z3_len=z3.Length(new_z3_str), taint_labels=item.taint_labels
             )
         else:
             part = SymbolicString.from_const(str(item))
@@ -244,22 +243,8 @@ def handle_list_extend(
     container = state.peek(index - 1)
 
     if isinstance(container, SymbolicList):
-
-        v = getattr(val, "_enhanced_object", val)
-        if isinstance(v, (list, tuple)):
-            for item in v:
-                s_item = item if hasattr(item, "z3_int") else SymbolicValue.from_const(item)
-                container = container.append(cast("SymbolicValue", s_item))
-        elif isinstance(val, SymbolicList):
-
-            if hasattr(val, "_concrete_items") and val._concrete_items:
-                for item in val._concrete_items:
-                    s_item = item if hasattr(item, "z3_int") else SymbolicValue.from_const(item)
-                    container = container.append(s_item)
-            else:
-
-                pass
-        state.stack[-index] = container
+        new_container = container.extend(val)
+        state.stack[-index] = new_container
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -270,10 +255,25 @@ def handle_collection_update(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Basic update for other collections."""
-    if state.stack:
-        state.pop()
+    val = state.pop()
+    index = int(instr.argval) if instr.argval is not None else 1
+    container = state.peek(index - 1)
+
+    if instr.opname in ("DICT_UPDATE", "DICT_MERGE") and isinstance(container, SymbolicDict):
+        new_container = container.update(val)
+        state.stack[-index] = new_container
+    elif instr.opname == "SET_UPDATE":
+        # Support for SymbolicSet if added, or fallback
+        if hasattr(container, "update"):
+            new_container = container.update(val)
+            state.stack[-index] = new_container
+
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
+
+
+
+
 
 
 @opcode_handler("LIST_APPEND")
@@ -297,8 +297,7 @@ def handle_list_append(
 @opcode_handler("SET_ADD")
 def handle_set_add(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Add to a set (used in set comprehensions)."""
-    val = state.pop()
-    index = int(instr.argval) if instr.argval is not None else 1
+    state.pop()  # val
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -319,7 +318,7 @@ def handle_map_add(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
     return OpcodeResult.continue_with(state)
 
 
-@opcode_handler("BINARY_SUBSCR")
+@opcode_handler("BINARY_SUBSCR", "BINARY_SUBSCR_GETITEM")
 def handle_binary_subscr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
@@ -346,9 +345,18 @@ def handle_binary_subscr(
         return OpcodeResult.continue_with(state)
     issues: list[Issue] = []
 
+    
     real_container = container
-    if isinstance(container, SymbolicObject):
+    if hasattr(container, "address"):
         real_container = state.memory.get(container.address, container)
+    elif hasattr(container, "_enhanced_object") and container._enhanced_object is not None:
+        eo = container._enhanced_object
+        if hasattr(eo, "address"):
+            real_container = state.memory.get(eo.address, eo)
+        else:
+            real_container = eo
+    elif hasattr(container, "_constant_value") and container._constant_value is not None:
+         real_container = container._constant_value
 
     if isinstance(real_container, (SymbolicList, SymbolicString)) and isinstance(
         index, SymbolicValue
@@ -376,22 +384,34 @@ def handle_binary_subscr(
             z3.And(index.z3_int >= -real_container.z3_len, index.z3_int < real_container.z3_len)
         )
         result = real_container[index]
-    elif isinstance(real_container, SymbolicDict) and isinstance(index, SymbolicString):
+    elif (isinstance(real_container, SymbolicDict) or (hasattr(real_container, 'z3_array') and hasattr(real_container, 'known_keys'))) and isinstance(index, (SymbolicString, SymbolicValue)):
         result, presence_check = real_container[index]
-
-        missing_check = [*state.path_constraints, z3.Not(presence_check)]
+        
+        # Check if KeyError is possible
+        missing_check = list(state.path_constraints) + [z3.Not(presence_check)]
         if is_satisfiable(missing_check):
-            issues.append(
-                Issue(
-                    kind=IssueKind.KEY_ERROR,
-                    message=f"Possible KeyError: {index.name} not in {real_container.name}",
-                    constraints=list(missing_check),
-                    model=get_model(missing_check),
-                    pc=state.pc,
-                )
+            issue = Issue(
+                kind=IssueKind.KEY_ERROR,
+                message=f"Possible KeyError: {index.name} not in {getattr(real_container, '_name', 'dict')}",
+                constraints=list(missing_check),
+                model=get_model(missing_check),
+                pc=state.pc,
             )
+            # IMPORTANT: Fork by copying BEFORE adding constraints to preserve independence
+            state_continue = state.fork().add_constraint(presence_check)
+            state_error = state.fork().add_constraint(z3.Not(presence_check))
+            
+            # The continuation state gets the result and moves forward
+            state_continue = state_continue.push(result)
+            state_continue = state_continue.advance_pc()
+            
+            return OpcodeResult.fork([state_continue, state_error], [None, issue])
 
+        # If missing is UNSAT, key MUST be present
         state = state.add_constraint(presence_check)
+        state = state.push(result)
+        state = state.advance_pc()
+        return OpcodeResult.continue_with(state)
     else:
         try:
             import collections.abc
@@ -752,7 +772,7 @@ def _format_value_symbolic(val: object, state: VMState) -> SymbolicString:
         new_z3_str = z3.If(val.is_none, z3.StringVal("None"), new_z3_str)
 
         return SymbolicString(
-            f"str({val.name})", new_z3_str, z3.Length(new_z3_str), val.taint_labels
+            _name=f"str({val.name})", _z3_str=new_z3_str, _z3_len=z3.Length(new_z3_str), taint_labels=val.taint_labels
         )
     return SymbolicString.from_const(str(val))
 
@@ -830,7 +850,7 @@ def handle_format_with_spec(
             state.push(sym_str).add_constraint(constraint).advance_pc()
         )
 
-    spec = state.pop()
+    state.pop()  # spec
     val = state.pop()
 
     result = _format_value_symbolic(val, state)

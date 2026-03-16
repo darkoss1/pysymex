@@ -71,8 +71,6 @@ class FilterPipeline:
     __slots__ = ("_filters",)
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self._filters: list[FilterFn] = []
 
     def add(self, fn: FilterFn) -> None:
@@ -84,8 +82,6 @@ class FilterPipeline:
         return all(f(event) for f in self._filters)
 
     def __len__(self) -> int:
-        """Len."""
-        """Return the number of elements in the container."""
         return len(self._filters)
 
 
@@ -449,8 +445,6 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
         p.add(_any_constraint)
 
     if args.any_field_contains:
-        afc: str = args.any_field_contains
-
         pass
 
     return p
@@ -475,15 +469,12 @@ class SummaryAccumulator:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.total: int = 0
         self.by_type: dict[str, int] = collections.defaultdict(int)
         self.first_seq: dict[str, int] = {}
         self.last_seq: dict[str, int] = {}
 
     def record(self, event: dict[str, Any]) -> None:
-        """Record."""
         et: str = event.get("event_type", "unknown")
         seq: int = event.get("seq", -1)
         self.total += 1
@@ -493,7 +484,6 @@ class SummaryAccumulator:
         self.last_seq[et] = seq
 
     def render(self) -> str:
-        """Render."""
         lines = [
             "# pysymex Trace Summary",
             f"Total matched events: {self.total}",

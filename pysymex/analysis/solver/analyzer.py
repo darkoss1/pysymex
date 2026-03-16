@@ -13,7 +13,7 @@ import inspect
 import logging
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pysymex.analysis.solver.graph import CFGBuilder, SymbolicState
 from pysymex.analysis.solver.opcodes import OpcodeHandlersMixin
@@ -77,7 +77,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         24: "/=",
         25: "^=",
     }
-    COMPARE_OPS: dict[str, Callable[[Any, Any], Any]] = {
+    COMPARE_OPS: dict[str, Callable[[object, object], object]] = {
         "<": lambda a, b: a < b,
         "<=": lambda a, b: a <= b,
         "==": lambda a, b: a == b,
@@ -99,8 +99,6 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
     }
 
     def __init__(self, engine: Z3Engine):
-        """Init."""
-        """Initialize the class instance."""
         self.engine = engine
         self.cfg_builder = CFGBuilder()
         self.current_function = ""

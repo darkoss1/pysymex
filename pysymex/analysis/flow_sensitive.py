@@ -83,8 +83,6 @@ class FlowSensitiveAnalyzer:
     """
 
     def __init__(self, code: object) -> None:
-        """Init."""
-        """Initialize the class instance."""
         builder = CFGBuilder()
         self.cfg = builder.build(code)
         self.reaching_defs = ReachingDefinitions(self.cfg)

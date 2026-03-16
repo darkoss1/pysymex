@@ -361,8 +361,7 @@ class SymbolicStateMachine(RuleBasedStateMachine):
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
+        """Initialize the state machine with empty stack, locals, and constraints."""
         super().__init__()
         self.stack: list[object] = []
         self.locals: dict[str, object] = {}
@@ -505,8 +504,6 @@ class ConformanceGenerator:
     """
 
     def __init__(self):
-        """Init."""
-        """Initialize the class instance."""
         self.tests: list[ConformanceTest] = []
 
     def add_expression_test(

@@ -334,8 +334,6 @@ class SQLInjectionAnalyzer:
         class SQLVisitor(ast.NodeVisitor):
             """AST visitor for identifying potential SQL query strings."""
             def __init__(self) -> None:
-                """Init."""
-                """Initialize the class instance."""
                 self.warnings = warnings
 
             def visit_BinOp(self, node: ast.BinOp) -> None:
@@ -433,8 +431,6 @@ class PathTraversalAnalyzer:
         class PathVisitor(ast.NodeVisitor):
             """AST visitor for identifying potential filesystem paths."""
             def __init__(self) -> None:
-                """Init."""
-                """Initialize the class instance."""
                 self.warnings = warnings
 
             def visit_Call(self, node: ast.Call) -> None:
@@ -540,8 +536,6 @@ class StringAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.printf_analyzer = PrintfFormatAnalyzer()
         self.format_analyzer = StrFormatAnalyzer()
         self.fstring_analyzer = FStringAnalyzer()

@@ -53,47 +53,38 @@ class TypeKind(Enum):
 
     @classmethod
     def int_type(cls) -> PyType:
-        """Int type."""
         return PyType.int_()
 
     @classmethod
     def str_type(cls) -> PyType:
-        """Str type."""
         return PyType.str_()
 
     @classmethod
     def bool_type(cls) -> PyType:
-        """Bool type."""
         return PyType.bool_()
 
     @classmethod
     def float_type(cls) -> PyType:
-        """Float type."""
         return PyType.float_()
 
     @classmethod
     def list_type(cls, element_type: PyType | None = None) -> PyType:
-        """List type."""
         return PyType.list_(element_type)
 
     @classmethod
     def dict_type(cls, key_type: PyType | None = None, value_type: PyType | None = None) -> PyType:
-        """Dict type."""
         return PyType.dict_(key_type, value_type)
 
     @classmethod
     def tuple_type(cls, *element_types: PyType) -> PyType:
-        """Tuple type."""
         return PyType.tuple_(*element_types)
 
     @classmethod
     def set_type(cls, element_type: PyType | None = None) -> PyType:
-        """Set type."""
         return PyType.set_(element_type)
 
     @classmethod
     def none_type(cls) -> PyType:
-        """None type."""
         return PyType.none()
 
     @classmethod
@@ -143,7 +134,6 @@ class TypeKind(Enum):
 
     @classmethod
     def none(cls) -> PyType:
-        """None."""
         return PyType(kind=cls.NONE, name="None")
 
     FUNCTION = auto()
@@ -193,7 +183,6 @@ class PyType:
     known_keys: frozenset[object] = frozenset()
 
     def __hash__(self) -> int:
-        """Hash."""
         """Return the hash value of the object."""
         return hash(
             (
@@ -211,8 +200,6 @@ class PyType:
         )
 
     def __eq__(self, other: object) -> bool:
-        """Eq."""
-        """Check for equality with another object."""
         if not isinstance(other, PyType):
             return False
         return (
@@ -594,7 +581,6 @@ class PyType:
 
     def __repr__(self) -> str:
         """Repr."""
-        """Return a formal string representation."""
         if self.kind == TypeKind.UNION:
             members = " | ".join(repr(m) for m in sorted(self.union_members, key=str))
             return f"({members })"

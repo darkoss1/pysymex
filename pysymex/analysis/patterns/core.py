@@ -119,7 +119,6 @@ class DictGetHandler(PatternHandler):
     """Handles dict.get(key, default) pattern."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.DICT_GET}
 
     def match(
@@ -226,7 +225,6 @@ class DictSetdefaultHandler(PatternHandler):
     """Handles dict.setdefault(key, default) pattern."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.DICT_SETDEFAULT}
 
     def match(
@@ -270,7 +268,6 @@ class DefaultDictAccessHandler(PatternHandler):
     """Handles defaultdict[key] access pattern."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.DEFAULTDICT_ACCESS}
 
     def match(
@@ -316,7 +313,6 @@ class CounterAccessHandler(PatternHandler):
     """Handles Counter[key] access pattern."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.COUNTER_ACCESS}
 
     def match(
@@ -365,7 +361,6 @@ class SafeIterationHandler(PatternHandler):
     """Handles safe iteration patterns that can't cause index errors."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {
             PatternKind.ENUMERATE_ITER,
             PatternKind.ZIP_ITER,
@@ -486,7 +481,6 @@ class IsinstanceHandler(PatternHandler):
     """Handles isinstance(x, T) type guard pattern."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.ISINSTANCE_CHECK}
 
     def match(
@@ -553,7 +547,6 @@ class NoneCheckHandler(PatternHandler):
     """Handles None check patterns (is None / is not None)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.NONE_CHECK}
 
     def match(
@@ -609,7 +602,6 @@ class HasattrHandler(PatternHandler):
     """Handles hasattr check patterns."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.HASATTR_CHECK, PatternKind.HASATTR_GETATTR}
 
     def match(

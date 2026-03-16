@@ -90,8 +90,6 @@ class Scanner:
     """
 
     def __init__(self, config: ScannerConfig | None = None) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.config = config or ScannerConfig()
         self.phases: list[AnalysisPhase] = [
             TypeInferencePhase(),
@@ -169,7 +167,7 @@ class Scanner:
             issue kind is reported only once.
         """
         if _dedup_keys is None:
-            _dedup_keys = {(e.kind, e.line, hash(e.message) if e.message else 0) for e in issues}
+            _dedup_keys = {(e.kind, e.line, e.message or "") for e in issues}
         if _semantic_keys is None:
             _semantic_keys = set()
             for e in issues:
@@ -190,7 +188,7 @@ class Scanner:
                 new_issues = self._run_phases(ctx)
                 for issue in new_issues:
 
-                    key = (issue.kind, issue.line, hash(issue.message) if issue.message else 0)
+                    key = (issue.kind, issue.line, issue.message or "")
                     if key in _dedup_keys:
                         continue
 

@@ -44,9 +44,7 @@ class FunctionSummaryCache:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
-        self._cache: dict[tuple[str, int], Any] = {}
+        self._cache: dict[tuple[str, tuple[str, ...], int], Any] = {}
         self._hits = 0
         self._misses = 0
 
@@ -74,7 +72,7 @@ class FunctionSummaryCache:
 
     def _compute_key(
         self, func_name: str, args: list[object], path_constraints: list[z3.BoolRef]
-    ) -> tuple[str, int]:
+    ) -> tuple[str, tuple[str, ...], int]:
         """Compute canonical hash key for arguments and their constraints."""
 
         canonical_map: list[tuple[z3.ExprRef, z3.ExprRef]] = []
@@ -124,7 +122,7 @@ class FunctionSummaryCache:
             constraint_hash = structural_hash_sorted(canonical_constraints)
 
         args_tuple: tuple[str, ...] = tuple(sym_args)
-        return (func_name, hash((args_tuple, constraint_hash)))
+        return (func_name, args_tuple, constraint_hash)
 
 
 class CallGraph:
@@ -133,8 +131,6 @@ class CallGraph:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.nodes: dict[str, CallGraphNode] = {}
         self.entry_points: set[str] = set()
 
@@ -240,8 +236,6 @@ class CallGraphBuilder:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.call_graph = CallGraph()
 
     def build_from_module(self, module_code: object) -> CallGraph:
@@ -409,8 +403,6 @@ class EffectAnalyzer:
     }
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.cache: dict[str, EffectSummary] = {}
 
     def analyze_function(self, code: object, name: str = "") -> EffectSummary:
@@ -577,8 +569,6 @@ class ContextSensitiveAnalyzer:
     """
 
     def __init__(self, k: int = 2) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.k = k
         self.summaries: dict[tuple[str, CallContext], ContextSensitiveSummary] = {}
         self.call_graph: CallGraph | None = None
@@ -646,8 +636,6 @@ class CrossFunctionAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.call_graph_builder = CallGraphBuilder()
         self.effect_analyzer = EffectAnalyzer()
         self.escape_analyzer = EscapeAnalyzer()

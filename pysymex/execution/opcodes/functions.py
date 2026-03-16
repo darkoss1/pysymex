@@ -554,7 +554,7 @@ def _dispatch_call(
     # Apply models
     model_name = getattr(func_obj, "model_name", None)
     if model_name:
-        res = _apply_model(state, model_name, args, kwargs)
+        res = _apply_model(state, func_obj, args, kwargs)
         if res:
             return res
 
@@ -659,20 +659,20 @@ def handle_load_method(
     result_val: object = None
     type_name = "unknown"
     if isinstance(obj, SymbolicObject):
-        if obj.address != -1:
-            obj_state = state.memory.get(obj.address)
+        if obj.address != -1:  # type: ignore[union-attr]
+            obj_state = state.memory.get(obj.address)  # type: ignore[union-attr]
             if isinstance(obj_state, SymbolicList):
                 type_name = "list"
             elif isinstance(obj_state, SymbolicDict):
                 type_name = "dict"
             elif obj_state is None:
                 obj_state = {}
-                state.memory[obj.address] = obj_state
-            
+                state.memory[obj.address] = obj_state  # type: ignore[union-attr]
+
             if type_name != "unknown":
                 model_name = f"{type_name}.{attr_name}"
                 if _resolve_model(model_name):
-                    res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+                    res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
                     res_val.model_name = model_name
                     state = state.push(res_val)
                     if push_null:
@@ -681,27 +681,27 @@ def handle_load_method(
                     state = state.advance_pc()
                     return OpcodeResult.continue_with(state)
 
-            if isinstance(obj_state, dict) and attr_name in obj_state:
-                result_val: object = obj_state[attr_name]
+            if isinstance(obj_state, (dict, CowDict)) and attr_name in obj_state:
+                result_val = obj_state[attr_name]  # type: ignore[index]
             else:
-                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
-                obj_state[attr_name] = result_val
+                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
+                obj_state[attr_name] = result_val  # type: ignore[index]
                 state = state.add_constraint(type_constraint)
         else:
-            addresses = list(obj.potential_addresses)
+            addresses = list(obj.potential_addresses)  # type: ignore[union-attr]
             if not addresses:
-                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
                 state = state.add_constraint(type_constraint)
             else:
                 values: list[tuple[object, object]] = []
                 for addr in addresses:
-                    mem = state.memory.get(addr, {})
-                    if attr_name in mem:
-                        val = mem[attr_name]
+                    mem = state.memory.get(addr, {})  # type: ignore[arg-type]
+                    if attr_name in mem:  # type: ignore[operator]
+                        val = mem[attr_name]  # type: ignore[index]
                     else:
                         val, _ = SymbolicValue.symbolic(f"obj_{addr}.{attr_name}")
-                        mem[attr_name] = val
-                    values.append((addr, val))
+                        mem[attr_name] = val  # type: ignore[index]
+                    values.append((addr, val))  # type: ignore[arg-type]
                 if len(values) == 1:
                     result_val = values[0][1]
                 else:
@@ -715,13 +715,13 @@ def handle_load_method(
                     for addr, val in reversed(values[:-1]):
                         if not isinstance(val, SymbolicValue):
                             val = SymbolicValue.from_const(val)
-                        cond: object = obj.z3_addr == addr
+                        cond = obj.z3_addr == addr  # type: ignore[union-attr]
                         merged_z3_int = z3.If(cond, val.z3_int, merged_z3_int)
                         merged_z3_bool = z3.If(cond, val.z3_bool, merged_z3_bool)
                         merged_is_int = z3.If(cond, val.is_int, merged_is_int)
                         merged_is_bool = z3.If(cond, val.is_bool, merged_is_bool)
                     result_val = SymbolicValue(
-                        _name=f"{obj.name}.{attr_name}",
+                        _name=f"{obj.name}.{attr_name}",  # type: ignore[union-attr]
                         z3_int=merged_z3_int,
                         is_int=merged_is_int,
                         z3_bool=merged_z3_bool,
@@ -741,7 +741,7 @@ def handle_load_method(
     if type_name != "unknown":
         model_name = f"{type_name}.{attr_name}"
         if _resolve_model(model_name):
-            res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+            res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
             res_val.model_name = model_name
             state = state.push(res_val)
             if push_null:
@@ -777,7 +777,7 @@ def handle_load_method(
     if result_val is None:
         # If the object state itself exists but is not a dict (e.g., a SymbolicList),
         # then it's a builtin type that doesn't support arbitrary attributes.
-        res_type = type(obj_state).__name__ if obj_state is not None else "unknown"
+        res_type = type(obj_state).__name__ if obj_state is not None else "unknown"  # type: ignore
         if obj_state is not None and not isinstance(obj_state, (dict, CowDict)):
             issue = Issue(
                 kind=IssueKind.ATTRIBUTE_ERROR,
@@ -798,7 +798,7 @@ def handle_load_method(
         import z3 as _z3
         state = state.add_constraint(_z3.Not(result_val.is_none))
 
-    state = state.push(result_val)
+    state = state.push(result_val)  # type: ignore[arg-type]
     if push_null:
         state.push(
             obj if isinstance(obj, SymbolicObject) or type_name != "unknown" else SymbolicNone()
@@ -827,8 +827,8 @@ def handle_store_attr(
         )
     attr_name = str(instr.argval)
     if isinstance(obj, SymbolicObject):
-        if obj.address != -1:
-            obj_state = state.memory.get(obj.address)
+        if obj.address != -1:  # type: ignore[union-attr]
+            obj_state = state.memory.get(obj.address)  # type: ignore[union-attr]
             if obj_state is None:
                 obj_state = wrap_cow_dict({})
             elif not isinstance(obj_state, (dict, CowDict)):
@@ -842,10 +842,10 @@ def handle_store_attr(
                 return OpcodeResult.error(issue, state=state)
             else:
 
-                obj_state = wrap_cow_dict(obj_state).cow_fork()
+                obj_state = wrap_cow_dict(obj_state).cow_fork()  # type: ignore[arg-type]
 
             obj_state[attr_name] = value
-            state.memory[obj.address] = obj_state
+            state.memory[obj.address] = obj_state  # type: ignore[union-attr]
     elif isinstance(obj, SymbolicNone) or (
         isinstance(obj, SymbolicValue)
         and not is_satisfiable([*state.path_constraints, z3.Not(obj.is_none)])
@@ -917,7 +917,7 @@ def handle_load_build_class(
         state._building_class = True
         state._class_registry = enhanced_class_registry
     except (ImportError, AttributeError):
-        pass  # Used as expected type-check or feature fallback
+        pass
     builtin_val = SymbolicValue(
         _name="__build_class__",
         z3_int=z3.IntVal(0),

@@ -25,13 +25,15 @@ def structural_hash(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
         Integer hash suitable for use as a cache key.
     """
 
-    h = 0x345678
-    mult = 1000003
+    h = 0x3456789A
+    mult = 1000000007
     for c in constraints:
-        h = (h ^ c.hash()) * mult
-        mult += 82520
+        # Prevent arbitrary precision integer explosion by masking inside the loop
+        ch = c.hash() & 0xFFFFFFFFFFFFFFFF
+        h = ((h ^ ch) * mult) & 0xFFFFFFFFFFFFFFFF
+        mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF
     h ^= len(constraints)
-    return h & 0xFFFFFFFF
+    return h & 0xFFFFFFFFFFFFFFFF
 
 
 def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
@@ -50,10 +52,11 @@ def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> 
         return 0
     hashes = sorted(c.hash() for c in constraints)
 
-    h = 0x345678
-    mult = 1000003
+    h = 0x3456789A
+    mult = 1000000007
     for ch in hashes:
-        h = (h ^ ch) * mult
-        mult += 82520
+        ch = ch & 0xFFFFFFFFFFFFFFFF
+        h = ((h ^ ch) * mult) & 0xFFFFFFFFFFFFFFFF
+        mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF
     h ^= len(constraints)
-    return h & 0xFFFFFFFF
+    return h & 0xFFFFFFFFFFFFFFFF

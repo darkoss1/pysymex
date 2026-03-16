@@ -44,11 +44,9 @@ class ConsoleScanReporter:
         )
 
     def on_issue(self, issue: dict[str, object]) -> None:
-        """On issue."""
         print(f"   \u2022 [{issue['kind']}] {issue['message']} (Line {issue['line']})")
 
     def on_error(self, _file_path: object, error: str) -> None:
-        """On error."""
         print(f"\n\u274c {error}")
 
     def on_progress(

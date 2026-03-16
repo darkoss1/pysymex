@@ -14,9 +14,6 @@ import dis
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-)
 
 from pysymex._compat import get_starts_line
 from pysymex.analysis.patterns.core import (
@@ -43,7 +40,6 @@ class StringMultiplyHandler(PatternHandler):
     """Handles string multiplication patterns (str * int)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.STRING_MULTIPLY}
 
     def match(
@@ -117,7 +113,6 @@ class OptionalChainHandler(PatternHandler):
     """Handles optional chaining patterns (x and x.attr)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.OPTIONAL_CHAIN}
 
     def match(
@@ -166,7 +161,6 @@ class NullCoalesceHandler(PatternHandler):
     """Handles null coalesce patterns (x or default)."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.NULL_COALESCE}
 
     def match(
@@ -204,7 +198,6 @@ class SafeCollectionHandler(PatternHandler):
     """Handles safe collection operations that don't raise errors."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {
             PatternKind.LIST_APPEND,
             PatternKind.LIST_EXTEND,
@@ -274,7 +267,6 @@ class TryExceptHandler(PatternHandler):
     """Handles try/except patterns."""
 
     def pattern_kinds(self) -> set[PatternKind]:
-        """Pattern kinds."""
         return {PatternKind.TRY_EXCEPT_PATTERN}
 
     def match(
@@ -325,8 +317,6 @@ class PatternRegistry:
     """Registry of all pattern handlers."""
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.handlers: list[PatternHandler] = []
         self._kind_to_handlers: dict[PatternKind, list[PatternHandler]] = defaultdict(list)
         self._register_default_handlers()
@@ -373,8 +363,6 @@ class PatternMatcher:
         self,
         registry: PatternRegistry | None = None,
     ) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.registry = registry or PatternRegistry()
         self._cache: dict[int, list[PatternMatch]] = {}
 
@@ -436,8 +424,6 @@ class PatternAnalyzer:
     """
 
     def __init__(self) -> None:
-        """Init."""
-        """Initialize the class instance."""
         self.registry = PatternRegistry()
         self.matcher = PatternMatcher(self.registry)
 
