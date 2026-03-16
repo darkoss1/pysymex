@@ -123,5 +123,5 @@ When reporting bugs, please include:
 Contact
 -------
 
-- GitHub Issues: https://github.com/darkoss1/pyspecter/issues
-- Discussions: https://github.com/darkoss1/pyspecter/discussions
+- GitHub Issues: https://github.com/darkoss1/pysymex/issues
+- Discussions: https://github.com/darkoss1/pysymex/discussions
