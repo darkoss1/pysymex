@@ -14,8 +14,8 @@ class TestIncrementalSolverBasic:
         assert solver._cache_hits == 0
 
     def test_backward_compat_alias(self):
-        """ShadowSolver should be an alias for IncrementalSolver."""
-        assert ShadowSolver is IncrementalSolver
+        """ShadowSolver should be a deprecated subclass of IncrementalSolver."""
+        assert issubclass(ShadowSolver, IncrementalSolver)
 
     def test_simple_sat(self):
         solver = IncrementalSolver()

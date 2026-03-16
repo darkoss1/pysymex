@@ -95,8 +95,18 @@ def _guarded_nonzero_divisor(divisor: z3.ArithRef) -> z3.ArithRef:
 
 
 def _py_floor_div(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:
-    """Python-compatible floor division for Z3 integers."""
-    return z3.If(b >= 0, a / b, (-a) / (-b))
+    """Python-compatible floor division for Z3 integers.
+
+    Python's ``//`` rounds toward negative infinity.  Z3's integer ``/``
+    uses Euclidean division (remainder always >= 0), which matches Python
+    when ``b > 0`` but differs by 1 when ``b < 0`` and the remainder is
+    non-zero.  Correct by subtracting 1 in that case.
+    """
+    return z3.If(
+        b > 0,
+        a / b,
+        z3.If(a % b == 0, a / b, a / b - 1),
+    )
 
 
 def _py_mod(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:

@@ -204,14 +204,6 @@ class DirectedPathManager(PathManager["VMState"]):
         return len(self._heap)
 
 
-@dataclass(frozen=True)
-class StateEntry:
-    """Wrapper to treat each added state as a unique entry in AdaptivePathManager."""
-
-    state: VMState
-    entry_id: int
-
-
 class AdaptivePathManager(PathManager["VMState"]):
     """Multi-armed bandit path manager using Thompson Sampling.
 
@@ -245,9 +237,10 @@ class AdaptivePathManager(PathManager["VMState"]):
         random_prior: tuple[float, float] = (1.0, 1.0),
     ):
         self._entry_counter = itertools.count()
-        self._dfs: list[StateEntry] = []  # stack (LIFO)
-        self._coverage_heap: list[PrioritizedState[StateEntry]] = []
-        self._random_pool: list[StateEntry] = []
+        self.store: dict[int, VMState] = {}
+        self._dfs: list[int] = []  # stack of entry IDs (LIFO)
+        self._coverage_heap: list[PrioritizedState[int]] = []  # heap of (priority, eid)
+        self._random_pool: list[int] = []  # list of entry IDs
 
         # Beta(alpha, beta) priors for each arm
         self._arms: dict[str, list[float]] = {
@@ -264,13 +257,14 @@ class AdaptivePathManager(PathManager["VMState"]):
         self._arm_selections: dict[str, int] = {a: 0 for a in self._arms}
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        entry = StateEntry(state, next(self._entry_counter))
-        self._dfs.append(entry)
+        eid = next(self._entry_counter)
+        self.store[eid] = state
+        self._dfs.append(eid)
 
         new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
-        heapq.heappush(self._coverage_heap, PrioritizedState(-new_pcs, entry))
+        heapq.heappush(self._coverage_heap, PrioritizedState(-new_pcs, eid))
 
-        self._random_pool.append(entry)
+        self._random_pool.append(eid)
         self._total_entries += 1
 
     def record_reward(self, reward: float) -> None:
@@ -305,33 +299,36 @@ class AdaptivePathManager(PathManager["VMState"]):
                 best_arm = arm_name
         return best_arm
 
-    def _pop_unique_from_stack(self, stack: list[StateEntry]) -> VMState | None:
+    def _pop_unique_from_stack(self, stack: list[int]) -> VMState | None:
         while stack:
-            entry = stack.pop()
-            if entry.entry_id not in self._returned_ids:
-                self._returned_ids.add(entry.entry_id)
-                self._covered_pcs.update(entry.state.visited_pcs)
-                return entry.state
+            eid = stack.pop()
+            if eid not in self._returned_ids:
+                self._returned_ids.add(eid)
+                state = self.store.pop(eid)
+                self._covered_pcs.update(state.visited_pcs)
+                return state
         return None
 
     def _pop_unique_from_heap(self) -> VMState | None:
         while self._coverage_heap:
             ps = heapq.heappop(self._coverage_heap)
-            entry = ps.state  # PrioritizedState.state is a StateEntry here
-            if entry.entry_id not in self._returned_ids:
-                self._returned_ids.add(entry.entry_id)
-                self._covered_pcs.update(entry.state.visited_pcs)
-                return entry.state
+            eid = ps.state  # PrioritizedState.state is an entry ID here
+            if eid not in self._returned_ids:
+                self._returned_ids.add(eid)
+                state = self.store.pop(eid)
+                self._covered_pcs.update(state.visited_pcs)
+                return state
         return None
 
     def _pop_unique_random(self) -> VMState | None:
         while self._random_pool:
             idx = _random_mod.randint(0, len(self._random_pool) - 1)
-            entry = self._random_pool.pop(idx)
-            if entry.entry_id not in self._returned_ids:
-                self._returned_ids.add(entry.entry_id)
-                self._covered_pcs.update(entry.state.visited_pcs)
-                return entry.state
+            eid = self._random_pool.pop(idx)
+            if eid not in self._returned_ids:
+                self._returned_ids.add(eid)
+                state = self.store.pop(eid)
+                self._covered_pcs.update(state.visited_pcs)
+                return state
         return None
 
     def get_next_state(self) -> VMState | None:

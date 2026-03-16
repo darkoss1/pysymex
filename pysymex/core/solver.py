@@ -747,7 +747,22 @@ class IncrementalSolver:
         )
 
 
-ShadowSolver = IncrementalSolver
+class ShadowSolver(IncrementalSolver):
+    """Deprecated alias for IncrementalSolver.
+
+    The name ``ShadowSolver`` is misleading in a symbolic execution
+    context. Use ``IncrementalSolver`` directly instead.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        import warnings
+
+        warnings.warn(
+            "ShadowSolver is deprecated, use IncrementalSolver directly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class PortfolioSolver:
@@ -954,7 +969,11 @@ def get_model(constraints: Any) -> z3.ModelRef | None:
 
 
 def _get_model_cached(constraints: tuple[z3.BoolRef, ...]) -> z3.ModelRef | None:
-    """Cached implementation of get_model. (DISABLED)"""
+    """Standalone (non-incremental) model extraction.
+
+    Not actually cached: z3.BoolRef is unhashable so functools.lru_cache
+    cannot be applied.  Use IncrementalSolver for hot paths.
+    """
     solver = z3.Solver()
     solver.set("timeout", 5000)
     solver.add(constraints)
@@ -970,7 +989,11 @@ def get_model_string(constraints: list[z3.BoolRef]) -> str | None:
 
 
 def prove(claim: z3.BoolRef) -> bool:
-    """Prove that a claim is always true. (DISABLED CACHE)"""
+    """Prove that a claim is always true.
+
+    Uses a fresh solver per call (no cache) because z3.BoolRef is
+    unhashable.  For repeated validity checks prefer IncrementalSolver.
+    """
     solver = z3.Solver()
     solver.set("timeout", 5000)
     solver.add(z3.Not(claim))

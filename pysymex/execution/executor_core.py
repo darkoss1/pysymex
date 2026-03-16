@@ -129,6 +129,7 @@ class SymbolicExecutor:
         self._type_analyzer: TypeAnalyzer | None = None
         self._abstract_analyzer: AbstractAnalyzer | None = None
         self._effect_summaries: dict[str, object] = {}
+        self._degraded_passes: list[str] = []
         self._prev_loop_states: dict[int, VMState] = {}
         self._interaction_graph = ConstraintInteractionGraph(self.solver._optimizer)
         if self.config.enable_taint_tracking:
@@ -155,7 +156,8 @@ class SymbolicExecutor:
             try:
                 self._abstract_analyzer = AbstractAnalyzer()
             except (ImportError, RuntimeError, TypeError):
-                logger.debug("Failed to initialize abstract analyzer", exc_info=True)
+                logger.warning("Failed to initialize abstract analyzer", exc_info=True)
+                self._degraded_passes.append("abstract_interpretation")
         limits = ResourceLimits(
             max_paths=self.config.max_paths,
             max_depth=self.config.max_depth,
@@ -266,7 +268,8 @@ class SymbolicExecutor:
                 self._cross_function.analyze_module(code)
                 self._effect_summaries = getattr(self._cross_function, "effect_summaries", {})
             except (AttributeError, TypeError, RuntimeError, RecursionError):
-                logger.debug("Cross-function analysis failed", exc_info=True)
+                logger.warning("Cross-function analysis failed", exc_info=True)
+                self._degraded_passes.append("cross_function")
                 self._cross_function = None
         if self.config.enable_type_inference:
             try:
@@ -275,7 +278,8 @@ class SymbolicExecutor:
                 if analyze_fn is not None:
                     analyze_fn(code)
             except (ImportError, AttributeError, TypeError, RuntimeError):
-                logger.debug("Type analyzer initialization failed", exc_info=True)
+                logger.warning("Type analyzer initialization failed", exc_info=True)
+                self._degraded_passes.append("type_inference")
                 self._type_analyzer = None
         self._execute_loop()
         self._promote_abstract_hints()
@@ -287,7 +291,8 @@ class SymbolicExecutor:
                 final_issues = filter_issues(final_issues)
                 final_issues = deduplicate_issues(final_issues)
             except (TypeError, ValueError, KeyError, AttributeError):
-                logger.debug("FP filtering/deduplication failed, using raw issues", exc_info=True)
+                logger.warning("FP filtering/deduplication failed, using raw issues", exc_info=True)
+                self._degraded_passes.append("fp_filtering")
                 final_issues = self._issues
         result = ExecutionResult(
             issues=final_issues,
@@ -303,6 +308,7 @@ class SymbolicExecutor:
             branches=getattr(self, "_last_branches", []),
             treewidth_stats=self._interaction_graph.get_stats(),
             solver_stats=self.solver.get_stats(),
+            degraded_passes=self._degraded_passes,
         )
         if cache_key is not None and self._result_cache is not None:
             self._result_cache.put(cache_key, result)
@@ -383,7 +389,8 @@ class SymbolicExecutor:
             try:
                 self._state_merger.detect_join_points(self._instructions, code=code)
             except (AttributeError, TypeError, IndexError, ValueError):
-                logger.debug("State merger join-point detection failed", exc_info=True)
+                logger.warning("State merger join-point detection failed", exc_info=True)
+                self._degraded_passes.append("state_merger")
 
         if self._abstract_analyzer is not None:
             self._run_abstract_interpretation(code)
@@ -397,7 +404,8 @@ class SymbolicExecutor:
                 final_issues = filter_issues(final_issues)
                 final_issues = deduplicate_issues(final_issues)
             except (TypeError, ValueError, KeyError, AttributeError):
-                logger.debug("FP filtering/deduplication failed, using raw issues", exc_info=True)
+                logger.warning("FP filtering/deduplication failed, using raw issues", exc_info=True)
+                self._degraded_passes.append("fp_filtering")
                 final_issues = self._issues
         return ExecutionResult(
             issues=final_issues,
@@ -413,6 +421,7 @@ class SymbolicExecutor:
             branches=getattr(self, "_last_branches", []),
             treewidth_stats=self._interaction_graph.get_stats(),
             solver_stats=self.solver.get_stats(),
+            degraded_passes=self._degraded_passes,
         )
 
     def _reset(self) -> None:
@@ -433,6 +442,7 @@ class SymbolicExecutor:
         self._paths_pruned = 0
         self._iterations = 0
         self._last_branches = []
+        self._degraded_passes: list[str] = []
         self._loop_detector = None
         self._loop_widening = None
         self._prev_loop_states = {}
@@ -510,6 +520,8 @@ class SymbolicExecutor:
 
         for msg, line, pc in self._abstract_hints:
             kind = self._infer_issue_kind(msg)
+            if kind is IssueKind.UNKNOWN:
+                continue
             if kind in confirmed_kinds:
                 self._issues.append(
                     Issue(
@@ -537,7 +549,7 @@ class SymbolicExecutor:
         if "attribute" in lower:
             return IssueKind.ATTRIBUTE_ERROR
 
-        return IssueKind.DIVISION_BY_ZERO
+        return IssueKind.UNKNOWN
 
     def _create_initial_state(
         self,

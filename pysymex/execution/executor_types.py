@@ -149,6 +149,7 @@ class ExecutionResult:
     branches: list[object] = field(default_factory=list[object])
     treewidth_stats: dict[str, object] = field(default_factory=dict[str, object])
     solver_stats: dict[str, object] = field(default_factory=dict[str, object])
+    degraded_passes: list[str] = field(default_factory=list[str])
 
     def has_issues(self) -> bool:
         """Check if any issues were found."""
