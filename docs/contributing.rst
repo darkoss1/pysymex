@@ -11,7 +11,7 @@ Development Setup
 
    .. code-block:: bash
 
-      git clone https://github.com/darkoss1/pyspecter.git
+      git clone https://github.com/darkoss1/pysymex.git
       cd pyspecter
 
 2. Create a virtual environment:
