@@ -28,17 +28,18 @@ if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
 
-def _get_symbolic_dict(arg: object, state: VMState) -> SymbolicDict | None:
+def _get_symbolic_dict(arg: object, state: VMState | None = None) -> SymbolicDict | None:
     """Extract SymbolicDict from argument, resolving SymbolicObject if needed."""
     if isinstance(arg, SymbolicDict):
         return arg
-    from pysymex.core.types_containers import SymbolicObject
-    if isinstance(arg, SymbolicObject):
-        addr = arg.address
-        if addr in state.memory:
-            val = state.memory[addr]
-            if isinstance(val, SymbolicDict):
-                return val
+    if state is not None:
+        from pysymex.core.types_containers import SymbolicObject
+        if isinstance(arg, SymbolicObject):
+            addr = arg.address
+            if addr in state.memory:
+                val = state.memory[addr]
+                if isinstance(val, SymbolicDict):
+                    return val
     return None
 
 

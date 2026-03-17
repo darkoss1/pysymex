@@ -94,6 +94,11 @@ class SymbolicList(SymbolicType):
             new_labels.update(label)
         return dataclasses.replace(self, taint_labels=frozenset(new_labels))
 
+    def copy(self) -> SymbolicList:
+        """Return a shallow copy of this symbolic list."""
+        import dataclasses
+        return dataclasses.replace(self)
+
     @staticmethod
     def symbolic(name: str, element_type: str = "int") -> tuple[SymbolicList, z3.BoolRef]:
         """Create a fresh symbolic list."""

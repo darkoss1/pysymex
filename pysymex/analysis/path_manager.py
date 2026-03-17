@@ -205,7 +205,7 @@ class DirectedPathManager(PathManager["VMState"]):
 
 
 class AdaptivePathManager(PathManager["VMState"]):
-    """Multi-armed bandit path manager using Thompson Sampling.
+    """Multi-armed bandit path manager using Discounted Thompson Sampling.
 
     Maintains three sub-strategies (DFS, coverage-guided, random) and
     uses a conjugate Beta-Bernoulli model per arm to balance
@@ -213,13 +213,21 @@ class AdaptivePathManager(PathManager["VMState"]):
     whether following a strategy leads to new coverage or issue
     discovery.
 
+    To handle the highly non-stationary environment of symbolic execution
+    (where "coverage" rewards naturally dry up over time), a discount
+    factor γ ∈ (0, 1) is applied to gradually forget outdated successes.
+    Rewards are normalized to [0, 1] to maintain strict Bayesian conjugate
+    prior validity.
+
     Thompson Sampling has O(sqrt(T log T)) regret and naturally
     adapts to the project's bug-distribution: projects with many
     arithmetic bugs reward DFS differently than web frameworks with
-    taint-flow vulnerabilities.
+    taint-flow vulnerabilities. The discounted variant achieves robust
+    bounds under non-stationary bandit theory.
 
     Attributes:
         _arms: Per-strategy Beta priors (alpha, beta).
+        _gamma: Discount factor for non-stationarity (default 0.95).
         _covered_pcs: Global set of covered program counters.
         _last_arm: Which arm was selected for the most recent state.
         _total_rewards: Cumulative reward signal for diagnostics.
@@ -230,11 +238,16 @@ class AdaptivePathManager(PathManager["VMState"]):
     ARM_COVERAGE = "coverage"
     ARM_RANDOM = "random"
 
+    # Reward normalization bounds (raw rewards mapped to [0, 1])
+    _REWARD_MIN = -5.0
+    _REWARD_MAX = 10.0
+
     def __init__(
         self,
         dfs_prior: tuple[float, float] = (2.0, 1.0),
         coverage_prior: tuple[float, float] = (2.0, 1.0),
         random_prior: tuple[float, float] = (1.0, 1.0),
+        gamma: float = 0.95,
     ):
         self._entry_counter = itertools.count()
         self.store: dict[int, VMState] = {}
@@ -255,6 +268,7 @@ class AdaptivePathManager(PathManager["VMState"]):
         self._last_arm: str | None = None
         self._total_rewards: float = 0.0
         self._arm_selections: dict[str, int] = {a: 0 for a in self._arms}
+        self._gamma = gamma
 
     def add_state(self, state: VMState, priority: float = 0.0) -> None:
         eid = next(self._entry_counter)
@@ -270,6 +284,15 @@ class AdaptivePathManager(PathManager["VMState"]):
     def record_reward(self, reward: float) -> None:
         """Feed a reward signal back to update the last-selected arm.
 
+        Uses Discounted Thompson Sampling: rewards are normalized to [0, 1]
+        to maintain strict Bayesian conjugate prior validity, and a discount
+        factor γ is applied to gradually forget outdated successes for
+        non-stationary environments.
+
+        Update rule:
+            α_k ← γ·α_k + r
+            β_k ← γ·β_k + (1 - r)
+
         Call this after the executor processes the state returned by
         ``get_next_state()``.  Typical reward signals:
 
@@ -281,11 +304,16 @@ class AdaptivePathManager(PathManager["VMState"]):
         """
         if self._last_arm is None:
             return
+
+        # Normalize reward to [0, 1] for conjugate prior validity
+        clamped = max(self._REWARD_MIN, min(self._REWARD_MAX, reward))
+        r = (clamped - self._REWARD_MIN) / (self._REWARD_MAX - self._REWARD_MIN)
+
+        # Discounted update: decay prior then add observation
         arm = self._arms[self._last_arm]
-        if reward > 0:
-            arm[0] += min(reward, 10.0)  # cap alpha increment
-        else:
-            arm[1] += min(abs(reward), 5.0)  # cap beta increment
+        arm[0] = self._gamma * arm[0] + r
+        arm[1] = self._gamma * arm[1] + (1.0 - r)
+
         self._total_rewards += reward
 
     def _thompson_sample(self) -> str:
@@ -293,7 +321,10 @@ class AdaptivePathManager(PathManager["VMState"]):
         best_arm = self.ARM_DFS
         best_sample = -1.0
         for arm_name, (alpha, beta) in self._arms.items():
-            sample = _random_mod.betavariate(alpha, beta)
+            # Clamp to epsilon: betavariate requires strictly positive params.
+            # After many gamma-discounted updates the losing arm's beta (or
+            # alpha) can decay toward 0 via float underflow, causing ValueError.
+            sample = _random_mod.betavariate(max(alpha, 1e-10), max(beta, 1e-10))
             if sample > best_sample:
                 best_sample = sample
                 best_arm = arm_name

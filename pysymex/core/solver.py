@@ -171,7 +171,7 @@ class IncrementalSolver:
         self._is_unsat_context: set[int] = set()
         self._portfolio: PortfolioSolver | None = None
         self._escalation_threshold_ms: float = 500.0
-        self._theory_hits: dict[str, int] = {"qflia": 0, "qfs": 0, "mixed": 0}
+        self._theory_hits: dict[str, int] = {"qflia": 0, "qfs": 0, "qfbv": 0, "mixed": 0}
         self._escalations: int = 0
 
     def reset(self) -> None:
@@ -435,12 +435,23 @@ class IncrementalSolver:
             self._reset_theory_config()
         elapsed_ms = (time.perf_counter() - start_ns) * 1000
 
-        # Auto-escalate slow/unknown queries to portfolio solver
+        # Auto-escalate slow/unknown queries to portfolio solver.
+        # Unknown results always use force=True to bypass the time guard —
+        # Z3 may return unknown quickly (internal resource exhaustion) and
+        # must still be escalated to avoid incorrect UNSAT conclusions.
         if result.is_unknown or elapsed_ms >= self._escalation_threshold_ms:
-            escalated = self._try_escalate(constraints, elapsed_ms)
+            escalated = self._try_escalate(
+                constraints, elapsed_ms, force=result.is_unknown
+            )
             if escalated is not None and not escalated.is_unknown:
                 self._cache_store(cache_key, cache_disc, escalated)
                 return escalated.is_sat
+
+        # If the result is still unknown, conservatively return True (SAT):
+        # treating unknown as UNSAT would prune potentially-feasible paths,
+        # which is unsound for path completeness.
+        if result.is_unknown:
+            return True
 
         self._cache_store(cache_key, cache_disc, result)
         return result.is_sat
@@ -641,6 +652,10 @@ class IncrementalSolver:
             elif sort_kind == z3.Z3_BV_SORT:
                 has_bv = True
 
+            # Early exit: once we know the result will be "mixed", stop scanning.
+            if sum([has_string, has_bv, has_nonlinear]) >= 2:
+                break
+
             if z3.is_app(expr):
                 decl = expr.decl()
                 dk = decl.kind()
@@ -660,6 +675,12 @@ class IncrementalSolver:
                     if child.get_id() not in visited:
                         stack.append(child)
 
+        # Classify: if more than one non-LIA theory is present, call it mixed
+        # so the caller doesn't apply a single-theory optimisation to a query
+        # that spans multiple theories.
+        theory_count = sum([has_string, has_bv, has_nonlinear])
+        if theory_count > 1:
+            return "mixed"
         if has_string:
             return "qfs"
         if has_bv:
@@ -701,16 +722,33 @@ class IncrementalSolver:
             self._solver.set("smt.arith.solver", 2)
         except z3.Z3Exception:
             pass
+        try:
+            self._solver.set("smt.string_solver", "auto")
+        except z3.Z3Exception:
+            pass
 
-    def _try_escalate(self, constraints: list[z3.BoolRef], elapsed_ms: float) -> SolverResult | None:
+    def _try_escalate(
+        self,
+        constraints: list[z3.BoolRef],
+        elapsed_ms: float,
+        force: bool = False,
+    ) -> SolverResult | None:
         """Escalate to :class:`PortfolioSolver` when a query is too slow.
 
         Called by :meth:`is_sat` when a single-solver ``check()`` returns
         ``unknown`` or exceeds :attr:`_escalation_threshold_ms`.
 
-        Returns a definitive result, or ``None`` if escalation also fails.
+        Args:
+            constraints: Constraints to re-check with the portfolio solver.
+            elapsed_ms: Time the primary solver spent on this query.
+            force: When True, bypass the time threshold guard (used when
+                the primary solver returned ``unknown`` quickly — e.g. via
+                an internal resource exhaustion).
+
+        Returns:
+            A definitive result, or ``None`` if escalation also fails.
         """
-        if elapsed_ms < self._escalation_threshold_ms:
+        if not force and elapsed_ms < self._escalation_threshold_ms:
             return None
 
         self._escalations += 1

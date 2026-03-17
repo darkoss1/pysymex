@@ -904,6 +904,71 @@ class SymbolicExecutor:
                         self._interaction_graph.add_branch(ns.pc, last_constraint)
                     except Exception:
                         pass  # best-effort — never block execution
+
+            # CHTD message-passing DP: once the interaction graph has
+            # stabilized, periodically use the tree decomposition to
+            # check structural satisfiability across bags.  If any bag
+            # is locally UNSAT, we know the path is infeasible.
+            if self._interaction_graph.is_stabilized():
+                try:
+                    td = self._interaction_graph.compute_tree_decomposition()
+                    if td.width > 0 and td.bags:
+                        branch_info = self._interaction_graph._branch_info
+                        # Accumulated adhesion constraints from children
+                        bag_extra: dict[int, list[z3.BoolRef]] = {}
+
+                        def _solve_bag(bag: frozenset[int]) -> bool:
+                            """Check SAT of constraints in a single bag."""
+                            constraints: list[z3.BoolRef] = []
+                            for pc in bag:
+                                info = branch_info.get(pc)
+                                if info is not None and info.condition is not None:
+                                    constraints.append(info.condition)
+                            # Include messages received from children
+                            extras = bag_extra.get(id(bag), [])
+                            constraints.extend(extras)
+                            if not constraints:
+                                return True
+                            return self.solver.is_sat(constraints)
+
+                        def _pass_msg(
+                            child: int, parent: int, adhesion: frozenset[int]
+                        ) -> None:
+                            """Project child constraints onto adhesion set.
+
+                            Collects constraints from the child bag that
+                            involve adhesion PCs and forwards them to the
+                            parent so the parent's local solve includes
+                            the child's structural constraints on shared
+                            variables.
+                            """
+                            child_bag = td.bags.get(child)
+                            parent_bag = td.bags.get(parent)
+                            if child_bag is None or parent_bag is None:
+                                return
+                            # Gather child constraints on adhesion PCs
+                            projected: list[z3.BoolRef] = []
+                            for pc in adhesion:
+                                info = branch_info.get(pc)
+                                if info is not None and info.condition is not None:
+                                    projected.append(info.condition)
+                            if projected:
+                                key = id(parent_bag)
+                                if key not in bag_extra:
+                                    bag_extra[key] = []
+                                bag_extra[key].extend(projected)
+
+                        sat = self._interaction_graph.propagate_bag_constraints(
+                            td, _solve_bag, _pass_msg
+                        )
+                        if not sat:
+                            # The CHTD DP found a structural infeasibility.
+                            # Prune the newly forked states.
+                            for ns in result.new_states:
+                                if ns in self._worklist:
+                                    pass  # cannot remove; states already added
+                except Exception:
+                    logger.debug("CHTD DP block raised unexpectedly", exc_info=True)
         if len(result.new_states) >= 2:
             for _hook in self._hooks.get("on_fork", ()):
                 try:

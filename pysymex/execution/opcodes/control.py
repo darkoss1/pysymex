@@ -44,8 +44,9 @@ def get_truthy_expr(value: object) -> z3.BoolRef:
     Returns:
         A Z3 boolean expression representing the truthiness of the value.
     """
-    if hasattr(value, "could_be_truthy"):
-        return value.could_be_truthy()
+    # --- Affinity fast path (CHTD key enabler) ---
+    # Must be checked BEFORE could_be_truthy() so known-type values
+    # emit a single-sort Z3 expression without discriminator variables.
     if isinstance(value, SymbolicValue):
         aff = value.affinity_type
         if aff == "bool" and value.z3_bool is not None:
@@ -53,14 +54,13 @@ def get_truthy_expr(value: object) -> z3.BoolRef:
         if aff == "int" and value.z3_int is not None:
             return value.z3_int != 0
         if aff == "float" and value.z3_float is not None:
-            return value.z3_float != 0
+            return z3.Not(z3.fpIsZero(value.z3_float))
         if aff == "str" and value.z3_str is not None:
             return z3.Length(value.z3_str) != 0
-        # General case — full discriminator encoding
-        return z3.Or(
-            z3.And(value.is_bool, value.z3_bool),
-            z3.And(value.is_int, value.z3_int != 0),
-        )
+        # Fall through to could_be_truthy() for NoneType / unknown affinity
+
+    if hasattr(value, "could_be_truthy"):
+        return value.could_be_truthy()
 
     if isinstance(value, bool):
         return z3.BoolVal(value)
@@ -395,7 +395,15 @@ def handle_jump_or_pop(
     pop_state = pop_state.add_constraint(z3.Not(cond_expr) if jump_on_true else cond_expr)
     pop_state.pop()
     pop_state = pop_state.set_pc(state.pc + 1)
-    return OpcodeResult.branch([jump_state, pop_state])
+
+    branches = []
+    if is_satisfiable(jump_state.path_constraints):
+        branches.append(jump_state)
+    if is_satisfiable(pop_state.path_constraints):
+        branches.append(pop_state)
+    if not branches:
+        return OpcodeResult.terminate()
+    return OpcodeResult.branch(branches)
 
 
 @opcode_handler("RAISE_VARARGS")

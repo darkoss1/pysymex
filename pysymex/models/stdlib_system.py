@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import z3
+
 from pysymex.core.addressing import next_address
 from pysymex.core.types import (
     SymbolicList,
@@ -272,8 +274,8 @@ class RandomRandomModel(FunctionModel):
             constraints=[
                 constraint,
                 result.is_float,
-                result.z3_real >= 0,
-                result.z3_real < 1,
+                z3.fpGEQ(result.z3_float, z3.FPVal(0.0, z3.Float64())),
+                z3.fpLT(result.z3_float, z3.FPVal(1.0, z3.Float64())),
             ],
         )
 
@@ -378,9 +380,9 @@ class RandomUniformModel(FunctionModel):
         if len(args) >= 2:
             a, b = args[0], args[1]
             if isinstance(a, (int, float)):
-                constraints.append(result.z3_real >= a)
+                constraints.append(z3.fpGEQ(result.z3_float, z3.FPVal(float(a), z3.Float64())))
             if isinstance(b, (int, float)):
-                constraints.append(result.z3_real <= b)
+                constraints.append(z3.fpLEQ(result.z3_float, z3.FPVal(float(b), z3.Float64())))
         return ModelResult(value=result, constraints=constraints)
 
 

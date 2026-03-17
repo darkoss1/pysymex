@@ -37,7 +37,7 @@ class ExceptionAnalyzer:
         path_condition: z3.BoolRef | None = None,
     ) -> None:
         """Add a potential exception that may be raised."""
-        if path_condition:
+        if path_condition is not None:
             exc = replace(exc, condition=z3.And(exc.condition or z3.BoolVal(True), path_condition))
         self._potential_exceptions.append(exc)
 

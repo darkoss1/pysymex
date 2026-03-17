@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from pysymex.analysis.detectors import DetectorRegistry, Issue, default_registry
-from pysymex.core.solver import ShadowSolver
+from pysymex.core.solver import IncrementalSolver
 from pysymex.execution.dispatcher import OpcodeDispatcher
 
 # Missing imports recovered from common patterns
@@ -15,6 +15,7 @@ from pysymex.analysis.contracts.decorators import get_function_contract
 from pysymex.analysis.properties import ArithmeticVerifier, PropertyProver
 from pysymex.analysis.path_manager import PathManager
 from pysymex.execution.termination import (
+    RankingFunction,
     TerminationAnalyzer,
     TerminationProof,
     TerminationStatus,
@@ -94,7 +95,7 @@ class VerifiedExecutor:
         self.config = config or VerifiedExecutionConfig()
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
-        self.solver = ShadowSolver(timeout_ms=self.config.solver_timeout_ms)
+        self.solver = IncrementalSolver(timeout_ms=self.config.solver_timeout_ms)
         self.contract_verifier = ContractVerifier(timeout_ms=self.config.solver_timeout_ms)
         self.property_prover = PropertyProver(timeout_ms=self.config.solver_timeout_ms)
         self.arithmetic_verifier = ArithmeticVerifier(

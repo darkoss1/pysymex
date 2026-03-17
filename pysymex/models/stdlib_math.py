@@ -42,8 +42,7 @@ class MathSqrtModel(FunctionModel):
                     constraint,
                     result.is_float,
                     x.z3_int >= 0,
-                    result.z3_real >= 0,
-                    result.z3_real * result.z3_real == z3.ToReal(x.z3_int),
+                    z3.fpGEQ(result.z3_float, z3.FPVal(0.0, z3.Float64())),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"sqrt_{state .pc }")
@@ -163,7 +162,7 @@ class MathExpModel(FunctionModel):
                 constraints=[
                     constraint,
                     result.is_float,
-                    result.z3_real > 0,
+                    z3.fpGT(result.z3_float, z3.FPVal(0.0, z3.Float64())),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"exp_{state .pc }")
@@ -191,8 +190,8 @@ class MathSinModel(FunctionModel):
             constraints=[
                 constraint,
                 result.is_float,
-                result.z3_real >= -1,
-                result.z3_real <= 1,
+                z3.fpGEQ(result.z3_float, z3.FPVal(-1.0, z3.Float64())),
+                z3.fpLEQ(result.z3_float, z3.FPVal(1.0, z3.Float64())),
             ],
         )
 
@@ -218,8 +217,8 @@ class MathCosModel(FunctionModel):
             constraints=[
                 constraint,
                 result.is_float,
-                result.z3_real >= -1,
-                result.z3_real <= 1,
+                z3.fpGEQ(result.z3_float, z3.FPVal(-1.0, z3.Float64())),
+                z3.fpLEQ(result.z3_float, z3.FPVal(1.0, z3.Float64())),
             ],
         )
 
@@ -265,14 +264,12 @@ class MathFabsModel(FunctionModel):
                 constraints=[
                     constraint,
                     result.is_float,
-                    result.z3_real
-                    == z3.If(z3.ToReal(x.z3_int) >= 0, z3.ToReal(x.z3_int), -z3.ToReal(x.z3_int)),
-                    result.z3_real >= 0,
+                    z3.fpGEQ(result.z3_float, z3.FPVal(0.0, z3.Float64())),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"fabs_{state .pc }")
         return ModelResult(
-            value=result, constraints=[constraint, result.is_float, result.z3_real >= 0]
+            value=result, constraints=[constraint, result.is_float, z3.fpGEQ(result.z3_float, z3.FPVal(0.0, z3.Float64()))]
         )
 
 
@@ -347,14 +344,18 @@ class MathIsCloseModel(FunctionModel):
             rel_tol = kwargs.get("rel_tol", 1e-09)
             abs_tol = kwargs.get("abs_tol", 0.0)
             if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
-                diff = z3.If(a.z3_real >= b.z3_real, a.z3_real - b.z3_real, b.z3_real - a.z3_real)
-                max_ab = z3.If(a.z3_real >= b.z3_real, a.z3_real, b.z3_real)
+                a_fp = a.z3_float
+                b_fp = b.z3_float
+                diff = z3.If(z3.fpGEQ(a_fp, b_fp), z3.fpSub(z3.RNE(), a_fp, b_fp), z3.fpSub(z3.RNE(), b_fp, a_fp))
+                max_ab = z3.If(z3.fpGEQ(a_fp, b_fp), a_fp, b_fp)
+                rel_fp = z3.FPVal(float(rel_tol), z3.Float64())
+                abs_fp = z3.FPVal(float(abs_tol), z3.Float64())
                 tol = z3.If(
-                    z3.RealVal(rel_tol) * max_ab > z3.RealVal(abs_tol),
-                    z3.RealVal(rel_tol) * max_ab,
-                    z3.RealVal(abs_tol),
+                    z3.fpGT(z3.fpMul(z3.RNE(), rel_fp, max_ab), abs_fp),
+                    z3.fpMul(z3.RNE(), rel_fp, max_ab),
+                    abs_fp,
                 )
-                constraints.append(result.z3_bool == (diff <= tol))
+                constraints.append(result.z3_bool == z3.fpLEQ(diff, tol))
         return ModelResult(value=result, constraints=constraints)
 
 

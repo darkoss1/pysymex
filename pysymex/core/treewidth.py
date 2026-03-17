@@ -3,13 +3,13 @@
 Implements the Constraint Hypergraph Treewidth Decomposition (CHTD)
 infrastructure: builds a graph where branch points are vertices and
 edges connect branches that share symbolic variables, then computes
-an approximate tree decomposition to identify the "skeleton" — the
-minimal set of branches whose assignments determine all others.
+an approximate tree decomposition.
 
 This enables a complexity-class transition for symbolic execution:
-instead of exploring 2^N paths (exponential in total branches),
-CHTD explores 2^|S| skeleton assignments times O(N·2^w) local
-propagation, where w = treewidth and |S| << N for real programs.
+instead of exploring 2^B paths (exponential in total branches B),
+CHTD achieves O(N · 2^w) structural path exploration via dynamic
+programming (message passing) over the tree decomposition, where
+w = treewidth and w << B for structured programs.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     import z3
@@ -65,11 +65,15 @@ class BranchInfo:
         pc: Program counter (bytecode index) of the branch.
         raw_vars: Original Z3 variable names from the branch condition.
         base_vars: SymbolicValue-level variable names (discriminators merged).
+        condition: The original Z3 boolean expression for this branch.
+            Stored so callers can use it for local satisfiability checks
+            (e.g. ``propagate_bag_constraints``).
     """
 
     pc: int
     raw_vars: frozenset[str]
     base_vars: frozenset[str]
+    condition: z3.BoolRef | None = None
 
 
 @dataclass
@@ -84,6 +88,7 @@ class TreeDecomposition:
         width: w = max(|bag|) - 1.  Treewidth of this decomposition.
         elimination_order: The vertex elimination sequence used to build
             this decomposition (useful for diagnostics).
+        parent_map: Mapping from bag ID to parent bag ID (root has no entry).
     """
 
     bags: dict[int, frozenset[int]]
@@ -91,6 +96,11 @@ class TreeDecomposition:
     adhesion: dict[tuple[int, int], frozenset[int]]
     width: int
     elimination_order: list[int] = field(default_factory=list)
+    parent_map: dict[int, int] = field(default_factory=dict)
+
+    def get_parent(self, bag_id: int) -> int | None:
+        """Get the parent bag ID, or None if this is the root."""
+        return self.parent_map.get(bag_id)
 
 
 class ConstraintInteractionGraph:
@@ -138,7 +148,7 @@ class ConstraintInteractionGraph:
 
     @property
     def estimated_treewidth(self) -> int:
-        """Current upper-bound estimate for treewidth (degeneracy-based)."""
+        """Current lower-bound estimate for treewidth (degeneracy-based)."""
         return self._estimated_tw
 
     def add_branch(self, pc: int, condition: z3.BoolRef) -> BranchInfo:
@@ -157,7 +167,7 @@ class ConstraintInteractionGraph:
         raw_vars = self._optimizer.get_variables(condition)
         base_vars = frozenset(_base_var_name(v) for v in raw_vars)
 
-        info = BranchInfo(pc=pc, raw_vars=raw_vars, base_vars=base_vars)
+        info = BranchInfo(pc=pc, raw_vars=raw_vars, base_vars=base_vars, condition=condition)
         self._branch_info[pc] = info
 
         old_max_degree = max(
@@ -176,7 +186,7 @@ class ConstraintInteractionGraph:
         )
 
         # Degeneracy (max min-degree in any subgraph) ≤ treewidth.
-        # We track the max degree as a cheap upper-bound proxy.
+        # We track max degree changes as a trigger to recompute degeneracy.
         if new_max_degree > old_max_degree:
             old_tw = self._estimated_tw
             self._estimated_tw = self._compute_degeneracy()
@@ -238,7 +248,10 @@ class ConstraintInteractionGraph:
     def compute_tree_decomposition(self) -> TreeDecomposition:
         """Compute an approximate tree decomposition via min-degree elimination.
 
-        Returns a TreeDecomposition whose width ≤ 2·optimal.
+        While minimum-degree elimination does not provide a strict constant-factor
+        guarantee for general graphs, it efficiently yields near-optimal
+        decompositions for the specific sparse topologies of program
+        control-flow graphs.
 
         Algorithm:
         1. Repeatedly remove the vertex with minimum degree
@@ -291,9 +304,10 @@ class ConstraintInteractionGraph:
             bag_id += 1
 
         # Build the tree: connect bag i to the first later bag
-        # that shares a vertex
+        # that shares a vertex. The later bag becomes the parent.
         tree_edges: list[tuple[int, int]] = []
         adhesion: dict[tuple[int, int], frozenset[int]] = {}
+        parent_map: dict[int, int] = {}
 
         for bid in range(len(bags)):
             bag = bags[bid]
@@ -304,6 +318,7 @@ class ConstraintInteractionGraph:
                     edge = (bid, bid2)
                     tree_edges.append(edge)
                     adhesion[edge] = overlap
+                    parent_map[bid] = bid2  # bid2 is parent of bid
                     break
 
         width = max_bag_size - 1 if max_bag_size > 0 else 0
@@ -314,6 +329,7 @@ class ConstraintInteractionGraph:
             adhesion=adhesion,
             width=width,
             elimination_order=elimination_order,
+            parent_map=parent_map,
         )
 
     def extract_skeleton(self) -> frozenset[int]:
@@ -332,6 +348,65 @@ class ConstraintInteractionGraph:
         for overlap in td.adhesion.values():
             skeleton.update(overlap)
         return frozenset(skeleton)
+
+    def propagate_bag_constraints(
+        self,
+        td: TreeDecomposition,
+        solve_local_bag: Callable[[frozenset[int]], bool],
+        pass_messages: Callable[[int, int, frozenset[int]], None],
+    ) -> bool:
+        """Dynamic programming (message passing) over the tree decomposition.
+
+        Instead of extracting a global skeleton and brute-forcing adhesion
+        variables—which scales poorly as |S| approaches O(N)—this method
+        achieves O(N · 2^w) structural complexity via local message passing.
+
+        For a tree decomposition T, constraints are solved locally within
+        each bag. The valid truth assignments are projected onto the adhesion
+        set and passed as a constrained interface to the parent bag. This
+        confines the exponential blowup strictly to the local bag width w.
+
+        Args:
+            td: The tree decomposition to traverse.
+            solve_local_bag: Callable(bag: frozenset[int]) -> bool that checks
+                satisfiability of constraints within a single bag.
+            pass_messages: Callable(child_id: int, parent_id: int,
+                adhesion: frozenset[int]) -> None that projects valid
+                assignments from child to parent via the adhesion set.
+
+        Returns:
+            True if all bags are locally satisfiable, False if any bag
+            is unsatisfiable (early termination).
+
+        Complexity:
+            O(N · 2^w) where N = number of bags and w = treewidth.
+        """
+        if not td.bags:
+            return True
+
+        # Bottom-up DP: process leaves before their parents.
+        # Bag IDs are assigned in elimination order: bag 0 = first eliminated
+        # (leaf-most), bag N-1 = last eliminated (root).  Iterating forward
+        # (low → high ID) therefore walks leaves toward the root, which is the
+        # correct direction for bottom-up message passing.
+        for bag_id in range(len(td.bags)):
+            bag = td.bags.get(bag_id)
+            if bag is None:
+                continue
+
+            # Solve constraints locally within this bag
+            local_sat = solve_local_bag(bag)
+            if not local_sat:
+                return False
+
+            # Pass messages to parent if exists
+            parent = td.get_parent(bag_id)
+            if parent is not None:
+                edge = (bag_id, parent)
+                adhesion = td.adhesion.get(edge, frozenset())
+                pass_messages(bag_id, parent, adhesion)
+
+        return True
 
     def get_independent_groups(self) -> list[frozenset[int]]:
         """Partition branches into fully-independent groups (treewidth 0).

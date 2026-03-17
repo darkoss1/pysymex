@@ -50,6 +50,8 @@ from .static_detectors import (
 from .static_types import (
     DetectionContext,
     Issue,
+    IssueKind,
+    Severity,
     StaticDetector,
 )
 
