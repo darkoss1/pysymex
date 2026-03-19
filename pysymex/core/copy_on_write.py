@@ -118,11 +118,16 @@ class CowDict(Generic[K, V]):
         self._data[key] = value
 
     def __delitem__(self, key: K) -> None:
-        """Remove a key and its value, ensuring the internal data is writable first."""
-        if key in self._data:
-            self._ensure_writable()
-            self._hash = None
-            del self._data[key]
+        """Remove a key and its value, ensuring the internal data is writable first.
+
+        Raises:
+            KeyError: If the key is not present (matching dict semantics).
+        """
+        if key not in self._data:
+            raise KeyError(key)
+        self._ensure_writable()
+        self._hash = None
+        del self._data[key]
 
     def get(self, key: K, default: V | None = None) -> V | None:
         """Get value by key with optional default."""

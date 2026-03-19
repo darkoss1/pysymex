@@ -25,7 +25,15 @@ class ConcreteInput:
 
     def __hash__(self) -> int:
         """Return the hash value of the object."""
-        return hash(frozenset(self.values.items()))
+        items = []
+        for k, v in sorted(self.values.items()):
+            try:
+                items.append((k, hash(v)))
+            except TypeError:
+                # Unhashable value (e.g. list): fall back to repr() so that
+                # equal objects hash equally, preserving the hash/eq contract.
+                items.append((k, hash(repr(v))))
+        return hash(tuple(items))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConcreteInput):
@@ -258,7 +266,7 @@ class ConcolicExecutor:
         elif z3.is_string(z3_val):
             return z3_val.as_string()
         elif z3.is_real(z3_val):
-            return float(z3_val.as_decimal(10))
+            return float(z3_val.as_decimal(10).rstrip("?"))
         else:
             return str(z3_val)
 
@@ -278,8 +286,8 @@ class ConcolicResult:
         return len(self.traces)
 
     @property
-    def coverage_percentage(self) -> float:
-        """Estimate of coverage (if total is known)."""
+    def coverage_percentage(self) -> int:
+        """Number of unique PCs (program counter values) covered across all traces."""
         return len(self.coverage)
 
     def get_failing_inputs(self) -> list[ConcreteInput]:

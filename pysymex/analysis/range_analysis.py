@@ -11,6 +11,7 @@ detect bugs like:
 
 from __future__ import annotations
 
+import icontract
 import logging
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ class Range:
             return True
         return not self.contains(0)
 
+    @icontract.ensure(lambda self, other, result: self.subset_of(result) and other.subset_of(result))
     def union(self, other: Range) -> Range:
         """Compute union (join) of two ranges."""
         if self.is_empty:
@@ -143,6 +145,7 @@ class Range:
             new_high = max(self.high, other.high)
         return Range(new_low, new_high)
 
+    @icontract.ensure(lambda self, other, result: result.subset_of(self) or result.is_empty)
     def intersect(self, other: Range) -> Range:
         """Compute intersection (meet) of two ranges."""
         if self.is_empty or other.is_empty:
@@ -337,6 +340,7 @@ class RangeState:
     def push(self, range_val: Range) -> None:
         self.stack.append(range_val)
 
+    @icontract.require(lambda self: not self.is_bottom)
     def pop(self) -> Range:
         """Pop."""
         if self.stack:
@@ -379,7 +383,7 @@ class RangeState:
         return result
 
     def subset_of(self, other: RangeState) -> bool:
-        """Subset of."""
+        """Check if self ⊆ other (every variable range in self fits within other)."""
         if self.is_bottom:
             return True
         if other.is_bottom:
@@ -387,6 +391,10 @@ class RangeState:
         for var, range_val in self.variables.items():
             if not range_val.subset_of(other.get(var)):
                 return False
+        for var in other.variables:
+            if var not in self.variables:
+                if not Range.full().subset_of(other.get(var)):
+                    return False
         return True
 
 
@@ -454,7 +462,10 @@ class RangeAnalyzer:
             states[cfg.entry.block_id] = initial
         worklist = [cfg.entry] if cfg.entry else []
         iterations: dict[int, int] = defaultdict(int)
-        while worklist:
+        global_iters = 0
+        max_global_iters = len(cfg.blocks) * 10 + 100
+        while worklist and global_iters < max_global_iters:
+            global_iters += 1
             block = worklist.pop(0)
             if not block:
                 continue
@@ -481,6 +492,11 @@ class RangeAnalyzer:
                     succ_block = cfg.blocks.get(succ_id)
                     if succ_block is not None and succ_block not in worklist:
                         worklist.append(succ_block)
+        if worklist and global_iters >= max_global_iters:
+            logger.warning(
+                "Range analysis hit iteration limit (%d) — results may be unsound",
+                max_global_iters,
+            )
         final: dict[str, Range] = {}
         for state in states.values():
             for var, range_val in state.variables.items():

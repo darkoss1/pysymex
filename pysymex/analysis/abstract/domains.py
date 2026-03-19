@@ -103,28 +103,28 @@ class ProductDomain:
         For example, if interval is [1, 10] and sign is NEG,
         the result should be bottom.
         """
+        _bottom = ProductDomain(
+            interval=Interval.bottom(),
+            sign=Sign.bottom(),
+            parity=Parity.bottom(),
+        )
         if not self.interval.is_bottom() and not self.sign.is_bottom():
             if self.sign.value == SignValue.NEG:
                 if self.interval.lo is not None and self.interval.lo >= 0:
-                    return ProductDomain(
-                        interval=Interval.bottom(),
-                        sign=Sign.bottom(),
-                        parity=Parity.bottom(),
-                    )
+                    return _bottom
             if self.sign.value == SignValue.POS:
                 if self.interval.hi is not None and self.interval.hi <= 0:
-                    return ProductDomain(
-                        interval=Interval.bottom(),
-                        sign=Sign.bottom(),
-                        parity=Parity.bottom(),
-                    )
+                    return _bottom
             if self.sign.value == SignValue.ZERO:
                 if not self.interval.contains(0):
-                    return ProductDomain(
-                        interval=Interval.bottom(),
-                        sign=Sign.bottom(),
-                        parity=Parity.bottom(),
-                    )
+                    return _bottom
+        if self.interval.is_constant() and not self.parity.is_bottom():
+            assert self.interval.lo is not None
+            actual_parity = self.interval.lo % 2
+            if self.parity.value == ParityValue.EVEN and actual_parity != 0:
+                return _bottom
+            if self.parity.value == ParityValue.ODD and actual_parity != 1:
+                return _bottom
         return self
 
 

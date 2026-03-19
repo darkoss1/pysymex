@@ -150,14 +150,15 @@ class SymbolicList(SymbolicType):
             index = SymbolicValue.from_const(index)
         if not isinstance(value, SymbolicValue):
             value = SymbolicValue.from_const(value)
-        new_array = z3.Store(self.z3_array, index.z3_int, value.z3_int)
+        real_idx = z3.If(index.z3_int < 0, index.z3_int + self.z3_len, index.z3_int)
+        new_array = z3.Store(self.z3_array, real_idx, value.z3_int)
         new_concrete = list(self._concrete_items) if self._concrete_items is not None else None
         if new_concrete is not None and z3.is_int_value(index.z3_int):
             idx = index.z3_int.as_long()
             if 0 <= idx < len(new_concrete):
                 new_concrete[idx] = value
             else:
-                new_concrete = None # Out of bounds or symbolic-like index
+                new_concrete = None
         else:
             new_concrete = None
 
@@ -220,15 +221,15 @@ class SymbolicList(SymbolicType):
             is_bool=Z3_FALSE,
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
-            is_list=Z3_TRUE, # Fix affinity
+            is_list=Z3_FALSE,
             is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
         )
 
     def in_bounds(self, index: SymbolicValue) -> z3.BoolRef:
-        """Check if index is valid."""
-        return z3.And(index.z3_int >= 0, index.z3_int < self.z3_len)
+        """Check if index is valid (supports negative Python indices)."""
+        return z3.And(index.z3_int >= -self.z3_len, index.z3_int < self.z3_len)
 
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicList:
         """Merge with another list based on condition."""
@@ -352,7 +353,7 @@ class SymbolicDict(SymbolicType):
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
             is_list=Z3_FALSE,
-            is_dict=Z3_TRUE, # Fix affinity
+            is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),
@@ -367,11 +368,13 @@ class SymbolicDict(SymbolicType):
             value = SymbolicValue.from_const(value)
         new_array = z3.Store(self.z3_array, key.z3_str, value.z3_int)
         key_unit = z3.Unit(key.z3_str)
+        is_existing_key = z3.Contains(self.known_keys, key_unit)
         new_keys = z3.If(
-            z3.Contains(self.known_keys, key_unit),
+            is_existing_key,
             self.known_keys,
             z3.Concat(self.known_keys, key_unit),
         )
+        new_len = z3.If(is_existing_key, self.z3_len, self.z3_len + 1)
         new_concrete = dict(self._concrete_items) if self._concrete_items is not None else None
         if new_concrete is not None and z3.is_string_value(key.z3_str):
             new_concrete[key.z3_str.as_string()] = value
@@ -382,7 +385,7 @@ class SymbolicDict(SymbolicType):
             _name=f"{self._name}[{key.name}]={value.name}",
             z3_array=new_array,
             known_keys=new_keys,
-            z3_len=self.z3_len,
+            z3_len=new_len,
             taint_labels=(self.taint_labels or frozenset())
             | (key.taint_labels or frozenset())
             | (value.taint_labels or frozenset()),
@@ -420,7 +423,7 @@ class SymbolicDict(SymbolicType):
             is_str=Z3_FALSE,
             is_obj=Z3_FALSE,
             is_list=Z3_FALSE,
-            is_dict=Z3_TRUE, # Fix affinity
+            is_dict=Z3_FALSE,
             is_path=Z3_FALSE,
             is_none=Z3_FALSE,
             taint_labels=(self.taint_labels or frozenset()) | (key.taint_labels or frozenset()),

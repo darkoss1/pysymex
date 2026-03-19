@@ -272,6 +272,8 @@ class SymbolicReversed(SymbolicIterator):
     def __post_init__(self):
         if isinstance(self.sequence, (list, tuple, str)):
             self.index = len(self.sequence) - 1
+        elif isinstance(self.sequence, SymbolicList):
+            self.index = self.sequence.z3_len - 1
         elif isinstance(self.sequence, SymbolicArray):
             self.index = self.sequence.length - 1
         else:

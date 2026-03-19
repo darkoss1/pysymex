@@ -156,7 +156,7 @@ class InvariantChecker:
         Check if an invariant can be violated.
         Returns True if invariant holds, False if violated.
         """
-        key = (inv.class_name, method_name, when)
+        key = (inv.class_name, method_name, when, z3_condition.sexpr())
         if key in self._checked_invariants:
             return True
         self._checked_invariants.add(key)
@@ -395,16 +395,18 @@ def _parse_not_none(
     match: object,
     self_attrs: dict[str, z3.ExprRef],
 ) -> z3.BoolRef:
-    """Parse 'x is not None' expression."""
-    return z3.BoolVal(True)
+    """Parse 'x is not None' — modeled as x != 0 (null sentinel)."""
+    var = _parse_value(match.group(1), self_attrs)
+    return var != 0
 
 
 def _parse_is_none(
     match: object,
     self_attrs: dict[str, z3.ExprRef],
 ) -> z3.BoolRef:
-    """Parse 'x is None' expression."""
-    return z3.BoolVal(False)
+    """Parse 'x is None' — modeled as x == 0 (null sentinel)."""
+    var = _parse_value(match.group(1), self_attrs)
+    return var == 0
 
 
 def check_object_invariants(
@@ -438,12 +440,12 @@ def check_object_invariants(
     if hasattr(obj, "__dict__"):
         for attr, value in obj.__dict__.items():
             key = f"self.{attr}"
-            if isinstance(value, int):
+            if isinstance(value, bool):
+                self_attrs[key] = z3.BoolVal(value)
+            elif isinstance(value, int):
                 self_attrs[key] = z3.IntVal(value)
             elif isinstance(value, float):
                 self_attrs[key] = z3.RealVal(value)
-            elif isinstance(value, bool):
-                self_attrs[key] = z3.BoolVal(value)
             else:
                 self_attrs[key] = z3.Int(key)
     z3_conditions = [parse_invariant_condition(inv.condition, self_attrs) for inv in invariants]

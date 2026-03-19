@@ -179,7 +179,7 @@ class SymbolicHeap:
             if z3.is_bv_value(address.base) and z3.is_bv_value(address.offset):
                 base = address.base.as_long()
                 offset = address.offset.as_long()
-                return base + offset
+                return (base + offset) & ((1 << 64) - 1)
         except z3.Z3Exception:
             logger.debug("Failed to resolve concrete address", exc_info=True)
         return None

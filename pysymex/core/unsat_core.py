@@ -1,7 +1,8 @@
 """UNSAT core extraction for pysymex.
 
-When Z3 returns UNSAT, extracts the minimal unsatisfiable core
+When Z3 returns UNSAT, extracts a sufficient unsatisfiable core
 to identify which constraints are responsible for infeasibility.
+Note: Z3's unsat_core() is not guaranteed to return a minimal core.
 This enables better error messages and faster subsequent queries.
 """
 
@@ -32,10 +33,11 @@ def extract_unsat_core(
     constraints: list[z3.BoolRef],
     timeout_ms: int = 5000,
 ) -> UnsatCoreResult | None:
-    """Extract the minimal unsatisfiable core from a set of constraints.
+    """Extract a sufficient unsatisfiable core from a set of constraints.
 
     Uses Z3's built-in unsat_core() with assumption literals to identify
-    which constraints contribute to the UNSAT result.
+    which constraints contribute to the UNSAT result. Note: the returned
+    core is sufficient but not necessarily minimal.
 
     Args:
         constraints: List of Z3 boolean constraints known to be UNSAT.

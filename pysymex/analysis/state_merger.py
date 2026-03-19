@@ -312,7 +312,7 @@ class StateMerger:
                         merged_frame_locals[k] = mv
                     else:
 
-                        merged_frame_locals[k] = v1 or v2
+                        merged_frame_locals[k] = v1 if v1 is not None else v2
 
                 from dataclasses import replace
 

@@ -10,6 +10,7 @@ Provides:
 
 from __future__ import annotations
 
+import icontract
 import dis
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -149,6 +150,7 @@ class ControlFlowGraph:
         """Get the entry basic block."""
         return self.blocks.get(self.entry_block_id)
 
+    @icontract.ensure(lambda self, block: self.blocks[block.id] == block)
     def add_block(self, block: BasicBlock) -> None:
         """Add a basic block."""
         self.blocks[block.id] = block
@@ -184,6 +186,7 @@ class ControlFlowGraph:
         """Check if a block is reachable from entry."""
         return block_id in self.dominators
 
+    @icontract.ensure(lambda self, dominator_id, dominated_id, result: not result or dominator_id in self.blocks)
     def dominates(self, dominator_id: int, dominated_id: int) -> bool:
         """Check if dominator dominates dominated."""
         dom_set = self.dominators.get(dominated_id, set())
@@ -274,6 +277,7 @@ class CFGBuilder:
         "CLEANUP_THROW",
     }
 
+    @icontract.ensure(lambda result: isinstance(result, ControlFlowGraph))
     def build(self, code: object) -> ControlFlowGraph:
         """Build CFG from a code object."""
         instructions = _cached_get_instructions(code)

@@ -16,7 +16,7 @@ from pysymex.execution.executor_types import BRANCH_OPCODES as BRANCH_OPCODES
 from pysymex.execution.executor_types import ExecutionConfig as ExecutionConfig
 from pysymex.execution.executor_types import ExecutionResult as ExecutionResult
 
-import pysymex.execution.opcodes as _opcodes  # noqa: F401
+import pysymex.execution.opcodes as _opcodes  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 __all__ = [
     "ExecutionConfig",

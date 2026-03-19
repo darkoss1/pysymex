@@ -40,7 +40,6 @@ class SymbolicDictOps:
             assert isinstance(d, SymbolicMap)
             length_var = z3.Int(f"dict_len_{next_address()}")
             return OpResult(value=SymbolicInt(length_var), constraints=[length_var >= 0])
-        return OpResult(value=None, error=f"Cannot get length of {type(d)}")
 
     @staticmethod
     def getitem(d: dict[object, object] | SymbolicDict | SymbolicMap, key: object) -> OpResult:
@@ -70,7 +69,6 @@ class SymbolicDictOps:
             result = d.get(z3_key)
             has_key = d.contains(z3_key)
             return OpResult(value=result, constraints=[has_key])
-        return OpResult(value=None, error=f"Cannot get item from {type(d)}")
 
     @staticmethod
     def setitem(d: dict[object, object] | SymbolicMap, key: object, value: object) -> OpResult:
@@ -98,7 +96,6 @@ class SymbolicDictOps:
             )
             new_map = d.set(z3_key, z3_val)
             return OpResult(value=None, modified_collection=new_map)
-        return OpResult(value=None, error=f"Cannot set item on {type(d)}")
 
     @staticmethod
     def delitem(d: dict[object, object] | SymbolicMap, key: object) -> OpResult:
@@ -122,7 +119,6 @@ class SymbolicDictOps:
             has_key = d.contains(z3_key)
             new_map = d.delete(z3_key)
             return OpResult(value=None, modified_collection=new_map, constraints=[has_key])
-        return OpResult(value=None, error=f"Cannot delete from {type(d)}")
 
     @staticmethod
     def get(d: dict[object, object] | SymbolicMap, key: object, default: object = None) -> OpResult:
@@ -153,7 +149,6 @@ class SymbolicDictOps:
             )
             result = d.get(z3_key, z3_default)
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot get from {type(d)}")
 
     @staticmethod
     def contains(d: dict[object, object] | SymbolicMap, key: object) -> OpResult:
@@ -172,7 +167,6 @@ class SymbolicDictOps:
             )
             result = d.contains(z3_key)
             return OpResult(value=SymbolicBool(result))
-        return OpResult(value=None, error=f"Cannot check containment in {type(d)}")
 
     @staticmethod
     def pop(d: dict[object, object] | SymbolicMap, key: object, default: object = None) -> OpResult:
@@ -209,7 +203,6 @@ class SymbolicDictOps:
             pop_val: object = d.get(z3_key, z3_default) if z3_default is not None else d.get(z3_key)
             new_map = d.delete(z3_key)
             return OpResult(value=pop_val, modified_collection=new_map)
-        return OpResult(value=None, error=f"Cannot pop from {type(d)}")
 
     @staticmethod
     def setdefault(
@@ -238,11 +231,9 @@ class SymbolicDictOps:
             )
             has_key = d.contains(z3_key)
             existing_value = d.get(z3_key)
-            z3.If(has_key, d, d.set(z3_key, z3_default))
             result = z3.If(has_key, existing_value, z3_default)
             final_map = d.set(z3_key, cast(z3.ExprRef, result))
             return OpResult(value=result, modified_collection=final_map)
-        return OpResult(value=None, error=f"Cannot setdefault on {type(d)}")
 
     @staticmethod
     def update(
@@ -302,7 +293,6 @@ class SymbolicSetOps:
         else:
             assert isinstance(s, SymbolicSet)
             return OpResult(value=s.length)
-        return OpResult(value=None, error=f"Cannot get length of {type(s)}")
 
     @staticmethod
     def contains(s: set[object] | SymbolicSet, value: object) -> OpResult:
@@ -318,7 +308,6 @@ class SymbolicSetOps:
             )
             result = s.contains(sym_val)
             return OpResult(value=result)
-        return OpResult(value=None, error=f"Cannot check containment in {type(s)}")
 
     @staticmethod
     def add(s: set[object] | SymbolicSet, value: object) -> OpResult:
@@ -335,7 +324,6 @@ class SymbolicSetOps:
             )
             new_set = s.add(sym_val)
             return OpResult(value=None, modified_collection=new_set)
-        return OpResult(value=None, error=f"Cannot add to {type(s)}")
 
     @staticmethod
     def remove(s: set[object] | SymbolicSet, value: object) -> OpResult:
@@ -358,7 +346,6 @@ class SymbolicSetOps:
             return OpResult(
                 value=None, modified_collection=new_set, constraints=[has_value.z3_bool]
             )
-        return OpResult(value=None, error=f"Cannot remove from {type(s)}")
 
     @staticmethod
     def discard(s: set[object] | SymbolicSet, value: object) -> OpResult:
@@ -375,7 +362,6 @@ class SymbolicSetOps:
             )
             new_set = s.remove(sym_val)
             return OpResult(value=None, modified_collection=new_set)
-        return OpResult(value=None, error=f"Cannot discard from {type(s)}")
 
     @staticmethod
     def pop(s: set[object] | SymbolicSet) -> OpResult:
@@ -390,7 +376,6 @@ class SymbolicSetOps:
             constraints: list[z3.BoolRef] = [s.length.value > 0]
             result = SymbolicInt(z3.Int(f"set_pop_{next_address()}"))
             return OpResult(value=result, constraints=constraints)
-        return OpResult(value=None, error=f"Cannot pop from {type(s)}")
 
     @staticmethod
     def union(s1: set[object] | SymbolicSet, s2: set[object] | SymbolicSet) -> OpResult:
@@ -481,7 +466,6 @@ class SymbolicTupleOps:
         else:
             assert isinstance(t, SymbolicTuple)
             return OpResult(value=len(t.elements))
-        return OpResult(value=None, error=f"Cannot get length of {type(t)}")
 
     @staticmethod
     def getitem(
@@ -521,7 +505,6 @@ class SymbolicTupleOps:
                     z3_idx < len(t.elements),
                 ]
                 return OpResult(value=result_st, constraints=constraints_st)
-        return OpResult(value=None, error=f"Cannot index {type(t)}")
 
     @staticmethod
     def count(t: tuple[object, ...] | SymbolicTuple, value: object) -> OpResult:
@@ -535,7 +518,6 @@ class SymbolicTupleOps:
                 if elem == value:
                     count += 1
             return OpResult(value=count)
-        return OpResult(value=None, error=f"Cannot count in {type(t)}")
 
     @staticmethod
     def index(
@@ -562,7 +544,6 @@ class SymbolicTupleOps:
                 if i < len(elements) and elements[i] == value:
                     return OpResult(value=i)
             return OpResult(value=None, error="ValueError: x not in tuple")
-        return OpResult(value=None, error=f"Cannot find index in {type(t)}")
 
     @staticmethod
     def slice(
@@ -578,7 +559,6 @@ class SymbolicTupleOps:
             assert isinstance(t, SymbolicTuple)
             elements = t.elements[start:stop:step]
             return OpResult(value=SymbolicTuple(elements))
-        return OpResult(value=None, error=f"Cannot slice {type(t)}")
 
     @staticmethod
     def concatenate(
@@ -603,4 +583,3 @@ class SymbolicTupleOps:
                 if elem == value:
                     return OpResult(value=True)
             return OpResult(value=False)
-        return OpResult(value=None, error=f"Cannot check containment in {type(t)}")

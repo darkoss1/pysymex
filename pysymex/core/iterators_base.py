@@ -202,6 +202,7 @@ class SymbolicRange(SymbolicIterator):
         stop = self.stop if isinstance(self.stop, z3.ArithRef) else z3.IntVal(self.stop)
         step = self.step if isinstance(self.step, z3.ArithRef) else z3.IntVal(self.step)
         diff = stop - curr
+        # Z3 integer division returns an Int, so ToInt is not needed and throws an error
         return z3.If(
             step > 0,
             z3.If(diff > 0, (diff + step - 1) / step, z3.IntVal(0)),
@@ -239,6 +240,7 @@ class SymbolicRange(SymbolicIterator):
         stop = self.stop if isinstance(self.stop, z3.ArithRef) else z3.IntVal(self.stop)
         step = self.step if isinstance(self.step, z3.ArithRef) else z3.IntVal(self.step)
         diff = stop - start
+        # Z3 integer division returns an Int, so ToInt is not needed and throws an error
         return z3.If(
             step > 0,
             z3.If(diff > 0, (diff + step - 1) / step, z3.IntVal(0)),

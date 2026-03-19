@@ -7,6 +7,7 @@ and all concrete analysis implementations.
 
 from __future__ import annotations
 
+import icontract
 import collections
 import dis
 from abc import ABC, abstractmethod
@@ -146,6 +147,7 @@ class DataFlowAnalysis(ABC, Generic[T]):
                             worklist.append(self.cfg.blocks[pred_id])
                             on_worklist.add(pred_id)
 
+    @icontract.ensure(lambda result: isinstance(result, (frozenset, set, dict, object)))
     def get_in(self, block_id: int) -> T:
         """Get input facts for a block."""
         return self.in_facts.get(block_id, self.initial_value())
@@ -223,6 +225,7 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
             result |= f
         return frozenset(result)
 
+    @icontract.ensure(lambda result: isinstance(result, frozenset))
     def get_reaching_defs_at(self, pc: int) -> frozenset[Definition]:
         """Get definitions reaching a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -295,6 +298,7 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
             result |= f
         return frozenset(result)
 
+    @icontract.ensure(lambda result: isinstance(result, bool))
     def is_live_at(self, var_name: str, pc: int) -> bool:
         """Check if a variable is live at a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -571,7 +575,7 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
                     env.set_type(var_name, env.get_type(loaded_var))
                 elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
                     # This instruction pushes two, so STORE_FAST likely pops the second one
-                    var1, var2 = prev_instr.argval
+                    _, var2 = prev_instr.argval
                     env.set_type(var_name, env.get_type(var2))
                 else:
                     env.set_type(var_name, PyType.unknown())
@@ -663,7 +667,7 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
                         loaded_var = prev_instr.argval
                         info.set_state(var_name, info.get_state(loaded_var))
                     elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
-                        var1, var2 = prev_instr.argval
+                        _, var2 = prev_instr.argval
                         info.set_state(var_name, info.get_state(var2))
                     else:
                         info.set_state(var_name, NullState.MAYBE_NULL)

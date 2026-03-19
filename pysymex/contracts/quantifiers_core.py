@@ -187,7 +187,7 @@ class ConditionTranslator(ast.NodeVisitor):
         operand = self.visit(node.operand)
         match node.op:
             case ast.Not():
-                return z3.Not(operand)
+                return cast(z3.ExprRef, z3.Not(operand))
             case ast.USub():
                 return -operand
             case ast.UAdd():
@@ -208,11 +208,11 @@ class ConditionTranslator(ast.NodeVisitor):
                 return left * right
             case ast.FloorDiv():
                 trunc = left / right
-                return z3.If(
-                    left % right == 0,
+                return cast(z3.ExprRef, z3.If(
+                    z3.Or(left % right == 0, right > 0),
                     trunc,
-                    z3.If((left >= 0) == (right >= 0), trunc, trunc - 1),
-                )
+                    trunc - 1,
+                ))
             case ast.Mod():
                 return left % right
             case ast.Pow():
@@ -414,7 +414,7 @@ class QuantifierInstantiator:
     ) -> int | None:
         """Try to get concrete value for expression."""
         if z3.is_int_value(expr):
-            return expr.as_long()
+            return cast(z3.IntNumRef, expr).as_long()
         solver.push()
         v = z3.Int("__bound")
         solver.add(v == expr)
@@ -423,7 +423,7 @@ class QuantifierInstantiator:
             result = model.eval(v)
             solver.pop()
             if z3.is_int_value(result):
-                return result.as_long()
+                return cast(z3.IntNumRef, result).as_long()
         solver.pop()
         return None
 
@@ -489,7 +489,7 @@ class QuantifierVerifier:
             return True, None
         elif result == z3.sat:
             model = solver.model()
-            counterexample = {str(d.name()): model[d] for d in model.decls()}
+            counterexample: dict[str, object] = {str(d.name()): model[d] for d in model.decls()}
             return False, counterexample
         else:
             return None, None
@@ -514,7 +514,7 @@ class QuantifierVerifier:
         result = solver.check()
         if result == z3.sat:
             model = solver.model()
-            witness = {str(d.name()): model[d] for d in model.decls()}
+            witness: dict[str, object] = {str(d.name()): model[d] for d in model.decls()}
             return True, witness
         elif result == z3.unsat:
             return False, None
@@ -577,7 +577,6 @@ def replace_quantifiers_with_z3(
     Returns the full contract as Z3.
     """
     quantifiers = extract_quantifiers(contract_string)
-    QuantifierParser(context)
     remaining = contract_string
     z3_parts: list[z3.BoolRef] = []
     for q in quantifiers:

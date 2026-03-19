@@ -24,10 +24,10 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-from pysymex.core.havoc import HavocValue as HavocValue
-from pysymex.core.types import AnySymbolic as AnySymbolic
+from pysymex.core.havoc import HavocValue
+from pysymex.core.types import AnySymbolic
 
-StackValue = AnySymbolic | int | bool | str | float | bytes | None
+StackValue: TypeAlias = AnySymbolic | int | bool | str | float | bytes | None
 
 
 SideEffects: TypeAlias = dict[str, object]
@@ -40,6 +40,26 @@ JsonDict: TypeAlias = dict[str, object]
 
 
 UserCallable: TypeAlias = Callable[..., object]
+
+
+@runtime_checkable
+class SummaryProtocol(Protocol):
+    """Protocol for function summaries being built."""
+
+    parameters: list[str]
+    preconditions: list[object]
+    postconditions: list[object]
+    modified: list[object]
+    reads: list[object]
+    calls: list[object]
+    may_raise: list[object]
+
+
+@runtime_checkable
+class SummaryBuilderProtocol(Protocol):
+    """Protocol for summary builders in state management."""
+
+    summary: SummaryProtocol
 
 
 Counterexample: TypeAlias = Mapping[str, int | str | bool | float | None]
@@ -157,6 +177,26 @@ class SymbolicStringProtocol(Protocol):
 
     def length(self) -> object:
         """The symbolic length of the string."""
+        ...
+
+
+@runtime_checkable
+class VerificationResultProtocol(Protocol):
+    """Protocol for verification results."""
+
+    can_crash: bool
+    proven_safe: bool
+    z3_status: str
+    verification_time_ms: float
+    crash: object | None
+
+
+@runtime_checkable
+class TaintTrackerProtocol(Protocol):
+    """Protocol for taint tracking in execution state."""
+
+    def fork(self) -> TaintTrackerProtocol:
+        """Create an independent copy for state forking."""
         ...
 
 

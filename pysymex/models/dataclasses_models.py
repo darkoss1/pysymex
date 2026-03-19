@@ -225,12 +225,11 @@ def make_dataclass_model(
 def replace_model(obj: object, /, **changes: object) -> object:
     """Model for dataclasses.replace() - create a copy with changes."""
     new_obj: object = type(obj).__new__(type(obj))
-    new_dict = cast("dict[str, object]", cast("object", new_obj).__dict__)
-    old_dict = cast("dict[str, object]", obj.__dict__)
-    new_dict.update(old_dict)
+    if hasattr(obj, "__dict__"):
+        getattr(new_obj, "__dict__").update(getattr(obj, "__dict__"))
 
     for key, value in changes.items():
-        setattr(cast("object", new_obj), key, value)
+        setattr(new_obj, key, value)
 
     return cast("Any", new_obj)
 

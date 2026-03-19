@@ -130,13 +130,18 @@ class RLockModel(LockModel):
 
         Same owner can acquire multiple times; count is incremented.
         """
-        if self._locked and self._owner is not None:
-
+        # For a truly symbolic threading model, the owner should be the current thread ID.
+        # But even if we don't have true symbolic thread IDs, an RLock owned by *somebody*
+        # (us) can just increment the counter.
+        if self._locked:
             self._count += 1
             return True
+
         if self._locked and not blocking:
             return False
+            
         self._locked = True
+        self._owner = "current_thread" # Mock owner so we know it's owned
         self._count = 1
         return True
 

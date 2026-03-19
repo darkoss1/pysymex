@@ -6,6 +6,7 @@ variables have been validated, reducing false positives for None-related issues.
 
 from __future__ import annotations
 
+import icontract
 import ast
 import re
 from dataclasses import dataclass, field
@@ -44,6 +45,7 @@ class NoneCheckState:
 
     unchecked: set[str] = field(default_factory=set[str])
 
+    @icontract.ensure(lambda self, var_name: var_name in self.confirmed_not_none and var_name not in self.confirmed_none)
     def mark_not_none(self, var_name: str) -> None:
         """Mark a variable as confirmed not None."""
         self.confirmed_not_none.add(var_name)
@@ -70,6 +72,7 @@ class NoneCheckState:
         """Check if variable is confirmed None."""
         return var_name in self.confirmed_none
 
+    @icontract.ensure(lambda result: isinstance(result, NoneCheckState))
     def copy(self) -> NoneCheckState:
         """Create a copy of the state."""
         return NoneCheckState(
@@ -104,6 +107,7 @@ class NoneCheckAnalyzer:
         self._state = NoneCheckState()
         self._checks: list[NoneCheck] = []
 
+    @icontract.ensure(lambda result: isinstance(result, list))
     def analyze_source(self, source_code: str) -> list[NoneCheck]:
         """Extract None checks from source code.
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar, Any
 from enum import Enum, auto
 
 
@@ -62,6 +63,30 @@ class Sign(Enum):
     NON_ZERO = auto()
     TOP = auto()
 
+
+_MEET_TABLE: dict[frozenset[Sign], Sign] = {
+    frozenset({Sign.NON_NEGATIVE, Sign.NON_POSITIVE}): Sign.ZERO,
+    frozenset({Sign.NON_NEGATIVE, Sign.NON_ZERO}): Sign.POSITIVE,
+    frozenset({Sign.NON_POSITIVE, Sign.NON_ZERO}): Sign.NEGATIVE,
+    frozenset({Sign.NON_NEGATIVE, Sign.POSITIVE}): Sign.POSITIVE,
+    frozenset({Sign.NON_NEGATIVE, Sign.ZERO}): Sign.ZERO,
+    frozenset({Sign.NON_POSITIVE, Sign.NEGATIVE}): Sign.NEGATIVE,
+    frozenset({Sign.NON_POSITIVE, Sign.ZERO}): Sign.ZERO,
+    frozenset({Sign.NON_ZERO, Sign.POSITIVE}): Sign.POSITIVE,
+    frozenset({Sign.NON_ZERO, Sign.NEGATIVE}): Sign.NEGATIVE,
+    frozenset({Sign.NON_ZERO, Sign.ZERO}): Sign.BOTTOM,
+}
+
+_SIGN_SUBSETS: dict[Sign, frozenset[Sign]] = {
+    Sign.BOTTOM: frozenset(Sign),
+    Sign.NEGATIVE: frozenset({Sign.NEGATIVE, Sign.NON_POSITIVE, Sign.NON_ZERO, Sign.TOP}),
+    Sign.ZERO: frozenset({Sign.ZERO, Sign.NON_NEGATIVE, Sign.NON_POSITIVE, Sign.TOP}),
+    Sign.POSITIVE: frozenset({Sign.POSITIVE, Sign.NON_NEGATIVE, Sign.NON_ZERO, Sign.TOP}),
+    Sign.NON_NEGATIVE: frozenset({Sign.NON_NEGATIVE, Sign.TOP}),
+    Sign.NON_POSITIVE: frozenset({Sign.NON_POSITIVE, Sign.TOP}),
+    Sign.NON_ZERO: frozenset({Sign.NON_ZERO, Sign.TOP}),
+    Sign.TOP: frozenset({Sign.TOP}),
+}
 
 @dataclass(frozen=True)
 class SignValue(AbstractValue):
@@ -148,7 +173,7 @@ class SignValue(AbstractValue):
         return SignValue.top()
 
     def meet(self, other: AbstractValue) -> SignValue:
-        """Meet."""
+        """Greatest lower bound (intersection) in the sign lattice."""
         if not isinstance(other, SignValue):
             return self
         s1, s2 = self.sign, other.sign
@@ -160,10 +185,9 @@ class SignValue(AbstractValue):
             return SignValue.bottom()
         if s1 == s2:
             return self
-        if s1 == Sign.NON_NEGATIVE and s2 == Sign.NON_POSITIVE:
-            return SignValue(Sign.ZERO)
-        if s1 == Sign.NON_POSITIVE and s2 == Sign.NON_NEGATIVE:
-            return SignValue(Sign.ZERO)
+        pair = frozenset({s1, s2})
+        if pair in _MEET_TABLE:
+            return SignValue(_MEET_TABLE[pair])
         return SignValue.bottom()
 
     def widen(self, other: AbstractValue) -> SignValue:
@@ -173,14 +197,10 @@ class SignValue(AbstractValue):
         return self.meet(other)
 
     def leq(self, other: AbstractValue) -> bool:
-        """Leq."""
+        """Check if self ⊆ other in the sign lattice."""
         if not isinstance(other, SignValue):
             return False
-        if self.sign == Sign.BOTTOM:
-            return True
-        if other.sign == Sign.TOP:
-            return True
-        return self.sign == other.sign
+        return other.sign in _SIGN_SUBSETS.get(self.sign, frozenset())
 
     def add(self, other: SignValue) -> SignValue:
         """Abstract addition."""
@@ -478,24 +498,40 @@ class Interval(AbstractValue):
 
         unbounded_lo = False
         unbounded_hi = False
-        for a, b in corners:
-            if a is None or b is None:
-                if a is not None and b is None:
-
-                    if a > 0:
-                        unbounded_hi = True
-                    elif a < 0:
+        corners_with_info = [
+            (self.low, True, other.low, True),
+            (self.low, True, other.high, False),
+            (self.high, False, other.low, True),
+            (self.high, False, other.high, False),
+        ]
+        for a, a_is_lo, b, b_is_lo in corners_with_info:
+            if a is not None and b is not None:
+                pass
+            elif a is not None and b is None:
+                if a > 0:
+                    if b_is_lo:
                         unbounded_lo = True
-
-                elif a is None and b is not None:
-                    if b > 0:
+                    else:
                         unbounded_hi = True
-                    elif b < 0:
+                elif a < 0:
+                    if b_is_lo:
+                        unbounded_hi = True
+                    else:
                         unbounded_lo = True
-                else:
-
-                    unbounded_lo = True
-                    unbounded_hi = True
+            elif a is None and b is not None:
+                if b > 0:
+                    if a_is_lo:
+                        unbounded_lo = True
+                    else:
+                        unbounded_hi = True
+                elif b < 0:
+                    if a_is_lo:
+                        unbounded_hi = True
+                    else:
+                        unbounded_lo = True
+            else:
+                unbounded_lo = True
+                unbounded_hi = True
         new_low: int | None = None if unbounded_lo else (min(bounds) if bounds else None)
         new_high: int | None = None if unbounded_hi else (max(bounds) if bounds else None)
         return Interval(new_low, new_high)
@@ -530,6 +566,14 @@ class Interval(AbstractValue):
                 quotients = [self.low // other.low, self.high // other.low]
                 return Interval(min(quotients), max(quotients)), False
         return Interval.top(), may_raise
+
+
+def _extended_gcd(a: int, b: int) -> tuple[int, int, int]:
+    """Extended Euclidean algorithm. Returns (gcd, x, y) where a*x + b*y = gcd."""
+    if a == 0:
+        return b, 0, 1
+    g, x1, y1 = _extended_gcd(b % a, a)
+    return g, y1 - (b // a) * x1, x1
 
 
 @dataclass(frozen=True)
@@ -622,7 +666,7 @@ class Congruence(AbstractValue):
         return Congruence(new_mod, new_rem)
 
     def meet(self, other: AbstractValue) -> Congruence:
-        """Meet."""
+        """Greatest lower bound via Chinese Remainder Theorem."""
         if not isinstance(other, Congruence):
             return self
         if self._is_bottom or other._is_bottom:
@@ -633,10 +677,23 @@ class Congruence(AbstractValue):
             return self
         import math
 
-        g = math.gcd(self.modulus if self.modulus else 1, other.modulus if other.modulus else 1)
-        if (self.remainder - other.remainder) % g != 0:
+        m1 = self.modulus if self.modulus else 0
+        m2 = other.modulus if other.modulus else 0
+        r1, r2 = self.remainder, other.remainder
+        if m1 == 0 and m2 == 0:
+            return self if r1 == r2 else Congruence.bottom()
+        if m1 == 0:
+            return self if r1 % m2 == r2 % m2 else Congruence.bottom()
+        if m2 == 0:
+            return other if r2 % m1 == r1 % m1 else Congruence.bottom()
+        g = math.gcd(m1, m2)
+        if (r1 - r2) % g != 0:
             return Congruence.bottom()
-        return self
+        new_mod = (m1 // g) * m2
+        # Extended GCD to find CRT solution
+        _, x, _ = _extended_gcd(m1, m2)
+        new_rem = (r1 + m1 * ((r2 - r1) // g) * x) % new_mod
+        return Congruence(new_mod, new_rem)
 
     def widen(self, other: AbstractValue) -> Congruence:
         return self.join(other)

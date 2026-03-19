@@ -11,6 +11,7 @@ for mathematical proofs of correctness. Covers:
 
 from __future__ import annotations
 
+import icontract
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class IntegerBounds:
     max_val: int
 
     @classmethod
+    @icontract.ensure(lambda result: result.min_val <= result.max_val)
     def for_width(cls, width: IntegerWidth, signed: bool = True) -> IntegerBounds:
         """Create bounds for a specific bit width."""
         if width == IntegerWidth.ARBITRARY:
@@ -145,6 +147,7 @@ class ArithmeticSafetyAnalyzer:
         self._solver.reset()
         self._issues.clear()
 
+    @icontract.ensure(lambda result: result is None or isinstance(result, ArithmeticIssue))
     def check_addition_overflow(
         self,
         a: z3.ExprRef,
@@ -294,6 +297,7 @@ class ArithmeticSafetyAnalyzer:
                 )
         return issues
 
+    @icontract.ensure(lambda result: result is None or isinstance(result, ArithmeticIssue))
     def check_modulo_safety(
         self,
         a: z3.ExprRef,
@@ -575,6 +579,7 @@ class SafeArithmetic:
     def __init__(self, analyzer: ArithmeticSafetyAnalyzer | None = None):
         self.analyzer = analyzer or ArithmeticSafetyAnalyzer()
 
+    @icontract.ensure(lambda result: isinstance(result[0], z3.ArithRef))
     def safe_add(
         self,
         a: z3.ArithRef,

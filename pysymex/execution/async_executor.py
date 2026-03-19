@@ -153,7 +153,7 @@ class SymbolicEventLoop:
     def cancel_coroutine(self, coro_id: str) -> bool:
         """Cancel a coroutine. Returns True if successfully cancelled."""
         coro = self._all_coroutines.get(coro_id)
-        if coro is None or coro.state == CoroutineState.COMPLETED:
+        if coro is None or coro.state in (CoroutineState.COMPLETED, CoroutineState.CANCELLED):
             return False
         coro.state = CoroutineState.CANCELLED
         self._ready = [c for c in self._ready if c.coro_id != coro_id]

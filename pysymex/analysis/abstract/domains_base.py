@@ -5,6 +5,7 @@ Provides the AbstractValue ABC (lattice operations) and the Interval domain.
 
 from __future__ import annotations
 
+import icontract
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
@@ -117,6 +118,7 @@ class Interval(AbstractValue["Interval"]):
             return False
         return True
 
+    @icontract.ensure(lambda self, other, result: (self.is_bottom() or result.contains(self.lo) if self.lo is not None else True) and (other.is_bottom() or result.contains(other.lo) if other.lo is not None else True))
     def join(self, other: Interval) -> Interval:
         """Least upper bound: [min(lo), max(hi)]"""
         if self.is_bottom():
@@ -131,6 +133,7 @@ class Interval(AbstractValue["Interval"]):
             new_hi = max(self.hi, other.hi)
         return Interval(new_lo, new_hi)
 
+    @icontract.ensure(lambda self, other, result: result.is_bottom() or (self.contains(result.lo) if result.lo is not None else True))
     def meet(self, other: Interval) -> Interval:
         """Greatest lower bound: [max(lo), min(hi)]"""
         if self.is_bottom() or other.is_bottom():

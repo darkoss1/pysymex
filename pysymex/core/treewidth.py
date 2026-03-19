@@ -220,7 +220,9 @@ class ConstraintInteractionGraph:
         """Compute the degeneracy (k-core number) of the graph.
 
         Degeneracy is a lower bound on treewidth and is computable
-        in O(V + E) via iterative minimum-degree vertex removal.
+        via iterative minimum-degree vertex removal. Current implementation
+        is O(V²) due to linear scan for minimum degree; a bucket-queue
+        implementation would achieve O(V + E).
         """
         if not self._adjacency:
             return 0
@@ -503,8 +505,8 @@ def _run_self_tests() -> None:
 
     groups2 = graph2.get_independent_groups()
     assert len(groups2) == 1, f"Expected 1 group (all linked via a+b), got {len(groups2)}"
-    assert 0 in graph2._adjacency[1]
-    assert 1 in graph2._adjacency[0]
+    assert 0 in graph2._adjacency[1]  # pyright: ignore[reportPrivateUsage]
+    assert 1 in graph2._adjacency[0]  # pyright: ignore[reportPrivateUsage]
     print(f"  PASS — treewidth estimate: {graph2.estimated_treewidth}")
 
     print("\n[TEST 4] Tree decomposition")
@@ -539,13 +541,13 @@ def _run_self_tests() -> None:
     # Branch 3 links val_42 and val_99
     graph3.add_branch(3, _z3.And(x_is_int, y_is_int, x_int + y_int > 10))
 
-    info0 = graph3._branch_info[0]
-    info1 = graph3._branch_info[1]
+    info0 = graph3._branch_info[0]  # pyright: ignore[reportPrivateUsage]
+    info1 = graph3._branch_info[1]  # pyright: ignore[reportPrivateUsage]
     # Both should see "val_42" as the base var
     assert "val_42" in info0.base_vars
     assert "val_42" in info1.base_vars
     # Branch 2 should only see "val_99"
-    assert graph3._branch_info[2].base_vars == frozenset({"val_99"})
+    assert graph3._branch_info[2].base_vars == frozenset({"val_99"})  # pyright: ignore[reportPrivateUsage]
     print(f"  PASS — base_vars correctly grouped, tw={graph3.estimated_treewidth}")
 
     print("\n[TEST 7] Stats reporting")

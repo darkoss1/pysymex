@@ -39,7 +39,14 @@ _EMPTY_TAINT: frozenset[str] = frozenset()
 UNBOUND = object()
 
 
-def wrap_cow_dict(val: dict[str, object] | CowDict[str, object] | None) -> CowDict[str, object]:
+from typing import TypeVar, Protocol
+
+class HashableValue(Protocol):
+    def hash_value(self) -> int: ...
+
+T = TypeVar("T")
+
+def wrap_cow_dict(val: dict[str, T] | CowDict[str, T] | None) -> CowDict[str, T]:
     """Wrap a dict in CowDict if it isn't already."""
     if isinstance(val, CowDict):
         return val
@@ -63,11 +70,10 @@ def _copy_summary_builder(builder: object) -> object:
     inside those lists are immutable and safe to share.
     """
     try:
-        new: object = copy.copy(builder)
+        new = copy.copy(builder)
 
-        builder_any: object = builder
-        if hasattr(builder_any, "summary"):
-            new.summary = copy.copy(builder_any.summary)
+        if hasattr(builder, "summary"):
+            new.summary = copy.copy(builder.summary)
             for attr in (
                 "parameters",
                 "preconditions",
@@ -419,9 +425,8 @@ class VMState:
         h ^= self.visited_pcs.hash_value() * 12345
 
         for v in self.stack:
-            v_any: object = v
-            if hasattr(v_any, "hash_value") and callable(v_any.hash_value):
-                h = (h * 31) ^ cast("int", v_any.hash_value())
+            if hasattr(v, "hash_value") and callable(getattr(v, "hash_value")):
+                h = (h * 31) ^ getattr(v, "hash_value")()
             else:
                 try:
                     h = (h * 31) ^ hash(v)

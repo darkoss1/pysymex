@@ -361,6 +361,7 @@ class SymbolicValue(SymbolicType):
             self.is_path,
             self.is_list,
             self.is_dict,
+            self.is_obj,
         )
         self._truthy_cache = result
         return result
@@ -374,6 +375,7 @@ class SymbolicValue(SymbolicType):
         result = z3.Or(
             z3.And(self.is_bool, z3.Not(self.z3_bool)),
             z3.And(self.is_int, self.z3_int == 0),
+            z3.And(self.is_float, z3.fpIsZero(self.z3_float)),
             z3.And(self.is_str, z3.Length(self.z3_str) == 0),
             self.is_none,
         )
@@ -656,7 +658,7 @@ class SymbolicValue(SymbolicType):
 
         if isinstance(value, str):
             from pysymex.core.types import SymbolicString
-            return _cast("SymbolicValue", SymbolicString.from_const(value).as_unified())
+            return SymbolicString.from_const(value).as_unified()
 
         sv = SymbolicValue(
             _name=str(value),
@@ -791,10 +793,11 @@ class SymbolicValue(SymbolicType):
             _name=f"(-{self._name})",
             z3_int=-self.z3_int,
             is_int=self.is_int,
+            z3_float=z3.fpNeg(self.z3_float),
+            is_float=self.is_float,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=self.taint_labels,
-            affinity_type="int",
         )
 
     def __mod__(self, other: object) -> SymbolicValue:
@@ -941,6 +944,9 @@ class SymbolicValue(SymbolicType):
     def __eq__(self, other: object) -> SymbolicValue:  # type: ignore[override]
         """Python '==' operator."""
         other = SymbolicValue.from_const(other)
+        # Convert int to FP for cross-type comparison (Python: 1 == 1.0 is True)
+        self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
             z3.And(self.is_int, other.is_int, self.z3_int == other.z3_int),
             z3.And(self.is_bool, other.is_bool, self.z3_bool == other.z3_bool),
@@ -948,6 +954,12 @@ class SymbolicValue(SymbolicType):
             z3.And(self.is_float, other.is_float, self.z3_float == other.z3_float),
             z3.And(self.is_none, other.is_none),
             z3.And(self.is_obj, other.is_obj, self.z3_addr == other.z3_addr),
+            z3.And(self.is_int, other.is_float, other.z3_float == self_as_fp),
+            z3.And(self.is_float, other.is_int, self.z3_float == other_as_fp),
+            z3.And(self.is_bool, other.is_int,
+                   z3.If(self.z3_bool, z3.IntVal(1), Z3_ZERO) == other.z3_int),
+            z3.And(self.is_int, other.is_bool,
+                   self.z3_int == z3.If(other.z3_bool, z3.IntVal(1), Z3_ZERO)),
         )
         return SymbolicValue(
             _name=f"({self._name}=={other._name})",
@@ -966,9 +978,13 @@ class SymbolicValue(SymbolicType):
     def __lt__(self, other: object) -> SymbolicValue:
         """Python '<' operator."""
         other = SymbolicValue.from_const(other)
+        self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
             z3.And(self.is_int, other.is_int, self.z3_int < other.z3_int),
             z3.And(self.is_float, other.is_float, z3.fpLT(self.z3_float, other.z3_float)),
+            z3.And(self.is_int, other.is_float, z3.fpLT(self_as_fp, other.z3_float)),
+            z3.And(self.is_float, other.is_int, z3.fpLT(self.z3_float, other_as_fp)),
         )
         return SymbolicValue(
             _name=f"({self._name}<{other._name})",
@@ -983,9 +999,13 @@ class SymbolicValue(SymbolicType):
     def __le__(self, other: object) -> SymbolicValue:
         """Python '<=' operator."""
         other = SymbolicValue.from_const(other)
+        self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
             z3.And(self.is_int, other.is_int, self.z3_int <= other.z3_int),
             z3.And(self.is_float, other.is_float, z3.fpLEQ(self.z3_float, other.z3_float)),
+            z3.And(self.is_int, other.is_float, z3.fpLEQ(self_as_fp, other.z3_float)),
+            z3.And(self.is_float, other.is_int, z3.fpLEQ(self.z3_float, other_as_fp)),
         )
         return SymbolicValue(
             _name=f"({self._name}<={other._name})",
@@ -1000,9 +1020,13 @@ class SymbolicValue(SymbolicType):
     def __gt__(self, other: object) -> SymbolicValue:
         """Python '>' operator."""
         other = SymbolicValue.from_const(other)
+        self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
             z3.And(self.is_int, other.is_int, self.z3_int > other.z3_int),
             z3.And(self.is_float, other.is_float, z3.fpGT(self.z3_float, other.z3_float)),
+            z3.And(self.is_int, other.is_float, z3.fpGT(self_as_fp, other.z3_float)),
+            z3.And(self.is_float, other.is_int, z3.fpGT(self.z3_float, other_as_fp)),
         )
         return SymbolicValue(
             _name=f"({self._name}>{other._name})",
@@ -1017,9 +1041,13 @@ class SymbolicValue(SymbolicType):
     def __ge__(self, other: object) -> SymbolicValue:
         """Python '>=' operator."""
         other = SymbolicValue.from_const(other)
+        self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
             z3.And(self.is_int, other.is_int, self.z3_int >= other.z3_int),
             z3.And(self.is_float, other.is_float, z3.fpGEQ(self.z3_float, other.z3_float)),
+            z3.And(self.is_int, other.is_float, z3.fpGEQ(self_as_fp, other.z3_float)),
+            z3.And(self.is_float, other.is_int, z3.fpGEQ(self.z3_float, other_as_fp)),
         )
         return SymbolicValue(
             _name=f"({self._name}>={other._name})",

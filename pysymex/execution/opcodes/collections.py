@@ -126,7 +126,7 @@ def handle_build_map(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
     for key, val in items:
         s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
         s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-        sym_dict = sym_dict.__setitem__(s_key, cast("SymbolicValue", s_val))
+        sym_dict = sym_dict.__setitem__(s_key, s_val)
     sym_dict.z3_len = z3.IntVal(count)
 
     state = state.push(sym_dict)
@@ -145,7 +145,7 @@ def handle_build_const_key_map(
     keys_tuple = state.pop()
     
     values = []
-    for i in range(count):
+    for _ in range(count):
         val = state.pop()
         values.append(val)
     values.reverse()
@@ -164,7 +164,7 @@ def handle_build_const_key_map(
         for key, val in zip(concrete_keys, values, strict=False):
             s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
             s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
-            sym_dict = sym_dict.__setitem__(s_key, cast("SymbolicValue", s_val))
+            sym_dict = sym_dict.__setitem__(s_key, s_val)
     else:
         pass
     sym_dict.z3_len = z3.IntVal(count)

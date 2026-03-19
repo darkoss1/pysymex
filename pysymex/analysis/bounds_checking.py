@@ -11,6 +11,7 @@ for mathematical proofs of memory safety. Covers:
 
 from __future__ import annotations
 
+import icontract
 import logging
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class SymbolicArray:
         assert self._array is not None
         return self._array
 
+    @icontract.ensure(lambda result: isinstance(result, z3.ExprRef))
     def select(self, index: z3.ArithRef) -> z3.ExprRef:
         """Read element at index."""
         assert self._array is not None
@@ -146,6 +148,7 @@ class SymbolicBuffer:
     size: z3.ArithRef
     base_address: z3.ArithRef = field(default_factory=lambda: z3.Int("base_0"))
 
+    @icontract.ensure(lambda result: isinstance(result, z3.BoolRef))
     def contains_address(self, addr: z3.ArithRef) -> z3.BoolRef:
         """Check if address is within buffer bounds."""
         return z3.And(addr >= self.base_address, addr < self.base_address + self.size)
@@ -180,6 +183,7 @@ class BoundsChecker:
         self._solver.reset()
         self._issues.clear()
 
+    @icontract.ensure(lambda result: isinstance(result, list))
     def check_index(
         self,
         index: z3.ArithRef,

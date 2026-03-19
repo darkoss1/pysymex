@@ -106,7 +106,7 @@ class FunctionSummaryCache:
             # Combine target vars into a dummy query to find all relevant constraints.
             if target_vars:
                 dummy_query = z3.And(*[(v == v) for v in target_vars])
-                relevant_slice = cast("list[z3.BoolRef]", optimizer.slice_for_query(path_constraints, dummy_query))
+                relevant_slice = optimizer.slice_for_query(path_constraints, dummy_query)
             else:
                 relevant_slice = []
 

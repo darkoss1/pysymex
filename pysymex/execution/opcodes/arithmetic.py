@@ -151,9 +151,24 @@ def _py_floor_div(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:
     return z3.If(b >= 0, a / b, (-a) / (-b))
 
 
-def _pow2(shift: z3.ArithRef) -> z3.ArithRef:
-    """Compute 2**shift as a Z3 integer (shift must be >= 0)."""
-    return z3.ToInt(z3.IntVal(2) ** shift)
+def _bv_shift(left: z3.ArithRef, right: z3.ArithRef, is_lshift: bool) -> z3.ArithRef:
+    """Compute shift safely using 64-bit BitVectors to avoid non-linear arithmetic explosions."""
+    from pysymex.core.types import int_to_bv, bv_to_int
+    
+    # Constrain shift amount to 0-63 to match standard 64-bit architecture limits
+    # and prevent bitvector overflow behavior.
+    safe_right = z3.If(right > 63, z3.IntVal(63), right)
+    
+    left_bv = int_to_bv(left)
+    right_bv = int_to_bv(safe_right)
+    
+    if is_lshift:
+        result_bv = left_bv << right_bv
+    else:
+        # Python right shift preserves sign (Arithmetic Shift Right)
+        result_bv = left_bv >> right_bv 
+        
+    return bv_to_int(result_bv)
 
 
 @opcode_handler("UNARY_POSITIVE")
@@ -570,15 +585,11 @@ def handle_binary_shift(
 
     state = state.add_constraint(z3.And(left.is_int, right.is_int, right.z3_int >= 0))
 
-    shift_pow = _pow2(right.z3_int)
-    result_int = (
-        left.z3_int * shift_pow
-        if instr.opname == "BINARY_LSHIFT"
-        else _py_floor_div(left.z3_int, shift_pow)
-    )
+    res_int = _bv_shift(left.z3_int, right.z3_int, is_lshift=(instr.opname == "BINARY_LSHIFT"))
+    
     result = SymbolicValue(
         _name=f"({left.name}{op}{right.name})",
-        z3_int=result_int,
+        z3_int=res_int,
         is_int=z3.And(left.is_int, right.is_int),
         z3_bool=Z3_FALSE,
         is_bool=Z3_FALSE,
@@ -721,12 +732,8 @@ def _get_binop_result(
                 return None, issues, True
 
             state = state.add_constraint(z3.And(left.is_int, right.is_int, right.z3_int >= 0))
-            shift_pow = _pow2(right.z3_int)
-            res_int = (
-                left.z3_int * shift_pow
-                if op_code.startswith("<<")
-                else _py_floor_div(left.z3_int, shift_pow)
-            )
+            res_int = _bv_shift(left.z3_int, right.z3_int, is_lshift=op_code.startswith("<<"))
+            
             result = SymbolicValue(
                 _name=f"({left.name}{op_code}{right.name})",
                 z3_int=res_int,

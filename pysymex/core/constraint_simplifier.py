@@ -132,16 +132,16 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
 
 
 def remove_subsumed(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
-    """Remove constraints that are subsumed by stronger ones.
+    """Remove structurally duplicate constraints.
 
-    Uses Z3 simplification to detect redundant constraints.
-    Only performs lightweight checks — does not invoke the full solver.
+    Uses Z3 structural equality to detect and remove exact duplicates.
+    Does not perform logical subsumption checking.
 
     Args:
         constraints: List of Z3 boolean constraints.
 
     Returns:
-        Deduplicated list with subsumed constraints removed.
+        Deduplicated list with structural duplicates removed.
     """
     if len(constraints) <= 1:
         return constraints

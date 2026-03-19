@@ -192,14 +192,15 @@ class SymbolicInt(SymbolicType):
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer modulo by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
-        return SymbolicInt(self.z3_int % safe_divisor)
+        floor_div = z3.ToInt(z3.ToReal(self.z3_int) / z3.ToReal(safe_divisor))
+        return SymbolicInt(self.z3_int - floor_div * safe_divisor)
 
     def __floordiv__(self, other: SymbolicInt) -> SymbolicInt:
         divisor = other.z3_int
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer division by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
-        return SymbolicInt(self.z3_int / safe_divisor)
+        return SymbolicInt(z3.ToInt(z3.ToReal(self.z3_int) / z3.ToReal(safe_divisor)))
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
         if isinstance(other, SymbolicFloat):
@@ -418,8 +419,15 @@ class SymbolicFloat(SymbolicType):
         return SymbolicBool(z3.Not(eq.z3_bool))
 
     def to_int(self) -> SymbolicInt:
-        """Convert to integer (truncate toward zero)."""
-        return SymbolicInt(z3.ToInt(self.z3_real))
+        """Convert to integer (truncate toward zero — matches Python int()).
+
+        z3.ToInt() applies floor (rounds toward -inf), which disagrees with
+        Python's int() for negative non-integers:  int(-1.5) == -1  but
+        ToInt(-1.5) == -2.  Correct formula: trunc(x) = sign(x)*floor(|x|).
+        """
+        abs_floor = z3.ToInt(z3.If(self.z3_real >= 0, self.z3_real, -self.z3_real))
+        sign = z3.If(self.z3_real < 0, z3.IntVal(-1), z3.IntVal(1))
+        return SymbolicInt(abs_floor * sign)
 
     @staticmethod
     def symbolic(name: str | None = None) -> SymbolicFloat:
@@ -436,9 +444,13 @@ class SymbolicFloat(SymbolicType):
         """As unified."""
         from .types import Z3_FALSE, SymbolicValue
 
+        # Use truncation toward zero (matching to_int / Python int()),
+        # not z3.ToInt which floors.
+        _abs_floor = z3.ToInt(z3.If(self.z3_real >= 0, self.z3_real, -self.z3_real))
+        _sign = z3.If(self.z3_real < 0, z3.IntVal(-1), z3.IntVal(1))
         return SymbolicValue(
             _name=self._name,
-            z3_int=z3.ToInt(self.z3_real),
+            z3_int=_abs_floor * _sign,
             is_int=Z3_FALSE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,

@@ -259,7 +259,7 @@ class AbstractState:
         return result
 
     def leq(self, other: AbstractState) -> bool:
-        """Leq."""
+        """Check if self ⊆ other (every variable in self is ≤ the same variable in other)."""
         if self._is_bottom:
             return True
         if other._is_bottom:
@@ -267,6 +267,10 @@ class AbstractState:
         for var, value in self.variables.items():
             if not value.leq(other.get(var)):
                 return False
+        for var in other.variables:
+            if var not in self.variables:
+                if not NumericProduct.top().leq(other.get(var)):
+                    return False
         return True
 
 

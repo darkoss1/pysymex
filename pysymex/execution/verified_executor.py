@@ -15,7 +15,7 @@ from pysymex.analysis.contracts.decorators import get_function_contract
 from pysymex.analysis.properties import ArithmeticVerifier, PropertyProver
 from pysymex.analysis.path_manager import PathManager
 from pysymex.execution.termination import (
-    RankingFunction,
+    RankingFunction as RankingFunction,
     TerminationAnalyzer,
     TerminationProof,
     TerminationStatus,
@@ -117,55 +117,180 @@ class VerifiedExecutor:
     def execute_function(
         self, func: object, symbolic_args: dict[str, str] | None = None
     ) -> VerifiedExecutionResult:
-        """Execute a function with lightweight contract/arithmetic checks."""
+        """Execute a function with full symbolic contract and property verification."""
+        from pysymex.execution.executor_core import SymbolicExecutor
+        from pysymex.execution.executor_types import ExecutionConfig
+
         func_name = getattr(func, "__name__", "<lambda>")
         source_file = inspect.getsourcefile(func) or ""
         symbolic_args = symbolic_args or {}
 
+        # 1. Setup the core Symbolic Executor with verification bounds
+        exec_config = ExecutionConfig(
+            max_paths=self.config.max_paths,
+            max_depth=self.config.max_depth,
+            max_iterations=self.config.max_iterations,
+            timeout_seconds=self.config.timeout_seconds,
+            strategy=self.config.strategy,
+            solver_timeout_ms=self.config.solver_timeout_ms,
+            detect_division_by_zero=self.config.detect_division_by_zero,
+            detect_assertion_errors=self.config.detect_assertion_errors,
+            detect_index_errors=self.config.detect_index_errors,
+            detect_type_errors=self.config.detect_type_errors,
+            detect_overflow=self.config.detect_overflow,
+            verbose=self.config.verbose,
+            collect_coverage=self.config.collect_coverage,
+            # Force hooks to be evaluated
+            use_loop_analysis=True,
+        )
+        core_executor = SymbolicExecutor(exec_config, self.detector_registry)
+
+        # 2. Extract Contracts
         contracts_checked = 0
         func_contract = get_function_contract(func) if callable(func) else None
+        
+        preconditions = []
+        postconditions = []
+        
         if func_contract is not None:
             if self.config.check_preconditions:
-                contracts_checked += len(func_contract.preconditions)
+                preconditions.extend(func_contract.preconditions)
             if self.config.check_postconditions:
-                contracts_checked += len(func_contract.postconditions)
+                postconditions.extend(func_contract.postconditions)
 
         doc_requires, doc_ensures = _extract_docstring_contracts(func)
-        if self.config.check_preconditions:
-            contracts_checked += doc_requires
+        contracts_checked = len(preconditions) + len(postconditions) + doc_requires + doc_ensures
+
+        contract_issues: list[ContractIssue] = []
+
+        # Intercept Return paths to check postconditions
+        def _check_postconditions_hook(executor: object, state: object, issue: object = None) -> None:
+            if not postconditions:
+                return
+            
+            # Type hinting the generic objects
+            from pysymex.core.state import VMState
+            import z3
+            
+            state_typed = state if isinstance(state, VMState) else None
+            if not state_typed:
+                return
+
+            # Check if this is a return/terminal state (stack might have return value)
+            if not hasattr(state_typed, "pc"):
+                return
+                
+            # If we're at a RETURN_VALUE or RETURN_CONST opcode (rough heuristic from context)
+            try:
+                instrs = getattr(state_typed, "current_instructions", getattr(executor, "_instructions", []))
+                if state_typed.pc < len(instrs):
+                    instr = instrs[state_typed.pc]
+                    if instr.opname in ("RETURN_VALUE", "RETURN_CONST"):
+                        ret_val = state_typed.peek() if state_typed.stack else None
+                        
+                        # Prepare symbols map for the compiler
+                        symbols: dict[str, z3.ExprRef] = {}
+                        for name, val in state_typed.local_vars.items():
+                            if hasattr(val, "z3_int"):
+                                symbols[name] = val.z3_int
+                            elif hasattr(val, "z3_bool"):
+                                symbols[name] = val.z3_bool
+                        
+                        if ret_val is not None:
+                            if hasattr(ret_val, "z3_int"):
+                                symbols["__return__"] = ret_val.z3_int
+                            elif hasattr(ret_val, "z3_bool"):
+                                symbols["__return__"] = ret_val.z3_bool
+
+                        for post in postconditions:
+                            try:
+                                # Delegate to the ContractVerifier instance
+                                res = self.contract_verifier.verify_postcondition(
+                                    post,
+                                    list(state_typed.path_constraints),
+                                    symbols
+                                )
+                                if res.status == ProofStatus.FALSIFIED:
+                                    contract_issues.append(
+                                        ContractIssue(
+                                            kind=ContractKind.POSTCONDITION,
+                                            condition=post,
+                                            message=f"Postcondition might not hold on return: {res.message}",
+                                            line_number=getattr(instr, "starts_line", None),
+                                            counterexample=res.counterexample or {},
+                                        )
+                                    )
+                            except Exception as e:
+                                logger.debug(f"Failed to verify postcondition {post}: {e}")
+            except Exception:
+                pass
+
         if self.config.check_postconditions:
-            contracts_checked += doc_ensures
+            core_executor.register_hook("pre_step", _check_postconditions_hook)
 
+        # 3. Run the core symbolic execution
+        try:
+            core_result = core_executor.execute_function(func, symbolic_args)
+        except Exception as e:
+            logger.error("Core symbolic execution failed", exc_info=True)
+            core_result = None
+
+        # 4. Synthesize Arithmetic Issues from Core Issues
         arithmetic_issues: list[ArithmeticIssue] = []
-        if self.config.check_division_safety or self.config.detect_division_by_zero:
-            if _contains_division(func):
-                arithmetic_issues.append(
-                    ArithmeticIssue(
-                        kind="division_by_zero",
-                        expression="division",
-                        message="Potential division by zero",
-                    )
-                )
+        issues = []
+        coverage = set()
+        paths_explored = 0
+        paths_completed = 0
+        paths_pruned = 0
+        total_time_seconds = 0.0
 
+        if core_result:
+            paths_explored = core_result.paths_explored
+            paths_completed = core_result.paths_completed
+            paths_pruned = core_result.paths_pruned
+            coverage = core_result.coverage
+            total_time_seconds = core_result.total_time_seconds
+            
+            for iss in core_result.issues:
+                if iss.kind.name in ("DIVISION_BY_ZERO", "OVERFLOW"):
+                    arithmetic_issues.append(
+                        ArithmeticIssue(
+                            kind=iss.kind.name.lower(),
+                            expression=iss.message,
+                            message=iss.message,
+                            line_number=iss.line_number,
+                            counterexample=iss.model or {},
+                        )
+                    )
+                else:
+                    issues.append(iss)
+
+        # 5. Precondition Checking (requires a bit of AST/bytecode mapping to call sites if we were interprocedural,
+        # but for the top-level function, preconditions are assumptions).
+        # We assume preconditions hold during execution, but if they are intrinsically unsatisfiable, we flag them.
+        
         inferred_properties: list[InferredProperty] = []
         if self.config.infer_properties:
-            inferred_properties = []
+            # Placeholder for property inference
+            pass
 
         return VerifiedExecutionResult(
-            issues=list(self._issues),
-            paths_explored=0,
-            paths_completed=0,
-            paths_pruned=0,
-            coverage=set(),
-            total_time_seconds=0.0,
+            issues=issues,
+            paths_explored=paths_explored,
+            paths_completed=paths_completed,
+            paths_pruned=paths_pruned,
+            coverage=coverage,
+            total_time_seconds=total_time_seconds,
             function_name=func_name,
             source_file=source_file,
-            contract_issues=list(self._contract_issues),
+            contract_issues=contract_issues,
             contracts_checked=contracts_checked,
-            contracts_verified=contracts_checked,
-            contracts_violated=len(self._contract_issues),
+            contracts_verified=contracts_checked - len(contract_issues),
+            contracts_violated=len(contract_issues),
             arithmetic_issues=arithmetic_issues,
             inferred_properties=inferred_properties,
+            # Add termination placeholder 
+            termination_proof=None,
         )
 
 

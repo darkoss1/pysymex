@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import z3
 
@@ -200,11 +200,11 @@ class SymbolicFloat:
 
     def is_positive_infinity(self) -> z3.BoolRef:
         """Check if value is positive infinity."""
-        return z3.And(z3.fpIsInf(self._expr), z3.fpIsPositive(self._expr))
+        return z3.And(z3.fpIsInf(self._expr, z3.fpIsPositive(self._expr)))
 
     def is_negative_infinity(self) -> z3.BoolRef:
         """Check if value is negative infinity."""
-        return z3.And(z3.fpIsInf(self._expr), z3.fpIsNegative(self._expr))
+        return z3.And(z3.fpIsInf(self._expr, z3.fpIsNegative(self._expr)))
 
     def is_zero(self) -> z3.BoolRef:
         """Check if value is zero (+0 or -0)."""
@@ -212,11 +212,11 @@ class SymbolicFloat:
 
     def is_positive_zero(self) -> z3.BoolRef:
         """Check if value is positive zero."""
-        return z3.And(z3.fpIsZero(self._expr), z3.fpIsPositive(self._expr))
+        return z3.And(z3.fpIsZero(self._expr, z3.fpIsPositive(self._expr)))
 
     def is_negative_zero(self) -> z3.BoolRef:
         """Check if value is negative zero."""
-        return z3.And(z3.fpIsZero(self._expr), z3.fpIsNegative(self._expr))
+        return z3.And(z3.fpIsZero(self._expr, z3.fpIsNegative(self._expr)))
 
     def is_denormal(self) -> z3.BoolRef:
         """Check if value is denormalized (subnormal)."""
@@ -271,13 +271,11 @@ class SymbolicFloat:
         """Stable hash of the Z3 expression."""
         return self._expr.hash()
 
-    def conditional_merge(self, other: SymbolicFloat | float, condition: z3.BoolRef) -> AnySymbolic:
+    def conditional_merge(self, other: SymbolicFloat | float | int, condition: z3.BoolRef) -> AnySymbolic:
         """Merge with another float based on a condition."""
-        if not isinstance(other, (SymbolicFloat, float, int)):
-            return self.as_unified().conditional_merge(other, condition)
         other_fp = self._to_fp(other)
         return SymbolicFloat(
-            z3_expr=z3.If(condition, self._expr, other_fp),
+            z3_expr=cast(z3.FPRef, z3.If(condition, self._expr, other_fp)),
             config=self.config,
         )
 
@@ -298,9 +296,12 @@ class SymbolicFloat:
         )
 
     def _to_fp(self, value: SymbolicFloat | float | int) -> z3.FPRef:
-        """Convert value to FP expression."""
+        """Convert value to FP expression in this instance's sort."""
         if isinstance(value, SymbolicFloat):
-            return value._expr
+            if value._sort == self._sort:
+                return value._expr
+            # Different precision — promote/demote to self's sort.
+            return z3.fpToFP(self._rm, value._expr, self._sort)
         return z3.FPVal(float(value), self._sort)
 
     def __repr__(self) -> str:
@@ -410,7 +411,14 @@ class AccuracyAnalyzer:
         computed: SymbolicFloat,
         exact: SymbolicFloat,
     ) -> z3.FPRef:
-        """Compute ULP (Units in Last Place) difference."""
+        """Compute absolute floating-point difference between two values.
+
+        Note: Despite the name, this returns ``|computed - exact|`` (the
+        absolute difference in the value domain), **not** the difference
+        measured in ULP units.  A true ULP-distance would require dividing
+        by ``ulp(exact)``, which depends on the exponent and is non-trivial
+        to express in Z3 FP arithmetic.
+        """
         diff = computed - exact
         return z3.fpAbs(diff.z3_expr)
 

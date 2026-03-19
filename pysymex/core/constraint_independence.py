@@ -215,7 +215,7 @@ class ConstraintIndependenceOptimizer:
 
         names: set[str] = set()
         worklist: list[_z3.ExprRef] = [expr]
-        seen_ids: set[int] = {key}
+        seen_ids: set[int] = {expr.get_id()}
 
         while worklist:
             node = worklist.pop()
@@ -229,7 +229,7 @@ class ConstraintIndependenceOptimizer:
 
             children = node.children()
             for child in children:
-                child_id = child.hash()
+                child_id = child.get_id()
                 if child_id not in seen_ids:
                     seen_ids.add(child_id)
                     worklist.append(child)

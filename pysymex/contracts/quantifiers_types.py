@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import cast
 
 import z3
 
@@ -70,19 +71,25 @@ class BoundSpec:
         """Convert bound to Z3 constraint."""
         if var is None:
             return z3.BoolVal(True)
+        arith_var = cast(z3.ArithRef, var)
         constraints: list[z3.BoolRef] = []
         if self.lower is not None:
+            lower = cast(z3.ArithRef, self.lower)
             if self.lower_inclusive:
-                constraints.append(var >= self.lower)
+                constraints.append(arith_var >= lower)
             else:
-                constraints.append(var > self.lower)
+                constraints.append(arith_var > lower)
         if self.upper is not None:
+            upper = cast(z3.ArithRef, self.upper)
             if self.upper_inclusive:
-                constraints.append(var <= self.upper)
+                constraints.append(arith_var <= upper)
             else:
-                constraints.append(var < self.upper)
+                constraints.append(arith_var < upper)
         if self.in_collection is not None:
-            constraints.append(z3.BoolVal(True))
+            try:
+                constraints.append(z3.Select(self.in_collection, var) != z3.IntVal(0))
+            except z3.Z3Exception:
+                pass  # collection not an array; leave unconstrained
         if not constraints:
             return z3.BoolVal(True)
         return z3.And(*constraints)
@@ -120,15 +127,15 @@ class Quantifier:
         elif self.kind == QuantifierKind.EXISTS:
             return z3.Exists(z3_vars, z3.And(bound_constraint, self.body))
         elif self.kind == QuantifierKind.UNIQUE:
-            z3_vars[0] if len(z3_vars) == 1 else z3_vars
             y_vars = [z3.FreshConst(v.sort, "y") for v in self.variables]
-            y_vars[0] if len(y_vars) == 1 else y_vars
             body_with_y = z3.substitute(self.body, *zip(z3_vars, y_vars, strict=False))
             bound_with_y = z3.substitute(bound_constraint, *zip(z3_vars, y_vars, strict=False))
+            # All bound variables must be equal for any two witnesses.
+            eq_all = z3.And(*[x == y for x, y in zip(z3_vars, y_vars, strict=False)])
             uniqueness = z3.ForAll(
-                y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), z3_vars[0] == y_vars[0])
+                y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), eq_all)
             )
-            return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body)), uniqueness)
+            return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body), uniqueness))
         elif self.kind == QuantifierKind.COUNT:
             raise NotImplementedError("COUNT quantifier requires special handling")
         else:

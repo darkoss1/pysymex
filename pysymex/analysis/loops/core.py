@@ -290,18 +290,21 @@ class LoopBoundInference:
                 continue
             if hasattr(iv, "step") and hasattr(iv, "initial"):
                 step_val = iv.step
-                if isinstance(step_val, z3.ArithRef) or isinstance(step_val, int):
-                    step = step_val if isinstance(step_val, int) else 1
-                    if step > 0:
-                        for constraint in state.path_constraints:
-                            if z3.is_lt(constraint) or z3.is_le(constraint):
-                                upper = (
-                                    constraint.children()[1]
-                                    if hasattr(constraint, "children")
-                                    else None
-                                )
-                                if upper is not None:
-                                    return LoopBound.symbolic(upper)
+                if isinstance(step_val, int):
+                    step = step_val
+                elif isinstance(step_val, z3.ArithRef) and z3.is_int_value(step_val):
+                    step = step_val.as_long()
+                else:
+                    step = None
+                if step is not None and step > 0:
+                    var_expr = getattr(var, "z3_int", var)
+                    for constraint in state.path_constraints:
+                        if z3.is_lt(constraint) or z3.is_le(constraint):
+                            children = constraint.children()
+                            if len(children) == 2:
+                                lhs, rhs = children[0], children[1]
+                                if z3.eq(lhs, var_expr) or str(lhs) == str(var_expr):
+                                    return LoopBound.symbolic(rhs)
         return LoopBound.range(0, 1000)
 
     def _infer_while_bound(
@@ -460,15 +463,44 @@ class LoopSummarizer:
         state: VMState,
         iterations: z3.ExprRef | int,
     ) -> dict[str, z3.ExprRef]:
-        """Detect accumulator patterns like sum += x."""
+        """Detect accumulator patterns like sum += iv (Arithmetic Series)."""
         effects: dict[str, z3.ExprRef] = {}
-        for name, iv in loop.induction_vars.items():
-            if iv.step == z3.IntVal(1) or iv.step == 1:
-                initial = iv.initial
-                if isinstance(iterations, int):
-                    effects[f"{name}_final"] = initial + z3.IntVal(iterations)
-                else:
-                    effects[f"{name}_final"] = initial + iterations
+        
+        instructions = getattr(state, "current_instructions", None)
+        if not instructions:
+            return effects
+
+        iv_names = set(loop.induction_vars.keys())
+        
+        for i in range(len(instructions) - 3):
+            instr1 = instructions[i]
+            if getattr(instr1, "offset", -1) not in loop.body_pcs:
+                continue
+                
+            if instr1.opname in ("LOAD_FAST", "LOAD_NAME"):
+                acc_name = instr1.argval
+                if isinstance(acc_name, str):
+                    instr2 = instructions[i + 1]
+                    
+                    if instr2.opname in ("LOAD_FAST", "LOAD_NAME") and instr2.argval in iv_names:
+                        iv_name = instr2.argval
+                        instr3 = instructions[i + 2]
+                        
+                        if instr3.opname == "BINARY_OP" and getattr(instr3, "argrepr", "") in ("+", "+="):
+                            instr4 = instructions[i + 3]
+                            
+                            if instr4.opname in ("STORE_FAST", "STORE_NAME") and instr4.argval == acc_name:
+                                iv = loop.induction_vars[str(iv_name)]
+                                acc_val = state.locals.get(acc_name)
+                                
+                                if acc_val is not None:
+                                    acc_initial = getattr(acc_val, "z3_int", acc_val)
+                                    if isinstance(acc_initial, z3.ExprRef):
+                                        n = z3.IntVal(iterations) if isinstance(iterations, int) else iterations
+                                        # Arithmetic series sum: n * initial + step * (n * (n - 1)) / 2
+                                        sum_n = (n * (n - z3.IntVal(1))) / z3.IntVal(2)
+                                        total_addition = (n * iv.initial) + (sum_n * iv.step)
+                                        effects[acc_name] = acc_initial + total_addition
         return effects
 
     def apply_summary(
@@ -506,7 +538,10 @@ class LoopInvariantGenerator:
         for name, iv in loop.induction_vars.items():
             sym_var = state.locals.get(name)
             if sym_var and hasattr(sym_var, "z3_int"):
-                invariants.append(sym_var.z3_int >= iv.initial)
+                if iv.direction >= 0:
+                    invariants.append(sym_var.z3_int >= iv.initial)
+                else:
+                    invariants.append(sym_var.z3_int <= iv.initial)
                 if loop.bound is not None:
                     final = iv.final_value(loop.bound.upper)
                     if iv.direction > 0:
@@ -583,7 +618,10 @@ class LoopWidening:
                 widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
                 widened.locals[name] = widened_sym
                 widened.path_constraints = widened.path_constraints.append(type_constraint)
-                widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
+                if iv.direction >= 0:
+                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
+                else:
+                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= iv.initial)
                 if loop.bound is not None:
                     final = iv.final_value(loop.bound.upper)
                     widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= final)

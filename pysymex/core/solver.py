@@ -411,10 +411,18 @@ class IncrementalSolver:
                             result = SolverResult.unsat()
                             self._cache_store(cache_key, cache_disc, result)
                             return False
-                # All clusters SAT
-                result = SolverResult.sat(None)
-                self._cache_store(cache_key, cache_disc, result)
-                return True
+
+                self._solver.push()
+                try:
+                    for c in constraints:
+                        self._solver.add(c)
+                    full_result = self.check()
+                finally:
+                    self._solver.pop()
+                self._cache_store(cache_key, cache_disc, full_result)
+                if full_result.is_unknown:
+                    return True
+                return full_result.is_sat
 
         # Single cluster or single constraint — solve directly
         # Theory-aware configuration: detect the dominant theory and
@@ -610,9 +618,6 @@ class IncrementalSolver:
         """
         return extract_unsat_core(constraints, timeout_ms=self._timeout_ms)
 
-    # ------------------------------------------------------------------
-    # Theory detection and auto-escalation
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _detect_theory(constraints: list[z3.BoolRef]) -> str:
@@ -800,7 +805,7 @@ class ShadowSolver(IncrementalSolver):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        super().__init__(*args, **kwargs)
 
 
 class PortfolioSolver:

@@ -250,6 +250,9 @@ class StateMerger:
         if not self.states_are_similar(state1, state2):
             return None
         merged = state1.copy()
+
+        branch_cond_for_locals: z3.BoolRef | None = None
+
         if state1.path_constraints and state2.path_constraints:
             from pysymex.core.copy_on_write import ConstraintChain
 
@@ -272,6 +275,7 @@ class StateMerger:
             extra2 = constraints_list2[common_len:]
             if extra1 and extra2:
                 branch_cond = extra1[0]
+                branch_cond_for_locals = branch_cond
                 for c in extra1:
                     merged.path_constraints = merged.path_constraints.append(
                         z3.Implies(branch_cond, c)
@@ -287,6 +291,9 @@ class StateMerger:
                 for c in extra2:
                     merged.path_constraints = merged.path_constraints.append(c)
 
+        if branch_cond_for_locals is None:
+            branch_cond_for_locals = z3.Bool(f"_merge_cond_{id(state1)}_{id(state2)}")
+
         for name, value2 in state2.locals.items():
             if name not in merged.locals:
                 merged.locals[name] = value2
@@ -296,9 +303,12 @@ class StateMerger:
                 s1: object = merged.locals[name]
                 s2: object = value2
                 if hasattr(s1, "conditional_merge"):
-                    merged.locals[name] = s1.conditional_merge(s2, z3.BoolVal(True))
+                    merged.locals[name] = s1.conditional_merge(s2, branch_cond_for_locals)
+                elif hasattr(s2, "conditional_merge"):
+                    merged.locals[name] = s2.conditional_merge(s1, z3.Not(branch_cond_for_locals))
                 else:
-                    merged.locals[name] = SymbolicValue.from_const(0)
+                    sv, _type_constr = SymbolicValue.symbolic(f"_merged_{name}")
+                    merged.locals[name] = sv
         self.stats.merges_successful += 1
         self.stats.states_reduced += 1
         return merged

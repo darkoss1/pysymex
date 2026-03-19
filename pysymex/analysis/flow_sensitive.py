@@ -22,6 +22,7 @@ Implementation split across:
 
 from __future__ import annotations
 
+import icontract
 from dataclasses import dataclass
 
 from .cfg import (
@@ -133,6 +134,7 @@ class FlowSensitiveAnalyzer:
                 return header_id
         return None
 
+    @icontract.require(lambda self, pc: self.cfg.get_block_at_pc(pc) is not None)
     def get_dominator(self, pc: int) -> int | None:
         """Get the immediate dominator block for a PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -140,6 +142,7 @@ class FlowSensitiveAnalyzer:
             return block.immediate_dominator
         return None
 
+    @icontract.ensure(lambda result: isinstance(result, bool))
     def is_reachable(self, pc: int) -> bool:
         """Check if a PC is reachable from entry."""
         block = self.cfg.get_block_at_pc(pc)
@@ -163,6 +166,8 @@ class FlowContext:
     null_info: NullInfo
 
     @classmethod
+    @icontract.require(lambda analyzer, pc: analyzer.cfg.get_block_at_pc(pc) is not None)
+    @icontract.ensure(lambda result: isinstance(result, FlowContext))
     def create(
         cls,
         analyzer: FlowSensitiveAnalyzer,

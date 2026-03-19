@@ -20,6 +20,7 @@ from typing import (
 
 import z3
 
+from pysymex.analysis.solver.types import VerificationResult
 from pysymex.core.constraint_hash import structural_hash
 from pysymex.core.constraint_independence import ConstraintIndependenceOptimizer
 from pysymex.core.parallel_types import (
@@ -585,7 +586,7 @@ class ProcessParallelVerifier:
 
 
 def _serialize_file_results(
-    filepath: str, file_results: dict[str, list[object]]
+    filepath: str, file_results: dict[str, list[VerificationResult]]
 ) -> dict[str, list[dict[str, object]]]:
     """Serialize verify results to be cross-process compatible."""
     serialized: dict[str, list[dict[str, object]]] = {}
@@ -610,7 +611,7 @@ def _serialize_file_results(
 
 def _process_verify_file(
     filepath: str, timeout_ms: int, max_depth: int
-) -> dict[str, object] | None:
+) -> dict[str, list[dict[str, object]]] | None:
     """Top-level worker function for process-based file verification.
 
     Must be module-level (not a method) for ProcessPoolExecutor pickling.

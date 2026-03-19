@@ -9,7 +9,7 @@ import types
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from ..detectors.static import (
+from ..detectors.static_types import (
     Issue,
     IssueKind,
     Severity,

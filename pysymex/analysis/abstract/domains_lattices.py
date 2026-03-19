@@ -6,6 +6,7 @@ and conversion to Z3 constraints.
 
 from __future__ import annotations
 
+import icontract
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -51,6 +52,7 @@ class Sign(AbstractValue["Sign"]):
     def is_bottom(self) -> bool:
         return self.value == SignValue.BOTTOM
 
+    @icontract.ensure(lambda result: isinstance(result, Sign))
     def join(self, other: Sign) -> Sign:
         """Least upper bound."""
         if self.is_bottom():
@@ -90,6 +92,7 @@ class Sign(AbstractValue["Sign"]):
                 return Sign(SignValue.TOP)
         return Sign(SignValue.TOP)
 
+    @icontract.ensure(lambda result: isinstance(result, Sign))
     def meet(self, other: Sign) -> Sign:
         """Greatest lower bound."""
         if self.is_top():
@@ -216,6 +219,7 @@ class Parity(AbstractValue["Parity"]):
     def is_bottom(self) -> bool:
         return self.value == ParityValue.BOTTOM
 
+    @icontract.ensure(lambda result: isinstance(result, Parity))
     def join(self, other: Parity) -> Parity:
         """Join."""
         if self.is_bottom():
@@ -335,6 +339,7 @@ class Null(AbstractValue["Null"]):
     def may_be_null(self) -> bool:
         return self.value in (NullValue.NULL, NullValue.TOP)
 
+    @icontract.ensure(lambda result: isinstance(result, Null))
     def join(self, other: Null) -> Null:
         """Join."""
         if self.is_bottom():

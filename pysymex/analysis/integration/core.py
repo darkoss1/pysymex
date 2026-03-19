@@ -18,13 +18,13 @@ from ..abstract.interpreter import (
     AbstractAnalyzer,
     DivisionByZeroWarning,
 )
-from ..detectors.static import (
+from ..detectors.static_types import (
     DetectionContext,
     Issue,
     IssueKind,
     Severity,
-    StaticAnalyzer,
 )
+from ..detectors.static import StaticAnalyzer
 from ..flow_sensitive import (
     CFGBuilder,
     FlowSensitiveAnalyzer,

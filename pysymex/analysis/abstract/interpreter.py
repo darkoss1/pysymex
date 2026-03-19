@@ -221,6 +221,11 @@ class AbstractInterpreter:
                     succ_block = cfg.blocks.get(succ_id)
                     if succ_block is not None and succ_block not in worklist:
                         worklist.append(succ_block)
+        if worklist and global_iterations >= max_global_iterations:
+            logger.warning(
+                "Abstract interpreter hit iteration limit (%d) — analysis may be unsound",
+                max_global_iterations,
+            )
         return states
 
     def _transfer_block(
