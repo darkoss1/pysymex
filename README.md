@@ -219,8 +219,8 @@ options:
   --mode {symbolic,static,pipeline}  Analysis mode (default: symbolic)
   --format {text,json,sarif}  Output format (default: text)
   -o OUTPUT             Output file path (default: stdout)
-  --max-paths N         Max paths per function (default: 200)
-  --timeout SECONDS     Timeout per function (default: 30)
+  --max-paths N         Maximum execution paths to explore (default: unlimited with CHTD)
+  --timeout SECONDS     Maximum analysis time in seconds (default: 60)
   -v, --verbose         Verbose output
   --workers N           Number of worker processes (0 = auto, default: 0)
   --auto                Auto-tune configuration based on complexity
