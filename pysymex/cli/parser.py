@@ -188,14 +188,14 @@ Examples:
     analyze_parser.add_argument(
         "--max-paths",
         type=int,
-        default=200,
-        help="Maximum paths to explore",
+        default=100000,
+        help="Maximum execution paths to explore (default: unlimited with CHTD)",
     )
     analyze_parser.add_argument(
         "--timeout",
         type=int,
-        default=30,
-        help="Timeout in seconds",
+        default=60,
+        help="Maximum analysis time in seconds (default: 60)",
     )
     analyze_parser.add_argument(
         "-v",
