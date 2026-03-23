@@ -28,28 +28,28 @@
 
 - Disassembles Python bytecode (CPython 3.11–3.13)
 - Symbolically executes every reachable path
-- Builds Z3 constraints at branches, arithmetic, and API calls
 - Reports bugs with **counterexamples** (concrete crashing inputs)
 - Tracks taint from untrusted sources to dangerous sinks
+- **Interprocedural Analysis** — crosses function boundaries via call graphs and summaries
+- **Asynchronous Execution** — high-throughput scanning with `asyncio` and process pools
 
 ## Features
-
-- **Hardware Acceleration (`h_acceleration`)** — Evaluates Boolean constraints near theoretical hardware limits via CuPy NVRTC direct CUDA C++ compilation. Includes instruction-level parallelism (ILP) unrolling and warp shuffle reductions. Seamlessly falls back to optimized multi-threaded Numba CPU execution when NVIDIA GPUs are absent.
-- **Full Symbolic Execution Engine** — bytecode-level analysis with CPython 3.13 opcode support
-- **CHTD Path Explosion Mitigation** — Constraint Hypergraph Treewidth Decomposition reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs
-- **Constraint Independence Optimization** — KLEE-style constraint slicing partitions queries into independent clusters, reducing solver load by 60-90%
-- **Adaptive Path Selection** — Thompson Sampling (Beta-Bernoulli bandit) balances DFS, coverage-guided, and random exploration strategies
-- **Theory-Aware Solver Dispatch** — auto-detects QF_LIA/QF_S/QF_BV theories and tunes Z3 parameters per query
-- **Exception Forking** — dual-path exploration for try/except blocks using Python 3.12+ exception tables
-- **Interprocedural Analysis** — tracks bugs across function calls via call graph and function summaries
-- **12+ Bug Detectors** — division by zero, null dereference, index/key errors, type errors, assertion failures, dead code, taint violations, integer overflow, and more
-- **Taint Tracking** — follows untrusted data through your code to detect injection vulnerabilities
-- **Abstract Interpretation** — interval, sign, and parity domains with widening for loop analysis
-- **Z3 SMT Integration** — formal proofs via incremental solver with caching and portfolio solving
-- **Loop Handling** — bound inference, induction variable detection, loop summarization, and widening
-- **Multiple Output Formats** — text, JSON, HTML, SARIF 2.1.0 (GitHub Security tab compatible)
-- **Watch Mode** — incremental re-analysis on file changes during development
-- **Parallel Scanning** — multi-process file verification for large codebases
+- **Hardware Acceleration (`h_acceleration`)** — Evaluates Boolean constraints near theoretical hardware limits via **CuPy NVRTC** direct CUDA C++ compilation. Includes instruction-level parallelism (ILP) unrolling and warp shuffle reductions. Seamlessly falls back to optimized multi-threaded Numba CPU execution.
+- **Full Symbolic Execution Engine** — bytecode-level analysis with robust CPython 3.13 opcode support.
+- **CHTD Path Explosion Mitigation** — Constraint Hypergraph Treewidth Decomposition reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs.
+- **Constraint Independence Optimization** — KLEE-style constraint slicing partitions queries into independent clusters, reducing solver load by 60-90%.
+- **Adaptive Path Selection** — Thompson Sampling (Beta-Bernoulli bandit) balances DFS, coverage-guided, and random exploration strategies.
+- **Theory-Aware Solver Dispatch** — auto-detects QF_LIA/QF_S/QF_BV theories and tunes Z3 parameters per query.
+- **Exception Forking** — explores both success and exception paths for try/except blocks using Python 3.12+ exception tables.
+- **Interprocedural Analysis** — tracks bugs across function calls via global call graph and function summaries.
+- **25+ Bug Types (40+ Detectors)** — handles everything from division by zero to path traversal and SQL injection.
+- **Taint Tracking** — fine-grained data flow tracking from untrusted sources to dangerous sinks.
+- **Abstract Interpretation** — interval, sign, and parity domains with widening for rapid loop convergence.
+- **Z3 SMT Integration** — formal proofs via incremental solver with caching and portfolio solving.
+- **Loop Handling** — bound inference, induction variable detection, loop summarization, and widening.
+- **Multiple Output Formats** — text, JSON, HTML, SARIF 2.1.0 (GitHub Security tab compatible).
+- **Watch Mode** — incremental re-analysis on file changes during development.
+- **Parallel Scanning** — process-level parallelism for multi-core verification scaling for large codebases
 
 ## Installation
 
@@ -105,26 +105,28 @@ pysymex benchmark --format markdown
 ### Python API
 
 ```python
-from pysymex.analysis.solver import verify_function
+from pysymex import analyze
 
 def risky_divide(x: int, y: int) -> int:
     return x // y
 
-results = verify_function(risky_divide)
-for r in results:
-    if r.can_crash:
-        print(f"Bug: {r.crash.description}")
-        print(f"Counterexample: {r.counterexample}")
+# Analyze for potential crashes
+result = analyze(risky_divide, {"x": "int", "y": "int"})
+
+for issue in result.issues:
+    print(f"Bug: {issue.message}")
+    print(f"Counterexample: {issue.counterexample}")
 ```
 
 ```python
-from pysymex.analysis.solver import Z3Engine
+from pysymex import Z3Engine
 
 engine = Z3Engine(
     timeout_ms=5000,
     interprocedural=True,
     track_taint=True,
 )
+# Returns a mapping of function names to VerificationResults
 file_results = engine.verify_file("mycode.py")
 ```
 
@@ -137,13 +139,16 @@ file_results = engine.verify_file("mycode.py")
 | Negative Shift | Bit shift with negative amount | `x << n` where `n<0` |
 | Index Out of Bounds | Array access beyond bounds | `arr[i]` where `i >= len(arr)` |
 | None Dereference | Accessing attributes on None | `obj.method()` where `obj=None` |
-| Type Error | Type mismatch in operations | Operations on wrong types |
+| Type Error | Type mismatch in operations | `str + int` |
 | Key Error | Dictionary key not found | `d[key]` where key missing |
-| Attribute Error | Missing attribute access | Missing method/property |
-| Assertion Failure | Assertions that can fail | `assert x > 0` where `x<=0` |
-| Unreachable Code | Dead code paths | Code after `return` |
-| Taint Violation | Untrusted data to dangerous sink | SQL injection, command injection |
-| Integer Overflow | Arithmetic overflow | Large number operations |
+| Attribute Error | Missing attribute access | `obj.missing_attr` |
+| Assertion Failure | Assertions that can fail | `assert x > 0` |
+| Unreachable Code | Dead code paths | Code after absolute `return` |
+| Taint Violation | Untrusted data to dangerous sink | SQLi, Command Injection |
+| Integer Overflow | Arithmetic overflow (32/64-bit) | `x + 1` where `x = MAX_INT` |
+| Path Traversal | Untrusted input used in file paths | `open("/etc/" + user_input)` |
+| Resource Leak | Unclosed files or connections | `f = open(p); return` |
+| ValueError | Invalid arguments to builtins | `int("abc")` |
 
 ## Example Output
 
@@ -176,38 +181,38 @@ file_results = engine.verify_file("mycode.py")
 
 ```
 pysymex/
-├── analysis/              # Analysis engines
-│   ├── solver/            # Core Z3 verification
-│   ├── abstract/          # Abstract interpretation domains
-│   ├── detectors/         # Bug detectors
-│   ├── taint/             # Taint tracking
+├── analysis/              # Advanced Analysis Engines
+│   ├── solver/            # Z3 interprocedural verification core
+│   ├── abstract/          # Abstract interpretation (interval, sign, parity)
+│   ├── detectors/         # Bug pattern detectors (40+ implementations)
+│   ├── taint/             # Taint tracking & information flow
+│   ├── type_inference/    # Static type inference system
 │   ├── path_manager.py    # Adaptive path selection (Thompson Sampling)
-│   └── ...                # 35+ analysis modules
-├── core/                  # Core symbolic types
-│   ├── types.py           # SymbolicValue, SymbolicString, SymbolicList, etc.
-│   ├── state.py           # VM state management (stack, locals, constraints)
-│   ├── solver.py          # Z3 solver wrapper (incremental, portfolio, theory-aware)
-│   ├── treewidth.py       # Constraint interaction graph & tree decomposition (CHTD)
-│   ├── constraint_independence.py  # KLEE-style constraint slicing
-│   └── ...
-├── execution/             # Bytecode execution
-│   ├── executor.py        # Main symbolic executor
-│   ├── dispatcher.py      # Opcode dispatch with exception table support
-│   ├── opcodes/           # Per-opcode handlers (CPython 3.11-3.13)
-│   │   ├── arithmetic.py  # Arithmetic ops with exception forking
-│   │   ├── control.py     # Branch handling with affinity fast path
-│   │   └── ...
+│   └── ...                # 40+ analysis modules
+├── core/                  # Engine Foundation
+│   ├── types.py           # Symbolic primitives (Int, Bool, String)
+│   ├── types_containers.py# Symbolic List, Dict, Object models
+│   ├── state.py           # VM state management (stack, locals, heap)
+│   ├── solver.py          # Z3 solver wrapper (incremental, portfolio)
+│   ├── treewidth.py       # Constraint Hypergraph Tree Decomposition (CHTD)
+│   └── constraint_independence.py  # KLEE-style constraint slicing
+├── execution/             # Bytecode Virtual Machine
+│   ├── executor.py        # Main engine hub
+│   ├── dispatcher.py      # Opcode dispatch with exception handling
+│   ├── opcodes/           # Per-opcode handlers (3.11-3.13)
 │   └── verified_executor.py
-├── models/                # Built-in stdlib models (100+ functions)
-├── reporting/             # HTML, SARIF, JSON, text output
-├── contracts/             # Design-by-contract (experimental)
-└── plugins/               # Plugin system for custom detectors
+├── h_acceleration/        # Hardware-Accelerated Solvers
+│   └── backends/          # GPU (CuPy NVRTC) and CPU (Numba) backends
+├── models/                # Stdlib Models (700+ functions)
+├── reporting/             # HTML, SARIF, JSON, Text formatters
+├── scanner/               # Fast static pattern matching scanner
+└── ...
 ```
 
 ## Running Tests
 
 ```bash
-# Run all tests (~5700 tests)
+# Run all tests (5700+ items)
 pytest tests/ -v
 
 # Run specific modules
