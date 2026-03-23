@@ -4,6 +4,15 @@ Advanced Features
 This section covers advanced features of pysymex.
 
 
+Hardware Acceleration
+---------------------
+
+PySyMex includes a custom-built, high-performance GPU Virtual Machine for resolving Constraint Hypergraph Treewidth Decomposition (CHTD) queries at scale. 
+
+To learn more about the C++ CUDA integration, the branchless bytecode ISA, and how to evaluate trillions of states per second, see the dedicated architecture documentation:
+* `docs/arch/H_ACCELERATION.md`
+
+
 Inter-Procedural Analysis
 -------------------------
 

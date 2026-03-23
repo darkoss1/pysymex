@@ -462,6 +462,14 @@ class IssueKind(Enum):
     OVERFLOW = "OVERFLOW"
     UNREACHABLE_CODE = "UNREACHABLE_CODE"
     INFINITE_LOOP = "INFINITE_LOOP"
+    SQL_INJECTION = "SQL_INJECTION"
+    PATH_TRAVERSAL = "PATH_TRAVERSAL"
+    COMMAND_INJECTION = "COMMAND_INJECTION"
+    CODE_INJECTION = "CODE_INJECTION"
+    VALUE_ERROR = "VALUE_ERROR"
+    UNBOUND_VARIABLE = "UNBOUND_VARIABLE"
+    UNHANDLED_EXCEPTION = "UNHANDLED_EXCEPTION"
+    RECURSION_LIMIT = "RECURSION_LIMIT"
 ```
 
 ### Issue Descriptions
@@ -476,6 +484,11 @@ class IssueKind(Enum):
 | `ASSERTION_ERROR` | Assert can fail | `assert x > 0` when x=0 |
 | `FORMAT_STRING_ERROR` | Bad format string | `"{} {}".format(x)` |
 | `RESOURCE_LEAK` | Unclosed resource | `open(f)` without close |
+| `SQL_INJECTION` | Untrusted input in SQL query | `execute(f"SELECT * FROM {user_input}")` |
+| `PATH_TRAVERSAL` | Untrusted input in file path | `open("/var/www/" + user_input)` |
+| `COMMAND_INJECTION` | Untrusted input in shell command | `os.system("echo " + user_input)` |
+| `VALUE_ERROR` | Invalid arguments to builtins | `int("abc")` |
+| `UNBOUND_VARIABLE` | Accessing variable before assignment | `print(x)` before `x = 1` |
 
 ---
 

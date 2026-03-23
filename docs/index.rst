@@ -37,6 +37,7 @@ This will detect that ``y`` could be zero, causing a division by zero error.
 Features
 --------
 
+- **Hardware Acceleration**: GPU Virtual Machine for evaluating trillions of states per second
 - **Symbolic Execution**: Explores all possible execution paths
 - **Z3 Integration**: Uses SMT solving for constraint reasoning
 - **Bug Detection**: Division by zero, assertions, index errors, and more

@@ -469,16 +469,23 @@ Tracks all scans in a session with automatic logging.
 
 | Kind | Description | Severity |
 |------|-------------|----------|
+| `SQL_INJECTION` | Untrusted data flows to SQL query execution | High |
+| `COMMAND_INJECTION` | Untrusted data flows to shell execution | High |
+| `PATH_TRAVERSAL` | Untrusted data flows to file system access | High |
+| `CODE_INJECTION` | Untrusted data flows to `eval()` or `exec()` | High |
+| `TAINT_VIOLATION` | Generic untrusted data flow to dangerous sink | High |
 | `DIVISION_BY_ZERO` | Division where denominator can be zero | High |
 | `MODULO_BY_ZERO` | Modulo where divisor can be zero | High |
 | `NULL_DEREFERENCE` | Accessing attribute/method of None | High |
+| `RESOURCE_LEAK` | Unclosed file or network connection | High |
 | `INDEX_ERROR` | Array/list index out of bounds | Medium |
 | `KEY_ERROR` | Dictionary key not found | Medium |
 | `TYPE_ERROR` | Type mismatch in operation | Medium |
 | `ASSERTION_ERROR` | Assertion can fail | Medium |
 | `ATTRIBUTE_ERROR` | Missing attribute access | Medium |
+| `VALUE_ERROR` | Invalid arguments to builtin functions | Medium |
+| `UNBOUND_VARIABLE` | Accessing a variable before it is assigned | Medium |
 | `NEGATIVE_SHIFT` | Bit shift with negative amount | Medium |
-| `TAINT_VIOLATION` | Untrusted data flows to dangerous sink | High |
 | `INTEGER_OVERFLOW` | Arithmetic overflow | Low |
 | `UNREACHABLE_CODE` | Dead code paths | Low |
 

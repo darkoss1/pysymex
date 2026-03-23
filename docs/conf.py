@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "pysymex"
 copyright = "2026, pysymex Team"
 author = "pysymex Team"
-release = "0.1.0a0"
+release = "0.1.0a2"
 version = "0.1"
 extensions = [
     "sphinx.ext.autodoc",
