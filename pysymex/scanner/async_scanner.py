@@ -52,24 +52,39 @@ async def _scan_file_async(
     """
     from pysymex.scanner.core import scan_file
 
-    loop = asyncio.get_running_loop()
-    pool = _get_pool()
+    task = partial(
+        scan_file,
+        file_path,
+        verbose=False,
+        max_paths=max_paths,
+        timeout=timeout,
+        auto_tune=auto_tune,
+        trace_enabled=trace_enabled,
+        trace_output_dir=trace_output_dir,
+        trace_verbosity=trace_verbosity,
+    )
 
     async with asyncio.timeout(timeout + 10.0):
-        return await loop.run_in_executor(
-            pool,
-            partial(
-                scan_file,
-                file_path,
-                verbose=False,
-                max_paths=max_paths,
-                timeout=timeout,
-                auto_tune=auto_tune,
-                trace_enabled=trace_enabled,
-                trace_output_dir=trace_output_dir,
-                trace_verbosity=trace_verbosity,
-            ),
-        )
+        use_process_pool = os.getenv("PYSYMEX_ASYNC_USE_PROCESS_POOL", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if not use_process_pool:
+            return await asyncio.to_thread(task)
+
+        loop = asyncio.get_running_loop()
+        pool = _get_pool()
+        try:
+            return await loop.run_in_executor(pool, task)
+        except Exception as exc:
+            if isinstance(exc, (PermissionError, OSError)) or "Access is denied" in str(exc):
+                logger.warning(
+                    "ProcessPool scan failed for %s, retrying in-thread: %s", file_path, exc
+                )
+                return await asyncio.to_thread(task)
+            raise
 
 
 async def scan_directory_async(

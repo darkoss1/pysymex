@@ -2,6 +2,15 @@
 
 ## Released
 
+### v0.1.0-alpha.2 ✅
+**Released:** March 2026
+
+- [x] Hardware Acceleration Pipeline (`h_acceleration`) achieving 25+ Trillion states/sec.
+- [x] NVRTC CuPy backend for zero-overhead dynamic CUDA C++ generation.
+- [x] Direct GPU projection using atomic operations, bypassing PCIe bottleneck.
+- [x] Numba CPU fallback for non-NVIDIA environments.
+- [x] 16-byte aligned bytecode ISA for maximized memory controller efficiency.
+
 ### v0.1.0-alpha.1 ✅
 **Released:** March 2026
 

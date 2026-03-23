@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Callable
+from dataclasses import replace as dc_replace
 
 from pysymex.analysis.detectors import Issue
 from pysymex.execution.executor_core import SymbolicExecutor as SymbolicExecutor
@@ -31,6 +32,7 @@ __all__ = [
 def analyze(
     func: Callable[..., object],
     symbolic_args: dict[str, str] | None = None,
+    config: ExecutionConfig | None = None,
     **config_kwargs: object,
 ) -> ExecutionResult:
     """
@@ -47,8 +49,13 @@ def analyze(
         >>> result = analyze(divide, {"x": "int", "y": "int"})
         >>> print(result.issues)  # Division by zero issue
     """
-    config = ExecutionConfig(**config_kwargs)
-    executor = SymbolicExecutor(config)
+    if config is None:
+        resolved_config = ExecutionConfig(**config_kwargs)
+    elif config_kwargs:
+        resolved_config = dc_replace(config, **config_kwargs)
+    else:
+        resolved_config = config
+    executor = SymbolicExecutor(resolved_config)
     return executor.execute_function(func, symbolic_args)
 
 

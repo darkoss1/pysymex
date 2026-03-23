@@ -165,6 +165,11 @@ HOOKS: MappingProxyType[str, HookPoint] = MappingProxyType(
         "path_complete": HookPoint("path_complete", "When a path completes"),
         "state_fork": HookPoint("state_fork", "When state is forked"),
         "state_merge": HookPoint("state_merge", "When states are merged"),
+        "pre_step": HookPoint("pre_step", "Before each bytecode step"),
+        "post_step": HookPoint("post_step", "After each bytecode step"),
+        "on_fork": HookPoint("on_fork", "When execution forks into multiple paths"),
+        "on_prune": HookPoint("on_prune", "When a path is pruned from exploration"),
+        "on_issue": HookPoint("on_issue", "When a potential bug/issue is detected"),
     }
 )
 
@@ -254,9 +259,10 @@ class PluginRegistry:
             plugin.deactivate(engine)
 
     def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None:
-        """Register a hook handler."""
-        if hook_name in self._hooks:
-            self._hooks[hook_name].append(handler)
+        """Register a hook handler.
+        Allows registering for predefined HOOKS or custom hook names.
+        """
+        self._hooks.setdefault(hook_name, []).append(handler)
 
     def trigger_hook(self, hook_name: str, *args: object, **kwargs: object) -> list[object]:
         """Trigger all handlers for a hook."""

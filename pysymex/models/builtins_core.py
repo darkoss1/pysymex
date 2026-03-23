@@ -21,6 +21,7 @@ from pysymex.core.types import (
     SymbolicString,
     SymbolicType,
     SymbolicValue,
+    SymbolicDict,
 )
 
 from .builtins_base import FunctionModel, ModelResult
@@ -64,10 +65,10 @@ class LenModel(FunctionModel):
                     result.z3_int >= 0,
                 ],
             )
-        if getattr(obj, "_type", "") == "set" or "set" in getattr(obj, "_name", "").lower():
+        if getattr(obj, "_type", "") == "set" or "set" in getattr(obj, "_name", "").lower() or getattr(obj, "type_tag", "") == "dict" or isinstance(obj, SymbolicDict):
             z3_len = getattr(obj, "z3_len", getattr(obj, "z3_int", None))
             if z3_len is not None:
-                result, constraint = SymbolicValue.symbolic(f"len_{getattr(obj, '_name', 'set')}")
+                result, constraint = SymbolicValue.symbolic(f"len_{getattr(obj, '_name', 'container')}")
                 return ModelResult(
                     value=result,
                     constraints=[

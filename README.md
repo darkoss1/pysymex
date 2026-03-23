@@ -34,6 +34,7 @@
 
 ## Features
 
+- **Hardware Acceleration (`h_acceleration`)** — Evaluates Boolean constraints near theoretical hardware limits via CuPy NVRTC direct CUDA C++ compilation. Includes instruction-level parallelism (ILP) unrolling and warp shuffle reductions. Seamlessly falls back to optimized multi-threaded Numba CPU execution when NVIDIA GPUs are absent.
 - **Full Symbolic Execution Engine** — bytecode-level analysis with CPython 3.13 opcode support
 - **CHTD Path Explosion Mitigation** — Constraint Hypergraph Treewidth Decomposition reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs
 - **Constraint Independence Optimization** — KLEE-style constraint slicing partitions queries into independent clusters, reducing solver load by 60-90%
@@ -60,6 +61,10 @@ pip install z3-solver
 git clone https://github.com/darkoss1/pysymex.git
 cd pysymex
 pip install -e .
+
+# OPTIONAL: Install GPU Acceleration (for massive performance scaling)
+pip install "pysymex[gpu]" 
+# Or directly: pip install cupy-cuda12x (for NVIDIA GPUs)
 ```
 
 ## Quick Start
@@ -85,6 +90,17 @@ pysymex scan . --watch
 # Run benchmarks
 pysymex benchmark --format markdown
 ```
+
+## Documentation
+
+> [!NOTE]
+> **Temporary Automated Documentation**
+> An automatically generated Code Wiki providing an architectural deep-dive and component reference is available at: [https://codewiki.google/github.com/darkoss1/pysymex](https://codewiki.google/github.com/darkoss1/pysymex)
+> 
+> **Important Notices:**
+> - The Wiki is generated automatically but may take time to refresh; please verify the generation and commit dates on the page.
+> - It may be **slightly outdated** compared to the latest `main` branch.
+> - This is **NOT** official documentation and is provided for research and architectural exploration purposes only. Do not fully rely on it for production implementation details.
 
 ### Python API
 
@@ -191,7 +207,7 @@ pysymex/
 ## Running Tests
 
 ```bash
-# Run all tests (~2723 tests)
+# Run all tests (~5700 tests)
 pytest tests/ -v
 
 # Run specific modules

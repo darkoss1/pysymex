@@ -150,6 +150,26 @@ class SymbolicFloat:
             config=self.config,
         )
 
+    def __floordiv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+        other_expr = self._to_fp(other)
+        # Z3 FP does not have a native floordiv, so we divide and round towards negative infinity
+        div_expr = z3.fpDiv(self._rm, self._expr, other_expr)
+        # RTN is Round Towards Negative Infinity
+        floored = z3.fpRoundToIntegral(z3.RTN(), div_expr)
+        return SymbolicFloat(
+            z3_expr=floored,
+            config=self.config,
+        )
+
+    def __rfloordiv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+        other_fp = self._to_fp(other)
+        div_expr = z3.fpDiv(self._rm, other_fp, self._expr)
+        floored = z3.fpRoundToIntegral(z3.RTN(), div_expr)
+        return SymbolicFloat(
+            z3_expr=floored,
+            config=self.config,
+        )
+
     def __neg__(self) -> SymbolicFloat:
         return SymbolicFloat(
             z3_expr=z3.fpNeg(self._expr),

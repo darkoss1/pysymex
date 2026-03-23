@@ -35,6 +35,7 @@ def analyze(
     func: Callable[..., object],
     symbolic_args: Mapping[str, str] | None = None,
     *,
+    config: ExecutionConfig | None = None,
     max_paths: int = 1000,
     max_depth: int = 100,
     max_iterations: int = 10000,
@@ -77,19 +78,24 @@ def analyze(
         for issue in result.issues:
             print(issue.format())
     """
-    config = ExecutionConfig(
-        max_paths=max_paths,
-        max_depth=max_depth,
-        max_iterations=max_iterations,
-        timeout_seconds=timeout,
-        verbose=verbose,
-        detect_division_by_zero=detect_division_by_zero,
-        detect_assertion_errors=detect_assertion_errors,
-        detect_index_errors=detect_index_errors,
-        detect_type_errors=detect_type_errors,
-        detect_overflow=detect_overflow,
-    )
-    executor = SymbolicExecutor(config)
+    if config is None:
+        resolved_config = ExecutionConfig(
+            max_paths=max_paths,
+            max_depth=max_depth,
+            max_iterations=max_iterations,
+            timeout_seconds=timeout,
+            verbose=verbose,
+            detect_division_by_zero=detect_division_by_zero,
+            detect_assertion_errors=detect_assertion_errors,
+            detect_index_errors=detect_index_errors,
+            detect_type_errors=detect_type_errors,
+            detect_overflow=detect_overflow,
+        )
+    else:
+        # Backward-compatible behavior for callers passing an explicit
+        # ExecutionConfig instance.
+        resolved_config = config
+    executor = SymbolicExecutor(resolved_config)
     return executor.execute_function(func, dict(symbolic_args) if symbolic_args else {})
 
 
@@ -238,7 +244,16 @@ def check_division_by_zero(func: Callable[..., object]) -> list[Issue]:
         detect_index_errors=False,
         detect_type_errors=False,
     )
-    return result.get_issues_by_kind(IssueKind.DIVISION_BY_ZERO)
+    deduped: dict[tuple[int | None, int | None, tuple[tuple[str, object], ...]], Issue] = {}
+    for issue in result.get_issues_by_kind(IssueKind.DIVISION_BY_ZERO):
+        counterexample = issue.get_counterexample() or {}
+        key = (
+            issue.pc,
+            issue.line_number,
+            tuple(sorted(counterexample.items())),
+        )
+        deduped.setdefault(key, issue)
+    return list(deduped.values())
 
 
 def check_assertions(func: Callable[..., object]) -> list[Issue]:
@@ -292,14 +307,14 @@ def format_issues(
     Returns:
         Formatted string.
     """
+    if format_type == "json":
+        import json
+
+        return json.dumps([issue.to_dict() for issue in issues], indent=2)
+
     lines: list[str] = []
     for i, issue in enumerate(issues, 1):
-        if format_type == "json":
-            import json
-
-            lines.append(json.dumps(issue.to_dict(), indent=2))
-        else:
-            lines.append(f"[{i }] {issue .format ()}")
+        lines.append(f"[{i}] {issue.format()}")
     return "\n\n".join(lines)
 
 

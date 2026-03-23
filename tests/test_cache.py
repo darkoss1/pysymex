@@ -242,6 +242,13 @@ class TestLRUCache:
 
         assert not errors
 
+        # Verify correctness: all written values should be readable
+        for thread_id in range(10):
+            for i in range(100):
+                key = f"t{thread_id}_k{i}"
+                val = cache.get(key)  # type: ignore[reportArgumentType]
+                assert val == i, f"Lost write under contention: {key} expected {i} got {val}"
+
 
 # =============================================================================
 # Persistent Cache Tests

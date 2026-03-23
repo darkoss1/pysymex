@@ -674,3 +674,253 @@ class TestUseCases:
 
         assert x_refined.is_non_null()
         assert not x_refined.may_be_null()
+
+
+# =============================================================================
+# Lattice Monotonicity Tests - Critical Soundness Properties
+# =============================================================================
+
+
+class TestLatticeMonotonicity:
+    """
+    Tests for lattice monotonicity properties.
+
+    These are CRITICAL soundness properties for the abstract interpreter.
+    If join is not monotone, the fixpoint iteration can:
+    - Cycle forever without converging
+    - Produce unsound results silently
+
+    Monotonicity property: a ⊑ join(a,b) and b ⊑ join(a,b)
+    """
+
+    def test_interval_join_monotonicity_left(self):
+        """Test that a ⊑ join(a,b) for intervals."""
+        from pysymex.analysis.abstract.interpreter_values import Interval
+
+        # Test various interval combinations
+        test_cases = [
+            (Interval.range(0, 5), Interval.range(3, 10)),
+            (Interval.range(-10, -5), Interval.range(-3, 5)),
+            (Interval.range(0, None), Interval.range(5, 10)),
+            (Interval.range(None, 10), Interval.range(None, 5)),
+            (Interval.const(5), Interval.range(0, 10)),
+            (Interval.bottom(), Interval.range(0, 10)),
+            (Interval.range(0, 10), Interval.bottom()),
+        ]
+
+        for a, b in test_cases:
+            joined = a.join(b)
+            # a ⊑ join(a,b)
+            assert a.leq(joined), f"Monotonicity violated: {a} ⊑ {joined} failed"
+
+    def test_interval_join_monotonicity_right(self):
+        """Test that b ⊑ join(a,b) for intervals."""
+        from pysymex.analysis.abstract.interpreter_values import Interval
+
+        test_cases = [
+            (Interval.range(0, 5), Interval.range(3, 10)),
+            (Interval.range(-10, -5), Interval.range(-3, 5)),
+            (Interval.range(0, None), Interval.range(5, 10)),
+            (Interval.const(7), Interval.range(0, 10)),
+        ]
+
+        for a, b in test_cases:
+            joined = a.join(b)
+            # b ⊑ join(a,b)
+            assert b.leq(joined), f"Monotonicity violated: {b} ⊑ {joined} failed"
+
+    def test_interval_join_is_least_upper_bound(self):
+        """Test that join is the LEAST upper bound."""
+        from pysymex.analysis.abstract.interpreter_values import Interval
+
+        a = Interval.range(0, 5)
+        b = Interval.range(3, 10)
+        joined = a.join(b)
+
+        # join(a,b) should be [0, 10]
+        assert joined.low == 0
+        assert joined.high == 10
+
+        # Any tighter bound should not contain both a and b
+        tighter = Interval.range(0, 9)
+        assert not b.leq(tighter), "Tighter bound should not contain b"
+
+    def test_sign_join_monotonicity(self):
+        """Test join monotonicity for sign domain."""
+        from pysymex.analysis.abstract.interpreter_values import SignValue, Sign
+
+        test_cases = [
+            (SignValue(Sign.POSITIVE), SignValue(Sign.ZERO)),
+            (SignValue(Sign.NEGATIVE), SignValue(Sign.ZERO)),
+            (SignValue(Sign.POSITIVE), SignValue(Sign.NEGATIVE)),
+            (SignValue(Sign.POSITIVE), SignValue(Sign.NON_NEGATIVE)),
+            (SignValue(Sign.ZERO), SignValue(Sign.NON_NEGATIVE)),
+            (SignValue.bottom(), SignValue(Sign.POSITIVE)),
+        ]
+
+        for a, b in test_cases:
+            joined = a.join(b)
+            # Both a and b should be ⊑ join(a,b)
+            assert a.leq(joined), f"Left monotonicity violated: {a} ⊑ {joined}"
+            assert b.leq(joined), f"Right monotonicity violated: {b} ⊑ {joined}"
+
+    def test_congruence_join_monotonicity(self):
+        """Test join monotonicity for congruence domain."""
+        from pysymex.analysis.abstract.interpreter_values import Congruence
+
+        test_cases = [
+            (Congruence.const(0), Congruence.const(2)),
+            (Congruence.const(1), Congruence.const(3)),
+            (Congruence.mod(2, 0), Congruence.mod(2, 1)),  # Even and odd
+            (Congruence.bottom(), Congruence.const(5)),
+        ]
+
+        for a, b in test_cases:
+            joined = a.join(b)
+            # Both a and b should be ⊑ join(a,b)
+            assert a.leq(joined), f"Left monotonicity violated: {a} ⊑ {joined}"
+            assert b.leq(joined), f"Right monotonicity violated: {b} ⊑ {joined}"
+
+    def test_numeric_product_join_monotonicity(self):
+        """Test join monotonicity for numeric product domain."""
+        from pysymex.analysis.abstract.interpreter_state import NumericProduct
+        from pysymex.analysis.abstract.interpreter_values import (
+            Congruence,
+            Interval,
+            Sign,
+            SignValue,
+        )
+
+        # Create two numeric products
+        a = NumericProduct(
+            interval=Interval.range(0, 5),
+            sign=SignValue(Sign.NON_NEGATIVE),
+            congruence=Congruence.const(2),
+        )
+        b = NumericProduct(
+            interval=Interval.range(3, 10),
+            sign=SignValue(Sign.NON_NEGATIVE),
+            congruence=Congruence.const(4),
+        )
+
+        joined = a.join(b)
+
+        # Both should be ⊑ joined
+        assert a.leq(joined), f"Left monotonicity violated: {a} ⊑ {joined}"
+        assert b.leq(joined), f"Right monotonicity violated: {b} ⊑ {joined}"
+
+    def test_abstract_state_join_monotonicity(self):
+        """Test join monotonicity for abstract state (most critical)."""
+        from pysymex.analysis.abstract.interpreter_state import AbstractState, NumericProduct
+        from pysymex.analysis.abstract.interpreter_values import (
+            Interval,
+            Sign,
+            SignValue,
+        )
+
+        # Create two states with different variable values
+        state_a = AbstractState()
+        state_a.set("x", NumericProduct(interval=Interval.range(0, 5), sign=SignValue(Sign.NON_NEGATIVE)))
+        state_a.set("y", NumericProduct(interval=Interval.range(10, 15), sign=SignValue(Sign.POSITIVE)))
+
+        state_b = AbstractState()
+        state_b.set("x", NumericProduct(interval=Interval.range(3, 10), sign=SignValue(Sign.NON_NEGATIVE)))
+        state_b.set("y", NumericProduct(interval=Interval.range(12, 20), sign=SignValue(Sign.POSITIVE)))
+
+        joined = state_a.join(state_b)
+
+        # Both states should be ⊑ joined
+        assert state_a.leq(joined), "Left monotonicity violated for abstract state"
+        assert state_b.leq(joined), "Right monotonicity violated for abstract state"
+
+    def test_join_idempotence(self):
+        """Test join idempotence: join(a,a) = a."""
+        from pysymex.analysis.abstract.interpreter_values import Interval, Sign, SignValue
+
+        # Interval
+        i = Interval.range(0, 10)
+        assert i.join(i).low == i.low and i.join(i).high == i.high
+
+        # Sign
+        s = SignValue(Sign.POSITIVE)
+        assert s.join(s).sign == s.sign
+
+    def test_join_commutativity(self):
+        """Test join commutativity: join(a,b) = join(b,a)."""
+        from pysymex.analysis.abstract.interpreter_values import Interval, Sign, SignValue
+
+        # Interval
+        i1 = Interval.range(0, 5)
+        i2 = Interval.range(3, 10)
+        assert i1.join(i2).low == i2.join(i1).low
+        assert i1.join(i2).high == i2.join(i1).high
+
+        # Sign
+        s1 = SignValue(Sign.POSITIVE)
+        s2 = SignValue(Sign.ZERO)
+        assert s1.join(s2).sign == s2.join(s1).sign
+
+    def test_join_associativity(self):
+        """Test join associativity: join(join(a,b),c) = join(a,join(b,c))."""
+        from pysymex.analysis.abstract.interpreter_values import Interval
+
+        i1 = Interval.range(0, 5)
+        i2 = Interval.range(3, 10)
+        i3 = Interval.range(7, 15)
+
+        left_assoc = i1.join(i2).join(i3)
+        right_assoc = i1.join(i2.join(i3))
+
+        assert left_assoc.low == right_assoc.low
+        assert left_assoc.high == right_assoc.high
+
+    def test_bottom_is_identity_for_join(self):
+        """Test that bottom is the identity element for join."""
+        from pysymex.analysis.abstract.interpreter_values import Interval, Sign, SignValue
+
+        # Interval
+        i = Interval.range(0, 10)
+        bottom_i = Interval.bottom()
+        assert i.join(bottom_i).low == i.low
+        assert i.join(bottom_i).high == i.high
+        assert bottom_i.join(i).low == i.low
+        assert bottom_i.join(i).high == i.high
+
+        # Sign
+        s = SignValue(Sign.POSITIVE)
+        bottom_s = SignValue.bottom()
+        assert s.join(bottom_s).sign == s.sign
+        assert bottom_s.join(s).sign == s.sign
+
+    def test_fixpoint_convergence_simulation(self):
+        """Simulate fixpoint iteration to ensure it terminates."""
+        from pysymex.analysis.abstract.interpreter_state import AbstractState, NumericProduct
+
+        # Simulate a loop: x = 0; while x < 10: x = x + 1
+        state = AbstractState()
+        state.set("x", NumericProduct.const(0))
+
+        iterations = 0
+        max_iterations = 20
+        prev_state = state.copy()
+
+        while iterations < max_iterations:
+            # Loop body: x = x + 1
+            x_val = state.get("x")
+            if hasattr(x_val, "add"):
+                next_state = state.copy()
+                new_x = x_val.add(NumericProduct.const(1))
+                next_state.set("x", new_x)
+
+                # Widen with previous to simulate fixpoint acceleration
+                state = prev_state.widen(next_state)
+
+                # Check if fixpoint reached
+                if state.leq(prev_state) and prev_state.leq(state):
+                    break
+
+                prev_state = state.copy()
+            iterations += 1
+
+        # Should converge within max_iterations
+        assert iterations < max_iterations, "Fixpoint iteration did not converge"

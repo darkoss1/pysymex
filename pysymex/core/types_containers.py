@@ -204,11 +204,23 @@ class SymbolicList(SymbolicType):
                     res = res.append(s_item)
                 return res
             else:
-                new_name = fresh_name("extended_list")
-                new_arr, _ = SymbolicList.symbolic(new_name)
-                # We at least know the new length
-                new_arr.z3_len = self.z3_len + other.z3_len
-                return new_arr
+                # Symbolic merge: use a conditional select logic
+                # For simplicity, we use a fresh array and constrain it, 
+                # but Z3 doesn't support 'copy' well. 
+                # Better: return a wrapper or use a lambda if possible.
+                # However, pysymex usually prefers ArrayRef.
+                # Let's use a Lambda to represent the concatenated array.
+                idx = z3.Int(fresh_name("i"))
+                new_array = z3.Lambda([idx], z3.If(idx < self.z3_len, 
+                                                z3.Select(self.z3_array, idx), 
+                                                z3.Select(other.z3_array, idx - self.z3_len)))
+                return SymbolicList(
+                    _name=f"{self._name}.extend({other.name})",
+                    z3_array=new_array,
+                    z3_len=self.z3_len + other.z3_len,
+                    element_type=self.element_type,
+                    taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
+                )
         return self
 
     def length(self) -> SymbolicValue:
@@ -392,24 +404,45 @@ class SymbolicDict(SymbolicType):
             _concrete_items=new_concrete,
         )
 
-    def update(self, other: SymbolicDict | dict) -> SymbolicDict:
-        """Update dict - returns new dict."""
+    def update(self, other: SymbolicDict | dict) -> tuple[SymbolicDict, z3.BoolRef]:
+        """Update dict - returns (new_dict, constraint)."""
         if isinstance(other, dict):
             res = self
+            all_constraints = []
             for k, v in other.items():
+                # self.__setitem__ returns a new SymbolicDict
                 res = res.__setitem__(k, v)
-            return res
+            return res, z3.And(*all_constraints) if all_constraints else z3.BoolVal(True)
         elif isinstance(other, SymbolicDict):
             if other._concrete_items is not None:
                 res = self
                 for k, v in other._concrete_items.items():
                     res = res.__setitem__(k, v)
-                return res
+                return res, z3.BoolVal(True)
             else:
-                new_name = fresh_name("updated_dict")
-                new_dict, _ = SymbolicDict.symbolic(new_name)
-                return new_dict
-        return self
+                k = z3.String(fresh_name("k"))
+                # If key is in 'other', use other's value, else use self's value.
+                other_has_k = z3.Contains(other.known_keys, z3.Unit(k))
+                new_array = z3.Lambda([k], z3.If(other_has_k,
+                                               z3.Select(other.z3_array, k),
+                                               z3.Select(self.z3_array, k)))
+                new_keys = z3.Concat(self.known_keys, other.known_keys)
+                
+                new_len = z3.Int(fresh_name("updated_len"))
+                # Length is at least max(len1, len2) and at most len1 + len2
+                max_len = z3.If(self.z3_len > other.z3_len, self.z3_len, other.z3_len)
+                sum_len = self.z3_len + other.z3_len
+                
+                constraint = z3.And(new_len >= max_len, new_len <= sum_len)
+                
+                return SymbolicDict(
+                    _name=f"{self._name}.update({other.name})",
+                    z3_array=new_array,
+                    known_keys=new_keys,
+                    z3_len=new_len,
+                    taint_labels=(self.taint_labels or frozenset()) | (other.taint_labels or frozenset()),
+                ), constraint
+        return self, z3.BoolVal(True)
 
     def contains_key(self, key: SymbolicString) -> SymbolicValue:
         """Check if key exists."""

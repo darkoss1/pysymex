@@ -258,6 +258,62 @@ class TestPluginHooks:
         assert 20 in results
         assert 30 in results
 
+    def test_crashing_plugin_does_not_crash_system(self):
+        """Test that a crashing plugin handler does not crash the entire system."""
+        registry = PluginRegistry()
+
+        # Register a working handler
+        results = []
+        registry.register_hook("pre_execute", lambda x: results.append(x * 2))
+
+        # Register a crashing handler
+        def crashing_handler(x):
+            raise RuntimeError("Intentional crash for testing")
+
+        registry.register_hook("pre_execute", crashing_handler)
+
+        # Register another working handler after the crashing one
+        registry.register_hook("pre_execute", lambda x: results.append(x * 3))
+
+        # Trigger hooks - should not raise exception
+        hook_results = registry.trigger_hook("pre_execute", 10)
+
+        # Verify first handler worked
+        assert 20 in results
+
+        # Verify third handler worked (system continued after crash)
+        assert 30 in results
+
+        # Verify exception was captured in results
+        assert len(hook_results) == 3
+        assert hook_results[0] is None  # First handler returns None
+        assert isinstance(hook_results[1], RuntimeError)
+        assert "Intentional crash" in str(hook_results[1])
+        assert hook_results[2] is None  # Third handler returns None
+
+    def test_exception_in_hook_is_visible_in_results(self):
+        """Test that exceptions in hooks are visible in the results list, not silently swallowed."""
+        registry = PluginRegistry()
+
+        # Register handlers that raise different exceptions
+        def raise_value_error():
+            raise ValueError("Value error")
+
+        def raise_type_error():
+            raise TypeError("Type error")
+
+        registry.register_hook("test_hook", raise_value_error)
+        registry.register_hook("test_hook", raise_type_error)
+
+        results = registry.trigger_hook("test_hook")
+
+        # Both exceptions should be in results
+        assert len(results) == 2
+        assert isinstance(results[0], ValueError)
+        assert isinstance(results[1], TypeError)
+        assert "Value error" in str(results[0])
+        assert "Type error" in str(results[1])
+
 
 class TestPluginLoader:
     """Tests for PluginLoader."""

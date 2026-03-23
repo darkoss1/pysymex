@@ -230,9 +230,9 @@ def handle_load_deref(
     """Load from closure/free variable."""
     name = str(instr.argval)
     value = state.get_local(name)
-    if value is None:
+    if value is UNBOUND or value is None:
         value = state.get_global(name)
-    if value is None:
+    if value is None or value is UNBOUND:
         sym_val, type_constraint = SymbolicValue.symbolic(f"closure_{name}")
         
         import z3 as _z3
@@ -281,7 +281,7 @@ def handle_load_fast_and_clear(
     """Load local variable and set slot to NULL (list comprehension save/restore)."""
     name = str(instr.argval)
     value = state.get_local(name)
-    if value is None:
+    if value is UNBOUND:
         value = SymbolicNone()
     state = state.push(value)
     state = state.set_local(name, UNBOUND)
@@ -305,7 +305,7 @@ def handle_store_fast_load_fast(
     value = state.pop()
     state = state.set_local(store_name, value)
     loaded = state.get_local(load_name)
-    if loaded is None:
+    if loaded is UNBOUND:
         loaded, constraint = SymbolicValue.symbolic(load_name)
         state = state.add_constraint(constraint)
     state = state.push(loaded)
@@ -334,7 +334,7 @@ def handle_load_from_dict_or_deref(
     if state.stack:
         state.pop()
     value = state.get_local(name)
-    if value is None:
+    if value is UNBOUND:
         value, constraint = SymbolicValue.symbolic(f"deref_{name}")
         state = state.add_constraint(constraint)
     state = state.push(value)

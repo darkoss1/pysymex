@@ -357,7 +357,11 @@ class ConstraintInteractionGraph:
         solve_local_bag: Callable[[frozenset[int]], bool],
         pass_messages: Callable[[int, int, frozenset[int]], None],
     ) -> bool:
-        """Dynamic programming (message passing) over the tree decomposition.
+        """[DEPRECATED] Dynamic programming (message passing) over the tree decomposition.
+
+        .. deprecated:: 0.x
+            This method is deprecated in favor of the GPU-accelerated
+            ``GPUBagSolver.propagate_all`` in the ``h_acceleration`` module.
 
         Instead of extracting a global skeleton and brute-forcing adhesion
         variables—which scales poorly as |S| approaches O(N)—this method
@@ -383,6 +387,13 @@ class ConstraintInteractionGraph:
         Complexity:
             O(N · 2^w) where N = number of bags and w = treewidth.
         """
+        import warnings
+        warnings.warn(
+            "ConstraintInteractionGraph.propagate_bag_constraints is deprecated. "
+            "Use pysymex.h_acceleration.chtd_solver.GPUBagSolver instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not td.bags:
             return True
 

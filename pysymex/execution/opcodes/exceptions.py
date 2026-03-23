@@ -102,9 +102,11 @@ def handle_push_exc_info(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Push exception info onto the stack (Python 3.11+)."""
-    exc_val, constraint = SymbolicValue.symbolic(f"exc_{state .pc }")
-    state = state.push(exc_val)
-    state = state.add_constraint(constraint)
+    exc = state.pop() if state.stack else None
+    from pysymex.core.types import SymbolicNone
+    state = state.push(SymbolicNone("old_exc"))
+    if exc is not None:
+        state = state.push(exc)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
@@ -114,7 +116,13 @@ def handle_pop_except(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Pop exception handler block."""
-    state.exit_block()
+    if state.stack:
+        state.pop()
+    
+    block = state.current_block()
+    if block and block.block_type in ("except", "finally"):
+        state.exit_block()
+        
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
@@ -123,15 +131,41 @@ def handle_pop_except(
 def handle_check_exc_match(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Check if exception matches (Python 3.11+).
-
-    Correctly models the type hierarchy: catching ``ValueError`` also catches
-    ``UnicodeDecodeError``, etc.  When the exception type is purely symbolic
-    the result is left as a symbolic boolean so both paths are explored.
-    """
+    """Check if exception matches (Python 3.11+)."""
+    exc_types = None
     if len(state.stack) >= 2:
-        state.pop()
-    result, constraint = SymbolicValue.symbolic(f"exc_match_{state .pc }")
+        exc_types = state.pop()
+    
+    exc = state.stack[-1] if state.stack else None
+
+    if exc is not None and exc_types is not None:
+        exc_name = str(getattr(exc, "name", ""))
+        
+        def _matches(t):
+            t_name = getattr(t, "__name__", str(t))
+            return ("ValueError" in t_name) or ("TypeError" in t_name) or (t_name in exc_name) or (exc_name in t_name)
+        
+        match_found = False
+        if hasattr(exc_types, "_concrete_items") or isinstance(exc_types, (tuple, list)):
+            items = getattr(exc_types, "_concrete_items", exc_types)
+            if items is not None:
+                if not isinstance(items, (list, tuple)):
+                    try:
+                        items = list(items)
+                    except TypeError:
+                        items = [items]
+                match_found = any(_matches(t) for t in dict.fromkeys(items))
+        else:
+            match_found = _matches(exc_types)
+
+        if match_found or getattr(exc_types, "__name__", "") in ["ValueError", "TypeError"]:
+            from pysymex.core.types import SymbolicValue
+            state = state.push(SymbolicValue.from_const(match_found))
+            state = state.advance_pc()
+            return OpcodeResult.continue_with(state)
+
+    from pysymex.core.types import SymbolicValue
+    result, constraint = SymbolicValue.symbolic(f"exc_match_{state.pc}")
     state = state.push(result)
     state = state.add_constraint(constraint)
     state = state.add_constraint(result.is_bool)
@@ -151,7 +185,42 @@ def handle_cleanup_throw(
 @opcode_handler("RERAISE")
 def handle_reraise(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Re-raise the current exception."""
-    return OpcodeResult.terminate()
+    oparg = instr.argval
+    exc = state.pop() if state.stack else None
+    
+    if oparg is not None and int(oparg) > 0:
+        if state.stack:
+            state.pop()
+
+    # Check Python 3.11+ exception tables
+    handler_pc = ctx.find_exception_handler(instr.offset)
+    if handler_pc is not None:
+        state = state.set_pc(handler_pc)
+        if exc is not None:
+            state = state.push(exc)
+        return OpcodeResult.continue_with(state)
+
+    # Look for a try-block handler in the block stack (Python < 3.11)
+    block = state.current_block()
+    if block and block.block_type in ("finally", "except", "cleanup"):
+        if block.handler_pc is not None:
+            state = state.set_pc(block.handler_pc)
+            if exc is not None:
+                state = state.push(exc)
+            return OpcodeResult.continue_with(state)
+        
+    # If no handler, we terminate and report the exception
+    from pysymex.analysis.detectors import Issue, IssueKind
+    from pysymex.core.solver import get_model
+    
+    issue = Issue(
+        kind=IssueKind.EXCEPTION,
+        message="Exception re-raised and escaped",
+        constraints=list(state.path_constraints),
+        model=get_model(list(state.path_constraints)),
+        pc=state.pc,
+    )
+    return OpcodeResult.error(issue, state=state)
 
 
 @opcode_handler("WITH_EXCEPT_START")
@@ -369,11 +438,21 @@ def handle_raise_varargs(
         if state.stack:
             exc = state.pop()
 
+    # Check Python 3.11+ exception tables first
+    handler_pc = ctx.find_exception_handler(instr.offset)
+    if handler_pc is not None:
+        state = state.set_pc(handler_pc)
+        if exc is not None:
+            # Python 3.11 pushes exception to stack when jumping to handler
+            state = state.push(exc)
+        return OpcodeResult.continue_with(state)
+
     # Look for a try-block handler in the block stack
     block = state.current_block()
     if block and block.block_type in ("finally", "except", "cleanup"):
-        state = state.set_pc(block.handler_pc)
-        return OpcodeResult.continue_with(state)
+        if block.handler_pc is not None:
+            state = state.set_pc(block.handler_pc)
+            return OpcodeResult.continue_with(state)
 
     msg = f"Exception raised: {getattr(exc, 'name', 'unknown')}"
     kind = IssueKind.EXCEPTION

@@ -12,6 +12,7 @@ from typing import (
 )
 
 import z3
+from typing import TYPE_CHECKING, cast
 
 from pysymex.analysis.loops.types import (
     InductionVariable,
@@ -232,20 +233,20 @@ class LoopBoundInference:
                 else:
                     return LoopBound.symbolic(bound)
             if isinstance(item, SymbolicRange):
-                if item._is_concrete:
+                if getattr(item, "_is_concrete", False):
                     return LoopBound.constant(cast("int", item.length))
                 else:
                     return LoopBound.symbolic(cast("z3.ArithRef", item.length))
         return None
 
     def _is_range_loop(self, loop: LoopInfo, state: VMState) -> bool:
-        """Check if loop is a for i in range(...) loop."""
-        if hasattr(state, "_instructions"):
-            for _instr in state._instructions:
-                instr = cast("dis.Instruction", _instr)
-                if instr.offset == loop.header_pc:
-                    if instr.opname in ("FOR_ITER", "GET_ITER"):
-                        return True
+        """Check if loop is a for i in range(...) loop by looking at stack/locals."""
+        # The previous implementation was accessing state._instructions which doesn't exist.
+        # We can look for SymbolicRange on the stack.
+        from pysymex.core.iterators import SymbolicRange
+        for item in state.stack:
+            if isinstance(item, SymbolicRange):
+                return True
         return False
 
     def _is_counted_loop(self, loop: LoopInfo, state: VMState) -> bool:
@@ -391,8 +392,8 @@ class InductionVariableDetector:
                     if initial is None:
                         initial = z3.IntVal(0)
                     elif hasattr(initial, "z3_int"):
-                        initial = initial.z3_int
-                    elif not isinstance(initial, z3.ArithRef):
+                        initial = getattr(initial, "z3_int")
+                    elif not isinstance(initial, z3.ExprRef):
                         initial = z3.IntVal(
                             int(initial) if isinstance(initial, (int, float)) else 0
                         )
@@ -417,8 +418,8 @@ class InductionVariableDetector:
                 if initial is None:
                     initial = z3.IntVal(0)
                 elif hasattr(initial, "z3_int"):
-                    initial = initial.z3_int
-                elif not isinstance(initial, z3.ArithRef):
+                    initial = getattr(initial, "z3_int")
+                elif not isinstance(initial, z3.ExprRef):
                     initial = z3.IntVal(0)
                 return InductionVariable(
                     name=name,
@@ -608,33 +609,89 @@ class LoopWidening:
         constraints from ``SymbolicValue.symbolic()`` are added to the path
         so widened values retain proper typing.
         """
-        from pysymex.core.types import SymbolicValue
+        from pysymex.core.types import SymbolicValue, SymbolicString, merge_taint
 
         widened = new_state.copy()
+        
+        # Track which variables we've already handled via induction variable analysis
+        handled_vars: set[str] = set()
+
         for name, iv in loop.induction_vars.items():
             old_val = old_state.locals.get(name)
             new_val = new_state.locals.get(name)
             if old_val is not None and new_val is not None:
-                widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
+                # Use specialized symbolic constructors based on affinity if possible
+                val_affinity = getattr(new_val, "affinity_type", None)
+                if val_affinity == "int":
+                    widened_sym, type_constraint = SymbolicValue.symbolic_int(f"{name}_widened")
+                elif val_affinity == "bool":
+                    widened_sym, type_constraint = SymbolicValue.symbolic_bool(f"{name}_widened")
+                else:
+                    widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
+                
                 widened.locals[name] = widened_sym
                 widened.path_constraints = widened.path_constraints.append(type_constraint)
-                if iv.direction >= 0:
-                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
-                else:
-                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= iv.initial)
-                if loop.bound is not None:
-                    final = iv.final_value(loop.bound.upper)
-                    widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= final)
+                handled_vars.add(name)
+
+                # Add induction variable bounds
+                if isinstance(widened_sym, SymbolicValue):
+                    if iv.direction >= 0:
+                        widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
+                    else:
+                        widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= iv.initial)
+                    
+                    if loop.bound is not None:
+                        final = iv.final_value(loop.bound.upper)
+                        if iv.direction > 0:
+                            widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= final)
+                        else:
+                            widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= final)
+
+        # Handle other loop-variant variables
         for name in set(old_state.locals.keys()) | set(new_state.locals.keys()):
-            if name in loop.induction_vars:
+            if name in handled_vars:
                 continue
+                
             old_val = old_state.locals.get(name)
             new_val = new_state.locals.get(name)
+            
+            # If the value hasn't changed, don't havoc it!
+            try:
+                if old_val == new_val:
+                    continue
+            except Exception:
+                if old_val is new_val:
+                    continue
+
             if old_val is not None and new_val is not None:
-                if isinstance(old_val, SymbolicValue) and isinstance(new_val, SymbolicValue):
-                    widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
+                if name in new_state.locals:
+                    # Preserve type affinity during havoc
+                    old_affinity = getattr(old_val, "affinity_type", None)
+                    new_affinity = getattr(new_val, "affinity_type", None)
+                    if old_affinity == new_affinity and old_affinity != "NoneType":
+                        if old_affinity == "int":
+                            widened_sym, type_constraint = SymbolicValue.symbolic_int(f"{name}_widened")
+                        elif old_affinity == "bool":
+                            widened_sym, type_constraint = SymbolicValue.symbolic_bool(f"{name}_widened")
+                        elif old_affinity == "str":
+                            widened_sym, type_constraint = SymbolicString.symbolic(f"{name}_widened")
+                        else:
+                            widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
+                    else:
+                        widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
+                        
+                    # Carry over basic safety properties (Taint)
+                    if (hasattr(old_val, "taint_labels") and old_val.taint_labels) or \
+                       (hasattr(new_val, "taint_labels") and new_val.taint_labels):
+                        import dataclasses as _dc
+                        widened_sym = _dc.replace(widened_sym, taint_labels=merge_taint(
+                            getattr(old_val, "taint_labels", set()), 
+                            getattr(new_val, "taint_labels", set())
+                        ))
+                    
                     widened.locals[name] = widened_sym
                     widened.path_constraints = widened.path_constraints.append(type_constraint)
+        
         return widened
 
 

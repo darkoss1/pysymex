@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pysymex"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,16 +38,54 @@ classifiers = [
 dependencies = [
     "z3-solver>=4.12.0",
     "pydantic>=2.0.0",
+    "icontract>=2.6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-xdist>=3.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0",
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
+]
+
+# Hardware acceleration backends
+accel-cpu = [
+    "numpy>=1.20.0",
+    "numba>=0.58.0",         # Parallel CPU JIT compilation
+    "scipy>=1.10.0",         # Thompson Sampling UCBs
+]
+accel-gpu = [
+    "numpy>=1.20.0",
+    "cupy-cuda12x>=13.0.0",  # CUDA NVRTC compilation
+    "scipy>=1.10.0",
+]
+accelerate = [
+    "numpy>=1.20.0",
+    "numba>=0.58.0",
+    "cupy-cuda12x>=13.0.0",
+    "scipy>=1.10.0",
+]
+
+# Legacy aliases
+gpu = [
+    "numpy>=1.20.0",
+    "numba>=0.58.0",
+    "cupy-cuda12x>=13.0.0",
+    "scipy>=1.10.0",
+]
+gpu-cuda = [
+    "numpy>=1.20.0",
+    "cupy-cuda12x>=13.0.0",
+    "scipy>=1.10.0",
+]
+
+# Full installation with all optional dependencies
+all = [
+    "pysymex[dev,gpu]",
 ]
 
 [project.scripts]
@@ -71,12 +109,14 @@ pysymex = ["py.typed"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -n auto"
 asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "fast: marks tests as fast",
     "integration: marks tests as integration tests",
+    "benchmark: marks tests as performance benchmarks",
+    "gpu: marks tests requiring GPU hardware",
 ]
 
 [tool.black]

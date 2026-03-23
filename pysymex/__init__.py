@@ -6,7 +6,7 @@ from importlib import import_module
 
 from pysymex._deps import ensure_z3_ready
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 
 try:
     ensure_z3_ready()

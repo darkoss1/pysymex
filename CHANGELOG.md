@@ -2,6 +2,43 @@
 
 All notable changes to PySyMex will be documented in this file.
 
+## [0.1.0-alpha.2] - 2026-03-20
+
+### Hardware Acceleration (h_acceleration)
+
+- **New Hardware Acceleration Pipeline**: Introduced the `h_acceleration` module to evaluate Boolean constraints near theoretical hardware limits, drastically accelerating CHTD bag solving.
+- **CuPy / NVRTC GPU Backend (`gpu.py`)**: Added a high-performance GPU backend using CuPy and NVRTC. It generates and compiles pure CUDA C++ dynamically on the fly, eliminating Python overhead.
+- **Numba CPU Backend (`cpu.py`)**: Added a highly optimized, multi-threaded CPU fallback using Numba's JIT compilation for environments without NVIDIA GPUs.
+- **Architectural Separation of Concerns**: Cleanly separated backends so users without NVIDIA GPUs do not need to install the heavy CUDA toolkit.
+- **16-byte Instruction Alignment**: Designed the internal ISA (`INSTRUCTION_DTYPE`) to use `uint16` structures padded to exactly 16 bytes. This prevents register overflow on complex expressions (supporting up to 8,192 variables) and perfectly aligns cache fetches for both modern CPUs (128-bit SSE/AVX vectors) and NVIDIA SMs (coalesced 128-bit loads).
+- **Advanced JIT Optimizations**: 
+    - *Thread Coarsening / ILP*: Manually unrolls evaluation loops inside the CuPy kernel to expose massive instruction-level parallelism, hiding register latency.
+    - *Hardware Popcount & Warp Reduction*: Leverages `__popcll` and `__shfl_down_sync` to perform cross-warp summation in single clock cycles.
+    - *Direct GPU Projection*: `evaluate_bag_projected` executes CHTD variable projection purely in GPU registers, emitting only the minimal output array to avoid PCIe transfer bottlenecks.
+- **Advanced Bytecode Compiler (`bytecode_optimizer.py`)**: 
+    - *Register Compaction & Renaming*: Recalculates variables backward to squeeze memory requirements into as few active registers as possible.
+    - *Structural CSE & Memoization*: Common Subexpression Elimination uses AST hashing to prevent duplicate logic. DAG traversals are fully memoized to prevent exponential compile-time hangs.
+    - *Aggressive Copy Prop / DCE*: Prunes unused operations strictly before JIT generation.
+
+### Bug Fixes & Stability Improvements
+
+Multiple correctness and stability fixes across the core engine, including:
+
+- Fixed `core/types.py` floor division and modulo to match Python semantics exactly (previously used C-style rounding)
+- Fixed `core/floats.py` missing `__floordiv__` on `SymbolicFloat` and incomplete IEEE-754 rounding mode support
+- Fixed `execution/executor_core.py` `register_hook` silently dropping plugin handlers for execution hooks (`pre_step`, `post_step`, `on_fork`, `on_prune`, `on_issue`)
+- Fixed `execution/executor_core.py` taint tracker not wired into initial execution state — taint tracking was initialized but never attached to the first path
+- Fixed `core/solver.py` LRU cache using O(N) string conversion for keys — now uses structural hash O(1)
+- Fixed `core/types_containers.py` `SymbolicList` allowing negative length and missing negative index resolution
+- Fixed `execution/executor_core.py` `deduplicate_issues` and `filter_issues` called but not imported — caused `NameError` on any execution that found issues
+- Fixed `analysis/cross_function/core.py` summary cache using unhashable types as dict keys in edge cases
+- Fixed `core/types.py` `_merge_taint` crashing on `None` inputs from untainted operands
+- Fixed `plugins/base.py` `register_hook` silently ignoring registrations for undeclared hook names
+
+### Test Suite
+- **5,702 tests passing** (up from 2,723), 0 failures
+-
+
 ## [0.1.0-alpha.1] - 2026-03-15
 
 ### Path Explosion Mitigation (CHTD)
@@ -32,7 +69,7 @@ All notable changes to PySyMex will be documented in this file.
 
 ### Test Suite
 
-- **2723 tests passing** (up from 2583), 0 failures
+- **2,723 tests passing** (up from 2,583), 0 failures
 - Added standalone integration tests (`verify_features.py`) covering treewidth, adaptive path manager, theory-aware solver, taint propagation, and full pipeline
 - Added extreme stress tests (`stress_test.py`) with 12 path-explosion scenarios up to 2^13 theoretical paths
 

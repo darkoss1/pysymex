@@ -241,10 +241,26 @@ def handle_list_extend(
     val = state.pop()
     index = int(instr.argval) if instr.argval is not None else 1
     container = state.peek(index - 1)
+    container_addr: int | None = None
+    real_container = container
+    if isinstance(container, SymbolicObject):
+        container_addr = container.address
+        real_container = state.memory.get(container.address, container)
 
-    if isinstance(container, SymbolicList):
-        new_container = container.extend(val)
-        state.stack[-index] = new_container
+    if isinstance(real_container, SymbolicList):
+        extend_val: object = val
+        if isinstance(val, SymbolicValue):
+            enhanced = getattr(val, "_enhanced_object", None)
+            const_val = getattr(val, "_constant_value", None)
+            if isinstance(enhanced, (list, tuple)):
+                extend_val = enhanced
+            elif isinstance(const_val, (list, tuple)):
+                extend_val = const_val
+        new_container = real_container.extend(extend_val)
+        if container_addr is not None:
+            state.memory[container_addr] = new_container
+        else:
+            state.stack[-index] = new_container
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -260,12 +276,18 @@ def handle_collection_update(
     container = state.peek(index - 1)
 
     if instr.opname in ("DICT_UPDATE", "DICT_MERGE") and isinstance(container, SymbolicDict):
-        new_container = container.update(val)
+        new_container, constraint = container.update(val)
         state.stack[-index] = new_container
+        state = state.add_constraint(constraint)
     elif instr.opname == "SET_UPDATE":
         # Support for SymbolicSet if added, or fallback
         if hasattr(container, "update"):
-            new_container = container.update(val)
+            result = container.update(val)
+            if isinstance(result, tuple):
+                new_container, constraint = result
+                state = state.add_constraint(constraint)
+            else:
+                new_container = result
             state.stack[-index] = new_container
 
     state = state.advance_pc()
@@ -285,11 +307,19 @@ def handle_list_append(
     index = int(instr.argval) if instr.argval is not None else 1
 
     container = state.peek(index - 1)
-    if isinstance(container, SymbolicList):
-        s_item = val if hasattr(val, "z3_int") else SymbolicValue.from_const(val)
-        new_list = container.append(cast("SymbolicValue", s_item))
+    container_addr: int | None = None
+    real_container = container
+    if isinstance(container, SymbolicObject):
+        container_addr = container.address
+        real_container = state.memory.get(container.address, container)
 
-        state.stack[-index] = new_list
+    if isinstance(real_container, SymbolicList):
+        s_item = val if hasattr(val, "z3_int") else SymbolicValue.from_const(val)
+        new_list = real_container.append(cast("SymbolicValue", s_item))
+        if container_addr is not None:
+            state.memory[container_addr] = new_list
+        else:
+            state.stack[-index] = new_list
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 

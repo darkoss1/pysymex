@@ -46,7 +46,7 @@ class SymbolicHeap:
 
     def allocate(
         self,
-        type_name: str,
+        type_name: str = "object",
         size: int = 1,
         is_mutable: bool = True,
         region: MemoryRegion = MemoryRegion.HEAP,

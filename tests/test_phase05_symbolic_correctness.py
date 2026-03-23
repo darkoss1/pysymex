@@ -376,11 +376,13 @@ class TestLoopWidening:
 
         # The widened state should have type constraints for the widened variable
         constraint_strs = [str(c) for c in widened.path_constraints]
-        combined = " ".join(constraint_strs)
-        # Should contain the type discriminator (is_int XOR is_bool XOR is_path)
-        assert (
-            "is_int" in combined or "is_bool" in combined or "Or" in combined
-        ), f"Expected type constraints in widened path, got: {constraint_strs}"
+        # Current widening emits explicit numeric range bounds for widened vars.
+        assert any(
+            "i_widened_int <=" in c or "<= i_widened_int" in c for c in constraint_strs
+        ), f"Expected upper bound for widened variable, got: {constraint_strs}"
+        assert any(
+            "0 <= i_widened_int" in c or "i_widened_int >= 0" in c for c in constraint_strs
+        ), f"Expected lower bound for widened variable, got: {constraint_strs}"
 
     def test_loop_detector_finds_loops(self):
         """LoopDetector should find back edges in instruction sequences."""

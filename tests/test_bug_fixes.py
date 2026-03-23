@@ -364,6 +364,45 @@ class TestStateForkIndependence:
 
 
 # ---------------------------------------------------------------------------
+# B13 - Regression guard for state mutation pruning
+# ---------------------------------------------------------------------------
+
+
+class TestB13_StateMutationPruningRegression:
+    """Ensure we never regress to immediate duplicate-state pruning at PC 0."""
+
+    def test_branching_function_not_pruned_immediately(self):
+        from pysymex.execution.executor import ExecutionConfig, SymbolicExecutor
+
+        def fn(x: int) -> int:
+            if x > 0:
+                return 1
+            return -1
+
+        executor = SymbolicExecutor(ExecutionConfig(max_paths=10, max_depth=20))
+        result = executor.execute_function(fn, {"x": "int"})
+
+        # Historical bug symptom: paths_explored=1, paths_pruned=1, coverage={0}
+        assert result.paths_explored >= 2
+        assert result.paths_completed >= 2
+        assert set(result.coverage) != {0}
+
+    def test_linear_function_advances_beyond_first_instruction(self):
+        from pysymex.execution.executor import ExecutionConfig, SymbolicExecutor
+
+        def fn(x: int) -> int:
+            y = x + 1
+            return y * 2
+
+        executor = SymbolicExecutor(ExecutionConfig(max_paths=5, max_depth=20))
+        result = executor.execute_function(fn, {"x": "int"})
+
+        assert result.paths_explored >= 1
+        assert result.paths_completed >= 1
+        assert max(result.coverage) > 0
+
+
+# ---------------------------------------------------------------------------
 # Additional: Solver basic operations
 # ---------------------------------------------------------------------------
 

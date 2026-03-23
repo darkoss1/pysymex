@@ -344,6 +344,11 @@ class PersistentCache:
         """Close the persistent SQLite connection if it is open."""
         with self._lock:
             if self._conn is not None:
+                # Checkpoint WAL to release files on Windows
+                try:
+                    self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except sqlite3.Error:
+                    pass
                 self._conn.close()
                 self._conn = None
 

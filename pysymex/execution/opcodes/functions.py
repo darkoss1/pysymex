@@ -98,6 +98,11 @@ def _check_taint_sinks(state: VMState, call_name: str, args: list[StackValue]) -
         location=call_name,
         line=state.pc,
     )
+    # Fallback: if tracker metadata is missing but symbolic taint labels are
+    # present on arguments, still emit a sink issue.
+    has_direct_taint = any(bool(getattr(arg, "taint_labels", None)) for arg in args)
+    if not flows and has_direct_taint:
+        flows = [object()]
     if flows:
         issue_kind = _SINK_TO_ISSUE.get(sink_type, IssueKind.UNHANDLED_EXCEPTION)
         issues.append(
@@ -225,7 +230,7 @@ def _perform_interprocedural_call(
     - Positional and Keyword arguments.
     """
     MAX_CALL_DEPTH = 10
-    if state.depth >= MAX_CALL_DEPTH:
+    if state.call_depth() >= MAX_CALL_DEPTH:
         return None
 
     from pysymex.core.types import SymbolicValue, SymbolicDict
@@ -279,6 +284,19 @@ def _perform_interprocedural_call(
     state = state.push_call(frame)
 
     new_locals = {}
+    # Carry closure cells into callee locals for LOAD_DEREF resolution.
+    try:
+        closure = getattr(func_obj, "__closure__", None)
+        freevars = list(getattr(func_code, "co_freevars", ()))
+        if closure and freevars:
+            for fv_name, cell in zip(freevars, closure, strict=False):
+                try:
+                    new_locals[fv_name] = cell.cell_contents
+                except ValueError:
+                    continue
+    except (AttributeError, TypeError):
+        pass
+
     # 1. Fill positional args
     for i, name in enumerate(pos_arg_names):
         if i < len(args):
@@ -430,14 +448,6 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
             # Prune the 'is None' path for generic variables to avoid cascades
             state = state.add_constraint(z3.Not(is_none))
 
-    result = _apply_model(state, func_obj, args, kwargs)
-    if result:
-        return result
-
-    oop_result = _try_enhanced_class_call(state, func_obj, args, kwargs)
-    if oop_result is not None:
-        return oop_result
-
     call_name = (
         getattr(func_obj, "model_name", None)
         or getattr(func_obj, "__name__", None)
@@ -449,6 +459,20 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
         if not hasattr(state, "_pending_taint_issues"):
             state._pending_taint_issues = []
         state._pending_taint_issues.extend(taint_issues)
+
+    result = _apply_model(state, func_obj, args, kwargs)
+    if result:
+        if hasattr(state, "_pending_taint_issues"):
+            result.issues.extend(state._pending_taint_issues)
+            delattr(state, "_pending_taint_issues")
+        return result
+
+    oop_result = _try_enhanced_class_call(state, func_obj, args, kwargs)
+    if oop_result is not None:
+        if hasattr(state, "_pending_taint_issues"):
+            oop_result.issues.extend(state._pending_taint_issues)
+            delattr(state, "_pending_taint_issues")
+        return oop_result
 
     if ctx.cross_function and hasattr(ctx.cross_function, "function_summary_cache"):
         cache = ctx.cross_function.function_summary_cache
@@ -668,6 +692,10 @@ def handle_load_method(
             elif obj_state is None:
                 obj_state = {}
                 state.memory[obj.address] = obj_state  # type: ignore[union-attr]
+            elif isinstance(obj_state, (dict, CowDict)):
+                module_name = obj_state.get("__module_name__")  # type: ignore[call-overload]
+                if isinstance(module_name, str) and module_name:
+                    type_name = module_name
 
             if type_name != "unknown":
                 model_name = f"{type_name}.{attr_name}"
@@ -793,6 +821,8 @@ def handle_load_method(
             f"{getattr(obj, 'name', 'obj')}.{attr_name}"
         )
         result_val.model_name = f"{type_name}.{attr_name}"
+        if isinstance(obj_state, (dict, CowDict)):
+            obj_state[attr_name] = result_val  # type: ignore[index]
         state = state.add_constraint(type_constraint)
         
         import z3 as _z3
@@ -953,6 +983,9 @@ def handle_import_name(
     # We use a unique address for each module to represent its identity
     addr = hash(module_name) & 0xFFFFFFFF
     module_val = SymbolicObject(module_name, addr, z3.IntVal(addr), {addr})
+    # Keep lightweight module metadata in heap so LOAD_ATTR can build
+    # qualified names like "os.system" for model/sink resolution.
+    state.memory[addr] = {"__module_name__": module_name}
 
     state = state.push(module_val)
     state = state.advance_pc()

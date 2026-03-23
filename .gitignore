@@ -114,10 +114,11 @@ dist_tmp/
 
 # Tool artifacts
 tmpclaude-*-cwd/
+.ruff_cache/
 
 # Comment backup archive (pre-cleanup originals)
 .comment_backups/
 pysymex_docs_experimental/
 tests_repo/
 .pysymex/
-.github/
+_tmp_rt_*/

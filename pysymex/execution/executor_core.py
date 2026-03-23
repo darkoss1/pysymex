@@ -72,6 +72,21 @@ from pysymex.execution.executor_types import (
 )
 from pysymex.resources import LimitExceeded, ResourceLimits, ResourceTracker
 
+# GPU acceleration for CHTD (lazy-loaded)
+_gpu_bag_solver = None
+
+def _get_gpu_bag_solver():
+    """Lazy-load GPU bag solver."""
+    global _gpu_bag_solver
+    if _gpu_bag_solver is None:
+        try:
+            from pysymex.h_acceleration.chtd_solver import create_gpu_bag_solver
+            _gpu_bag_solver = create_gpu_bag_solver(use_gpu=True)
+            logger.info(f"GPU CHTD solver initialized: GPU={_gpu_bag_solver.is_gpu_available}")
+        except ImportError:
+            _gpu_bag_solver = False  # Mark as unavailable
+    return _gpu_bag_solver if _gpu_bag_solver else None
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["SymbolicExecutor"]
@@ -100,8 +115,20 @@ class SymbolicExecutor:
         self,
         config: ExecutionConfig | None = None,
         detector_registry: DetectorRegistry | None = None,
+        **config_overrides: object,
     ):
-        self.config = config or ExecutionConfig()
+        # Ensure default opcode handlers are registered even when importing
+        # SymbolicExecutor directly from executor_core.
+        import pysymex.execution.opcodes as _opcodes  # noqa: F401
+
+        if config is None:
+            self.config = ExecutionConfig(**config_overrides)
+        elif config_overrides:
+            from dataclasses import replace as _dc_replace
+
+            self.config = _dc_replace(config, **config_overrides)
+        else:
+            self.config = config
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
         self.solver = IncrementalSolver(
@@ -249,6 +276,32 @@ class SymbolicExecutor:
             self.dispatcher.set_exception_entries([])
         self._build_line_mapping(code)
         initial_state = self._create_initial_state(func, symbolic_args or {}, initial_values)
+        # Bind closure cell contents (LOAD_DEREF targets) into locals.
+        try:
+            closure = getattr(func, "__closure__", None)
+            freevars = list(getattr(code, "co_freevars", ()))
+            if closure and freevars:
+                for fv_name, cell in zip(freevars, closure, strict=False):
+                    try:
+                        initial_state.local_vars[fv_name] = cell.cell_contents
+                    except ValueError:
+                        # Empty closure cell; skip.
+                        continue
+        except (AttributeError, TypeError):
+            pass
+        # Seed module-local function globals so LOAD_GLOBAL can resolve
+        # inter-procedural calls in the analyzed function.
+        try:
+            module_funcs: dict[str, object] = {}
+            for g_name, g_val in func.__globals__.items():
+                if inspect.isfunction(g_val) and getattr(g_val, "__module__", None) == getattr(
+                    func, "__module__", None
+                ):
+                    module_funcs[g_name] = g_val
+            if module_funcs:
+                initial_state.global_vars = CowDict(module_funcs)
+        except (AttributeError, TypeError):
+            pass
         if self._taint_tracker is not None:
             initial_state.taint_tracker = self._taint_tracker
         self._worklist = create_path_manager(self.config.strategy)
@@ -582,8 +635,26 @@ class SymbolicExecutor:
                 type_hint = symbolic_args.get(name) or inferred_types.get(name, "int")
 
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
+            if self.config and self.config.enable_taint_tracking and hasattr(sym_val, "with_taint"):
+                try:
+                    sym_val = sym_val.with_taint("user_input")
+                except (AttributeError, TypeError):
+                    pass
             state.local_vars[name] = sym_val
             state = state.add_constraint(constraint)
+
+            if self._taint_tracker is not None:
+                try:
+                    from pysymex.analysis.taint import TaintSource
+
+                    self._taint_tracker.mark_tainted(
+                        sym_val,
+                        TaintSource.USER_INPUT,
+                        origin=name,
+                        line=0,
+                    )
+                except (ImportError, AttributeError, TypeError):
+                    pass
             
             # Apply Noise Reduction Heuristic: Assume 'self'/'cls' is non-None
             if self.config and self.config.heuristic_assume_non_null_self:
@@ -909,58 +980,69 @@ class SymbolicExecutor:
             # stabilized, periodically use the tree decomposition to
             # check structural satisfiability across bags.  If any bag
             # is locally UNSAT, we know the path is infeasible.
+            #
+            # GPU ACCELERATION: When available, uses GPU to evaluate all
+            # 2^w assignments per bag in parallel, enabling true CHTD
+            # message passing with O(N · 2^w) complexity.
             if self._interaction_graph.is_stabilized():
                 try:
                     td = self._interaction_graph.compute_tree_decomposition()
                     if td.width > 0 and td.bags:
                         branch_info = self._interaction_graph._branch_info
-                        # Accumulated adhesion constraints from children
-                        bag_extra: dict[int, list[z3.BoolRef]] = {}
 
-                        def _solve_bag(bag: frozenset[int]) -> bool:
-                            """Check SAT of constraints in a single bag."""
-                            constraints: list[z3.BoolRef] = []
-                            for pc in bag:
-                                info = branch_info.get(pc)
-                                if info is not None and info.condition is not None:
-                                    constraints.append(info.condition)
-                            # Include messages received from children
-                            extras = bag_extra.get(id(bag), [])
-                            constraints.extend(extras)
-                            if not constraints:
-                                return True
-                            return self.solver.is_sat(constraints)
+                        # Use GPU-accelerated CHTD solver
+                        gpu_solver = _get_gpu_bag_solver()
+                        if gpu_solver is not None:
+                            sat = gpu_solver.propagate_all(td, branch_info)
+                        else:
+                            import warnings
+                            warnings.warn(
+                                "h_acceleration component is unavailable. "
+                                "Falling back to deprecated CPU CHTD solver. "
+                                "Please install the h_acceleration dependencies (e.g. numpy).",
+                                DeprecationWarning,
+                                stacklevel=2
+                            )
+                            # Fallback: CPU-based SAT checking per bag
+                            bag_extra: dict[int, list[z3.BoolRef]] = {}
 
-                        def _pass_msg(
-                            child: int, parent: int, adhesion: frozenset[int]
-                        ) -> None:
-                            """Project child constraints onto adhesion set.
+                            def _solve_bag(bag: frozenset[int]) -> bool:
+                                """Check SAT of constraints in a single bag."""
+                                constraints: list[z3.BoolRef] = []
+                                for pc in bag:
+                                    info = branch_info.get(pc)
+                                    if info is not None and info.condition is not None:
+                                        constraints.append(info.condition)
+                                # Include messages received from children
+                                extras = bag_extra.get(id(bag), [])
+                                constraints.extend(extras)
+                                if not constraints:
+                                    return True
+                                return self.solver.is_sat(constraints)
 
-                            Collects constraints from the child bag that
-                            involve adhesion PCs and forwards them to the
-                            parent so the parent's local solve includes
-                            the child's structural constraints on shared
-                            variables.
-                            """
-                            child_bag = td.bags.get(child)
-                            parent_bag = td.bags.get(parent)
-                            if child_bag is None or parent_bag is None:
-                                return
-                            # Gather child constraints on adhesion PCs
-                            projected: list[z3.BoolRef] = []
-                            for pc in adhesion:
-                                info = branch_info.get(pc)
-                                if info is not None and info.condition is not None:
-                                    projected.append(info.condition)
-                            if projected:
-                                key = id(parent_bag)
-                                if key not in bag_extra:
-                                    bag_extra[key] = []
-                                bag_extra[key].extend(projected)
+                            def _pass_msg(
+                                child: int, parent: int, adhesion: frozenset[int]
+                            ) -> None:
+                                """Project child constraints onto adhesion set."""
+                                child_bag = td.bags.get(child)
+                                parent_bag = td.bags.get(parent)
+                                if child_bag is None or parent_bag is None:
+                                    return
+                                projected: list[z3.BoolRef] = []
+                                for pc in adhesion:
+                                    info = branch_info.get(pc)
+                                    if info is not None and info.condition is not None:
+                                        projected.append(info.condition)
+                                if projected:
+                                    key = id(parent_bag)
+                                    if key not in bag_extra:
+                                        bag_extra[key] = []
+                                    bag_extra[key].extend(projected)
 
-                        sat = self._interaction_graph.propagate_bag_constraints(
-                            td, _solve_bag, _pass_msg
-                        )
+                            sat = self._interaction_graph.propagate_bag_constraints(
+                                td, _solve_bag, _pass_msg
+                            )
+
                         if not sat:
                             # The CHTD DP found a structural infeasibility.
                             # Prune the newly forked states.
