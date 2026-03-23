@@ -53,18 +53,25 @@
 
 ## Installation
 
-```bash
-# Install Z3 solver (required)
-pip install z3-solver
+Install directly from PyPI:
 
-# Clone and install
+```bash
+# Standard installation (Basic pure-Python engine)
+pip install pysymex
+
+# High-Performance CPU Mode (Installs Numba & NumPy)
+pip install "pysymex[accel-cpu]"
+
+# Extreme-Performance GPU Mode (Installs CuPy for NVIDIA GPUs)
+pip install "pysymex[accel-gpu]"
+```
+
+Or install from source for development:
+
+```bash
 git clone https://github.com/darkoss1/pysymex.git
 cd pysymex
-pip install -e .
-
-# OPTIONAL: Install GPU Acceleration (for massive performance scaling)
-pip install "pysymex[gpu]" 
-# Or directly: pip install cupy-cuda12x (for NVIDIA GPUs)
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
@@ -255,6 +262,7 @@ options:
 - Python 3.11+ (tested on 3.11, 3.12, 3.13)
 - z3-solver >= 4.12.0
 - pydantic >= 2.0.0
+- icontract >= 2.6.0
 
 ## License
 
