@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python set operations.
 
 This module provides relationship-preserving symbolic models for set methods.
@@ -6,7 +24,7 @@ It tracks set size, membership constraints, and length mutations.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import z3
 
@@ -39,8 +57,8 @@ class SetModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the set constructor model."""
-        result, constraint = SymbolicValue.symbolic(f"set_{state .pc }")
-        result._type = "set"
+        result, constraint = SymbolicValue.symbolic(f"set_{state.pc}")
+        setattr(result, "_type", "set")
         if not args:
             return ModelResult(value=result, constraints=[constraint, result.z3_int == 0])
         return ModelResult(value=result, constraints=[constraint, result.z3_int >= 0])
@@ -69,7 +87,7 @@ class SetAddModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(z3.And(new_len >= z3_len, new_len <= z3_len + 1))
                 s.z3_int = new_len
             side_effects["set_mutation"] = {
@@ -113,7 +131,7 @@ class SetRemoveModel(FunctionModel):
                     "message": "set.remove(x): x not in set",
                     "condition": z3_len == 0,
                 }
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len == z3_len - 1)
                 s.z3_int = new_len
             side_effects["set_mutation"] = {
@@ -151,7 +169,7 @@ class SetDiscardModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(z3.And(new_len >= z3_len - 1, new_len <= z3_len))
                 constraints.append(new_len >= 0)
                 s.z3_int = new_len
@@ -182,7 +200,7 @@ class SetPopModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.pop method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"set_pop_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_pop_{state.pc}")
         constraints: list[z3.BoolRef | z3.ExprRef] = [constraint]
         side_effects: dict[str, object] = {}
         z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None)) if s else None
@@ -193,7 +211,7 @@ class SetPopModel(FunctionModel):
                 "message": "pop from an empty set",
                 "condition": z3_len == 0,
             }
-            new_len = z3.Int(f"set_len_{state .pc }")
+            new_len = z3.Int(f"set_len_{state.pc}")
             constraints.append(new_len == z3_len - 1)
             s.z3_int = new_len
             side_effects["set_mutation"] = {
@@ -252,8 +270,8 @@ class SetCopyModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.copy method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"set_copy_{state .pc }")
-        cast("Any", result)._type = "set"
+        result, constraint = SymbolicList.symbolic(f"set_copy_{state.pc}")
+        setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -276,8 +294,8 @@ class SetUnionModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.union method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"set_union_{state .pc }")
-        cast("Any", result)._type = "set"
+        result, constraint = SymbolicList.symbolic(f"set_union_{state.pc}")
+        setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -300,8 +318,8 @@ class SetIntersectionModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.intersection method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"set_inter_{state .pc }")
-        cast("Any", result)._type = "set"
+        result, constraint = SymbolicList.symbolic(f"set_inter_{state.pc}")
+        setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -325,7 +343,7 @@ class SetContainsModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.__contains__ method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"set_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_contains_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -350,11 +368,11 @@ class SetLenModel(FunctionModel):
         s = _get_symbolic_set(args[0]) if args else None
         z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None)) if s else None
         if s is not None and z3_len is not None:
-            result_val, result_const = SymbolicValue.symbolic(f"len_{getattr (s ,'_name','set')}")
+            result_val, result_const = SymbolicValue.symbolic(f"len_{getattr(s, '_name', 'set')}")
             return ModelResult(
                 value=result_val, constraints=[result_const, result_val.z3_int == z3_len]
             )
-        result, constraint = SymbolicValue.symbolic(f"set_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_len_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -375,8 +393,8 @@ class SetDifferenceModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.difference method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"set_diff_{state .pc }")
-        cast("Any", result)._type = "set"
+        result, constraint = SymbolicList.symbolic(f"set_diff_{state.pc}")
+        setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -401,8 +419,8 @@ class SetSymmetricDifferenceModel(FunctionModel):
         """Apply set.symmetric_difference method."""
         s = _get_symbolic_set(args[0]) if args else None
         other = _get_symbolic_set(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"set_symdiff_{state .pc }")
-        cast("Any", result)._type = "set"
+        result, constraint = SymbolicList.symbolic(f"set_symdiff_{state.pc}")
+        setattr(result, "_type", "set")
         constraints = [constraint, result.z3_len >= 0]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -428,7 +446,7 @@ class SetIssubsetModel(FunctionModel):
         """Apply set.issubset method."""
         s = _get_symbolic_set(args[0]) if args else None
         other = _get_symbolic_set(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"set_issubset_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_issubset_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None and other is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -457,7 +475,7 @@ class SetIssupersetModel(FunctionModel):
         """Apply set.issuperset method."""
         s = _get_symbolic_set(args[0]) if args else None
         other = _get_symbolic_set(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"set_issuperset_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_issuperset_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None and other is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -486,7 +504,7 @@ class SetIsdisjointModel(FunctionModel):
         """Apply set.isdisjoint method."""
         s = _get_symbolic_set(args[0]) if args else None
         other = _get_symbolic_set(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"set_isdisjoint_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"set_isdisjoint_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
@@ -518,7 +536,7 @@ class SetUpdateModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len >= z3_len)
                 s.z3_int = new_len
             side_effects["set_mutation"] = {
@@ -551,7 +569,7 @@ class SetIntersectionUpdateModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len <= z3_len)
                 constraints.append(new_len >= 0)
                 s.z3_int = new_len
@@ -585,7 +603,7 @@ class SetDifferenceUpdateModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len <= z3_len)
                 constraints.append(new_len >= 0)
                 s.z3_int = new_len
@@ -619,7 +637,7 @@ class SetSymmetricDifferenceUpdateModel(FunctionModel):
         if s is not None:
             z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
             if z3_len is not None:
-                new_len = z3.Int(f"set_len_{state .pc }")
+                new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len >= 0)
                 s.z3_int = new_len
             side_effects["set_mutation"] = {

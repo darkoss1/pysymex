@@ -6,7 +6,7 @@
 
 ## Abstract
 
-Symbolic execution faces a fundamental scalability barrier: the path explosion problem, where a program with $B$ branch points produces up to $O(2^B)$ feasible paths. PySyMex mitigates this through a novel combination of graph-theoretic structural analysis and online learning. Rather than enumerating paths naively, PySyMex constructs a **Constraint Interaction Graph (CIG)** over branch conditions, partitions independent constraint clusters via Union-Find, and computes an approximate **tree decomposition** of the CIG using minimum-degree elimination. By applying dynamic programming (message passing) over the tree decomposition, the structural path exploration complexity is reduced to $O(N \cdot 2^w)$, where $w$ is the treewidth of the CIG and $w \ll B$ for structured programs. Path scheduling is governed by an **Adaptive Path Manager** using Discounted Thompson Sampling over a Beta-Bernoulli multi-armed bandit, which dynamically allocates exploration budget across DFS, coverage-guided, and random strategies based on real-time, non-stationary reward feedback. Additionally, a theory-aware solver dispatch layer classifies constraint theories and tunes Z3 parameters per query, with automatic escalation to a parallel portfolio solver for hard instances. Together, these components form the CHTD-TS architecture.
+Symbolic execution faces a fundamental scalability barrier: the path explosion problem, where a program with $B$ branch points produces up to $O(2^B)$ feasible paths. PySyMex mitigates this through a novel combination of graph-theoretic structural analysis and online learning. Rather than enumerating paths naively, PySyMex constructs a **Constraint Interaction Graph (CIG)** over branch conditions, partitions independent constraint clusters via Union-Find, and computes an approximate **tree decomposition** of the CIG using minimum-degree elimination. By applying dynamic programming (message passing) over the tree decomposition, the structural path exploration complexity is reduced to $O(N \cdot 2^w)$, where $w$ is the treewidth of the CIG and $w \ll B$ for structured programs. Path scheduling is governed by an **Adaptive Path Manager** using Discounted Thompson Sampling over a Beta-Bernoulli multi-armed bandit, which dynamically allocates exploration budget across CHTD-native, coverage-guided, and random strategies based on real-time, non-stationary reward feedback. Additionally, a theory-aware solver dispatch layer classifies constraint theories and tunes Z3 parameters per query, with automatic escalation to a parallel portfolio solver for hard instances. Together, these components form the CHTD-TS architecture.
 
 ---
 
@@ -270,7 +270,7 @@ Fixed exploration strategies exhibit structural bias. An online learning approac
 
 ### 6.2 Discounted Multi-Armed Bandit Formulation
 
-The `AdaptivePathManager` maintains three arms (`dfs`, `coverage`, `random`). Each arm $k$ is modeled as a coin with unknown bias $\theta_k \sim \text{Beta}(\alpha_k, \beta_k)$. To handle non-stationarity, PySyMex applies a discount factor $\gamma \in (0, 1)$ (default: 0.95) to gradually forget outdated successes.
+The `AdaptivePathManager` maintains three arms (`structural`, `coverage`, `random`). Each arm $k$ is modeled as a coin with unknown bias $\theta_k \sim \text{Beta}(\alpha_k, \beta_k)$. To handle non-stationarity, PySyMex applies a discount factor $\gamma \in (0, 1)$ (default: 0.95) to gradually forget outdated successes.
 
 ### 6.3 Thompson Sampling Algorithm
 
@@ -280,7 +280,7 @@ $$ \hat{\theta}_k \sim \text{Beta}(\alpha_k, \beta_k), \quad k^* = \arg\max_k \h
 
 ```python
 def _thompson_sample(self) -> str:
-    best_arm = self.ARM_DFS
+    best_arm = self.ARM_STRUCTURAL
     best_sample = -1.0
     for arm_name, (alpha, beta) in self._arms.items():
         sample = random.betavariate(alpha, beta)

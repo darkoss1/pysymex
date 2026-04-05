@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Exception handler awareness for reducing false positives.
 
 This module detects when code is inside exception handlers to avoid
@@ -8,6 +26,7 @@ reporting unreachable code or expected error conditions.
 from __future__ import annotations
 
 import logging
+from types import CodeType
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +110,7 @@ class ExceptionHandlerAnalyzer:
         self._state = ExceptionHandlerState()
         self._handler_ranges: dict[int, tuple[int, int]] = {}
 
-    def analyze_bytecode(self, code: object) -> list[ExceptionHandlerInfo]:
+    def analyze_bytecode(self, code: CodeType) -> list[ExceptionHandlerInfo]:
         """Extract exception handlers from bytecode.
 
         Args:
@@ -111,7 +130,7 @@ class ExceptionHandlerAnalyzer:
         self._state.all_handlers = handlers
         return handlers
 
-    def _parse_exception_table(self, code: object) -> list[ExceptionHandlerInfo]:
+    def _parse_exception_table(self, code: CodeType) -> list[ExceptionHandlerInfo]:
         """Parse the exception table from Python 3.11+ code objects."""
         handlers: list[ExceptionHandlerInfo] = []
 
@@ -208,7 +227,7 @@ class ExceptionHandlerAnalyzer:
         """Visit AST nodes to find exception handlers."""
         handlers: list[ExceptionHandlerInfo] = []
 
-        for child in ast.walk(node):
+        for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.Try):
                 for handler in child.handlers:
                     exc_types = []
@@ -266,6 +285,10 @@ class ExceptionHandlerAnalyzer:
                             nesting_depth=depth,
                         )
                     )
+
+                handlers.extend(self._visit_ast(child, depth + 1))
+            else:
+                handlers.extend(self._visit_ast(child, depth))
 
         return handlers
 

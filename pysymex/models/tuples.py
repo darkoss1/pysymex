@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python tuple operations.
 
 This module provides relationship-preserving symbolic models for tuple methods.
@@ -6,7 +24,7 @@ Tuples are immutable, so all operations return new values without side effects.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import z3
 
@@ -38,7 +56,7 @@ class TupleModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         """Apply tuple() constructor."""
-        result, constraint = SymbolicList.symbolic(f"tuple_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"tuple_{state.pc}")
         constraints = [constraint]
         if not args:
             constraints.append(result.z3_len == 0)
@@ -59,7 +77,7 @@ class TupleGetitemModel(FunctionModel):
     ) -> ModelResult:
         """Apply tuple.__getitem__ method."""
         t = _get_symbolic_tuple(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"tuple_item_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_item_{state.pc}")
         constraints = [constraint]
         side_effects: dict[str, object] = {}
         if t is not None and len(args) > 1:
@@ -88,7 +106,7 @@ class TupleContainsModel(FunctionModel):
     ) -> ModelResult:
         """Apply tuple.__contains__ method."""
         t = _get_symbolic_tuple(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"tuple_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_contains_{state.pc}")
         constraints = [constraint, result.is_bool]
         if t is not None:
             constraints.append(z3.Implies(t.z3_len == 0, z3.Not(result.z3_bool)))
@@ -115,7 +133,7 @@ class TupleLenModel(FunctionModel):
                 value=result,
                 constraints=[constraint, result.z3_int == t.z3_len],
             )
-        result, constraint = SymbolicValue.symbolic(f"tuple_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_len_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -136,7 +154,7 @@ class TupleCountModel(FunctionModel):
     ) -> ModelResult:
         """Apply tuple.count method."""
         t = _get_symbolic_tuple(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"tuple_count_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_count_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if t is not None:
             constraints.append(result.z3_int <= t.z3_len)
@@ -157,7 +175,7 @@ class TupleIndexModel(FunctionModel):
     ) -> ModelResult:
         """Apply tuple.index method."""
         t = _get_symbolic_tuple(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"tuple_index_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_index_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         side_effects: dict[str, object] = {}
         if t is not None:
@@ -185,7 +203,7 @@ class TupleAddModel(FunctionModel):
         """Apply tuple.__add__ method."""
         t = _get_symbolic_tuple(args[0]) if args else None
         other = _get_symbolic_tuple(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"tuple_add_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"tuple_add_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if t is not None and other is not None:
             constraints.append(result.z3_len == t.z3_len + other.z3_len)
@@ -209,13 +227,16 @@ class TupleMulModel(FunctionModel):
         """Apply tuple.__mul__ method."""
         t = _get_symbolic_tuple(args[0]) if args else None
         n = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"tuple_mul_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"tuple_mul_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if t is not None and n is not None:
             n_val = getattr(n, "z3_int", None)
             if n_val is not None:
                 constraints.append(
-                    z3.If(n_val > 0, result.z3_len == t.z3_len * n_val, result.z3_len == 0)
+                    cast(
+                        "z3.BoolRef",
+                        z3.If(n_val > 0, result.z3_len == t.z3_len * n_val, result.z3_len == 0),
+                    )
                 )
         return ModelResult(value=result, constraints=constraints)
 
@@ -234,7 +255,7 @@ class TupleSliceModel(FunctionModel):
     ) -> ModelResult:
         """Apply tuple slice operation."""
         t = _get_symbolic_tuple(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"tuple_slice_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"tuple_slice_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if t is not None:
             constraints.append(result.z3_len <= t.z3_len)
@@ -256,7 +277,7 @@ class TupleEqModel(FunctionModel):
         """Apply tuple.__eq__ method."""
         t = _get_symbolic_tuple(args[0]) if args else None
         other = _get_symbolic_tuple(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"tuple_eq_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_eq_{state.pc}")
         constraints = [constraint, result.is_bool]
         if t is not None and other is not None:
             constraints.append(z3.Implies(result.z3_bool, t.z3_len == other.z3_len))
@@ -277,7 +298,7 @@ class TupleHashModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         """Apply tuple.__hash__ method."""
-        result, constraint = SymbolicValue.symbolic(f"tuple_hash_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"tuple_hash_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int],

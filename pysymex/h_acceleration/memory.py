@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU Memory Management Utilities.
 
 Provides memory budget calculations, device memory monitoring,
@@ -22,9 +40,12 @@ __all__ = [
     "estimate_max_treewidth",
 ]
 
+
 class GPUMemoryError(Exception):
     """Raised when memory requirements exceed available resources."""
+
     pass
+
 
 @dataclass(frozen=True, slots=True)
 class MemoryBudget:
@@ -60,8 +81,11 @@ class MemoryBudget:
         return self.total_mb <= available_mb
 
     def __repr__(self) -> str:
-        return (f"MemoryBudget(output={self.output_mb:.2f}MB, "
-                f"total={self.total_mb:.2f}MB, threads={self.total_threads:,})")
+        return (
+            f"MemoryBudget(output={self.output_mb:.2f}MB, "
+            f"total={self.total_mb:.2f}MB, threads={self.total_threads:,})"
+        )
+
 
 def calculate_memory_budget(
     num_variables: int,
@@ -81,14 +105,10 @@ def calculate_memory_budget(
     """
     num_states = 1 << num_variables
     output_bytes = (num_states + 7) // 8
-    instruction_bytes = num_instructions * 16  # INSTRUCTION_DTYPE.itemsize = 16 bytes
+    instruction_bytes = num_instructions * 16
     register_bytes_per_thread = 32
 
-    total_device_bytes = (
-        output_bytes +
-        instruction_bytes +
-        4096
-    )
+    total_device_bytes = output_bytes + instruction_bytes + 4096
 
     recommended_batch = None
     if num_states > 2**26:
@@ -102,6 +122,7 @@ def calculate_memory_budget(
         total_threads=num_states,
         recommended_batch_size=recommended_batch,
     )
+
 
 def estimate_max_treewidth(available_memory_mb: int) -> int:
     """Estimate maximum treewidth that fits in available GPU memory.
@@ -127,6 +148,7 @@ def estimate_max_treewidth(available_memory_mb: int) -> int:
 
     return min(max_w, 30)
 
+
 def get_device_memory_info() -> dict[str, bool | int]:
     """Query GPU device memory information.
 
@@ -137,12 +159,14 @@ def get_device_memory_info() -> dict[str, bool | int]:
     """
     try:
         from pysymex.h_acceleration.backends import gpu as cuda
+
         if cuda.is_available():
             return cuda.get_memory_info()
     except ImportError:
         pass
 
     return {"available": False}
+
 
 def evaluate_batched(
     constraint: CompiledConstraint,
@@ -167,6 +191,4 @@ def evaluate_batched(
     """
     from pysymex.h_acceleration.dispatcher import get_dispatcher
 
-    # Currently evaluates the full constraint in one pass.
-    # The dispatcher handles memory management internally.
     return get_dispatcher().evaluate_bag(constraint).bitmap

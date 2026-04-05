@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Advanced Bounds Checking Analysis with Z3.
 This module provides comprehensive bounds checking using Z3 SMT solver
 for mathematical proofs of memory safety. Covers:
@@ -11,14 +29,19 @@ for mathematical proofs of memory safety. Covers:
 
 from __future__ import annotations
 
-import icontract
 import logging
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
+
+import icontract
+
+if TYPE_CHECKING:
+    import z3
 
 logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import cast
 
 import z3
 
@@ -58,22 +81,22 @@ class BoundsIssue:
     message: str
     location: str | None = None
     line_number: int | None = None
-    constraints: list[object] = field(default_factory=list[object])
-    counterexample: dict[str, object] = field(default_factory=dict[str, object])
+    constraints: Sequence[z3.BoolRef] = field(default_factory=list)
+    counterexample: dict[str, object] = field(default_factory=dict)
     severity: str = "error"
     array_name: str | None = None
     index_expr: str | None = None
 
     def format(self) -> str:
         """Format issue for display."""
-        loc = f" at line {self .line_number }" if self.line_number else ""
-        arr = f" on {self .array_name }" if self.array_name else ""
+        loc = f" at line {self.line_number}" if self.line_number else ""
+        arr = f" on {self.array_name}" if self.array_name else ""
         ce = ""
         if self.counterexample:
             ce = " | Counterexample: " + ", ".join(
-                f"{k }={v }" for k, v in self.counterexample.items()
+                f"{k}={v}" for k, v in self.counterexample.items()
             )
-        return f"[{self .kind .name }]{loc }{arr }: {self .message }{ce }"
+        return f"[{self.kind.name}]{loc}{arr}: {self.message}{ce}"
 
 
 @dataclass
@@ -89,10 +112,10 @@ class SymbolicArray:
     name: str
     length: z3.ArithRef
     element_sort: z3.SortRef = field(default_factory=lambda: z3.IntSort())
-    dimensions: list[z3.ArithRef] = field(default_factory=list[z3.ArithRef])
+    dimensions: list[z3.ArithRef] = field(default_factory=list)
     _array: z3.ArrayRef | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post init."""
         if not self.dimensions:
             self.dimensions = [self.length]
@@ -116,7 +139,7 @@ class SymbolicArray:
         assert self._array is not None
         new_array = z3.Store(self._array, index, value)
         return SymbolicArray(
-            name=f"{self .name }'",
+            name=f"{self.name}'",
             length=self.length,
             element_sort=self.element_sort,
             dimensions=list(self.dimensions),
@@ -170,7 +193,7 @@ class BoundsChecker:
         timeout_ms: int = 5000,
         check_off_by_one: bool = True,
         strict_slice_bounds: bool = True,
-    ):
+    ) -> None:
         self.timeout_ms = timeout_ms
         self.check_off_by_one = check_off_by_one
         self.strict_slice_bounds = strict_slice_bounds
@@ -207,69 +230,69 @@ class BoundsChecker:
         constraints = list(path_constraints or [])
         if allow_negative_indexing:
             neg_oob = z3.And(index < 0, index < -length)
-            if is_satisfiable(constraints + [neg_oob]):
-                model = get_model(constraints + [neg_oob])
+            if is_satisfiable([*constraints, neg_oob]):
+                model = get_model([*constraints, neg_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.INDEX_NEGATIVE,
                         message="Negative index too small for array length",
                         array_name=array_name,
                         index_expr=str(index),
-                        constraints=constraints + [neg_oob],
+                        constraints=[*constraints, neg_oob],
                         counterexample=self._extract_model(model, [index, length]),
                     )
                 )
             pos_oob = z3.And(index >= 0, index >= length)
-            if is_satisfiable(constraints + [pos_oob]):
-                model = get_model(constraints + [pos_oob])
+            if is_satisfiable([*constraints, pos_oob]):
+                model = get_model([*constraints, pos_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.INDEX_OUT_OF_BOUNDS,
                         message="Index >= length",
                         array_name=array_name,
                         index_expr=str(index),
-                        constraints=constraints + [pos_oob],
+                        constraints=[*constraints, pos_oob],
                         counterexample=self._extract_model(model, [index, length]),
                     )
                 )
         else:
             negative = index < 0
-            if is_satisfiable(constraints + [negative]):
-                model = get_model(constraints + [negative])
+            if is_satisfiable([*constraints, negative]):
+                model = get_model([*constraints, negative])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.INDEX_NEGATIVE,
                         message="Negative index not allowed",
                         array_name=array_name,
                         index_expr=str(index),
-                        constraints=constraints + [negative],
+                        constraints=[*constraints, negative],
                         counterexample=self._extract_model(model, [index, length]),
                     )
                 )
             too_large = index >= length
-            if is_satisfiable(constraints + [too_large]):
-                model = get_model(constraints + [too_large])
+            if is_satisfiable([*constraints, too_large]):
+                model = get_model([*constraints, too_large])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.INDEX_OUT_OF_BOUNDS,
                         message="Index >= length",
                         array_name=array_name,
                         index_expr=str(index),
-                        constraints=constraints + [too_large],
+                        constraints=[*constraints, too_large],
                         counterexample=self._extract_model(model, [index, length]),
                     )
                 )
         if self.check_off_by_one:
             off_by_one = index == length
-            if is_satisfiable(constraints + [off_by_one]):
-                model = get_model(constraints + [off_by_one])
+            if is_satisfiable([*constraints, off_by_one]):
+                model = get_model([*constraints, off_by_one])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.INDEX_EQUALS_LENGTH,
                         message="Off-by-one: index equals length",
                         array_name=array_name,
                         index_expr=str(index),
-                        constraints=constraints + [off_by_one],
+                        constraints=[*constraints, off_by_one],
                         counterexample=self._extract_model(model, [index, length]),
                         severity="warning",
                     )
@@ -302,64 +325,64 @@ class BoundsChecker:
         if step is None:
             step = z3.IntVal(1)
         step_zero = step == 0
-        if is_satisfiable(constraints + [step_zero]):
-            model = get_model(constraints + [step_zero])
+        if is_satisfiable([*constraints, step_zero]):
+            model = get_model([*constraints, step_zero])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.SLICE_STEP_ZERO,
                     message="Slice step cannot be zero",
                     array_name=array_name,
-                    constraints=constraints + [step_zero],
+                    constraints=[*constraints, step_zero],
                     counterexample=self._extract_model(model, [step]),
                 )
             )
         if start is not None and self.strict_slice_bounds:
             start_neg_oob = z3.And(start < 0, start < -length)
-            if is_satisfiable(constraints + [start_neg_oob]):
-                model = get_model(constraints + [start_neg_oob])
+            if is_satisfiable([*constraints, start_neg_oob]):
+                model = get_model([*constraints, start_neg_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.SLICE_START_NEGATIVE,
                         message="Slice start negative index too small",
                         array_name=array_name,
-                        constraints=constraints + [start_neg_oob],
+                        constraints=[*constraints, start_neg_oob],
                         counterexample=self._extract_model(model, [start, length]),
                     )
                 )
             start_pos_oob = z3.And(start >= 0, start > length)
-            if is_satisfiable(constraints + [start_pos_oob]):
-                model = get_model(constraints + [start_pos_oob])
+            if is_satisfiable([*constraints, start_pos_oob]):
+                model = get_model([*constraints, start_pos_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.SLICE_START_OUT_OF_BOUNDS,
                         message="Slice start > length",
                         array_name=array_name,
-                        constraints=constraints + [start_pos_oob],
+                        constraints=[*constraints, start_pos_oob],
                         counterexample=self._extract_model(model, [start, length]),
                     )
                 )
         if stop is not None and self.strict_slice_bounds:
             stop_neg_oob = z3.And(stop < 0, stop < -length)
-            if is_satisfiable(constraints + [stop_neg_oob]):
-                model = get_model(constraints + [stop_neg_oob])
+            if is_satisfiable([*constraints, stop_neg_oob]):
+                model = get_model([*constraints, stop_neg_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.SLICE_STOP_NEGATIVE,
                         message="Slice stop negative index too small",
                         array_name=array_name,
-                        constraints=constraints + [stop_neg_oob],
+                        constraints=[*constraints, stop_neg_oob],
                         counterexample=self._extract_model(model, [stop, length]),
                     )
                 )
             stop_pos_oob = z3.And(stop >= 0, stop > length)
-            if is_satisfiable(constraints + [stop_pos_oob]):
-                model = get_model(constraints + [stop_pos_oob])
+            if is_satisfiable([*constraints, stop_pos_oob]):
+                model = get_model([*constraints, stop_pos_oob])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.SLICE_STOP_OUT_OF_BOUNDS,
                         message="Slice stop > length",
                         array_name=array_name,
-                        constraints=constraints + [stop_pos_oob],
+                        constraints=[*constraints, stop_pos_oob],
                         counterexample=self._extract_model(model, [stop, length]),
                     )
                 )
@@ -382,7 +405,7 @@ class BoundsChecker:
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.DIMENSION_MISMATCH,
-                    message=f"Expected {len (dimensions )} indices, got {len (indices )}",
+                    message=f"Expected {len(dimensions)} indices, got {len(indices)}",
                     array_name=array_name,
                 )
             )
@@ -391,7 +414,7 @@ class BoundsChecker:
             dim_issues = self.check_index(
                 idx,
                 dim,
-                array_name=f"{array_name }[dim{i }]",
+                array_name=f"{array_name}[dim{i}]",
                 path_constraints=constraints,
                 allow_negative_indexing=True,
             )
@@ -444,26 +467,26 @@ class BoundsChecker:
         issues: list[BoundsIssue] = []
         constraints = list(path_constraints or [])
         underflow = offset < 0
-        if is_satisfiable(constraints + [underflow]):
-            model = get_model(constraints + [underflow])
+        if is_satisfiable([*constraints, underflow]):
+            model = get_model([*constraints, underflow])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.BUFFER_UNDERFLOW,
                     message="Buffer underflow: negative offset",
                     array_name=buffer.name,
-                    constraints=constraints + [underflow],
+                    constraints=[*constraints, underflow],
                     counterexample=self._extract_model(model, [offset, buffer.size]),
                 )
             )
         overflow = offset + access_size > buffer.size
-        if is_satisfiable(constraints + [overflow]):
-            model = get_model(constraints + [overflow])
+        if is_satisfiable([*constraints, overflow]):
+            model = get_model([*constraints, overflow])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.BUFFER_OVERFLOW,
                     message="Buffer overflow: access extends past end",
                     array_name=buffer.name,
-                    constraints=constraints + [overflow],
+                    constraints=[*constraints, overflow],
                     counterexample=self._extract_model(model, [offset, access_size, buffer.size]),
                 )
             )
@@ -493,13 +516,13 @@ class BoundsChecker:
         )
         issues.extend(dest_issues)
         neg_size = copy_size < 0
-        if is_satisfiable(constraints + [neg_size]):
-            model = get_model(constraints + [neg_size])
+        if is_satisfiable([*constraints, neg_size]):
+            model = get_model([*constraints, neg_size])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.NEGATIVE_SIZE,
                     message="Negative copy size",
-                    constraints=constraints + [neg_size],
+                    constraints=[*constraints, neg_size],
                     counterexample=self._extract_model(model, [copy_size]),
                 )
             )
@@ -519,26 +542,26 @@ class BoundsChecker:
         issues: list[BoundsIssue] = []
         constraints = list(path_constraints or [])
         neg_oob = z3.And(index < 0, index < -str_length)
-        if is_satisfiable(constraints + [neg_oob]):
-            model = get_model(constraints + [neg_oob])
+        if is_satisfiable([*constraints, neg_oob]):
+            model = get_model([*constraints, neg_oob])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.STRING_INDEX_NEGATIVE,
                     message="String negative index out of bounds",
                     array_name=string_name,
-                    constraints=constraints + [neg_oob],
+                    constraints=[*constraints, neg_oob],
                     counterexample=self._extract_model(model, [index, str_length]),
                 )
             )
         pos_oob = z3.And(index >= 0, index >= str_length)
-        if is_satisfiable(constraints + [pos_oob]):
-            model = get_model(constraints + [pos_oob])
+        if is_satisfiable([*constraints, pos_oob]):
+            model = get_model([*constraints, pos_oob])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.STRING_INDEX_OUT_OF_BOUNDS,
                     message="String index >= length",
                     array_name=string_name,
-                    constraints=constraints + [pos_oob],
+                    constraints=[*constraints, pos_oob],
                     counterexample=self._extract_model(model, [index, str_length]),
                 )
             )
@@ -559,24 +582,24 @@ class BoundsChecker:
         issues: list[BoundsIssue] = []
         constraints = list(path_constraints or [])
         neg_size = size < 0
-        if is_satisfiable(constraints + [neg_size]):
-            model = get_model(constraints + [neg_size])
+        if is_satisfiable([*constraints, neg_size]):
+            model = get_model([*constraints, neg_size])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.NEGATIVE_SIZE,
                     message="Negative allocation size",
-                    constraints=constraints + [neg_size],
+                    constraints=[*constraints, neg_size],
                     counterexample=self._extract_model(model, [size]),
                 )
             )
         too_large = size > max_allowed
-        if is_satisfiable(constraints + [too_large]):
-            model = get_model(constraints + [too_large])
+        if is_satisfiable([*constraints, too_large]):
+            model = get_model([*constraints, too_large])
             issues.append(
                 BoundsIssue(
                     kind=BoundsIssueKind.ALLOCATION_TOO_LARGE,
-                    message=f"Allocation size > {max_allowed }",
-                    constraints=constraints + [too_large],
+                    message=f"Allocation size > {max_allowed}",
+                    constraints=[*constraints, too_large],
                     counterexample=self._extract_model(model, [size]),
                 )
             )
@@ -634,10 +657,10 @@ class BoundsChecker:
         """
         constraints = list(path_constraints or [])
         oob_possible = z3.Or(index < 0, index >= length)
-        if is_satisfiable(constraints + [oob_possible]):
-            model = get_model(constraints + [oob_possible])
+        if is_satisfiable([*constraints, oob_possible]):
+            model = get_model([*constraints, oob_possible])
             ce = self._extract_model(model, [index, length])
-            return (False, f"Counterexample: {ce }")
+            return (False, f"Counterexample: {ce}")
         else:
             return (True, None)
 
@@ -676,13 +699,13 @@ class ListBoundsChecker(BoundsChecker):
         """Check if list append could exceed capacity."""
         constraints = list(path_constraints or [])
         overflow = current_length >= max_capacity
-        if is_satisfiable(constraints + [overflow]):
-            model = get_model(constraints + [overflow])
+        if is_satisfiable([*constraints, overflow]):
+            model = get_model([*constraints, overflow])
             return [
                 BoundsIssue(
                     kind=BoundsIssueKind.ALLOCATION_TOO_LARGE,
                     message="List append would exceed max capacity",
-                    constraints=constraints + [overflow],
+                    constraints=[*constraints, overflow],
                     counterexample=self._extract_model(model, [current_length]),
                 )
             ]
@@ -699,13 +722,13 @@ class ListBoundsChecker(BoundsChecker):
         constraints = list(path_constraints or [])
         new_length = current_length + extend_length
         overflow = new_length > max_capacity
-        if is_satisfiable(constraints + [overflow]):
-            model = get_model(constraints + [overflow])
+        if is_satisfiable([*constraints, overflow]):
+            model = get_model([*constraints, overflow])
             return [
                 BoundsIssue(
                     kind=BoundsIssueKind.ALLOCATION_TOO_LARGE,
                     message="List extend would exceed max capacity",
-                    constraints=constraints + [overflow],
+                    constraints=[*constraints, overflow],
                     counterexample=self._extract_model(model, [current_length, extend_length]),
                 )
             ]
@@ -730,13 +753,13 @@ class NumpyBoundsChecker(BoundsChecker):
         for dim in new_shape:
             new_total = new_total * dim
         mismatch = current_total != new_total
-        if is_satisfiable(constraints + [mismatch]):
-            model = get_model(constraints + [mismatch])
+        if is_satisfiable([*constraints, mismatch]):
+            model = get_model([*constraints, mismatch])
             return [
                 BoundsIssue(
                     kind=BoundsIssueKind.SHAPE_MISMATCH,
                     message="Reshape total elements mismatch",
-                    constraints=constraints + [mismatch],
+                    constraints=[*constraints, mismatch],
                     counterexample=self._extract_model(
                         model, cast("list[z3.ExprRef]", current_shape + new_shape)
                     ),
@@ -762,13 +785,13 @@ class NumpyBoundsChecker(BoundsChecker):
         result_shape: list[z3.ArithRef] = []
         for d1, d2 in zip(padded1, padded2, strict=False):
             incompatible = z3.And(d1 != d2, d1 != 1, d2 != 1)
-            if is_satisfiable(constraints + [incompatible]):
-                model = get_model(constraints + [incompatible])
+            if is_satisfiable([*constraints, incompatible]):
+                model = get_model([*constraints, incompatible])
                 issues.append(
                     BoundsIssue(
                         kind=BoundsIssueKind.SHAPE_MISMATCH,
                         message="Shapes cannot be broadcast together",
-                        constraints=constraints + [incompatible],
+                        constraints=[*constraints, incompatible],
                         counterexample=self._extract_model(model, [d1, d2]),
                     )
                 )

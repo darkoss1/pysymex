@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Core cache infrastructure: key types, hash functions, LRU cache,
 persistent SQLite cache, and tiered (memory + persistent) cache.
 """
@@ -15,12 +33,12 @@ import sqlite3
 import stat
 import threading
 import time
+import types
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import (
-    Any,
     Generic,
     TypeVar,
 )
@@ -96,20 +114,42 @@ class _CacheIntegrity:
         self._key = key
         return key
 
-    def sign(self, blob: bytes) -> bytes:
-        """Return ``tag || blob`` where tag is HMAC-SHA256."""
+    def sign(self, key_str: str | bytes, blob: bytes | None = None) -> bytes:
+        """Return ``tag || blob`` where tag is HMAC-SHA256.
+
+        Backward compatibility:
+        - ``sign(blob)`` uses a global cache namespace key.
+        - ``sign(key_str, blob)`` uses per-key binding.
+        """
+        if blob is None:
+            blob = key_str.encode("utf-8") if isinstance(key_str, str) else key_str
+            key_str = "__global__"
         key = self._load_or_create_key()
-        tag = hmac.new(key, blob, HMAC_DIGEST).digest()
+        payload = str(key_str).encode("utf-8") + b"\0" + blob
+        tag = hmac.new(key, payload, HMAC_DIGEST).digest()
         return tag + blob
 
-    def verify_and_extract(self, signed_blob: bytes) -> bytes | None:
-        """Verify HMAC tag and return raw blob, or None if invalid."""
+    def verify_and_extract(
+        self,
+        key_str: str | bytes,
+        signed_blob: bytes | None = None,
+    ) -> bytes | None:
+        """Verify HMAC tag and return raw blob, or None if invalid.
+
+        Backward compatibility:
+        - ``verify_and_extract(signed_blob)`` verifies with global namespace key.
+        - ``verify_and_extract(key_str, signed_blob)`` verifies key-bound blob.
+        """
+        if signed_blob is None:
+            signed_blob = key_str.encode("utf-8") if isinstance(key_str, str) else key_str
+            key_str = "__global__"
         if len(signed_blob) < HMAC_TAG_SIZE:
             return None
         tag = signed_blob[:HMAC_TAG_SIZE]
         blob = signed_blob[HMAC_TAG_SIZE:]
         key = self._load_or_create_key()
-        expected = hmac.new(key, blob, HMAC_DIGEST).digest()
+        payload = str(key_str).encode("utf-8") + b"\0" + blob
+        expected = hmac.new(key, payload, HMAC_DIGEST).digest()
         if hmac.compare_digest(tag, expected):
             return blob
         return None
@@ -135,18 +175,26 @@ class CacheKey:
 
     def to_string(self) -> str:
         """Convert to string representation."""
-        return f"{self .key_type .name }:{self .identifier }:{self .version }"
+        return f"{self.key_type.name}:{self.identifier}:{self.version}"
 
     @classmethod
     def from_string(cls, s: str) -> CacheKey:
         """Parse from string representation."""
-        parts = s.split(":", 2)
-        if len(parts) != 3:
-            raise ValueError(f"Invalid cache key string: {s }")
+        parts = s.split(":", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid cache key string: {s}")
+
+        right_parts = parts[1].rsplit(":", 1)
+        if len(right_parts) == 2:
+            identifier, version = right_parts
+        else:
+            identifier = parts[1]
+            version = "1.0"
+
         return cls(
             key_type=CacheKeyType[parts[0]],
-            identifier=parts[1],
-            version=parts[2],
+            identifier=identifier,
+            version=version,
         )
 
 
@@ -155,9 +203,20 @@ def hash_bytecode(code: bytes) -> str:
     return hashlib.sha256(code).hexdigest()
 
 
-def hash_function(func_name: str, code: bytes, signature: str = "") -> str:
+def hash_function(func_name: str, code: types.CodeType | bytes, signature: str = "") -> str:
     """Hash a function for caching."""
-    content = f"{func_name }:{signature }:".encode() + code
+    if isinstance(code, bytes):
+        content = f"{func_name}:{signature}:".encode() + code
+    else:
+        content = f"{func_name}:{signature}:".encode() + code.co_code
+        if hasattr(code, "co_consts"):
+            content += str(code.co_consts).encode()
+        if hasattr(code, "co_names"):
+            content += str(code.co_names).encode()
+        if hasattr(code, "co_freevars"):
+            content += str(code.co_freevars).encode()
+        if hasattr(code, "co_cellvars"):
+            content += str(code.co_cellvars).encode()
     return hashlib.sha256(content).hexdigest()
 
 
@@ -178,7 +237,7 @@ class LRUCache(Generic[K, V]):
     Keeps most recently used items in memory up to a maximum size.
     """
 
-    def __init__(self, maxsize: int = 1000):
+    def __init__(self, maxsize: int = 1000) -> None:
         self.maxsize = maxsize
         self._cache: OrderedDict[K, V] = OrderedDict()
         self._lock = threading.RLock()
@@ -234,6 +293,15 @@ class LRUCache(Generic[K, V]):
         """Get cache hit rate."""
         total = self._hits + self._misses
         return self._hits / total if total > 0 else 0.0
+
+    def __getstate__(self) -> dict[str, object]:
+        state = self.__dict__.copy()
+        state["_lock"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self.__dict__.update(state)
+        self._lock = threading.RLock()
 
     def stats(self) -> dict[str, object]:
         """Get cache statistics."""
@@ -300,7 +368,7 @@ class PersistentCache:
         db_path: Path | None = None,
         max_entries: int = 10000,
         max_age_days: int = 30,
-    ):
+    ) -> None:
         self.db_path = db_path or Path.home() / ".pysymex" / "cache.db"
         self.max_entries = max_entries
         self.max_age_days = max_age_days
@@ -311,6 +379,13 @@ class PersistentCache:
         self._conn: sqlite3.Connection | None = None
         self._ensure_directory()
         self._init_database()
+        threading.Thread(target=self._run_cleanup_safe, daemon=True).start()
+
+    def _run_cleanup_safe(self) -> None:
+        try:
+            self.cleanup()
+        except Exception:
+            pass
 
     def _ensure_directory(self) -> None:
         """Ensure cache directory exists."""
@@ -344,13 +419,23 @@ class PersistentCache:
         """Close the persistent SQLite connection if it is open."""
         with self._lock:
             if self._conn is not None:
-                # Checkpoint WAL to release files on Windows
                 try:
                     self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 except sqlite3.Error:
                     pass
                 self._conn.close()
                 self._conn = None
+
+    def __getstate__(self) -> dict[str, object]:
+        state = self.__dict__.copy()
+        state["_lock"] = None
+        state["_conn"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self.__dict__.update(state)
+        self._lock = threading.RLock()
+        self._conn = None
 
     def get(self, key: CacheKey) -> object | None:
         """Get value from cache, verifying HMAC integrity before deserialization."""
@@ -362,7 +447,7 @@ class PersistentCache:
             if row:
                 conn.execute(
                     """
-                    UPDATE cache 
+                    UPDATE cache
                     SET accessed_at = ?, access_count = access_count + 1
                     WHERE key = ?
                     """,
@@ -371,11 +456,12 @@ class PersistentCache:
                 conn.commit()
                 try:
                     raw_blob = self._integrity.verify_and_extract(
+                        key_str,
                         row["value_blob"],
                     )
                     if raw_blob is None:
                         logger.warning(
-                            "HMAC verification failed for cache key %s — " "removing tainted entry",
+                            "HMAC verification failed for cache key %s — removing tainted entry",
                             key_str,
                         )
                         conn.execute(
@@ -404,7 +490,7 @@ class PersistentCache:
         key_str = key.to_string()
         try:
             raw_blob = pickle.dumps(value)
-            signed_blob = self._integrity.sign(raw_blob)
+            signed_blob = self._integrity.sign(key_str, raw_blob)
             value_hash = hashlib.sha256(raw_blob).hexdigest()
             dep_list = dependencies or []
             dep_json = json.dumps([d.to_string() for d in dep_list])
@@ -413,8 +499,8 @@ class PersistentCache:
                 conn = self._get_connection()
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO cache 
-                    (key, key_type, value_hash, value_blob, created_at, 
+                    INSERT OR REPLACE INTO cache
+                    (key, key_type, value_hash, value_blob, created_at,
                      accessed_at, access_count, dependencies)
                     VALUES (?, ?, ?, ?, ?, ?, 1, ?)
                     """,
@@ -466,14 +552,22 @@ class PersistentCache:
         with self._lock:
             conn = self._get_connection()
             cursor = conn.execute(
-                "SELECT cache_key FROM cache_deps WHERE dependency = ?",
+                """
+                WITH RECURSIVE transitive_deps(cache_key) AS (
+                    SELECT cache_key FROM cache_deps WHERE dependency = ?
+                    UNION
+                    SELECT d.cache_key FROM cache_deps d
+                    JOIN transitive_deps t ON d.dependency = t.cache_key
+                )
+                SELECT cache_key FROM transitive_deps
+                """,
                 (key_str,),
             )
             invalidated = {row["cache_key"] for row in cursor}
             if invalidated:
                 placeholders = ",".join("?" * len(invalidated))
                 conn.execute(
-                    f"DELETE FROM cache WHERE key IN ({placeholders })",
+                    f"DELETE FROM cache WHERE key IN ({placeholders})",
                     tuple(invalidated),
                 )
             conn.commit()
@@ -505,8 +599,8 @@ class PersistentCache:
                 conn.execute(
                     """
                     DELETE FROM cache WHERE key IN (
-                        SELECT key FROM cache 
-                        ORDER BY accessed_at ASC 
+                        SELECT key FROM cache
+                        ORDER BY accessed_at ASC
                         LIMIT ?
                     )
                     """,
@@ -559,8 +653,8 @@ class TieredCache:
         self,
         memory_size: int = 1000,
         db_path: Path | None = None,
-    ):
-        self.memory = LRUCache[str, Any](maxsize=memory_size)
+    ) -> None:
+        self.memory = LRUCache[str, object](maxsize=memory_size)
         self.persistent = PersistentCache(db_path=db_path)
 
     def get(self, key: CacheKey) -> object | None:
@@ -584,6 +678,10 @@ class TieredCache:
     ) -> None:
         """Put in cache."""
         key_str = key.to_string()
+        if persist:
+            invalidated = self.persistent.invalidate_dependencies(key)
+            for d in invalidated:
+                self.memory.remove(d)
         self.memory.put(key_str, value)
         if persist:
             self.persistent.put(key, value, dependencies)

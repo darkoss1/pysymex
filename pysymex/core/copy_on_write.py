@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Copy-on-Write data structures for pysymex.
 
 Provides efficient state forking via copy-on-write semantics:
@@ -63,19 +81,25 @@ class CowDict(Generic[K, V]):
         This is critical for state deduplication. We prioritize deterministic
         hashing over object identity to allow merging of equivalent symbolic states.
         """
-        from typing import Any as _Any
-
         try:
             return hash(obj)
         except TypeError:
-            obj_any: _Any = obj
-            if hasattr(obj_any, "hash_value") and callable(obj_any.hash_value):
-                return int(obj_any.hash_value())
+            hash_value = getattr(obj, "hash_value", None)
+            if callable(hash_value):
+                hv = hash_value()
+                if isinstance(hv, int):
+                    return hv
+                return hash(str(hv))
 
-            if hasattr(obj_any, "to_z3") and callable(obj_any.to_z3):
-                z3_ast: _Any = obj_any.to_z3()
-                if hasattr(z3_ast, "hash") and callable(z3_ast.hash):
-                    return int(z3_ast.hash())
+            to_z3 = getattr(obj, "to_z3", None)
+            if callable(to_z3):
+                z3_ast = to_z3()
+                z3_hash = getattr(z3_ast, "hash", None)
+                if callable(z3_hash):
+                    zh = z3_hash()
+                    if isinstance(zh, int):
+                        return zh
+                    return hash(str(zh))
                 return hash(str(z3_ast))
 
             return 0
@@ -95,25 +119,21 @@ class CowDict(Generic[K, V]):
         for k, v in self._data.items():
             hk = self._safe_hash(k)
             hv = self._safe_hash(v)
-            
-            # Combine the pair with a strong avalanche multiplier
+
             pair_h = (hk ^ (hv * 1000003)) & 0xFFFFFFFFFFFFFFFF
-            pair_h = (pair_h ^ (pair_h >> 30)) * 0xbf58476d1ce4e5b9 & 0xFFFFFFFFFFFFFFFF
-            pair_h = (pair_h ^ (pair_h >> 27)) * 0x94d049bb133111eb & 0xFFFFFFFFFFFFFFFF
+            pair_h = (pair_h ^ (pair_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+            pair_h = (pair_h ^ (pair_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
             pair_h = pair_h ^ (pair_h >> 31)
-            
-            # XOR sum is perfectly commutative but the avalanche makes it collision-proof
+
             h ^= pair_h
-            
+
         self._hash = h & 0xFFFFFFFFFFFFFFFF
         return self._hash
 
     def __setitem__(self, key: K, value: V) -> None:
         """Store a key-value pair, ensuring the internal data is writable first."""
         self._ensure_writable()
-        # Invalidate the cached hash on any mutation; recompute lazily on next
-        # hash_value() call.  Incremental order-sensitive updates are complex
-        # and error-prone, so we just invalidate.
+
         self._hash = None
         self._data[key] = value
 
@@ -207,9 +227,7 @@ class CowSet:
         """Add an element to the set, ensuring it is writable first."""
         if item not in self._data:
             self._ensure_writable()
-            # Invalidate the cached hash; recomputed lazily in hash_value().
-            # Incremental XOR updates were removed because the XOR-based running
-            # total was not consistent with the polynomial hash used in hash_value().
+
             self._hash = None
             self._data.add(item)
 
@@ -240,15 +258,15 @@ class CowSet:
         """
         if self._hash is not None:
             return self._hash
-            
+
         h = 0
         for item in self._data:
             item_h = (item + 0x9E3779B9) & 0xFFFFFFFFFFFFFFFF
-            item_h = (item_h ^ (item_h >> 30)) * 0xbf58476d1ce4e5b9 & 0xFFFFFFFFFFFFFFFF
-            item_h = (item_h ^ (item_h >> 27)) * 0x94d049bb133111eb & 0xFFFFFFFFFFFFFFFF
+            item_h = (item_h ^ (item_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+            item_h = (item_h ^ (item_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
             item_h = item_h ^ (item_h >> 31)
             h ^= item_h
-            
+
         h ^= len(self._data)
         self._hash = h & 0xFFFFFFFFFFFFFFFF
         return self._hash
@@ -348,10 +366,11 @@ class ConstraintChain:
         else:
             self._length = parent._length + (1 if constraint is not None else 0)
             if constraint is not None:
-                # 64-bit bounded rolling hash using a strong prime
                 ch = constraint.hash() & 0xFFFFFFFFFFFFFFFF
-                self._incremental_hash = ((parent._incremental_hash ^ ch) * 1000000007) & 0xFFFFFFFFFFFFFFFF
-                # BUG-006 fix: track all constraint hashes, not just immediate parent
+                self._incremental_hash = (
+                    (parent._incremental_hash ^ ch) * 1000000007
+                ) & 0xFFFFFFFFFFFFFFFF
+
                 self._seen_hashes = parent._seen_hashes | {constraint.hash()}
             else:
                 self._incremental_hash = parent._incremental_hash
@@ -386,11 +405,19 @@ class ConstraintChain:
         return self._length
 
     def __iter__(self) -> Iterator[z3.BoolRef]:
+        """Iterate constraints in chronological order (oldest first)."""
+        yield from self.to_list()
+
+    def __reversed__(self) -> Iterator[z3.BoolRef]:
         """Iterate constraints in reverse chronological order (newest first)."""
         node: ConstraintChain | None = self
         while node is not None and node.constraint is not None:
             yield node.constraint
             node = node.parent
+
+    def newest(self) -> z3.BoolRef | None:
+        """Return the newest constraint in O(1), or None if empty."""
+        return self.constraint
 
     def __getitem__(self, index: int | slice) -> z3.BoolRef | list[z3.BoolRef]:
         """Support subscripting and slicing."""

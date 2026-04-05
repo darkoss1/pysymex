@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Advanced Type Inference Engine for pysymex.
 
@@ -23,7 +41,7 @@ import inspect
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from types import CodeType
 
 from pysymex.analysis.type_inference.engine import TypeInferenceEngine
 from pysymex.analysis.type_inference.env import TypeEnvironment
@@ -123,7 +141,7 @@ class ConfidenceScore:
         combined_factors = {**self.factors, **other.factors}
         return ConfidenceScore(
             score=combined_score,
-            source=f"{self .source }+{other .source }",
+            source=f"{self.source}+{other.source}",
             factors=combined_factors,
         )
 
@@ -161,7 +179,7 @@ class TypeAnalyzer:
 
     def analyze_function(
         self,
-        func: Callable[..., object] | Any,
+        func: Callable[..., object] | CodeType,
         initial_types: dict[str, PyType] | None = None,
     ) -> dict[int, TypeEnvironment]:
         """
@@ -176,8 +194,8 @@ class TypeAnalyzer:
             self._reset_run_state()
             initial_env = TypeEnvironment()
 
-            if hasattr(func, "co_code"):
-                code: object = func
+            if isinstance(func, CodeType):
+                code = func
                 for var in code.co_varnames[: code.co_argcount]:
                     initial_env.set_type(var, PyType.unknown())
             else:
@@ -230,13 +248,13 @@ class TypeAnalyzer:
         if container_type.kind == TypeKind.DEFAULTDICT:
             return True, "defaultdict never raises KeyError"
         if not container_type.is_subscriptable():
-            return False, f"Type {container_type .name } is not subscriptable"
+            return False, f"Type {container_type.name} is not subscriptable"
         if container_type.kind == TypeKind.DICT:
             key_type = container_type.get_key_type()
             if not index_type.is_subtype_of(key_type) and key_type.kind != TypeKind.ANY:
                 return (
                     False,
-                    f"Key type {index_type .name } doesn't match dict key type {key_type .name }",
+                    f"Key type {index_type.name} doesn't match dict key type {key_type.name}",
                 )
         if container_type.kind in {TypeKind.LIST, TypeKind.TUPLE, TypeKind.DEQUE}:
             if index_type.kind != TypeKind.INT and index_type.kind != TypeKind.LITERAL:
@@ -266,9 +284,9 @@ class TypeAnalyzer:
                 if left_type.kind == TypeKind.LIST and right_type.kind == TypeKind.LIST:
                     return True, "List concatenation"
                 if left_type.kind == TypeKind.STR and right_type.kind != TypeKind.STR:
-                    return False, f"Cannot concatenate str with {right_type .name }"
+                    return False, f"Cannot concatenate str with {right_type.name}"
                 if left_type.kind != TypeKind.STR and right_type.kind == TypeKind.STR:
-                    return False, f"Cannot concatenate {left_type .name } with str"
+                    return False, f"Cannot concatenate {left_type.name} with str"
             if op == "*":
                 if left_type.kind == TypeKind.STR and right_type.kind == TypeKind.INT:
                     return True, "String repetition"
@@ -279,7 +297,7 @@ class TypeAnalyzer:
                 if left_type.kind == TypeKind.INT and right_type.kind == TypeKind.LIST:
                     return True, "List repetition"
                 if left_type.kind == TypeKind.STR and right_type.kind != TypeKind.INT:
-                    return False, f"Cannot multiply str with {right_type .name }"
+                    return False, f"Cannot multiply str with {right_type.name}"
         if op in {"/", "//", "%"}:
             if right_type.kind == TypeKind.LITERAL:
                 for val in right_type.literal_values:

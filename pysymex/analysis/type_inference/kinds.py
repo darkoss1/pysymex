@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Type kinds and type representations for PySyMex's type inference.
 
@@ -379,7 +397,7 @@ class PyType:
         return cls(
             kind=TypeKind.CALLABLE,
             name="Callable",
-            params=tuple(params) + (ret,),
+            params=(*tuple(params), ret),
         )
 
     int_type = int_
@@ -583,11 +601,11 @@ class PyType:
         """Repr."""
         if self.kind == TypeKind.UNION:
             members = " | ".join(repr(m) for m in sorted(self.union_members, key=str))
-            return f"({members })"
+            return f"({members})"
         if self.kind == TypeKind.LITERAL:
             values = ", ".join(repr(v) for v in self.literal_values)
-            return f"Literal[{values }]"
+            return f"Literal[{values}]"
         if self.params:
             params = ", ".join(repr(p) for p in self.params)
-            return f"{self .name }[{params }]"
+            return f"{self.name}[{params}]"
         return self.name

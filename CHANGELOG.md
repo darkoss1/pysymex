@@ -2,6 +2,29 @@
 
 All notable changes to PySyMex will be documented in this file.
 
+## [0.1.0-alpha.3] - 2026-04-02
+
+### Sandbox Hardening & Isolation
+
+- **Core Sandbox Integration**: Promoted sandbox hardening as a core release feature across the isolation stack.
+- **Strict Path Validation**: Added strict `extra_files` path sanitization for absolute paths, drive-prefixed paths, traversal segments, and dangerous leading dash segments.
+- **Resolved-path Containment**: Enforced resolved-path checks before writes in sandbox isolation backends to prevent host escapes.
+- **Windows Job Object limits**: Hardened Windows startup and Job handling with safer fallback behavior and memory-limit enforcement.
+
+### Security and Verification
+
+- **Adversarial Resiliency**: Expanded adversarial sandbox escape regression tests.
+- **Formal Strictness Gates**: Added strictness-gate coverage and formal checks across solver, resources, integration, patterns, and loops.
+
+### Release Hygiene
+
+- **Documentation Updates**: Updated documentation, architecture pages, and roadmap for the 0.1.0-alpha.3 release.
+
+### Bug Fixes
+
+- 12 bug fixes implemented across core soundness and adversarial edge cases.
+
+
 ## [0.1.0-alpha.2] - 2026-03-20
 
 ### Hardware Acceleration (h_acceleration)

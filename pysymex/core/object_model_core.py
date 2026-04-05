@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Object Model Core for pysymex.
 Phase 19: Logic for object model - built-in classes, state management,
@@ -102,10 +120,13 @@ class ObjectState:
         default_factory=lambda: dict[ObjectId, SymbolicObject]()
     )
     classes: dict[str, SymbolicClass] = field(default_factory=lambda: dict[str, SymbolicClass]())
+    _objects_shared: bool = False
+    _classes_shared: bool = False
 
-    def __post_init__(self):
-        for name, cls in BUILTIN_CLASSES.items():
-            self.classes[name] = cls
+    def __post_init__(self) -> None:
+        if not self.classes:
+            for name, cls in BUILTIN_CLASSES.items():
+                self.classes[name] = cls
 
     def create_object(
         self,
@@ -113,6 +134,9 @@ class ObjectState:
         name: str | None = None,
     ) -> SymbolicObject:
         """Create a new symbolic object."""
+        if self._objects_shared:
+            self.objects = dict(self.objects)
+            self._objects_shared = False
         obj = SymbolicObject(cls=cls, _id=ObjectId(name) if name else None)
         self.objects[obj.id] = obj
         return obj
@@ -124,6 +148,9 @@ class ObjectState:
         qualname: str = "",
     ) -> SymbolicClass:
         """Create a new symbolic class."""
+        if self._classes_shared:
+            self.classes = dict(self.classes)
+            self._classes_shared = False
         if not bases:
             bases = (OBJECT_CLASS,)
         cls = SymbolicClass(name=name, qualname=qualname or name, bases=bases)
@@ -157,10 +184,19 @@ class ObjectState:
         return obj1.id.to_z3() == obj2.id.to_z3()
 
     def clone(self) -> ObjectState:
-        """Create a shallow copy of object state."""
-        state = ObjectState()
-        state.objects = dict(self.objects)
-        state.classes = dict(self.classes)
+        """Create a copy-on-write clone of object state.
+
+        Clones share dict storage until either clone mutates via
+        ``create_object``/``create_class``, which materialize an independent
+        copy before write.
+        """
+        self._objects_shared = True
+        self._classes_shared = True
+        state = object.__new__(ObjectState)
+        state.objects = self.objects
+        state.classes = self.classes
+        state._objects_shared = True
+        state._classes_shared = True
         return state
 
 

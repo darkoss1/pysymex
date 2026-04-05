@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Core execution tracer: event dispatcher, solver proxy, and session manager.
 
 Architecture
@@ -46,11 +64,13 @@ import json
 import linecache
 import sys
 import time
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
+import z3
 from pydantic import BaseModel
 
 from pysymex.tracing.schemas import (
@@ -68,13 +88,21 @@ from pysymex.tracing.schemas import (
 from pysymex.tracing.z3_utils import Z3SemanticRegistry, Z3Serializer
 
 if TYPE_CHECKING:
+    from pysymex._typing import SolverProtocol, StackValue
     from pysymex.analysis.detectors.base import Issue
-    from pysymex.core.solver import IncrementalSolver
     from pysymex.core.state import VMState
     from pysymex.execution.executor_core import SymbolicExecutor
 
 
-def _to_config_scalar(value: Any) -> str | int | float | bool | None:
+class _TraceWriter(Protocol):
+    def write(self, s: str, /) -> int: ...
+
+    def flush(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+def _to_config_scalar(value: object) -> str | int | float | bool | None:
     """Coerce arbitrary config values into schema-safe scalar values.
 
     ``SystemContextEvent.tracer_config`` accepts only scalar values. Nested
@@ -91,7 +119,7 @@ def _to_config_scalar(value: Any) -> str | int | float | bool | None:
 
 
 def _normalise_config_snapshot(
-    snapshot: dict[str, Any],
+    snapshot: dict[str, object],
 ) -> dict[str, str | int | float | bool | None]:
     """Convert a raw config snapshot to ``SystemContextEvent`` scalar schema."""
     return {str(key): _to_config_scalar(value) for key, value in snapshot.items()}
@@ -124,52 +152,18 @@ class TracingSolverProxy:
 
     def __init__(
         self,
-        inner: IncrementalSolver,
+        inner: SolverProtocol,
         tracer: ExecutionTracer,
-        state_getter: Any,
+        state_getter: Callable[[], VMState | None],
     ) -> None:
         """Initialize the proxy with a solver, tracer, and state provider."""
         object.__setattr__(self, "_inner", inner)
         object.__setattr__(self, "_tracer", tracer)
         object.__setattr__(self, "_state_getter", state_getter)
 
-    def is_sat(self, constraints: list[Any]) -> bool:
-        """Intercept is_sat, record telemetry, then delegate."""
-        inner: IncrementalSolver = object.__getattribute__(self, "_inner")
-        tracer: ExecutionTracer = object.__getattribute__(self, "_tracer")
-        state_getter = object.__getattribute__(self, "_state_getter")
-
-        cache_hits_before: int = getattr(inner, "_cache_hits", 0)
-        t0 = time.perf_counter()
-        result: bool = inner.is_sat(constraints)
-        latency_ms = (time.perf_counter() - t0) * 1000.0
-        cache_hits_after: int = getattr(inner, "_cache_hits", 0)
-        cache_hit = cache_hits_after > cache_hits_before
-
-        try:
-            state: VMState | None = state_getter()
-            path_id = getattr(state, "path_id", 0) if state is not None else 0
-            pc = getattr(state, "pc", 0) if state is not None else 0
-            result_str = "sat" if result else "unsat"
-            tracer.on_solve(
-                constraints=constraints,
-                result_str=result_str,
-                latency_ms=latency_ms,
-                cache_hit=cache_hit,
-                model=None,
-                path_id=path_id,
-                pc=pc,
-            )
-        except Exception as exc:
-            print(
-                f"[pysymex.tracing] TracingSolverProxy.is_sat telemetry error: {exc}",
-                file=sys.stderr,
-            )
-        return result
-
-    def check(self, *assumptions: Any) -> Any:
+    def check(self, *assumptions: z3.BoolRef) -> z3.CheckSatResult:
         """Intercept check (used by several internal callers), record telemetry."""
-        inner: IncrementalSolver = object.__getattribute__(self, "_inner")
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
         tracer: ExecutionTracer = object.__getattribute__(self, "_tracer")
         state_getter = object.__getattribute__(self, "_state_getter")
 
@@ -185,14 +179,13 @@ class TracingSolverProxy:
             state: VMState | None = state_getter()
             path_id = getattr(state, "path_id", 0) if state is not None else 0
             pc = getattr(state, "pc", 0) if state is not None else 0
-            is_sat_flag = getattr(result, "is_sat", None)
-            if is_sat_flag is True:
+            if result == z3.sat:
                 result_str = "sat"
-            elif getattr(result, "is_unsat", None) is True:
+            elif result == z3.unsat:
                 result_str = "unsat"
             else:
                 result_str = "unknown"
-            model = getattr(result, "model", None)
+            model = None
             tracer.on_solve(
                 constraints=list(assumptions),
                 result_str=result_str,
@@ -207,13 +200,52 @@ class TracingSolverProxy:
                 f"[pysymex.tracing] TracingSolverProxy.check telemetry error: {exc}",
                 file=sys.stderr,
             )
-        return result
 
-    def __getattr__(self, name: str) -> Any:
+        if isinstance(result, z3.CheckSatResult):
+            return result
+        if hasattr(result, "is_sat") and bool(getattr(result, "is_sat", False)):
+            return z3.sat
+        if hasattr(result, "is_unsat") and bool(getattr(result, "is_unsat", False)):
+            return z3.unsat
+        return z3.unknown
+
+    def push(self) -> None:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        inner.push()
+
+    def pop(self) -> None:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        inner.pop()
+
+    def add(self, *constraints: z3.BoolRef) -> None:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        inner.add(*constraints)
+
+    def reset(self) -> None:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        inner.reset()
+
+    def is_sat(
+        self,
+        constraints: Iterable[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> bool:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        return inner.is_sat(constraints, known_sat_prefix_len=known_sat_prefix_len)
+
+    def get_stats(self) -> dict[str, object]:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        return inner.get_stats()
+
+    def constraint_optimizer(self) -> object:
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        return inner.constraint_optimizer()
+
+    def __getattr__(self, name: str) -> object:
         """Delegate every other attribute look-up to the inner solver."""
         return getattr(object.__getattribute__(self, "_inner"), name)
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: object) -> None:
         """Delegate attribute writes to the inner solver."""
         setattr(object.__getattribute__(self, "_inner"), name, value)
 
@@ -252,7 +284,7 @@ class ExecutionTracer:
         self._serializer: Z3Serializer = Z3Serializer(self._registry)
 
         self._lock: Lock = Lock()
-        self._file: Any = None
+        self._file: _TraceWriter | None = None
         self._trace_path: Path | None = None
         self._seq: int = 0
         self._delta_buffer: list[str] = []
@@ -260,7 +292,14 @@ class ExecutionTracer:
         self._path_tree: dict[int, int | None] = {}
 
         self._pre_step_snapshot: (
-            tuple[list[Any], dict[str, Any], dict[str, Any], dict[Any, Any]] | None
+            tuple[
+                list[StackValue],
+                dict[str, StackValue],
+                dict[str, StackValue],
+                dict[int, StackValue],
+                int,
+            ]
+            | None
         ) = None
 
         self._current_state: VMState | None = None
@@ -276,7 +315,7 @@ class ExecutionTracer:
         func_name: str,
         signature_str: str,
         initial_args: dict[str, str],
-        config_snapshot: dict[str, Any] | None = None,
+        config_snapshot: dict[str, object] | None = None,
         source_file: str = "<unknown>",
     ) -> Path:
         """Open a new trace file and write the ``system_context`` header.
@@ -384,7 +423,12 @@ class ExecutionTracer:
     def __enter__(self) -> ExecutionTracer:
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         if exc_type is not None:
             try:
                 self.end_session()
@@ -412,7 +456,9 @@ class ExecutionTracer:
         executor.register_hook("on_prune", self.on_prune)
         executor.register_hook("on_issue", self.on_issue)
 
-        state_getter = lambda: self._current_state
+        def state_getter():
+            return self._current_state
+
         executor.solver = TracingSolverProxy(executor.solver, self, state_getter)
 
     def pre_step(self, executor: SymbolicExecutor, state: VMState) -> None:
@@ -430,12 +476,11 @@ class ExecutionTracer:
         self._current_state = state
         try:
             stack_copy = list(state.stack)
-            locals_copy = dict(state.local_vars) if state.local_vars is not None else {}
-            globals_copy = dict(state.global_vars) if state.global_vars is not None else {}
-            memory_copy = dict(state.memory) if state.memory is not None else {}
-            self._pre_step_snapshot = (stack_copy, locals_copy, globals_copy, memory_copy)
+            locals_copy = dict(state.local_vars)
+            globals_copy = dict(state.global_vars)
+            memory_copy = dict(state.memory)
             constraints = state.path_constraints
-            count = len(constraints) if constraints is not None else 0
+            count = len(constraints)
             self._pre_step_snapshot = (stack_copy, locals_copy, globals_copy, memory_copy, count)
         except Exception:
             self._pre_step_snapshot = None
@@ -468,12 +513,13 @@ class ExecutionTracer:
         constraint_added: ConstraintEntry | None = None
 
         try:
-            current_stack = list(state.stack) if state.stack is not None else []
-            current_locals = dict(state.local_vars) if state.local_vars is not None else {}
-            current_memory = dict(state.memory) if state.memory is not None else {}
+            current_stack = list(state.stack)
+            current_locals = dict(state.local_vars)
+            current_memory = dict(state.memory)
 
+            prev_constraint_count: int | None = None
             if snap is not None:
-                prev_stack, prev_locals, _prev_globals, prev_memory = snap
+                prev_stack, prev_locals, _prev_globals, prev_memory, prev_constraint_count = snap
 
                 prev_len = len(prev_stack)
                 curr_len = len(current_stack)
@@ -485,7 +531,9 @@ class ExecutionTracer:
                     ]
                     stack_diff = StackDiff(popped=0, pushed=pushed_vals)
                 elif current_stack != prev_stack:
-                    n_changed = sum(1 for a, b in zip(prev_stack, current_stack) if a is not b)
+                    n_changed = sum(
+                        1 for a, b in zip(prev_stack, current_stack, strict=False) if a is not b
+                    )
                     if n_changed:
                         stack_diff = StackDiff(
                             popped=n_changed,
@@ -524,36 +572,30 @@ class ExecutionTracer:
                         if addr not in prev_memory or prev_memory[addr] is not val:
                             mem_diff[str(addr)] = self._serializer.serialize_stack_value(val)
 
-            try:
-                prev_constraint_count = (
-                    self._pre_step_snapshot[4]
-                    if (self._pre_step_snapshot and len(self._pre_step_snapshot) > 4)
-                    else None
-                )
-                current_constraints = state.path_constraints
-                current_count = len(current_constraints) if current_constraints is not None else 0
-                if prev_constraint_count is not None and current_count > prev_constraint_count:
-                    # Capture multiple added constraints if several were added in one step
-                    new_constraints = []
-                    curr = current_constraints
-                    # Traverse back to the previous head
-                    for _ in range(current_count - prev_constraint_count):
-                        if curr is not None and curr.constraint is not None:
-                            new_constraints.append(curr.constraint)
-                            curr = curr.parent
-                        else:
-                            break
-                    
-                    if new_constraints:
-                        # Combine them for logging, or just take the most recent
-                        newest = new_constraints[0]
-                        causality = f"{instr.opname} at PC={state.pc}"
-                        constraint_added = ConstraintEntry(
-                            smtlib=self._serializer.safe_sexpr(newest),
-                            causality=causality,
-                        )
-            except Exception:
-                pass
+            current_constraints = state.path_constraints
+            current_count = len(current_constraints)
+            if (
+                snap is not None
+                and prev_constraint_count is not None
+                and current_count > prev_constraint_count
+            ):
+                new_constraints = []
+                curr = current_constraints
+
+                for _ in range(current_count - prev_constraint_count):
+                    if curr is not None:
+                        new_constraints.append(curr.constraint)
+                        curr = curr.parent
+                    else:
+                        break
+
+                if new_constraints:
+                    newest = new_constraints[0]
+                    causality = f"{instr.opname} at PC={state.pc}"
+                    constraint_added = ConstraintEntry(
+                        smtlib=self._serializer.safe_sexpr(newest),
+                        causality=causality,
+                    )
 
         except Exception:
             pass
@@ -645,11 +687,11 @@ class ExecutionTracer:
 
     def on_solve(
         self,
-        constraints: list[Any],
+        constraints: list[z3.BoolRef],
         result_str: str,
         latency_ms: float,
         cache_hit: bool,
-        model: Any,
+        model: object,
         path_id: int = 0,
         pc: int = 0,
     ) -> None:
@@ -674,7 +716,7 @@ class ExecutionTracer:
             except Exception:
                 pass
 
-        result_val: Any = result_str if result_str in ("sat", "unsat", "unknown") else "unknown"
+        result_val = result_str if result_str in ("sat", "unsat", "unknown") else "unknown"
 
         event = SolveEvent(
             seq=self._next_seq(),
@@ -763,13 +805,12 @@ class ExecutionTracer:
 
         confidence = 1.0
         likelihood = 1.0
-        # If the detector already calculated confidence score, use it
-        if hasattr(issue, "confidence") and issue.confidence is not None:
-            confidence = float(issue.confidence)
-        if hasattr(issue, "likelihood") and issue.likelihood is not None:
-            likelihood = float(issue.likelihood)
 
-        # Triage Logic: Reduce confidence for known noisy patterns (fallback/override)
+        if hasattr(issue, "confidence"):
+            confidence = float(getattr(issue, "confidence", 1.0))
+        if hasattr(issue, "likelihood"):
+            likelihood = float(getattr(issue, "likelihood", 1.0))
+
         if confidence == 1.0:
             if issue_kind == "NULL_DEREFERENCE" and "unpack_" in detector_name:
                 confidence = 0.4
@@ -838,7 +879,7 @@ class ExecutionTracer:
         except Exception:
             pass
 
-        trigger_val: Any = trigger if trigger in ("fork", "prune", "issue") else "prune"
+        trigger_val = trigger if trigger in ("fork", "prune", "issue") else "prune"
 
         return KeyframeEvent(
             seq=self._next_seq(),

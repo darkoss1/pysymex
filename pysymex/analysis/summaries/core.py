@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Function Summary logic classes for pysymex.
 Phase 20: Builders, registry, composition, analysis.
@@ -28,9 +46,19 @@ class SummaryBuilder:
     Builds function summaries from analysis results.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.summary = FunctionSummary(name=name)
         self._param_index = 0
+        self._initial_args: list[object] = []
+
+    @property
+    def initial_args(self) -> list[object]:
+        return self._initial_args
+
+    def set_initial_args(self, args: list[object]) -> SummaryBuilder:
+        self._initial_args = list(args)
+        return self
+        self._initial_args: list[object] = []
 
     def set_qualname(self, qualname: str) -> SummaryBuilder:
         """Set qualified name."""
@@ -152,7 +180,7 @@ class SummaryRegistry:
     Stores and retrieves summaries by function name/qualname.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._summaries: dict[str, FunctionSummary] = {}
         self._by_module: dict[str, list[str]] = {}
         self._lock = threading.RLock()
@@ -228,6 +256,49 @@ def compose_summaries(
         result.is_pure = False
     if not inner.is_deterministic:
         result.is_deterministic = False
+
+    def to_z3_expr(val: object) -> z3.ExprRef | None:
+        if isinstance(val, z3.ExprRef):
+            return val
+        if isinstance(val, bool):
+            return z3.BoolVal(val)
+        if isinstance(val, int):
+            return z3.IntVal(val)
+        if isinstance(val, float):
+            return z3.RealVal(val)
+        if isinstance(val, str):
+            return z3.StringVal(val)
+        return None
+
+    import uuid
+
+    z3_args: list[z3.ExprRef] = []
+    for i, arg in enumerate(call_site.args):
+        z3_expr = to_z3_expr(arg)
+        if z3_expr is not None:
+            z3_args.append(z3_expr)
+        else:
+            uid = uuid.uuid4().hex[:8]
+            z3_args.append(z3.Int(f"unknown_arg_{i}_{uid}"))
+
+    z3_kwargs: dict[str, z3.ExprRef] = {}
+    for k, arg in call_site.kwargs.items():
+        z3_expr = to_z3_expr(arg)
+        if z3_expr is not None:
+            z3_kwargs[k] = z3_expr
+        else:
+            uid = uuid.uuid4().hex[:8]
+            z3_kwargs[k] = z3.Int(f"unknown_kwarg_{k}_{uid}")
+
+    try:
+        pre, post, _ = instantiate_summary(inner, z3_args, z3_kwargs)
+        if not z3.is_true(pre):
+            result.add_precondition(pre)
+        if not z3.is_true(post):
+            result.add_postcondition(post)
+    except TypeError:
+        pass
+
     return result
 
 
@@ -235,6 +306,7 @@ def instantiate_summary(
     summary: FunctionSummary,
     args: list[z3.ExprRef],
     kwargs: dict[str, z3.ExprRef],
+    call_id: str = "",
 ) -> tuple[z3.BoolRef, z3.BoolRef, z3.ExprRef | None]:
     """
     Instantiate a summary with concrete/symbolic arguments.
@@ -248,25 +320,52 @@ def instantiate_summary(
         elif param.name in kwargs:
             old_var = param.to_z3()
             subst[old_var] = kwargs[param.name]
+        elif param.default_value is not None:
+            old_var = param.to_z3()
+            if isinstance(param.default_value, bool):
+                subst[old_var] = z3.BoolVal(param.default_value)
+            elif isinstance(param.default_value, int):
+                subst[old_var] = z3.IntVal(param.default_value)
+            elif isinstance(param.default_value, float):
+                subst[old_var] = z3.RealVal(param.default_value)
+            elif isinstance(param.default_value, str):
+                subst[old_var] = z3.StringVal(param.default_value)
+        else:
+            raise TypeError(f"Missing required argument: '{param.name}'")
+
+    fresh_return_var = None
+    if summary.return_var is not None:
+        sort = summary.return_var.sort()
+        import uuid
+
+        uid = call_id or uuid.uuid4().hex[:8]
+        fresh_name = f"{summary.name}_ret_{uid}"
+        fresh_return_var = z3.Const(fresh_name, sort)
+        subst[summary.return_var] = fresh_return_var
+
+    subst_items = list(subst.items())
+
     pre_conds: list[z3.ExprRef | z3.BoolRef] = []
     for cond in summary.preconditions:
-        instantiated = z3.substitute(cond, *subst.items()) if subst else cond
+        instantiated = z3.substitute(cond, *subst_items) if subst_items else cond
         pre_conds.append(instantiated)
     precondition = z3.And(*pre_conds) if pre_conds else z3.BoolVal(True)
+
     post_conds: list[z3.ExprRef | z3.BoolRef] = []
     for cond in summary.postconditions:
-        instantiated = z3.substitute(cond, *subst.items()) if subst else cond
+        instantiated = z3.substitute(cond, *subst_items) if subst_items else cond
         post_conds.append(instantiated)
-    postcondition = z3.And(*post_conds) if post_conds else z3.BoolVal(True)
-    return_val = summary.return_var
-    if summary.return_constraint:
+
+    if summary.return_constraint is not None:
         instantiated_rc = (
-            z3.substitute(summary.return_constraint, *subst.items())
-            if subst
+            z3.substitute(summary.return_constraint, *subst_items)
+            if subst_items
             else summary.return_constraint
         )
-        postcondition = z3.And(postcondition, instantiated_rc)
-    return precondition, postcondition, return_val
+        post_conds.append(instantiated_rc)
+
+    postcondition = z3.And(*post_conds) if post_conds else z3.BoolVal(True)
+    return precondition, postcondition, fresh_return_var
 
 
 def create_builtin_summaries() -> list[FunctionSummary]:
@@ -358,7 +457,7 @@ class SummaryAnalyzer:
     Analyzes function summaries for various properties.
     """
 
-    def __init__(self, registry: SummaryRegistry | None = None):
+    def __init__(self, registry: SummaryRegistry | None = None) -> None:
         self.registry = registry or SUMMARY_REGISTRY
 
     def is_pure(self, name: str) -> bool:
@@ -401,6 +500,7 @@ class SummaryAnalyzer:
         name: str,
         args: list[z3.ExprRef],
         path_constraints: list[z3.BoolRef],
+        kwargs: dict[str, z3.ExprRef] | None = None,
     ) -> tuple[bool, dict[str, object] | None]:
         """
         Check if preconditions are satisfied.
@@ -409,7 +509,8 @@ class SummaryAnalyzer:
         summary = self.registry.get(name)
         if not summary or not summary.preconditions:
             return True, None
-        pre, _, _ = instantiate_summary(summary, args, {})
+        kw = kwargs or {}
+        pre, _, _ = instantiate_summary(summary, args, kw)
         solver = create_solver()
         for pc in path_constraints:
             solver.add(pc)
@@ -417,5 +518,5 @@ class SummaryAnalyzer:
         if solver.check() == z3.sat:
             model = solver.model()
             counterexample = {str(d.name()): model[d] for d in model.decls()}
-            return False, counterexample
+            return False, cast("dict[str, object]", counterexample)
         return True, None

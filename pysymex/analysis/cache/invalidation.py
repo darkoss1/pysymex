@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Cache invalidation: strategies, rules, smart invalidation,
 and file-based caching with hash tracking.
 """
@@ -9,7 +27,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
 
 from pysymex.analysis.cache.core import (
     CacheKey,
@@ -44,7 +61,7 @@ class SmartInvalidator:
     to minimize unnecessary re-analysis.
     """
 
-    def __init__(self, cache: TieredCache):
+    def __init__(self, cache: TieredCache) -> None:
         self.cache = cache
         self.rules: list[InvalidationRule] = []
         self._stale: set[str] = set()
@@ -110,35 +127,38 @@ class FileCache:
     Tracks file hashes and only re-analyzes when content changes.
     """
 
-    def __init__(self, cache: TieredCache | None = None):
+    def __init__(self, cache: TieredCache | None = None) -> None:
         self.cache = cache or TieredCache()
         self._file_hashes: dict[str, str] = {}
 
     def get_or_analyze(
         self,
         path: Path,
-        analyze_fn: Callable[[Path], Any],
+        analyze_fn: Callable[[Path], object],
     ) -> tuple[object, bool]:
         """Get cached result or run analysis.
         Returns (result, was_cached).
         """
         path_str = str(path.absolute())
         current_hash = hash_file(path)
-        cached_hash = self._file_hashes.get(path_str)
-        if cached_hash == current_hash:
-            key = CacheKey(CacheKeyType.MODULE, path_str)
-            cached = self.cache.get(key)
-            if cached is not None:
-                return cached, True
+        key = CacheKey(CacheKeyType.MODULE, path_str, version=current_hash)
+        cached = self.cache.get(key)
+        if cached is not None:
+            self._file_hashes[path_str] = current_hash
+            return cached, True
         result = analyze_fn(path)
         self._file_hashes[path_str] = current_hash
-        key = CacheKey(CacheKeyType.MODULE, path_str)
         self.cache.put(key, result)
         return result, False
 
     def invalidate(self, path: Path) -> None:
         """Invalidate cache for a file."""
         path_str = str(path.absolute())
-        self._file_hashes.pop(path_str, None)
-        key = CacheKey(CacheKeyType.MODULE, path_str)
-        self.cache.remove(key)
+        cached_hash = self._file_hashes.pop(path_str, None)
+        if cached_hash:
+            key = CacheKey(CacheKeyType.MODULE, path_str, version=cached_hash)
+            self.cache.remove(key)
+        else:
+            current_hash = hash_file(path)
+            key = CacheKey(CacheKeyType.MODULE, path_str, version=current_hash)
+            self.cache.remove(key)

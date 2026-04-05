@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Contract expression compiler for pysymex.
 
 Compiles Python expression strings to Z3 constraints using AST parsing.
@@ -19,7 +37,7 @@ logger = logging.getLogger(__name__)
 class ContractCompiler(ast.NodeVisitor):
     """Compiles Python expressions to Z3 constraints."""
 
-    def __init__(self, symbols: dict[str, z3.ExprRef]):
+    def __init__(self, symbols: dict[str, z3.ExprRef]) -> None:
         self.symbols = symbols
         self._old_prefix = "old_"
 
@@ -32,7 +50,7 @@ class ContractCompiler(ast.NodeVisitor):
             return compiler.visit(tree.body)
         except (SyntaxError, KeyError, TypeError, z3.Z3Exception):
             logger.debug("Failed to compile contract expression: %s", expr_str, exc_info=True)
-            return z3.Bool(f"contract_{hash (expr_str )}")
+            return z3.Bool(f"contract_{hash(expr_str)}")
 
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
         """Handle comparison operators."""
@@ -55,7 +73,7 @@ class ContractCompiler(ast.NodeVisitor):
                 case ast.NotEq():
                     cmp = current != right
                 case _:
-                    cmp = z3.Bool(f"cmp_{next_address ()}")
+                    cmp = z3.Bool(f"cmp_{next_address()}")
             if result is None:
                 result = cmp
             else:
@@ -72,7 +90,7 @@ class ContractCompiler(ast.NodeVisitor):
             case ast.Or():
                 return z3.Or(*values)
             case _:
-                return z3.Bool(f"boolop_{next_address ()}")
+                return z3.Bool(f"boolop_{next_address()}")
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> z3.ExprRef:
         """Handle unary operators."""
@@ -115,7 +133,7 @@ class ContractCompiler(ast.NodeVisitor):
                         return left * left
                     elif node.right.value == 3:
                         return left * left * left
-                return z3.Int(f"pow_{next_address ()}")
+                return z3.Int(f"pow_{next_address()}")
             case ast.BitAnd():
                 return left & right
             case ast.BitOr():
@@ -123,7 +141,7 @@ class ContractCompiler(ast.NodeVisitor):
             case ast.BitXor():
                 return left ^ right
             case _:
-                return z3.Int(f"binop_{next_address ()}")
+                return z3.Int(f"binop_{next_address()}")
 
     def visit_Name(self, node: ast.Name) -> z3.ExprRef:
         """Handle variable references."""
@@ -134,12 +152,29 @@ class ContractCompiler(ast.NodeVisitor):
             return z3.Int("__result__")
         if name.startswith(self._old_prefix):
             actual_name = name[len(self._old_prefix) :]
-            old_name = f"old_{actual_name }"
+            old_name = f"old_{actual_name}"
             if old_name in self.symbols:
                 return self.symbols[old_name]
         if name in self.symbols:
             return self.symbols[name]
         return z3.Int(name)
+
+    def visit_Attribute(self, node: ast.Attribute) -> z3.ExprRef:
+        """Handle dotted attribute references (e.g., self.x)."""
+        parts: list[str] = [node.attr]
+        cur: ast.AST = node.value
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if isinstance(cur, ast.Name):
+            parts.append(cur.id)
+            name = ".".join(reversed(parts))
+            if name in self.symbols:
+                return self.symbols[name]
+            sym = z3.Int(name)
+            self.symbols[name] = sym
+            return sym
+        return z3.Int(f"attr_{next_address()}")
 
     def visit_Constant(self, node: ast.Constant) -> z3.ExprRef:
         """Handle literals."""
@@ -151,7 +186,7 @@ class ContractCompiler(ast.NodeVisitor):
             case float() as v:
                 return z3.RealVal(v)
             case _:
-                return z3.Int(f"const_{next_address ()}")
+                return z3.Int(f"const_{next_address()}")
 
     def visit_Call(self, node: ast.Call) -> z3.ExprRef:
         """Handle function calls in contracts."""
@@ -160,7 +195,7 @@ class ContractCompiler(ast.NodeVisitor):
             if func_name == "old" and len(node.args) == 1:
                 if isinstance(node.args[0], ast.Name):
                     var_name = node.args[0].id
-                    old_name = f"old_{var_name }"
+                    old_name = f"old_{var_name}"
                     if old_name in self.symbols:
                         return self.symbols[old_name]
                     return z3.Int(old_name)
@@ -179,7 +214,7 @@ class ContractCompiler(ast.NodeVisitor):
                 return z3.If(a >= b, a, b)
             if func_name == "len" and len(node.args) == 1:
                 if isinstance(node.args[0], ast.Name):
-                    return z3.Int(f"len_{node .args [0 ].id }")
+                    return z3.Int(f"len_{node.args[0].id}")
             if func_name in ("forall", "exists", "exists_unique"):
                 from pysymex.contracts.quantifiers import (
                     replace_quantifiers_with_z3,
@@ -190,7 +225,7 @@ class ContractCompiler(ast.NodeVisitor):
                     return replace_quantifiers_with_z3(expr_str, self.symbols)
                 except (ValueError, TypeError, z3.Z3Exception):
                     logger.debug("Quantifier replacement failed", exc_info=True)
-        return z3.Int(f"call_{next_address ()}")
+        return z3.Int(f"call_{next_address()}")
 
     def visit_IfExp(self, node: ast.IfExp) -> z3.ExprRef:
         """Handle ternary if expressions."""
@@ -204,14 +239,14 @@ class ContractCompiler(ast.NodeVisitor):
         if isinstance(node.value, ast.Name):
             base_name = node.value.id
             if isinstance(node.slice, ast.Constant):
-                return z3.Int(f"{base_name }_{node .slice .value }")
+                return z3.Int(f"{base_name}_{node.slice.value}")
             elif isinstance(node.slice, ast.Name):
-                return z3.Int(f"{base_name }_{node .slice .id }")
-        return z3.Int(f"subscript_{next_address ()}")
+                return z3.Int(f"{base_name}_{node.slice.id}")
+        return z3.Int(f"subscript_{next_address()}")
 
     def generic_visit(self, node: ast.AST) -> z3.ExprRef:
         """Default handler for unknown nodes."""
-        return z3.Int(f"unknown_{next_address ()}")
+        return z3.Int(f"unknown_{next_address()}")
 
 
 __all__ = [

@@ -238,8 +238,16 @@ class TestSymbolicInt:
         assert prove((a >= b).z3_bool)
         assert prove((b < a).z3_bool)
         assert prove((b <= a).z3_bool)
-        assert prove(z3.Not((a == b).z3_bool))
-        assert prove((a != b).z3_bool)
+        eq_res = a == b
+        neq_res = a != b
+        if isinstance(eq_res, bool):
+            assert eq_res is False
+        else:
+            assert prove(z3.Not(eq_res.z3_bool))
+        if isinstance(neq_res, bool):
+            assert neq_res is True
+        else:
+            assert prove(neq_res.z3_bool)
 
     def test_symbolic_arithmetic(self):
         x = SymbolicInt.symbolic("x")

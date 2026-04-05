@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python frozenset operations.
 
 Frozenset is immutable, so all operations return new values.
@@ -5,7 +23,7 @@ Frozenset is immutable, so all operations return new values.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import z3
 
@@ -37,7 +55,7 @@ class FrozensetContainsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"frozenset_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_contains_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
             constraints.append(z3.Implies(s.z3_len == 0, z3.Not(result.z3_bool)))
@@ -59,14 +77,14 @@ class FrozensetLenModel(FunctionModel):
         s = _get_symbolic_frozenset(args[0]) if args else None
         if s is not None:
             result = SymbolicValue(
-                _name=f"len_frozenset_{state .pc }",
+                _name=f"len_frozenset_{state.pc}",
                 z3_int=s.z3_len,
                 is_int=z3.BoolVal(True),
                 z3_bool=z3.BoolVal(False),
                 is_bool=z3.BoolVal(False),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"frozenset_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_len_{state.pc}")
         return ModelResult(
             value=result, constraints=[constraint, result.is_int, result.z3_int >= 0]
         )
@@ -85,8 +103,8 @@ class FrozensetUnionModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"frozenset_union_{state .pc }")
-        cast("Any", result)._type = "frozenset"
+        result, constraint = SymbolicList.symbolic(f"frozenset_union_{state.pc}")
+        setattr(result, "_type", "frozenset")
         constraints = [constraint]
         if s is not None:
             constraints.append(result.z3_len >= s.z3_len)
@@ -106,8 +124,8 @@ class FrozensetIntersectionModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"frozenset_inter_{state .pc }")
-        cast("Any", result)._type = "frozenset"
+        result, constraint = SymbolicList.symbolic(f"frozenset_inter_{state.pc}")
+        setattr(result, "_type", "frozenset")
         constraints = [constraint, result.z3_len >= 0]
         if s is not None:
             constraints.append(result.z3_len <= s.z3_len)
@@ -127,8 +145,8 @@ class FrozensetDifferenceModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"frozenset_diff_{state .pc }")
-        cast("Any", result)._type = "frozenset"
+        result, constraint = SymbolicList.symbolic(f"frozenset_diff_{state.pc}")
+        setattr(result, "_type", "frozenset")
         constraints = [constraint, result.z3_len >= 0]
         if s is not None:
             constraints.append(result.z3_len <= s.z3_len)
@@ -147,8 +165,8 @@ class FrozensetSymmetricDifferenceModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"frozenset_symdiff_{state .pc }")
-        cast("Any", result)._type = "frozenset"
+        result, constraint = SymbolicList.symbolic(f"frozenset_symdiff_{state.pc}")
+        setattr(result, "_type", "frozenset")
         constraints = [constraint, result.z3_len >= 0]
         return ModelResult(value=result, constraints=constraints)
 
@@ -166,7 +184,7 @@ class FrozensetIssubsetModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"frozenset_issubset_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_issubset_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
             constraints.append(z3.Implies(s.z3_len == 0, result.z3_bool))
@@ -185,7 +203,7 @@ class FrozensetIssupersetModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"frozenset_issuperset_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_issuperset_{state.pc}")
         constraints = [constraint, result.is_bool]
         return ModelResult(value=result, constraints=constraints)
 
@@ -203,7 +221,7 @@ class FrozensetIsdisjointModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"frozenset_isdisjoint_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_isdisjoint_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
             constraints.append(z3.Implies(s.z3_len == 0, result.z3_bool))
@@ -223,8 +241,8 @@ class FrozensetCopyModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         s = _get_symbolic_frozenset(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"frozenset_copy_{state .pc }")
-        cast("Any", result)._type = "frozenset"
+        result, constraint = SymbolicList.symbolic(f"frozenset_copy_{state.pc}")
+        setattr(result, "_type", "frozenset")
         constraints = [constraint]
         if s is not None:
             constraints.append(result.z3_len == s.z3_len)
@@ -243,7 +261,7 @@ class FrozensetHashModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"frozenset_hash_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"frozenset_hash_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
 

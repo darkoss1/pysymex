@@ -15,7 +15,7 @@ def test_infinite_loop_timeout_defense():
         return 0
 
     # Strict limits so the test breaks fast
-    res = analyze(hang, {"x": "int"}, max_depth=50, max_paths=20)
+    res = analyze(hang, {"x": "int"}, max_depth=8, max_paths=1, max_iterations=200, timeout=1.0)
     
     # The scan should finish quickly due to depth cutoff constraints
     assert res.paths_pruned >= 0, "Engine should prune paths exceeding boundaries cleanly"

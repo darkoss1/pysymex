@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Data Flow Analysis Core for pysymex.
 
@@ -7,7 +25,6 @@ and all concrete analysis implementations.
 
 from __future__ import annotations
 
-import icontract
 import collections
 import dis
 from abc import ABC, abstractmethod
@@ -15,6 +32,8 @@ from collections import defaultdict
 from typing import (
     Generic,
 )
+
+import icontract
 
 from pysymex._compat import get_starts_line
 
@@ -83,7 +102,6 @@ class DataFlowAnalysis(ABC, Generic[T]):
         if not self.cfg.blocks:
             return
 
-        # Initialize facts
         for block_id in self.cfg.blocks:
             if self.is_forward():
                 if block_id == self.cfg.entry_block_id:
@@ -98,19 +116,14 @@ class DataFlowAnalysis(ABC, Generic[T]):
                     self.out_facts[block_id] = self.initial_value()
                 self.in_facts[block_id] = self.initial_value()
 
-        # Worklist initialization: start with all blocks in appropriate order
         worklist = collections.deque(
             self.cfg.iter_blocks_forward() if self.is_forward() else self.cfg.iter_blocks_reverse()
         )
         on_worklist = {block.id for block in worklist}
 
-        iterations = 0
-        max_iterations = len(self.cfg.blocks) * 10
-
-        while worklist and iterations < max_iterations:
+        while worklist:
             block = worklist.popleft()
             on_worklist.remove(block.id)
-            iterations += 1
 
             if self.is_forward():
                 if block.id != self.cfg.entry_block_id:
@@ -124,7 +137,7 @@ class DataFlowAnalysis(ABC, Generic[T]):
                 new_out = self.transfer(block, self.in_facts.get(block.id, self.initial_value()))
                 if new_out != self.out_facts.get(block.id):
                     self.out_facts[block.id] = new_out
-                    # Add successors to worklist
+
                     for succ_id in block.successors:
                         if succ_id not in on_worklist:
                             worklist.append(self.cfg.blocks[succ_id])
@@ -141,13 +154,12 @@ class DataFlowAnalysis(ABC, Generic[T]):
                 new_in = self.transfer(block, self.out_facts.get(block.id, self.initial_value()))
                 if new_in != self.in_facts.get(block.id):
                     self.in_facts[block.id] = new_in
-                    # Add predecessors to worklist
+
                     for pred_id in block.predecessors:
                         if pred_id not in on_worklist:
                             worklist.append(self.cfg.blocks[pred_id])
                             on_worklist.add(pred_id)
 
-    @icontract.ensure(lambda result: isinstance(result, (frozenset, set, dict, object)))
     def get_in(self, block_id: int) -> T:
         """Get input facts for a block."""
         return self.in_facts.get(block_id, self.initial_value())
@@ -214,6 +226,10 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                     line=_get_line_number(instr),
                 )
                 result.add(defn)
+            elif instr.opname in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+                var_name = instr.argval
+                to_remove = {d for d in result if d.var_name == var_name}
+                result -= to_remove
         return frozenset(result)
 
     def meet(self, facts: list[frozenset[Definition]]) -> frozenset[Definition]:
@@ -246,6 +262,10 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
                     line=_get_line_number(instr),
                 )
                 result.add(defn)
+            elif instr.opname in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+                var_name = instr.argval
+                to_remove = {d for d in result if d.var_name == var_name}
+                result -= to_remove
         return frozenset(result)
 
 
@@ -281,7 +301,16 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
         result = set(in_fact)
         for instr in reversed(block.instructions):
             var_name = instr.argval if isinstance(instr.argval, str) else None
-            if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+            if instr.opname in {
+                "STORE_NAME",
+                "STORE_FAST",
+                "STORE_GLOBAL",
+                "STORE_DEREF",
+                "DELETE_NAME",
+                "DELETE_FAST",
+                "DELETE_GLOBAL",
+                "DELETE_DEREF",
+            }:
                 if var_name:
                     result.discard(var_name)
             if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
@@ -309,7 +338,16 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
             if instr.offset < pc:
                 break
             var = instr.argval if isinstance(instr.argval, str) else None
-            if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+            if instr.opname in {
+                "STORE_NAME",
+                "STORE_FAST",
+                "STORE_GLOBAL",
+                "STORE_DEREF",
+                "DELETE_NAME",
+                "DELETE_FAST",
+                "DELETE_GLOBAL",
+                "DELETE_DEREF",
+            }:
                 if var:
                     live.discard(var)
             if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
@@ -351,6 +389,15 @@ class DefUseAnalysis:
                         line=_get_line_number(instr),
                     )
                     reaching.add(defn)
+                elif instr.opname in {
+                    "DELETE_NAME",
+                    "DELETE_FAST",
+                    "DELETE_GLOBAL",
+                    "DELETE_DEREF",
+                }:
+                    var_name = instr.argval
+                    to_remove = {d for d in reaching if d.var_name == var_name}
+                    reaching -= to_remove
                 if instr.opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
                     var_name = instr.argval
                     use = Use(
@@ -402,50 +449,111 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
         """Collect all expressions in the CFG."""
         for block in self.cfg.blocks.values():
             stack: list[str] = []
+
+            def push(s: str) -> None:
+                stack.append(s)
+
+            def pop() -> str:
+                return stack.pop() if stack else "unknown"
+
             for instr in block.instructions:
-                if instr.opname in {
+                op = instr.opname
+                if op in {
                     "LOAD_NAME",
                     "LOAD_FAST",
                     "LOAD_GLOBAL",
                     "LOAD_DEREF",
                     "LOAD_FAST_CHECK",
                     "LOAD_FAST_AND_CLEAR",
+                    "LOAD_CLOSURE",
                 }:
-                    stack.append(str(instr.argval))
-                elif instr.opname == "LOAD_FAST_LOAD_FAST":
+                    push(str(instr.argval))
+                elif op == "LOAD_FAST_LOAD_FAST":
                     arg1, arg2 = instr.argval
-                    stack.append(str(arg1))
-                    stack.append(str(arg2))
-                elif instr.opname == "LOAD_CONST":
-                    stack.append(f"const_{instr.argval}")
-                elif instr.opname in {"BINARY_OP", "BINARY_SUBSCR"}:
-                    if len(stack) >= 2:
-                        right = stack.pop()
-                        left = stack.pop()
-                        op = instr.argrepr if instr.opname == "BINARY_OP" else "[]"
-                        expr = Expression(
-                            operator=op,
-                            operands=(left, right),
-                        )
+                    push(str(arg1))
+                    push(str(arg2))
+                elif op == "LOAD_CONST":
+                    push(f"const_{instr.argval}")
+                elif op in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+                    pop()
+                elif op in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+                    pass
+                elif op in {"BINARY_OP", "BINARY_SUBSCR"}:
+                    right = pop()
+                    left = pop()
+                    operator = instr.argrepr if op == "BINARY_OP" else "[]"
+                    if left != "unknown" and right != "unknown":
+                        expr = Expression(operator=operator, operands=(left, right))
                         self.all_expressions.add(expr)
-                        stack.append(f"({left}{op}{right})")
-                elif instr.opname == "UNARY_OP":
-                    if stack:
-                        operand = stack.pop()
-                        expr = Expression(
-                            operator=instr.argrepr,
-                            operands=(operand,),
-                        )
+                        push(f"({left}{operator}{right})")
+                    else:
+                        push("unknown")
+                elif op == "UNARY_OP":
+                    operand = pop()
+                    if operand != "unknown":
+                        expr = Expression(operator=instr.argrepr, operands=(operand,))
                         self.all_expressions.add(expr)
-                        stack.append(f"({instr.argrepr}{operand})")
-                elif instr.opname in {
-                    "STORE_NAME",
-                    "STORE_FAST",
-                    "STORE_GLOBAL",
-                    "STORE_DEREF",
-                }:
-                    if stack:
-                        stack.pop()
+                        push(f"({instr.argrepr}{operand})")
+                    else:
+                        push("unknown")
+                elif op == "DUP_TOP":
+                    val = pop()
+                    push(val)
+                    push(val)
+                elif op == "DUP_TOP_TWO":
+                    val1 = pop()
+                    val2 = pop()
+                    push(val2)
+                    push(val1)
+                    push(val2)
+                    push(val1)
+                elif op == "ROT_TWO":
+                    val1 = pop()
+                    val2 = pop()
+                    push(val1)
+                    push(val2)
+                elif op == "ROT_THREE":
+                    val1 = pop()
+                    val2 = pop()
+                    val3 = pop()
+                    push(val1)
+                    push(val3)
+                    push(val2)
+                elif op == "SWAP":
+                    idx = int(instr.argval) if instr.argval else 1
+                    if len(stack) >= idx:
+                        stack[-1], stack[-idx] = stack[-idx], stack[-1]
+                elif op == "COPY":
+                    idx = int(instr.argval) if instr.argval else 1
+                    if len(stack) >= idx:
+                        push(stack[-idx])
+                    else:
+                        push("unknown")
+                elif op == "UNPACK_SEQUENCE":
+                    pop()
+                    count = int(instr.argval) if instr.argval is not None else 0
+                    for _ in range(count):
+                        push("unknown")
+                elif op == "POP_TOP":
+                    pop()
+                elif "INPLACE_" in op or "COMPARE_OP" in op:
+                    pop()
+                    pop()
+                    push("unknown")
+                elif op.startswith("BUILD_"):
+                    count = int(instr.argval) if instr.argval is not None else 0
+                    if op == "BUILD_MAP":
+                        count *= 2
+                    elif op == "BUILD_CONST_KEY_MAP":
+                        count += 1
+                    for _ in range(count):
+                        pop()
+                    push("unknown")
+                elif op.startswith("CALL"):
+                    stack.clear()
+                    push("unknown")
+                else:
+                    stack.clear()
 
     def initial_value(self) -> frozenset[Expression]:
         return frozenset(self.all_expressions)
@@ -461,44 +569,115 @@ class AvailableExpressions(DataFlowAnalysis[frozenset[Expression]]):
         """Transfer function: gen ∪ (in - kill)."""
         result = set(in_fact)
         stack: list[str] = []
+
+        def push(s: str) -> None:
+            stack.append(s)
+
+        def pop() -> str:
+            return stack.pop() if stack else "unknown"
+
         for instr in block.instructions:
-            if instr.opname in {
+            op = instr.opname
+            if op in {
                 "LOAD_NAME",
                 "LOAD_FAST",
                 "LOAD_GLOBAL",
                 "LOAD_DEREF",
                 "LOAD_FAST_CHECK",
                 "LOAD_FAST_AND_CLEAR",
+                "LOAD_CLOSURE",
             }:
-                stack.append(str(instr.argval))
-            elif instr.opname == "LOAD_FAST_LOAD_FAST":
+                push(str(instr.argval))
+            elif op == "LOAD_FAST_LOAD_FAST":
                 arg1, arg2 = instr.argval
-                stack.append(str(arg1))
-                stack.append(str(arg2))
-            elif instr.opname == "LOAD_CONST":
-                stack.append(f"const_{instr.argval}")
-            elif instr.opname in {
-                "STORE_NAME",
-                "STORE_FAST",
-                "STORE_GLOBAL",
-                "STORE_DEREF",
-            }:
+                push(str(arg1))
+                push(str(arg2))
+            elif op == "LOAD_CONST":
+                push(f"const_{instr.argval}")
+            elif op in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
                 var_name = str(instr.argval)
                 to_remove = {e for e in result if var_name in e.operands}
                 result -= to_remove
-                if stack:
-                    stack.pop()
-            elif instr.opname in {"BINARY_OP", "BINARY_SUBSCR"}:
-                if len(stack) >= 2:
-                    right = stack.pop()
-                    left = stack.pop()
-                    op = instr.argrepr if instr.opname == "BINARY_OP" else "[]"
-                    expr = Expression(
-                        operator=op,
-                        operands=(left, right),
-                    )
+                pop()
+            elif op in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+                pass
+            elif op in {"BINARY_OP", "BINARY_SUBSCR"}:
+                right = pop()
+                left = pop()
+                operator = instr.argrepr if op == "BINARY_OP" else "[]"
+                if left != "unknown" and right != "unknown":
+                    expr = Expression(operator=operator, operands=(left, right))
                     result.add(expr)
-                    stack.append(f"({left}{op}{right})")
+                    push(f"({left}{operator}{right})")
+                else:
+                    push("unknown")
+            elif op == "UNARY_OP":
+                operand = pop()
+                if operand != "unknown":
+                    expr = Expression(operator=instr.argrepr, operands=(operand,))
+                    result.add(expr)
+                    push(f"({instr.argrepr}{operand})")
+                else:
+                    push("unknown")
+            elif op == "DUP_TOP":
+                val = pop()
+                push(val)
+                push(val)
+            elif op == "DUP_TOP_TWO":
+                val1 = pop()
+                val2 = pop()
+                push(val2)
+                push(val1)
+                push(val2)
+                push(val1)
+            elif op == "ROT_TWO":
+                val1 = pop()
+                val2 = pop()
+                push(val1)
+                push(val2)
+            elif op == "ROT_THREE":
+                val1 = pop()
+                val2 = pop()
+                val3 = pop()
+                push(val1)
+                push(val3)
+                push(val2)
+            elif op == "SWAP":
+                idx = int(instr.argval) if instr.argval else 1
+                if len(stack) >= idx:
+                    stack[-1], stack[-idx] = stack[-idx], stack[-1]
+            elif op == "COPY":
+                idx = int(instr.argval) if instr.argval else 1
+                if len(stack) >= idx:
+                    push(stack[-idx])
+                else:
+                    push("unknown")
+            elif op == "UNPACK_SEQUENCE":
+                pop()
+                count = int(instr.argval) if instr.argval is not None else 0
+                for _ in range(count):
+                    push("unknown")
+            elif op == "POP_TOP":
+                pop()
+            elif "INPLACE_" in op or "COMPARE_OP" in op:
+                pop()
+                pop()
+                push("unknown")
+            elif op.startswith("BUILD_"):
+                count = int(instr.argval) if instr.argval is not None else 0
+                if op == "BUILD_MAP":
+                    count *= 2
+                elif op == "BUILD_CONST_KEY_MAP":
+                    count += 1
+                for _ in range(count):
+                    pop()
+                push("unknown")
+            elif op.startswith("CALL"):
+                stack.clear()
+                push("unknown")
+            else:
+                stack.clear()
+
         return frozenset(result)
 
     def meet(self, facts: list[frozenset[Expression]]) -> frozenset[Expression]:
@@ -545,42 +724,113 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
     ) -> TypeEnvironment:
         """Transfer function: update types through the block."""
         env = in_fact.copy()
-        prev_instr: dis.Instruction | None = None
+        stack: list[PyType] = []
         for instr in block.instructions:
-            self._process_instruction(env, instr, prev_instr)
-            prev_instr = instr
+            self._process_instruction(env, instr, stack)
         return env
 
     def _process_instruction(
         self,
         env: TypeEnvironment,
         instr: dis.Instruction,
-        prev_instr: dis.Instruction | None = None,
+        stack: list[PyType],
     ) -> None:
         """Process a single instruction for type flow."""
-        if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
-            var_name = instr.argval
-            if prev_instr is not None:
-                if prev_instr.opname == "LOAD_CONST":
-                    env.set_type(var_name, self._type_from_const(prev_instr.argval))
-                elif prev_instr.opname in {
-                    "LOAD_NAME",
-                    "LOAD_FAST",
-                    "LOAD_GLOBAL",
-                    "LOAD_DEREF",
-                    "LOAD_FAST_CHECK",
-                    "LOAD_FAST_AND_CLEAR",
-                }:
-                    loaded_var = prev_instr.argval
-                    env.set_type(var_name, env.get_type(loaded_var))
-                elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
-                    # This instruction pushes two, so STORE_FAST likely pops the second one
-                    _, var2 = prev_instr.argval
-                    env.set_type(var_name, env.get_type(var2))
-                else:
-                    env.set_type(var_name, PyType.unknown())
+        op = instr.opname
+
+        def push(t: PyType) -> None:
+            stack.append(t)
+
+        def pop() -> PyType:
+            return stack.pop() if stack else PyType.unknown()
+
+        if op == "LOAD_CONST":
+            push(self._type_from_const(instr.argval))
+        elif op in {
+            "LOAD_NAME",
+            "LOAD_FAST",
+            "LOAD_GLOBAL",
+            "LOAD_DEREF",
+            "LOAD_FAST_CHECK",
+            "LOAD_FAST_AND_CLEAR",
+            "LOAD_CLOSURE",
+        }:
+            push(env.get_type(str(instr.argval)))
+        elif op == "LOAD_FAST_LOAD_FAST":
+            arg1, arg2 = instr.argval
+            push(env.get_type(str(arg1)))
+            push(env.get_type(str(arg2)))
+        elif op in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+            env.set_type(str(instr.argval), pop())
+        elif op in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+            pass
+        elif op == "DUP_TOP":
+            val = pop()
+            push(val)
+            push(val)
+        elif op == "DUP_TOP_TWO":
+            val1 = pop()
+            val2 = pop()
+            push(val2)
+            push(val1)
+            push(val2)
+            push(val1)
+        elif op == "ROT_TWO":
+            val1 = pop()
+            val2 = pop()
+            push(val1)
+            push(val2)
+        elif op == "ROT_THREE":
+            val1 = pop()
+            val2 = pop()
+            val3 = pop()
+            push(val1)
+            push(val3)
+            push(val2)
+        elif op == "SWAP":
+            idx = int(instr.argval) if instr.argval else 1
+            if len(stack) >= idx:
+                stack[-1], stack[-idx] = stack[-idx], stack[-1]
+        elif op == "COPY":
+            idx = int(instr.argval) if instr.argval else 1
+            if len(stack) >= idx:
+                push(stack[-idx])
             else:
-                env.set_type(var_name, PyType.unknown())
+                push(PyType.unknown())
+        elif op == "UNPACK_SEQUENCE":
+            pop()
+            count = int(instr.argval) if instr.argval is not None else 0
+            for _ in range(count):
+                push(PyType.unknown())
+        elif op == "POP_TOP":
+            pop()
+        elif "BINARY_" in op or "INPLACE_" in op or "COMPARE_OP" in op:
+            pop()
+            pop()
+            push(PyType.unknown())
+        elif "UNARY_" in op:
+            pop()
+            push(PyType.unknown())
+        elif op.startswith("BUILD_"):
+            count = int(instr.argval) if instr.argval is not None else 0
+            if op == "BUILD_MAP":
+                count *= 2
+            elif op == "BUILD_CONST_KEY_MAP":
+                count += 1
+            for _ in range(count):
+                pop()
+            if op in {"BUILD_TUPLE", "BUILD_LIST", "BUILD_SET"}:
+                if op == "BUILD_TUPLE":
+                    push(PyType.tuple_type())
+                else:
+                    push(PyType.unknown())
+            else:
+                push(PyType.unknown())
+        elif op.startswith("CALL"):
+            stack.clear()
+            push(PyType.unknown())
+        else:
+            stack.clear()
 
     @staticmethod
     def _type_from_const(value: object) -> PyType:
@@ -616,12 +866,11 @@ class TypeFlowAnalysis(DataFlowAnalysis[TypeEnvironment]):
         if not block:
             return PyType.unknown()
         env = self.get_in(block.id).copy()
-        prev_instr: dis.Instruction | None = None
+        stack: list[PyType] = []
         for instr in block.instructions:
             if instr.offset >= pc:
                 break
-            self._process_instruction(env, instr, prev_instr)
-            prev_instr = instr
+            self._process_instruction(env, instr, stack)
         return env.get_type(var_name)
 
 
@@ -646,34 +895,101 @@ class NullAnalysis(DataFlowAnalysis[NullInfo]):
     def transfer(self, block: BasicBlock, in_fact: NullInfo) -> NullInfo:
         """Transfer function for null analysis."""
         info = in_fact.copy()
-        prev_instr: dis.Instruction | None = None
+        stack: list[NullState] = []
+
+        def push(state: NullState) -> None:
+            stack.append(state)
+
+        def pop() -> NullState:
+            return stack.pop() if stack else NullState.UNKNOWN
+
         for instr in block.instructions:
-            if instr.opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
-                var_name = instr.argval
-                if prev_instr is not None:
-                    if prev_instr.opname == "LOAD_CONST":
-                        if prev_instr.argval is None:
-                            info.set_state(var_name, NullState.DEFINITELY_NULL)
-                        else:
-                            info.set_state(var_name, NullState.DEFINITELY_NOT_NULL)
-                    elif prev_instr.opname in {
-                        "LOAD_NAME",
-                        "LOAD_FAST",
-                        "LOAD_GLOBAL",
-                        "LOAD_DEREF",
-                        "LOAD_FAST_CHECK",
-                        "LOAD_FAST_AND_CLEAR",
-                    }:
-                        loaded_var = prev_instr.argval
-                        info.set_state(var_name, info.get_state(loaded_var))
-                    elif prev_instr.opname == "LOAD_FAST_LOAD_FAST":
-                        _, var2 = prev_instr.argval
-                        info.set_state(var_name, info.get_state(var2))
-                    else:
-                        info.set_state(var_name, NullState.MAYBE_NULL)
+            op = instr.opname
+            if op == "LOAD_CONST":
+                if instr.argval is None:
+                    push(NullState.DEFINITELY_NULL)
                 else:
-                    info.set_state(var_name, NullState.MAYBE_NULL)
-            prev_instr = instr
+                    push(NullState.DEFINITELY_NOT_NULL)
+            elif op in {
+                "LOAD_NAME",
+                "LOAD_FAST",
+                "LOAD_GLOBAL",
+                "LOAD_DEREF",
+                "LOAD_FAST_CHECK",
+                "LOAD_FAST_AND_CLEAR",
+                "LOAD_CLOSURE",
+            }:
+                push(info.get_state(str(instr.argval)))
+            elif op == "LOAD_FAST_LOAD_FAST":
+                arg1, arg2 = instr.argval
+                push(info.get_state(str(arg1)))
+                push(info.get_state(str(arg2)))
+            elif op in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
+                info.set_state(str(instr.argval), pop())
+            elif op in {"DELETE_NAME", "DELETE_FAST", "DELETE_GLOBAL", "DELETE_DEREF"}:
+                pass
+            elif op == "DUP_TOP":
+                val = pop()
+                push(val)
+                push(val)
+            elif op == "DUP_TOP_TWO":
+                val1 = pop()
+                val2 = pop()
+                push(val2)
+                push(val1)
+                push(val2)
+                push(val1)
+            elif op == "ROT_TWO":
+                val1 = pop()
+                val2 = pop()
+                push(val1)
+                push(val2)
+            elif op == "ROT_THREE":
+                val1 = pop()
+                val2 = pop()
+                val3 = pop()
+                push(val1)
+                push(val3)
+                push(val2)
+            elif op == "SWAP":
+                idx = int(instr.argval) if instr.argval else 1
+                if len(stack) >= idx:
+                    stack[-1], stack[-idx] = stack[-idx], stack[-1]
+            elif op == "COPY":
+                idx = int(instr.argval) if instr.argval else 1
+                if len(stack) >= idx:
+                    push(stack[-idx])
+                else:
+                    push(NullState.UNKNOWN)
+            elif op == "UNPACK_SEQUENCE":
+                pop()
+                count = int(instr.argval) if instr.argval is not None else 0
+                for _ in range(count):
+                    push(NullState.UNKNOWN)
+            elif op == "POP_TOP":
+                pop()
+            elif "BINARY_" in op or "INPLACE_" in op or "COMPARE_OP" in op:
+                pop()
+                pop()
+                push(NullState.DEFINITELY_NOT_NULL)
+            elif "UNARY_" in op:
+                pop()
+                push(NullState.DEFINITELY_NOT_NULL)
+            elif op.startswith("BUILD_"):
+                count = int(instr.argval) if instr.argval is not None else 0
+                if op == "BUILD_MAP":
+                    count *= 2
+                elif op == "BUILD_CONST_KEY_MAP":
+                    count += 1
+                for _ in range(count):
+                    pop()
+                push(NullState.DEFINITELY_NOT_NULL)
+            elif op.startswith("CALL"):
+                stack.clear()
+                push(NullState.MAYBE_NULL)
+            else:
+                stack.clear()
+
         narrowing = self.narrowing_conditions.get(block.id, {})
         for var_name, state in narrowing.items():
             info.set_state(var_name, state)

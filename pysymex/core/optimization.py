@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Performance optimization utilities for pysymex.
 This module provides:
 - Constraint caching for faster satisfiability checks
@@ -17,6 +35,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Protocol,
+    TypeGuard,
+    cast,
 )
 
 import z3
@@ -26,7 +47,33 @@ from pysymex.core.solver import create_solver
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from pysymex._typing import StackValue
     from pysymex.core.state import VMState
+
+
+class _ConditionalMergeable(Protocol):
+    def conditional_merge(self, other: object, condition: z3.BoolRef) -> object: ...
+
+
+def _supports_conditional_merge(value: object) -> TypeGuard[_ConditionalMergeable]:
+    return hasattr(value, "conditional_merge") and callable(
+        getattr(value, "conditional_merge", None)
+    )
+
+
+def _z3_values_equal(left: object, right: object) -> bool:
+    """Structural equality helper for Z3 and non-Z3 values.
+
+    Uses ``z3.eq`` for symbolic expressions and regular equality as a fallback.
+    """
+    if left is right:
+        return True
+    if isinstance(left, z3.ExprRef) and isinstance(right, z3.ExprRef):
+        try:
+            return bool(z3.eq(left, right))
+        except Exception:
+            return False
+    return left == right
 
 
 @dataclass
@@ -59,7 +106,7 @@ class ConstraintCache:
     and hashing for efficient lookup.
     """
 
-    def __init__(self, max_size: int = 10000):
+    def __init__(self, max_size: int = 10000) -> None:
         self.max_size = max_size
         self._cache: OrderedDict[
             tuple[int, tuple[int, ...]], tuple[bool, z3.ModelRef | None, float]
@@ -203,7 +250,7 @@ class StateMerger:
         self,
         similarity_threshold: float = 0.8,
         max_pending_states: int = 100,
-    ):
+    ) -> None:
         self.similarity_threshold = similarity_threshold
         self.max_pending_states = max_pending_states
         self.stats = MergeStats()
@@ -297,18 +344,22 @@ class StateMerger:
         for name, value2 in state2.locals.items():
             if name not in merged.locals:
                 merged.locals[name] = value2
-            elif str(merged.locals[name]) != str(value2):
+            elif not _z3_values_equal(merged.locals[name], value2):
                 from pysymex.core.types import SymbolicValue
 
-                s1: object = merged.locals[name]
-                s2: object = value2
-                if hasattr(s1, "conditional_merge"):
-                    merged.locals[name] = s1.conditional_merge(s2, branch_cond_for_locals)
-                elif hasattr(s2, "conditional_merge"):
-                    merged.locals[name] = s2.conditional_merge(s1, z3.Not(branch_cond_for_locals))
+                s1: StackValue = merged.locals[name]
+                s2: StackValue = value2
+                if _supports_conditional_merge(s1):
+                    merged.locals[name] = cast(
+                        "StackValue", s1.conditional_merge(s2, branch_cond_for_locals)
+                    )
+                elif _supports_conditional_merge(s2):
+                    merged.locals[name] = cast(
+                        "StackValue", s2.conditional_merge(s1, z3.Not(branch_cond_for_locals))
+                    )
                 else:
                     sv, _type_constr = SymbolicValue.symbolic(f"_merged_{name}")
-                    merged.locals[name] = sv
+                    merged.locals[name] = cast("StackValue", sv)
         self.stats.merges_successful += 1
         self.stats.states_reduced += 1
         return merged
@@ -352,7 +403,7 @@ class LazySymbolicValue:
         self,
         name: str,
         value_factory: Callable[[], object],
-    ):
+    ) -> None:
         self.name = name
         self._factory = value_factory
         self._value: object | None = None
@@ -386,7 +437,7 @@ class CompactState:
         locals_: frozenset[tuple[str, object]] | None = None,
         constraints: tuple[object, ...] | None = None,
         parent: CompactState | None = None,
-    ):
+    ) -> None:
         self._pc = pc
         self._stack: tuple[object, ...] = stack or ()
         self._locals = locals_ or frozenset()
@@ -427,7 +478,7 @@ class CompactState:
         """Return new state with value pushed to stack."""
         return CompactState(
             pc=self._pc,
-            stack=self._stack + (value,),
+            stack=(*self._stack, value),
             locals_=self._locals,
             constraints=self._constraints,
             parent=self,
@@ -464,7 +515,7 @@ class CompactState:
             pc=self._pc,
             stack=self._stack,
             locals_=self._locals,
-            constraints=self._constraints + (constraint,),
+            constraints=(*self._constraints, constraint),
             parent=self,
         )
 
@@ -519,7 +570,7 @@ class ProfileData:
 class ExecutionProfiler:
     """Profiler for symbolic execution."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = ProfileData()
         self._start_time: float | None = None
         self._opcode_start: float | None = None

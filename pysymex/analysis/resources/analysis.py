@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Resource Leak and Memory Safety Analysis for pysymex.
 This module detects:
@@ -15,6 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from types import CodeType
 
 from pysymex._compat import get_starts_line
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
@@ -134,7 +153,7 @@ class ResourceLeakDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Detect resource leaks in function."""
@@ -155,14 +174,22 @@ class ResourceLeakDetector:
             if opname in {"LOAD_GLOBAL", "LOAD_NAME"}:
                 call_stack.append(str(arg))
             elif opname == "LOAD_ATTR":
+                if str(arg) in RESOURCE_CLOSERS and i > 0:
+                    prev = instructions[i - 1]
+                    if prev.opname in {"LOAD_FAST", "LOAD_NAME"}:
+                        var_name = str(prev.argval)
+                        if var_name in self.resources:
+                            self.resources[var_name].state = ResourceState.CLOSED
+                            self.resources[var_name].close_line = current_line
+
                 if call_stack:
-                    call_stack[-1] = f"{call_stack [-1 ]}.{arg }"
+                    call_stack[-1] = f"{call_stack[-1]}.{arg}"
                 else:
                     call_stack.append(str(arg))
             elif opname in {"CALL", "CALL_FUNCTION", "CALL_METHOD"}:
                 if call_stack:
                     func_name = call_stack.pop()
-                    for pattern, _kind in RESOURCE_OPENERS.items():
+                    for pattern in RESOURCE_OPENERS.keys():
                         if func_name.endswith(pattern) or func_name == pattern:
                             pending_store = func_name
                             break
@@ -180,14 +207,6 @@ class ResourceLeakDetector:
                             )
                             break
                     pending_store = None
-            elif opname == "LOAD_ATTR" and str(arg) in RESOURCE_CLOSERS:
-                if i > 0:
-                    prev = instructions[i - 1]
-                    if prev.opname in {"LOAD_FAST", "LOAD_NAME"}:
-                        var_name = str(prev.argval)
-                        if var_name in self.resources:
-                            self.resources[var_name].state = ResourceState.CLOSED
-                            self.resources[var_name].close_line = current_line
             elif opname == "BEFORE_WITH":
                 self.context_stack.append("context")
             elif opname == "WITH_CLEANUP_START":
@@ -216,8 +235,8 @@ class ResourceLeakDetector:
                         resource_kind=resource.kind,
                         resource_name=name,
                         message=(
-                            f"Resource '{name }' ({resource .kind .name }) "
-                            f"opened on line {resource .open_line } may not be closed"
+                            f"Resource '{name}' ({resource.kind.name}) "
+                            f"opened on line {resource.open_line} may not be closed"
                         ),
                     )
                 )
@@ -230,7 +249,7 @@ class ContextManagerAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Analyze context manager usage."""
@@ -264,7 +283,7 @@ class ContextManagerAnalyzer:
                     line=line,
                     resource_kind=ResourceKind.FILE_HANDLE,
                     resource_name="file",
-                    message=f"'{func }()' should be used with 'with' statement",
+                    message=f"'{func}()' should be used with 'with' statement",
                     severity="warning",
                 )
             )
@@ -288,7 +307,7 @@ class ReferenceCycleDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Detect potential reference cycles."""
@@ -339,7 +358,7 @@ class LockSafetyAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Analyze lock usage for potential issues."""
@@ -359,7 +378,6 @@ class LockSafetyAnalyzer:
             arg = instr.argval
 
             if opname in {"BEFORE_WITH", "BEFORE_ASYNC_WITH"}:
-
                 if loading_var and loading_var in acquired_locks:
                     del acquired_locks[loading_var]
 
@@ -399,7 +417,7 @@ class LockSafetyAnalyzer:
                                     line=current_line,
                                     resource_kind=ResourceKind.LOCK,
                                     resource_name=loading_var,
-                                    message=f"Lock '{loading_var }' released without being acquired",
+                                    message=f"Lock '{loading_var}' released without being acquired",
                                 )
                             )
                         last_acquire_var = None
@@ -419,7 +437,7 @@ class LockSafetyAnalyzer:
                             resource_kind=ResourceKind.LOCK,
                             resource_name=lock_name,
                             message=(
-                                f"Lock '{lock_name }' acquired on line {acquire_line } "
+                                f"Lock '{lock_name}' acquired on line {acquire_line} "
                                 f"may not be released before return"
                             ),
                         )
@@ -434,7 +452,7 @@ class GeneratorCleanupAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Check for generator cleanup issues."""
@@ -493,7 +511,7 @@ class ResourceAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Analyze a function for resource issues."""
@@ -507,7 +525,7 @@ class ResourceAnalyzer:
 
     def analyze_module(
         self,
-        module_code: object,
+        module_code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ResourceWarning]:
         """Analyze all functions in a module."""
@@ -518,7 +536,7 @@ class ResourceAnalyzer:
 
     def _analyze_nested(
         self,
-        code: object,
+        code: CodeType,
         file_path: str,
         warnings: list[ResourceWarning],
     ) -> None:

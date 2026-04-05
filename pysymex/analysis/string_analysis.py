@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 String Analysis for pysymex.
 This module analyzes string operations including:
@@ -15,6 +33,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum, auto
+from types import CodeType
 
 from pysymex._compat import get_starts_line
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
@@ -107,7 +126,7 @@ class PrintfFormatAnalyzer:
                             kind=StringWarningKind.MISSING_FORMAT_ARG,
                             file=file_path,
                             line=line,
-                            message=f"Format string expects {expected } arguments, got {actual }",
+                            message=f"Format string expects {expected} arguments, got {actual}",
                             code_snippet=format_string,
                             severity="error",
                         )
@@ -118,7 +137,7 @@ class PrintfFormatAnalyzer:
                             kind=StringWarningKind.EXTRA_FORMAT_ARG,
                             file=file_path,
                             line=line,
-                            message=f"Format string expects {expected } arguments, got {actual }",
+                            message=f"Format string expects {expected} arguments, got {actual}",
                             code_snippet=format_string,
                         )
                     )
@@ -187,7 +206,7 @@ class StrFormatAnalyzer:
                         kind=StringWarningKind.MISSING_FORMAT_ARG,
                         file=file_path,
                         line=line,
-                        message=f"Format string references index {max_index }, but only {len (args )} positional arguments",
+                        message=f"Format string references index {max_index}, but only {len(args)} positional arguments",
                         code_snippet=format_string,
                         severity="error",
                     )
@@ -199,7 +218,7 @@ class StrFormatAnalyzer:
                         kind=StringWarningKind.MISSING_FORMAT_ARG,
                         file=file_path,
                         line=line,
-                        message=f"Format string references '{name }' but it's not in keyword arguments",
+                        message=f"Format string references '{name}' but it's not in keyword arguments",
                         code_snippet=format_string,
                     )
                 )
@@ -226,6 +245,7 @@ class FStringAnalyzer:
 
         class FStringVisitor(ast.NodeVisitor):
             """AST visitor for analyzing f-string components."""
+
             def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
                 """Visit joinedstr."""
                 for value in node.values:
@@ -269,7 +289,7 @@ class RegexAnalyzer:
                     kind=StringWarningKind.INVALID_REGEX,
                     file=file_path,
                     line=line,
-                    message=f"Invalid regex pattern: {e }",
+                    message=f"Invalid regex pattern: {e}",
                     code_snippet=pattern,
                     severity="error",
                 )
@@ -333,6 +353,7 @@ class SQLInjectionAnalyzer:
 
         class SQLVisitor(ast.NodeVisitor):
             """AST visitor for identifying potential SQL query strings."""
+
             def __init__(self) -> None:
                 self.warnings = warnings
 
@@ -347,7 +368,7 @@ class SQLInjectionAnalyzer:
                                     kind=StringWarningKind.SQL_INJECTION,
                                     file=file_path,
                                     line=node.lineno,
-                                    message=f"Potential SQL injection: variable '{node .right .id }' in SQL string",
+                                    message=f"Potential SQL injection: variable '{node.right.id}' in SQL string",
                                     code_snippet=sql_string[:50],
                                     severity="error",
                                 )
@@ -430,6 +451,7 @@ class PathTraversalAnalyzer:
 
         class PathVisitor(ast.NodeVisitor):
             """AST visitor for identifying potential filesystem paths."""
+
             def __init__(self) -> None:
                 self.warnings = warnings
 
@@ -498,7 +520,7 @@ class StringMultiplicationAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[StringWarning]:
         """Analyze bytecode for string multiplication issues."""
@@ -558,7 +580,7 @@ class StringAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[StringWarning]:
         """Analyze function for string issues."""
@@ -582,7 +604,7 @@ class StringAnalyzer:
 
     def _analyze_nested(
         self,
-        code: object,
+        code: CodeType,
         file_path: str,
         warnings: list[StringWarning],
     ) -> None:

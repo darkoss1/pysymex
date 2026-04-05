@@ -1,8 +1,27 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Taint analysis core — TaintAnalyzer, TaintFlowAnalysis, TaintChecker."""
 
 from __future__ import annotations
 
 import dis
+from types import CodeType
 
 from pysymex._compat import get_starts_line
 from pysymex.analysis.flow_sensitive import (
@@ -106,7 +125,7 @@ class TaintAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[TaintViolation]:
         """Analyze a function for taint violations."""
@@ -138,11 +157,11 @@ class TaintAnalyzer:
             tainted = state.get_taint(var_name)
             state.push(TaintedValue(var_name, set(tainted.labels), tainted.confidence))
         elif opname == "LOAD_CONST":
-            state.push(TaintedValue(f"const_{arg }"))
+            state.push(TaintedValue(f"const_{arg}"))
         elif opname == "LOAD_ATTR":
             attr_name = arg
             obj_taint = state.pop()
-            full_name = f"{obj_taint .value_name }.{attr_name }"
+            full_name = f"{obj_taint.value_name}.{attr_name}"
 
             source = self._find_source(full_name)
             if source:
@@ -157,7 +176,7 @@ class TaintAnalyzer:
             else:
                 result = TaintedValue(full_name)
                 for label in obj_taint.labels:
-                    result.add_label(label.propagate(f".{attr_name }"))
+                    result.add_label(label.propagate(f".{attr_name}"))
                 state.push(result)
         elif opname in {"STORE_NAME", "STORE_FAST", "STORE_GLOBAL", "STORE_DEREF"}:
             var_name = arg
@@ -169,18 +188,16 @@ class TaintAnalyzer:
             if len(state.stack) >= 2:
                 right = state.pop()
                 left = state.pop()
-                result = TaintedValue(
-                    f"({left .value_name } {instr .argrepr } {right .value_name })"
-                )
+                result = TaintedValue(f"({left.value_name} {instr.argrepr} {right.value_name})")
                 for label in left.labels:
-                    result.add_label(label.propagate(f"op:{instr .argrepr }"))
+                    result.add_label(label.propagate(f"op:{instr.argrepr}"))
                 for label in right.labels:
-                    result.add_label(label.propagate(f"op:{instr .argrepr }"))
+                    result.add_label(label.propagate(f"op:{instr.argrepr}"))
                 state.push(result)
         elif opname == "FORMAT_VALUE":
             if state.stack:
                 value = state.pop()
-                result = TaintedValue(f"format({value .value_name })")
+                result = TaintedValue(f"format({value.value_name})")
                 for label in value.labels:
                     result.add_label(label.propagate("format"))
                 state.push(result)
@@ -201,7 +218,7 @@ class TaintAnalyzer:
             if len(state.stack) >= 2:
                 index = state.pop()
                 container = state.pop()
-                result = TaintedValue(f"{container .value_name }[{index .value_name }]")
+                result = TaintedValue(f"{container.value_name}[{index.value_name}]")
                 for label in container.labels:
                     result.add_label(label.propagate("subscript"))
                 state.push(result)
@@ -244,6 +261,16 @@ class TaintAnalyzer:
         elif opname == "RETURN_VALUE":
             pass
 
+    def process_instruction(
+        self,
+        instr: dis.Instruction,
+        state: TaintState,
+        line: int,
+        file_path: str,
+    ) -> None:
+        """Public wrapper for instruction processing."""
+        self._process_instruction(instr, state, line, file_path)
+
     def _handle_call(
         self,
         instr: dis.Instruction,
@@ -266,7 +293,7 @@ class TaintAnalyzer:
                 source=source.description or source.name,
                 source_line=line,
             )
-            result = TaintedValue(f"{func_name }()")
+            result = TaintedValue(f"{func_name}()")
             result.add_label(label)
             state.push(result)
             return
@@ -294,23 +321,23 @@ class TaintAnalyzer:
                 for label in arg.labels:
                     if not (label.kind & sanitizer.removes_kinds):
                         new_labels.add(label)
-                result = TaintedValue(f"{func_name }({arg .value_name })")
+                result = TaintedValue(f"{func_name}({arg.value_name})")
                 result.labels = new_labels
                 state.push(result)
                 return
-        result = TaintedValue(f"{func_name }()")
+        result = TaintedValue(f"{func_name}()")
         for arg in args:
             for label in arg.labels:
-                result.add_label(label.propagate(f"call:{func_name }"))
+                result.add_label(label.propagate(f"call:{func_name}"))
         for label in func_taint.labels:
-            result.add_label(label.propagate(f"call:{func_name }"))
+            result.add_label(label.propagate(f"call:{func_name}"))
         state.push(result)
 
     def _find_source(self, name: str) -> TaintSource | None:
         """Find a taint source by name."""
         if name in self.sources:
             return self.sources[name]
-        base_name = name.split(".")[-1]
+        base_name = name.rsplit(".", maxsplit=1)[-1]
 
         if "." in name and base_name in self._AMBIGUOUS_SHORT_NAMES:
             return None
@@ -322,7 +349,7 @@ class TaintAnalyzer:
         """Find a taint sink by name."""
         if name in self.sinks:
             return self.sinks[name]
-        base_name = name.split(".")[-1]
+        base_name = name.rsplit(".", maxsplit=1)[-1]
 
         if "." in name and base_name in self._AMBIGUOUS_SHORT_NAMES:
             return None
@@ -334,7 +361,7 @@ class TaintAnalyzer:
         """Find a sanitizer by name."""
         if name in self.sanitizers:
             return self.sanitizers[name]
-        base_name = name.split(".")[-1]
+        base_name = name.rsplit(".", maxsplit=1)[-1]
         if base_name in self.sanitizers:
             return self.sanitizers[base_name]
         return None
@@ -383,7 +410,7 @@ class TaintFlowAnalysis(DataFlowAnalysis[TaintState]):
             line = get_starts_line(instr)
             if line is not None:
                 current_line = line
-            self.analyzer._process_instruction(instr, state, current_line, self.file_path)
+            self.analyzer.process_instruction(instr, state, current_line, self.file_path)
         return state
 
     def meet(self, facts: list[TaintState]) -> TaintState:
@@ -408,7 +435,7 @@ class TaintChecker:
 
     def check_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[TaintViolation]:
         """Check a function for taint violations."""
@@ -416,7 +443,7 @@ class TaintChecker:
 
     def check_flow_sensitive(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[TaintViolation]:
         """Check with flow-sensitive analysis."""

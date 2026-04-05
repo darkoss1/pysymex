@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Scanner - type definitions
 =====================================
@@ -106,7 +124,7 @@ class ScanSession:
     reuse of satisfiability results.
     """
 
-    def __init__(self, log_file: Path | None = None, cache_size: int = 10_000):
+    def __init__(self, log_file: Path | None = None, cache_size: int = 10_000) -> None:
         self.results: list[ScanResult] = []
         self.start_time = datetime.now()
         self.log_file = log_file or Path(
@@ -130,7 +148,7 @@ class ScanSession:
         self.results.append(result)
         self._save_log()
 
-    def _save_log(self):
+    def _save_log(self) -> None:
         """Save results to log file. Optimized to reduce overhead."""
 
         log_data = {
@@ -152,7 +170,8 @@ class ScanSession:
         issue_counts: dict[str, int] = {}
         for r in self.results:
             for issue in r.issues:
-                kind = issue.get("kind", "UNKNOWN")
+                kind_val = issue.get("kind", "UNKNOWN")
+                kind = str(kind_val)
                 issue_counts[kind] = issue_counts.get(kind, 0) + 1
         return {
             "files_scanned": len(self.results),

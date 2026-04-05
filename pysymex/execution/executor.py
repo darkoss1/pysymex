@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Main symbolic executor for PySyMex — slim hub with re-exports.
 
 Extraction modules:
@@ -10,14 +28,14 @@ from __future__ import annotations
 import types
 from collections.abc import Callable
 from dataclasses import replace as dc_replace
+from typing import cast
 
+import pysymex.execution.opcodes as _opcodes
 from pysymex.analysis.detectors import Issue
 from pysymex.execution.executor_core import SymbolicExecutor as SymbolicExecutor
 from pysymex.execution.executor_types import BRANCH_OPCODES as BRANCH_OPCODES
 from pysymex.execution.executor_types import ExecutionConfig as ExecutionConfig
 from pysymex.execution.executor_types import ExecutionResult as ExecutionResult
-
-import pysymex.execution.opcodes as _opcodes  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 __all__ = [
     "ExecutionConfig",
@@ -50,7 +68,8 @@ def analyze(
         >>> print(result.issues)  # Division by zero issue
     """
     if config is None:
-        resolved_config = ExecutionConfig(**config_kwargs)
+        config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+        resolved_config = config_ctor(**config_kwargs)
     elif config_kwargs:
         resolved_config = dc_replace(config, **config_kwargs)
     else:
@@ -76,7 +95,8 @@ def analyze_code(
     if isinstance(code, str):
         compiled = compile(code, "<string>", "exec")
         code = compiled
-    config = ExecutionConfig(**config_kwargs)
+    config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+    config = config_ctor(**config_kwargs)
     executor = SymbolicExecutor(config)
     return executor.execute_code(code, symbolic_vars)
 

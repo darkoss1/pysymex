@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Advanced Type Constraint Analysis with Z3.
 
 This module provides comprehensive type safety checking using Z3 SMT solver.
@@ -33,7 +51,7 @@ class TypeConstraintChecker:
     Provides mathematically proven type safety verification.
     """
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
         self.encoder = TypeEncoder()
         self._solver = z3.Solver()
@@ -70,12 +88,12 @@ class TypeConstraintChecker:
                 is_sub, _ = self.is_subtype(sub, t, path_constraints)
                 if is_sub:
                     return (True, None)
-            return (False, f"{sub } is not subtype of any member of {sup }")
+            return (False, f"{sub} is not subtype of any member of {sup}")
         if sub.kind == TypeKind.UNION:
             for t in sub.args:
                 is_sub, _reason = self.is_subtype(t, sup, path_constraints)
                 if not is_sub:
-                    return (False, f"Union member {t } is not subtype of {sup }")
+                    return (False, f"Union member {t} is not subtype of {sup}")
             return (True, None)
         if sub.kind == TypeKind.LITERAL:
             for val in sub.literal_values or frozenset():
@@ -90,7 +108,7 @@ class TypeConstraintChecker:
                 is_sub, _reason = self.is_subtype(base, sup, path_constraints)
                 if is_sub:
                     return (True, None)
-            return (False, f"Literal values not compatible with {sup }")
+            return (False, f"Literal values not compatible with {sup}")
         if sub.kind == sup.kind and sub.args and sup.args:
             return self._check_parameterized_subtype(sub, sup, path_constraints)
         sub_z3 = self.encoder.encode(sub)
@@ -106,7 +124,7 @@ class TypeConstraintChecker:
         if result == z3.unsat:
             return (True, None)
         else:
-            return (False, f"{sub } is not a subtype of {sup }")
+            return (False, f"{sub} is not a subtype of {sup}")
 
     def _check_parameterized_subtype(
         self,
@@ -120,7 +138,7 @@ class TypeConstraintChecker:
         if sub.variance == Variance.INVARIANT:
             for s_arg, p_arg in zip(sub.args, sup.args, strict=False):
                 if s_arg != p_arg:
-                    return (False, f"Type parameter mismatch: {s_arg } vs {p_arg }")
+                    return (False, f"Type parameter mismatch: {s_arg} vs {p_arg}")
             return (True, None)
         elif sub.variance == Variance.COVARIANT:
             for s_arg, p_arg in zip(sub.args, sup.args, strict=False):
@@ -146,7 +164,7 @@ class TypeConstraintChecker:
         if not is_sub:
             return TypeIssue(
                 kind=TypeIssueKind.INCOMPATIBLE_TYPES,
-                message=f"Cannot assign {value_type } to {target_type }: {reason }",
+                message=f"Cannot assign {value_type} to {target_type}: {reason}",
                 expected_type=target_type,
                 actual_type=value_type,
             )
@@ -163,7 +181,7 @@ class TypeConstraintChecker:
         if not is_sub:
             return TypeIssue(
                 kind=TypeIssueKind.INCOMPATIBLE_RETURN,
-                message=f"Return type {actual_return } incompatible with declared {declared_return }",
+                message=f"Return type {actual_return} incompatible with declared {declared_return}",
                 expected_type=declared_return,
                 actual_type=actual_return,
             )
@@ -181,7 +199,7 @@ class TypeConstraintChecker:
         if not is_sub:
             return TypeIssue(
                 kind=TypeIssueKind.INCOMPATIBLE_ARGUMENT,
-                message=f"Argument '{param_name }' has type {arg_type }, expected {param_type }",
+                message=f"Argument '{param_name}' has type {arg_type}, expected {param_type}",
                 expected_type=param_type,
                 actual_type=arg_type,
             )
@@ -209,7 +227,7 @@ class TypeConstraintChecker:
         if members_without_attr:
             return TypeIssue(
                 kind=TypeIssueKind.UNSAFE_UNION_ACCESS,
-                message=f"Attribute '{attribute }' not available on all union members: {members_without_attr }",
+                message=f"Attribute '{attribute}' not available on all union members: {members_without_attr}",
                 actual_type=union_type,
                 constraints=list(path_constraints or []),
             )
@@ -302,7 +320,7 @@ class TypeConstraintChecker:
                     return None
             return TypeIssue(
                 kind=TypeIssueKind.POSSIBLE_NONE,
-                message=f"Value is always None, cannot {operation }",
+                message=f"Value is always None, cannot {operation}",
                 actual_type=value_type,
                 constraints=list(path_constraints or []),
             )
@@ -314,7 +332,7 @@ class TypeConstraintChecker:
             if none_in_union:
                 return TypeIssue(
                     kind=TypeIssueKind.POSSIBLE_NONE,
-                    message=f"Value may be None, need to check before {operation }",
+                    message=f"Value may be None, need to check before {operation}",
                     actual_type=value_type,
                     constraints=list(path_constraints or []),
                 )
@@ -377,7 +395,7 @@ class TypeConstraintChecker:
         if unhandled:
             return TypeIssue(
                 kind=TypeIssueKind.INCOMPLETE_EXHAUSTIVE,
-                message=f"Unhandled union members: {unhandled }",
+                message=f"Unhandled union members: {unhandled}",
                 actual_type=union_type,
             )
         return None
@@ -400,7 +418,7 @@ class TypeConstraintChecker:
                 if not is_sub:
                     return TypeIssue(
                         kind=TypeIssueKind.GENERIC_CONSTRAINT_VIOLATED,
-                        message=f"Type {concrete_type } does not satisfy bound {bound }",
+                        message=f"Type {concrete_type} does not satisfy bound {bound}",
                         expected_type=bound,
                         actual_type=concrete_type,
                     )
@@ -421,7 +439,7 @@ class TypeConstraintChecker:
             if usage_variance != Variance.INVARIANT:
                 return TypeIssue(
                     kind=TypeIssueKind.VARIANCE_MISMATCH,
-                    message=f"Invariant type parameter used {actual_usage }ly",
+                    message=f"Invariant type parameter used {actual_usage}ly",
                 )
         elif declared_variance == Variance.COVARIANT:
             if usage_variance == Variance.CONTRAVARIANT:
@@ -452,7 +470,7 @@ class TypeConstraintChecker:
             issues.append(
                 TypeIssue(
                     kind=TypeIssueKind.INCOMPATIBLE_TYPES,
-                    message=f"Cannot call non-callable type {callable_type }",
+                    message=f"Cannot call non-callable type {callable_type}",
                     actual_type=callable_type,
                 )
             )
@@ -463,18 +481,18 @@ class TypeConstraintChecker:
             issues.append(
                 TypeIssue(
                     kind=TypeIssueKind.TOO_FEW_ARGUMENTS,
-                    message=f"Expected {len (param_types )} arguments, got {len (arg_types )}",
+                    message=f"Expected {len(param_types)} arguments, got {len(arg_types)}",
                 )
             )
         elif len(arg_types) > len(param_types):
             issues.append(
                 TypeIssue(
                     kind=TypeIssueKind.TOO_MANY_ARGUMENTS,
-                    message=f"Expected {len (param_types )} arguments, got {len (arg_types )}",
+                    message=f"Expected {len(param_types)} arguments, got {len(arg_types)}",
                 )
             )
         for i, (param, arg) in enumerate(zip(param_types, arg_types, strict=False)):
-            issue = self.check_argument(param, arg, f"arg{i }", path_constraints)
+            issue = self.check_argument(param, arg, f"arg{i}", path_constraints)
             if issue:
                 issues.append(issue)
         return (return_type, issues)
@@ -511,10 +529,21 @@ class TypeConstraintChecker:
                     return (SymbolicType.str_type(), issues)
                 if left_type.kind == TypeKind.INT and right_type.kind == TypeKind.STR:
                     return (SymbolicType.str_type(), issues)
+                if (
+                    left_type.kind in {TypeKind.LIST, TypeKind.TUPLE, TypeKind.BYTES}
+                    and right_type.kind == TypeKind.INT
+                ):
+                    return (left_type, issues)
+                if left_type.kind == TypeKind.INT and right_type.kind in {
+                    TypeKind.LIST,
+                    TypeKind.TUPLE,
+                    TypeKind.BYTES,
+                }:
+                    return (right_type, issues)
             issues.append(
                 TypeIssue(
                     kind=TypeIssueKind.INCOMPATIBLE_TYPES,
-                    message=f"Cannot apply '{operator }' to {left_type } and {right_type }",
+                    message=f"Cannot apply '{operator}' to {left_type} and {right_type}",
                 )
             )
             return (SymbolicType.any_type(), issues)

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Asynchronous GPU Execution with ThreadPoolExecutor.
 
 Provides concurrent evaluation of multiple constraints using a thread pool.
@@ -19,7 +37,7 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -37,6 +55,7 @@ __all__ = [
     "PipelinedEvaluator",
     "StreamPool",
 ]
+
 
 @dataclass
 class AsyncHandle:
@@ -84,6 +103,7 @@ class AsyncHandle:
         """
         return self.future.cancel()
 
+
 class StreamPool:
     """Pool of CUDA streams for concurrent kernel execution.
 
@@ -117,13 +137,14 @@ class StreamPool:
 
         try:
             from numba import cuda
+
             if not cuda.is_available():
                 raise BackendError("CUDA not available")
 
-            self._streams = [cuda.stream() for _ in range(self._num_streams)]
+            self._streams = cast("list[Stream]", [cuda.stream() for _ in range(self._num_streams)])
             self._initialized = True
         except ImportError:
-            raise BackendError("Numba not installed")
+            raise BackendError("Numba not installed (pip install numba)") from None
 
     def get_stream(self) -> tuple[Stream, int]:
         """Get next available stream from pool.
@@ -150,6 +171,7 @@ class StreamPool:
     @property
     def num_streams(self) -> int:
         return self._num_streams
+
 
 class AsyncGPUExecutor:
     """Asynchronous executor for GPU constraint evaluation.
@@ -183,18 +205,17 @@ class AsyncGPUExecutor:
         Returns:
             AsyncHandle for result retrieval
         """
-        stream, stream_id = self._stream_pool.get_stream()
+        _stream, stream_id = self._stream_pool.get_stream()
 
         def evaluate_on_stream() -> npt.NDArray[np.uint8]:
             from pysymex.h_acceleration.backends import gpu as gpu_backend
 
-            d_output, used_stream = gpu_backend.evaluate_bag_async(constraint, stream)
+            d_output, used_stream = gpu_backend.evaluate_bag_async(constraint, None)
             used_stream.synchronize()
-            result: npt.NDArray[np.uint8] = d_output.copy_to_host()
+            result = cast("npt.NDArray[np.uint8]", d_output.get().view(np.uint8))
             return result
 
         future = self._executor.submit(evaluate_on_stream)
-
 
         handle = AsyncHandle(
             future=future,
@@ -219,9 +240,7 @@ class AsyncGPUExecutor:
         return [self.submit(c) for c in constraints]
 
     def wait_all(
-        self,
-        handles: list[AsyncHandle],
-        timeout: float | None = None
+        self, handles: list[AsyncHandle], timeout: float | None = None
     ) -> list[npt.NDArray[np.uint8]]:
         """Wait for all handles to complete.
 
@@ -242,6 +261,7 @@ class AsyncGPUExecutor:
         """
         self._executor.shutdown(wait=wait)
         self._stream_pool.synchronize_all()
+
 
 class PipelinedEvaluator:
     """Pipelined evaluator for sequential constraint batches.
@@ -311,7 +331,9 @@ class PipelinedEvaluator:
         """Shutdown executor and cleanup resources."""
         self._executor.shutdown()
 
+
 _global_executor: AsyncGPUExecutor | None = None
+
 
 def get_async_executor() -> AsyncGPUExecutor:
     """Get or create global async executor instance.
@@ -324,6 +346,7 @@ def get_async_executor() -> AsyncGPUExecutor:
         _global_executor = AsyncGPUExecutor()
     return _global_executor
 
+
 def evaluate_async(constraint: CompiledConstraint) -> AsyncHandle:
     """Submit constraint for async evaluation using global executor.
 
@@ -334,6 +357,7 @@ def evaluate_async(constraint: CompiledConstraint) -> AsyncHandle:
         AsyncHandle for result retrieval
     """
     return get_async_executor().submit(constraint)
+
 
 def reset_async_executor() -> None:
     """Shutdown and reset global async executor.

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Configuration system for pysymex.
 
 Supports TOML configuration files with project-level and user-level
@@ -227,7 +245,7 @@ class AnalysisConfig:
     """Configuration for analysis behaviour.
 
     Attributes:
-        strategy: Path exploration strategy (``"dfs"``, ``"bfs"``, etc.).
+        strategy: Path exploration strategy (``"chtd_native"``, ``"adaptive"``, etc.).
         loop_unroll_limit: Maximum loop iterations before widening.
         array_size_limit: Upper bound for symbolic array sizes.
         string_solver: Z3 string solver backend.
@@ -237,7 +255,7 @@ class AnalysisConfig:
         exclude_patterns: Glob patterns for files to exclude.
     """
 
-    strategy: str = "dfs"
+    strategy: str = "adaptive"
     loop_unroll_limit: int = 10
     array_size_limit: int = 50
     string_solver: str = "z3str3"
@@ -433,77 +451,96 @@ def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
     """Apply configuration data to config object."""
     if "detectors" in data:
         det_data = data["detectors"]
-        for key in [
-            "division_by_zero",
-            "assertion_errors",
-            "index_errors",
-            "type_errors",
-            "key_errors",
-            "attribute_errors",
-            "overflow",
-            "null_pointer",
-            "taint_enabled",
-        ]:
-            if key in det_data:
-                setattr(config.detectors, key, det_data[key])
-        if "taint_sources" in det_data:
-            config.detectors.taint_sources = list(det_data["taint_sources"])
-        if "taint_sinks" in det_data:
-            config.detectors.taint_sinks = list(det_data["taint_sinks"])
+        if isinstance(det_data, dict):
+            for key in [
+                "division_by_zero",
+                "assertion_errors",
+                "index_errors",
+                "type_errors",
+                "key_errors",
+                "attribute_errors",
+                "overflow",
+                "null_pointer",
+                "taint_enabled",
+            ]:
+                if key in det_data:
+                    setattr(config.detectors, key, det_data[key])
+            if "taint_sources" in det_data:
+                src = det_data["taint_sources"]
+                if isinstance(src, list):
+                    config.detectors.taint_sources = list(src)
+            if "taint_sinks" in det_data:
+                sinks = det_data["taint_sinks"]
+                if isinstance(sinks, list):
+                    config.detectors.taint_sinks = list(sinks)
     if "limits" in data:
         lim_data = data["limits"]
-        for key in [
-            "max_paths",
-            "max_depth",
-            "max_iterations",
-            "timeout_seconds",
-            "max_memory_mb",
-            "max_constraint_size",
-            "max_string_length",
-            "max_list_length",
-        ]:
-            if key in lim_data:
-                setattr(config.limits, key, lim_data[key])
+        if isinstance(lim_data, dict):
+            for key in [
+                "max_paths",
+                "max_depth",
+                "max_iterations",
+                "timeout_seconds",
+                "max_memory_mb",
+                "max_constraint_size",
+                "max_string_length",
+                "max_list_length",
+            ]:
+                if key in lim_data:
+                    setattr(config.limits, key, lim_data[key])
     if "output" in data:
         out_data = data["output"]
-        for key in [
-            "format",
-            "output_dir",
-            "color",
-            "verbose",
-            "quiet",
-            "show_paths",
-            "show_constraints",
-            "show_timing",
-        ]:
-            if key in out_data:
-                setattr(config.output, key, out_data[key])
+        if isinstance(out_data, dict):
+            for key in [
+                "format",
+                "output_dir",
+                "color",
+                "verbose",
+                "quiet",
+                "show_paths",
+                "show_constraints",
+                "show_timing",
+            ]:
+                if key in out_data:
+                    setattr(config.output, key, out_data[key])
     if "analysis" in data:
         ana_data = data["analysis"]
-        for key in [
-            "strategy",
-            "loop_unroll_limit",
-            "array_size_limit",
-            "string_solver",
-            "incremental_solving",
-            "constraint_caching",
-        ]:
-            if key in ana_data:
-                setattr(config.analysis, key, ana_data[key])
-        if "include_patterns" in ana_data:
-            config.analysis.include_patterns = list(ana_data["include_patterns"])
-        if "exclude_patterns" in ana_data:
-            config.analysis.exclude_patterns = list(ana_data["exclude_patterns"])
+        if isinstance(ana_data, dict):
+            for key in [
+                "strategy",
+                "loop_unroll_limit",
+                "array_size_limit",
+                "string_solver",
+                "incremental_solving",
+                "constraint_caching",
+            ]:
+                if key in ana_data:
+                    setattr(config.analysis, key, ana_data[key])
+            if "include_patterns" in ana_data:
+                inc = ana_data["include_patterns"]
+                if isinstance(inc, list):
+                    config.analysis.include_patterns = list(inc)
+            if "exclude_patterns" in ana_data:
+                exc = ana_data["exclude_patterns"]
+                if isinstance(exc, list):
+                    config.analysis.exclude_patterns = list(exc)
     if "plugins" in data:
         plug_data = data["plugins"]
-        if "enabled" in plug_data:
-            config.plugins.enabled = plug_data["enabled"]
-        if "plugin_dirs" in plug_data:
-            config.plugins.plugin_dirs = list(plug_data["plugin_dirs"])
-        if "disabled_plugins" in plug_data:
-            config.plugins.disabled_plugins = set(plug_data["disabled_plugins"])
-        if "plugin_settings" in plug_data:
-            config.plugins.plugin_settings = dict(plug_data["plugin_settings"])
+        if isinstance(plug_data, dict):
+            if "enabled" in plug_data:
+                config.plugins.enabled = bool(plug_data["enabled"])
+            if "plugin_dirs" in plug_data:
+                dirs = plug_data["plugin_dirs"]
+                if isinstance(dirs, list):
+                    config.plugins.plugin_dirs = list(dirs)
+            if "disabled_plugins" in plug_data:
+                disabled = plug_data["disabled_plugins"]
+                if isinstance(disabled, (list, set)):
+                    config.plugins.disabled_plugins = set(disabled)
+            if "plugin_settings" in plug_data:
+                settings = plug_data["plugin_settings"]
+                if isinstance(settings, dict):
+                    config.plugins.plugin_settings = dict(settings)
 
 
 def generate_default_config() -> str:

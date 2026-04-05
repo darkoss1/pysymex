@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Scanner Integration Types for pysymex.
 Type definitions used by the scanner integration pipeline.
@@ -206,7 +224,7 @@ class ModuleContext:
     file_path: str
     module_name: str
     source_code: str
-    code: object | None = None
+    code: types.CodeType | None = None
     functions: dict[str, FunctionContext] = field(default_factory=dict[str, FunctionContext])
     imports: set[str] = field(default_factory=set[str])
     global_types: dict[str, PyType] = field(default_factory=dict[str, PyType])

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Safe Z3 expression serialisation and semantic variable renaming.
 
 The core problem this module addresses: Z3 internally names many variables
@@ -32,7 +50,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from threading import Lock
-from typing import Any, Final
+from typing import Final
 
 _z3_avail: bool = False
 try:
@@ -82,7 +100,7 @@ class Z3SemanticRegistry:
         self._auto: dict[str, str] = {}
         self._overrides: dict[str, str] = {}
 
-    def register(self, z3_var: Any, semantic_name: str) -> None:
+    def register(self, z3_var: object, semantic_name: str) -> None:
         """Register a Z3 expression's declaration name → semantic name.
 
         Args:
@@ -102,7 +120,7 @@ class Z3SemanticRegistry:
         except Exception:
             pass
 
-    def auto_register(self, symbolic_value: Any, semantic_name: str) -> None:
+    def auto_register(self, symbolic_value: object, semantic_name: str) -> None:
         """Attempt to extract and register Z3 variable(s) from a pysymex value.
 
         Handles the common pysymex value shapes:
@@ -121,7 +139,6 @@ class Z3SemanticRegistry:
         if _z3 is None or symbolic_value is None:
             return
         try:
-
             expr = getattr(symbolic_value, "expr", None)
             if expr is not None and isinstance(expr, _z3.ExprRef):
                 self.register(expr, semantic_name)
@@ -185,7 +202,7 @@ class Z3Serializer:
     def __init__(self, registry: Z3SemanticRegistry) -> None:
         self._registry = registry
 
-    def safe_sexpr(self, expr: Any) -> str:
+    def safe_sexpr(self, expr: object) -> str:
         """Convert a Z3 expression to a human-readable S-expression string.
 
         Process:
@@ -212,7 +229,6 @@ class Z3Serializer:
                 simplified = _z3.simplify(expr)
                 raw = simplified.sexpr()
             except Exception:
-
                 try:
                     raw = expr.sexpr()
                 except Exception:
@@ -261,7 +277,7 @@ class Z3Serializer:
             return s
 
     def constraints_to_smtlib(
-        self, constraints: Iterable[Any], causality: str = ""
+        self, constraints: Iterable[object], causality: str = ""
     ) -> list[dict[str, str]]:
         """Serialise an iterable of Z3 boolean constraints to JSONL-safe dicts.
 
@@ -289,7 +305,7 @@ class Z3Serializer:
                 result.append({"smtlib": _UNSERIALIZABLE, "causality": causality})
         return result
 
-    def serialize_model(self, model: Any, max_vars: int = 30) -> dict[str, str]:
+    def serialize_model(self, model: object, max_vars: int = 30) -> dict[str, str]:
         """Serialise a Z3 satisfying model to a bounded ``{name: value}`` dict.
 
         The model excerpt is bounded to ``max_vars`` entries to prevent
@@ -307,12 +323,17 @@ class Z3Serializer:
             return {}
         result: dict[str, str] = {}
         try:
-            decls = model.decls()
+            decls_fn = getattr(model, "decls", None)
+            if not callable(decls_fn):
+                return result
+            decls = decls_fn()
+            if not isinstance(decls, list):
+                return result
             for decl in decls[:max_vars]:
                 try:
                     raw_name: str = decl.name()
                     semantic_name = self._registry.lookup(raw_name)
-                    value_expr = model[decl]
+                    value_expr = model[decl]  # type: ignore[index]
                     value_str = self.safe_sexpr(value_expr)
                     result[semantic_name] = value_str
                 except Exception:
@@ -321,7 +342,7 @@ class Z3Serializer:
             pass
         return result
 
-    def serialize_stack_value(self, val: Any) -> str:
+    def serialize_stack_value(self, val: object) -> str:
         """Serialise a single symbolic stack value to a string.
 
         Attempts several strategies in order:
@@ -340,7 +361,6 @@ class Z3Serializer:
         if val is None:
             return "None"
         try:
-
             for attr in ("expr", "_expr"):
                 inner = getattr(val, attr, None)
                 if inner is not None and _z3 is not None and isinstance(inner, _z3.ExprRef):
@@ -357,7 +377,7 @@ class Z3Serializer:
             except Exception:
                 return _UNSERIALIZABLE
 
-    def serialize_namespace(self, ns: Any) -> dict[str, str]:
+    def serialize_namespace(self, ns: object) -> dict[str, str]:
         """Serialise a variable namespace (local_vars or global_vars) to strings.
 
         Keys that raise during iteration or serialisation are skipped.
@@ -372,7 +392,13 @@ class Z3Serializer:
         if ns is None:
             return out
         try:
-            for k, v in ns.items():
+            items_fn = getattr(ns, "items", None)
+            if not callable(items_fn):
+                return out
+            items_obj = items_fn()
+            if not isinstance(items_obj, Iterable):
+                return out
+            for k, v in items_obj:
                 try:
                     out[str(k)] = self.serialize_stack_value(v)
                 except Exception:

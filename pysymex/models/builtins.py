@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python builtin functions.
 
 This module provides symbolic handlers for core Python builtins like len,
@@ -94,12 +112,12 @@ from .builtins_extended import (
 class ModelRegistry:
     """Registry for function models."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a new ModelRegistry instance."""
         self._models: dict[str, FunctionModel] = {}
         self._register_defaults()
 
-    def _register_defaults(self):
+    def _register_defaults(self) -> None:
         """Register default builtin models and standard library models."""
         from pysymex.models.builtins_extended import EXTENDED_MODELS
         from pysymex.models.bytes_models import BYTES_MODELS
@@ -130,101 +148,99 @@ class ModelRegistry:
         from pysymex.models.strings import STRING_MODELS
         from pysymex.models.tuples import TUPLE_MODELS
 
-        all_models = (
-            [
-                IntModel(),
-                FloatModel(),
-                BoolModel(),
-                StrModel(),
-                ListModel(),
-                DictModel(),
-                TupleModel(),
-                NoneModel(),
-                TypeModel(),
-                PrintModel(),
-                AbsModel(),
-                MinModel(),
-                MaxModel(),
-                SumModel(),
-                AnyModel(),
-                AllModel(),
-                ZipModel(),
-                RangeModel(),
-                EnumerateModel(),
-                FilterModel(),
-                MapModel(),
-                IterModel(),
-                NextModel(),
-                SuperModel(),
-                GetattrModel(),
-                SetattrModel(),
-                HasattrModel(),
-                IsinstanceModel(),
-                IssubclassModel(),
-                IdModel(),
-                HashModel(),
-                GlobalsModel(),
-                LocalsModel(),
-                LenModel(),
-                SetModel(),
-                SortedModel(),
-                ReversedModel(),
-                PowModel(),
-                RoundModel(),
-                DivmodModel(),
-                CallableModel(),
-                OrdModel(),
-                ChrModel(),
-                ReprModel(),
-                FormatModel(),
-                InputModel(),
-                OpenModel(),
-                ExecModel(),
-                EvalModel(),
-                CompileModel(),
-                BinModel(),
-                OctModel(),
-                HexModel(),
-                BytesModel(),
-                BytearrayModel(),
-                FrozensetModel(),
-                MemoryviewModel(),
-                ObjectModel(),
-                PropertyModel(),
-                ClassmethodModel(),
-                StaticmethodModel(),
-                VarsModel(),
-                DirModel(),
-                AsciiModel(),
-                BreakpointModel(),
-            ]
-            + math_models
-            + collections_models
-            + itertools_models
-            + functools_models
-            + ospath_models
-            + json_models
-            + re_models
-            + random_models
-            + datetime_models
-            + types_models
-            + operator_models
-            + copy_models
-            + io_models
-            + heapq_models
-            + bisect_models
-            + enum_models
-            + dataclasses_models
-            + DICT_MODELS
-            + LIST_MODELS
-            + STRING_MODELS
-            + EXTENDED_MODELS
-            + SET_MODELS
-            + TUPLE_MODELS
-            + BYTES_MODELS
-            + FROZENSET_MODELS
-            + INT_FLOAT_MODELS
-        )
+        all_models = [
+            IntModel(),
+            FloatModel(),
+            BoolModel(),
+            StrModel(),
+            ListModel(),
+            DictModel(),
+            TupleModel(),
+            NoneModel(),
+            TypeModel(),
+            PrintModel(),
+            AbsModel(),
+            MinModel(),
+            MaxModel(),
+            SumModel(),
+            AnyModel(),
+            AllModel(),
+            ZipModel(),
+            RangeModel(),
+            EnumerateModel(),
+            FilterModel(),
+            MapModel(),
+            IterModel(),
+            NextModel(),
+            SuperModel(),
+            GetattrModel(),
+            SetattrModel(),
+            HasattrModel(),
+            IsinstanceModel(),
+            IssubclassModel(),
+            IdModel(),
+            HashModel(),
+            GlobalsModel(),
+            LocalsModel(),
+            LenModel(),
+            SetModel(),
+            SortedModel(),
+            ReversedModel(),
+            PowModel(),
+            RoundModel(),
+            DivmodModel(),
+            CallableModel(),
+            OrdModel(),
+            ChrModel(),
+            ReprModel(),
+            FormatModel(),
+            InputModel(),
+            OpenModel(),
+            ExecModel(),
+            EvalModel(),
+            CompileModel(),
+            BinModel(),
+            OctModel(),
+            HexModel(),
+            BytesModel(),
+            BytearrayModel(),
+            FrozensetModel(),
+            MemoryviewModel(),
+            ObjectModel(),
+            PropertyModel(),
+            ClassmethodModel(),
+            StaticmethodModel(),
+            VarsModel(),
+            DirModel(),
+            AsciiModel(),
+            BreakpointModel(),
+            *math_models,
+            *collections_models,
+            *itertools_models,
+            *functools_models,
+            *ospath_models,
+            *json_models,
+            *re_models,
+            *random_models,
+            *datetime_models,
+            *types_models,
+            *operator_models,
+            *copy_models,
+            *io_models,
+            *heapq_models,
+            *bisect_models,
+            *enum_models,
+            *dataclasses_models,
+            *DICT_MODELS,
+            *LIST_MODELS,
+            *STRING_MODELS,
+            *EXTENDED_MODELS,
+            *SET_MODELS,
+            *TUPLE_MODELS,
+            *BYTES_MODELS,
+            *FROZENSET_MODELS,
+            *INT_FLOAT_MODELS,
+        ]
         for model in all_models:
             self.register(model)
 
@@ -246,8 +262,9 @@ class ModelRegistry:
         state: VMState,
     ) -> ModelResult | None:
         """Try to apply a model for a function."""
-        if hasattr(func, "__name__"):
-            model = self.get(func.__name__)
+        func_name = getattr(func, "__name__", None)
+        if isinstance(func_name, str):
+            model = self.get(func_name)
             if model:
                 return model.apply(args, kwargs, state)
         model = self.get(str(func))
@@ -257,8 +274,9 @@ class ModelRegistry:
 
     def has_model(self, func: object) -> bool:
         """Check if a model exists for a function."""
-        if hasattr(func, "__name__"):
-            return func.__name__ in self._models
+        func_name = getattr(func, "__name__", None)
+        if isinstance(func_name, str):
+            return func_name in self._models
         return str(func) in self._models
 
     def list_models(self) -> list[str]:

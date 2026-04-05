@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Memory Model - Core logic classes
 Provides symbolic heap modeling, memory state management, aliasing analysis,
@@ -8,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import cast
+from typing import TypedDict, cast
 
 import z3
 
@@ -23,7 +41,7 @@ from pysymex.core.memory_model_types import (
 )
 from pysymex.core.solver import create_solver
 
-from .symbolic_types import SymbolicInt
+from .types import Z3_FALSE, Z3_TRUE, SymbolicValue
 
 
 class SymbolicHeap:
@@ -43,6 +61,39 @@ class SymbolicHeap:
         self._references: dict[int, set[str]] = {}
         self._freed: set[int] = set()
         self._solver = create_solver()
+        self._symbolic_candidate_cache: dict[tuple[MemoryRegion, str], list[int]] = {}
+        self._allocations = 0
+        self._frees = 0
+        self._reads = 0
+        self._writes = 0
+        self._symbolic_reads = 0
+        self._symbolic_writes = 0
+        self._candidate_cache_hits = 0
+        self._candidate_cache_misses = 0
+        self._peak_live_objects = 0
+        self._symbolic_candidate_cache_limit = 512
+        self._shared_object_addrs: set[int] = set()
+
+    @staticmethod
+    def _clone_heap_object(obj: HeapObject) -> HeapObject:
+        return HeapObject(
+            address=obj.address,
+            type_name=obj.type_name,
+            fields=dict(obj.fields),
+            is_mutable=obj.is_mutable,
+            size=obj.size,
+            is_alive=obj.is_alive,
+        )
+
+    def _ensure_unshared_object(self, addr: int) -> None:
+        if addr not in self._shared_object_addrs:
+            return
+        obj = self._heap.get(addr)
+        if obj is None:
+            self._shared_object_addrs.discard(addr)
+            return
+        self._heap[addr] = self._clone_heap_object(obj)
+        self._shared_object_addrs.discard(addr)
 
     def allocate(
         self,
@@ -68,6 +119,9 @@ class SymbolicHeap:
         self._heap[addr] = obj
         self._address_map[addr] = sym_addr
         self._references[addr] = set()
+        self._symbolic_candidate_cache.clear()
+        self._allocations += 1
+        self._peak_live_objects = max(self._peak_live_objects, len(self._heap))
         return sym_addr
 
     def free(self, address: SymbolicAddress) -> None:
@@ -78,16 +132,27 @@ class SymbolicHeap:
         """
         addr = self._get_concrete_address(address)
         if addr is None:
+            for obj in self._heap.values():
+                if obj.address.region != address.region:
+                    continue
+                cond = address.effective_address == obj.address.effective_address
+                if not self._may_alias(cond):
+                    continue
+                obj.is_alive = z3.simplify(z3.And(obj.is_alive, z3.Not(cond)))
             return
         if addr in self._freed:
             raise ValueError(f"Double free detected at address {addr}")
         if addr not in self._heap:
             raise ValueError(f"Freeing unallocated address {addr}")
+        self._ensure_unshared_object(addr)
         self._freed.add(addr)
         del self._heap[addr]
         del self._address_map[addr]
         if addr in self._references:
             del self._references[addr]
+        self._shared_object_addrs.discard(addr)
+        self._symbolic_candidate_cache.clear()
+        self._frees += 1
 
     def read(self, address: SymbolicAddress, field: str = "__value__") -> object:
         """
@@ -98,13 +163,15 @@ class SymbolicHeap:
         Returns:
             The value at the address, or a fresh symbolic if unknown
         """
+        self._reads += 1
         addr = self._get_concrete_address(address)
         if addr is None:
-            return SymbolicInt(z3.Int(f"mem_read_{next_address ()}_{field}"))
+            self._symbolic_reads += 1
+            return self._read_symbolic(address, field)
         if addr in self._freed:
             raise ValueError(f"Use after free detected at address {addr}")
         if addr not in self._heap:
-            return SymbolicInt(z3.Int(f"uninit_{addr}_{field}"))
+            return SymbolicValue.from_const(None)
         obj = self._heap[addr]
         return obj.get_field(field)
 
@@ -116,17 +183,12 @@ class SymbolicHeap:
             value: The value to write
             field: The field name to write (default is __value__ for simple values)
         """
+        self._writes += 1
         addr = self._get_concrete_address(address)
         if addr is None:
-            addr = self._next_address
-            self._next_address += 1
-            sym_addr = SymbolicAddress(
-                region=address.region, base=addr, offset=0, type_tag=address.type_tag
-            )
-            obj = HeapObject(address=sym_addr, type_name=address.type_tag, is_mutable=True)
-            self._heap[addr] = obj
-            self._address_map[addr] = sym_addr
-            self._references[addr] = set()
+            self._symbolic_writes += 1
+            self._write_symbolic(address, value, field)
+            return
         if addr in self._freed:
             raise ValueError(f"Write to freed memory at address {addr}")
         if addr not in self._heap:
@@ -134,7 +196,15 @@ class SymbolicHeap:
             obj = HeapObject(address=sym_addr, type_name=address.type_tag, is_mutable=True)
             self._heap[addr] = obj
             self._references[addr] = set()
-        self._heap[addr].set_field(field, value)
+            self._shared_object_addrs.discard(addr)
+        else:
+            self._ensure_unshared_object(addr)
+        stored_value = (
+            self._as_symbolic_value(value, f"mem_store_{field}")
+            if isinstance(value, SymbolicValue | bool | int | float | str)
+            else value
+        )
+        self._heap[addr].set_field(field, stored_value)
 
     def get_object(self, address: SymbolicAddress) -> HeapObject | None:
         """Get the heap object at an address."""
@@ -142,6 +212,30 @@ class SymbolicHeap:
         if addr is None:
             return None
         return self._heap.get(addr)
+
+    def fork(self) -> SymbolicHeap:
+        """Create a forked heap using object-level copy-on-write sharing."""
+        child = SymbolicHeap()
+        child._next_address = self._next_address
+        child._heap = dict(self._heap)
+        child._address_map = dict(self._address_map)
+        child._references = {k: set(v) for k, v in self._references.items()}
+        child._freed = set(self._freed)
+        child._symbolic_candidate_cache = {
+            k: list(v) for k, v in self._symbolic_candidate_cache.items()
+        }
+        child._allocations = self._allocations
+        child._frees = self._frees
+        child._reads = self._reads
+        child._writes = self._writes
+        child._symbolic_reads = self._symbolic_reads
+        child._symbolic_writes = self._symbolic_writes
+        child._candidate_cache_hits = self._candidate_cache_hits
+        child._candidate_cache_misses = self._candidate_cache_misses
+        child._peak_live_objects = self._peak_live_objects
+        child._shared_object_addrs = set(child._heap.keys())
+        self._shared_object_addrs.update(self._heap.keys())
+        return child
 
     def add_reference(self, address: SymbolicAddress, var_name: str) -> None:
         """Record that a variable references this address."""
@@ -184,9 +278,125 @@ class SymbolicHeap:
             logger.debug("Failed to resolve concrete address", exc_info=True)
         return None
 
+    def _as_symbolic_value(self, value: object, hint: str) -> SymbolicValue:
+        if isinstance(value, SymbolicValue):
+            return value
+        if value is None:
+            return SymbolicValue.from_const(None)
+        if isinstance(value, bool | int | float | str):
+            return SymbolicValue.from_const(value)
+        sym, _ = SymbolicValue.symbolic(hint)
+        return sym
+
+    def _read_symbolic(self, address: SymbolicAddress, field: str) -> SymbolicValue:
+        candidates = [
+            obj
+            for obj in self._heap.values()
+            if obj.address.region == address.region and not z3.is_false(z3.simplify(obj.is_alive))
+        ]
+        if not candidates:
+            fresh, _ = SymbolicValue.symbolic(f"mem_read_{next_address()}_{field}")
+            return fresh
+
+        default_val, _ = SymbolicValue.symbolic(f"mem_read_default_{next_address()}_{field}")
+        merged_int = default_val.z3_int
+        for obj in reversed(candidates):
+            cond = address.effective_address == obj.address.effective_address
+            field_val = self._as_symbolic_value(obj.get_field(field), f"mem_read_obj_{field}")
+            merged_int = z3.simplify(z3.If(cond, field_val.z3_int, merged_int))
+
+        return SymbolicValue(
+            _name=f"mem_read_{field}",
+            z3_int=merged_int,
+            is_int=Z3_TRUE,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
+        )
+
+    def _write_symbolic(self, address: SymbolicAddress, value: object, field: str) -> None:
+        from pysymex.core.solver import active_incremental_solver
+
+        value_sv = self._as_symbolic_value(value, f"mem_write_{field}")
+        active = active_incremental_solver.get()
+
+        if active is not None:
+            cache_key = (address.region, str(address.effective_address.hash()))
+            candidate_addrs = self._symbolic_candidate_cache.get(cache_key)
+            if candidate_addrs is None:
+                self._candidate_cache_misses += 1
+                candidate_addrs = []
+                for concrete_addr, obj in self._heap.items():
+                    if obj.address.region != address.region:
+                        continue
+                    cond = address.effective_address == obj.address.effective_address
+                    if active.is_sat([cond]):
+                        candidate_addrs.append(concrete_addr)
+                if len(self._symbolic_candidate_cache) >= self._symbolic_candidate_cache_limit:
+                    self._symbolic_candidate_cache.pop(next(iter(self._symbolic_candidate_cache)))
+                self._symbolic_candidate_cache[cache_key] = candidate_addrs
+            else:
+                self._candidate_cache_hits += 1
+            objects = [self._heap[a] for a in candidate_addrs if a in self._heap]
+        else:
+            objects = [obj for obj in self._heap.values() if obj.address.region == address.region]
+
+        for obj in objects:
+            cond = address.effective_address == obj.address.effective_address
+            if not self._may_alias(cond):
+                continue
+
+            concrete_addr = self._get_concrete_address(obj.address)
+            if concrete_addr is not None:
+                self._ensure_unshared_object(concrete_addr)
+                obj = self._heap[concrete_addr]
+
+            current_sv = self._as_symbolic_value(obj.get_field(field), f"mem_old_{field}")
+            merged = z3.simplify(z3.If(cond, value_sv.z3_int, current_sv.z3_int))
+            obj.set_field(
+                field,
+                SymbolicValue(
+                    _name=f"mem_write_{field}",
+                    z3_int=merged,
+                    is_int=Z3_TRUE,
+                    z3_bool=Z3_FALSE,
+                    is_bool=Z3_FALSE,
+                ),
+            )
+
+    def _may_alias(self, condition: z3.BoolRef) -> bool:
+        from pysymex.core.solver import active_incremental_solver
+
+        active = active_incremental_solver.get()
+        if active is not None:
+            return bool(active.is_sat([condition]))
+
+        self._solver.push()
+        self._solver.add(condition)
+        sat = self._solver.check() == z3.sat
+        self._solver.pop()
+        return sat
+
     def get_concrete_address(self, address: SymbolicAddress) -> int | None:
         """Public access to concrete address resolution."""
         return self._get_concrete_address(address)
+
+    def get_stats(self) -> dict[str, int]:
+        """Return lightweight runtime counters for performance diagnostics."""
+        return {
+            "allocations": self._allocations,
+            "frees": self._frees,
+            "reads": self._reads,
+            "writes": self._writes,
+            "symbolic_reads": self._symbolic_reads,
+            "symbolic_writes": self._symbolic_writes,
+            "candidate_cache_hits": self._candidate_cache_hits,
+            "candidate_cache_misses": self._candidate_cache_misses,
+            "candidate_cache_entries": len(self._symbolic_candidate_cache),
+            "candidate_cache_limit": self._symbolic_candidate_cache_limit,
+            "shared_object_count": len(self._shared_object_addrs),
+            "live_objects": len(self._heap),
+            "peak_live_objects": self._peak_live_objects,
+        }
 
     @property
     def heap_data(self) -> dict[int, HeapObject]:
@@ -221,9 +431,11 @@ class SymbolicHeap:
         }
         self._freed = set(snapshot.freed_set)
         self._next_address = snapshot.next_address_value
+        self._shared_object_addrs.clear()
+        self._peak_live_objects = max(self._peak_live_objects, len(self._heap))
 
     def __repr__(self) -> str:
-        return f"SymbolicHeap({len (self._heap )} objects, next_addr={self._next_address})"
+        return f"SymbolicHeap({len(self._heap)} objects, next_addr={self._next_address})"
 
 
 @dataclass
@@ -360,13 +572,19 @@ class MemoryState:
         self._current_frame = self.stack[-1] if self.stack else None
 
 
+class _FrameSnapshot(TypedDict):
+    function_name: str
+    locals: dict[str, object]
+    return_address: int | None
+
+
 @dataclass
 class MemorySnapshot:
     """Complete memory state snapshot."""
 
     heap_snapshot: HeapSnapshot
     globals: dict[str, object]
-    stack_copies: list[dict[str, object]]
+    stack_copies: list[_FrameSnapshot]
 
     def __init__(self, state: MemoryState):
         self.heap_snapshot = state.heap.snapshot()
@@ -391,6 +609,18 @@ class AliasingAnalyzer:
     def __init__(self, heap: SymbolicHeap):
         self.heap = heap
         self._alias_sets: dict[int, set[SymbolicAddress]] = {}
+        self._may_alias_cache: dict[tuple[SymbolicAddress, SymbolicAddress], bool] = {}
+        self._must_alias_cache: dict[tuple[SymbolicAddress, SymbolicAddress], bool] = {}
+
+    @staticmethod
+    def _pair_key(
+        a: SymbolicAddress, b: SymbolicAddress
+    ) -> tuple[SymbolicAddress, SymbolicAddress]:
+        return (a, b) if hash(a) <= hash(b) else (b, a)
+
+    def _clear_query_caches(self) -> None:
+        self._may_alias_cache.clear()
+        self._must_alias_cache.clear()
 
     def add_address(self, addr: SymbolicAddress) -> None:
         """Add an address to the analysis."""
@@ -399,22 +629,41 @@ class AliasingAnalyzer:
             if concrete not in self._alias_sets:
                 self._alias_sets[concrete] = set()
             self._alias_sets[concrete].add(addr)
+            self._clear_query_caches()
 
     def get_may_aliases(self, addr: SymbolicAddress) -> set[SymbolicAddress]:
         """Get all addresses that may alias with the given address."""
+        concrete = self.heap.get_concrete_address(addr)
+        if concrete is not None:
+            return set(self._alias_sets.get(concrete, set()))
+
         result: set[SymbolicAddress] = set()
         for other_set in self._alias_sets.values():
             for other in other_set:
-                if self.heap.may_alias(addr, other):
+                key = self._pair_key(addr, other)
+                cached = self._may_alias_cache.get(key)
+                if cached is None:
+                    cached = self.heap.may_alias(addr, other)
+                    self._may_alias_cache[key] = cached
+                if cached:
                     result.add(other)
         return result
 
     def get_must_aliases(self, addr: SymbolicAddress) -> set[SymbolicAddress]:
         """Get all addresses that must alias with the given address."""
+        concrete = self.heap.get_concrete_address(addr)
+        if concrete is not None:
+            return set(self._alias_sets.get(concrete, set()))
+
         result: set[SymbolicAddress] = set()
         for other_set in self._alias_sets.values():
             for other in other_set:
-                if self.heap.must_alias(addr, other):
+                key = self._pair_key(addr, other)
+                cached = self._must_alias_cache.get(key)
+                if cached is None:
+                    cached = self.heap.must_alias(addr, other)
+                    self._must_alias_cache[key] = cached
+                if cached:
                     result.add(other)
         return result
 

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Theory-aware constraint simplification for pysymex.
 
 Applies algebraic simplifications to Z3 constraints before solver calls:
@@ -8,8 +26,6 @@ Applies algebraic simplifications to Z3 constraints before solver calls:
 """
 
 from __future__ import annotations
-
-from typing import cast
 
 import z3
 
@@ -40,7 +56,7 @@ def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
             continue
         if z3.is_false(simplified):
             return [z3.BoolVal(False)]
-        filtered.append(cast("z3.BoolRef", simplified))
+        filtered.append(simplified)
 
     if not filtered:
         return []
@@ -71,7 +87,7 @@ def _tactic_simplify(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
             subgoal = result[0]
             simplified = list(subgoal)
             if simplified:
-                return cast("list[z3.BoolRef]", simplified)
+                return simplified
 
             return []
 
@@ -101,7 +117,6 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
     if not constraints:
         return False
 
-    # Pass 1 — explicit False literals and build hash → constraint map.
     by_hash: dict[int, list[z3.BoolRef]] = {}
     for c in constraints:
         if z3.is_false(c):
@@ -113,11 +128,6 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
         else:
             bucket.append(c)
 
-    # Pass 2 — structural negation pairs.
-    # For each constraint c, compute Not(c) and look up its hash.  Only
-    # declare a contradiction when a candidate in that bucket is *structurally
-    # identical* to Not(c) via ExprRef.eq(), avoiding hash-collision false
-    # positives.
     for c in constraints:
         neg = z3.Not(c)
         neg_h = neg.hash()

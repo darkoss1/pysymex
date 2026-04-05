@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Termination analysis using ranking functions.
 
 Provides:
@@ -77,7 +95,7 @@ class TerminationAnalyzer:
     interrogation of counterexamples when a proof attempt fails.
     """
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -135,7 +153,7 @@ class TerminationAnalyzer:
                 status=TerminationStatus.UNKNOWN,
                 ranking_function=ranking,
                 counterexample=counterexample,
-                message=f"Ranking function can be negative: {ranking .expression }",
+                message=f"Ranking function can be negative: {ranking.expression}",
             )
         self._solver.pop()
         check1_proved = result == z3.unsat
@@ -158,7 +176,7 @@ class TerminationAnalyzer:
             return TerminationProof(
                 status=TerminationStatus.TERMINATES,
                 ranking_function=ranking,
-                message=f"Termination proven with ranking function: {ranking .expression }",
+                message=f"Termination proven with ranking function: {ranking.expression}",
             )
         return TerminationProof(
             status=TerminationStatus.UNKNOWN,
@@ -187,7 +205,7 @@ class TerminationAnalyzer:
                     self._solver.add(var < 0)
                     if self._solver.check() == z3.unsat:
                         ranking = RankingFunction(
-                            name=f"rank_{name }",
+                            name=f"rank_{name}",
                             expression=name,
                             z3_expr=var,
                             variables=[name],
@@ -195,7 +213,7 @@ class TerminationAnalyzer:
                         return TerminationProof(
                             status=TerminationStatus.TERMINATES,
                             ranking_function=ranking,
-                            message=f"Termination proven: {name } decreases and is bounded",
+                            message=f"Termination proven: {name} decreases and is bounded",
                         )
         return TerminationProof(
             status=TerminationStatus.UNKNOWN, message="Could not synthesize ranking function"

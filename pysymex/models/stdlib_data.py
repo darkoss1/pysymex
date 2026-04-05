@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for enum, dataclasses, and operator modules.
 
 Models:
@@ -34,7 +52,7 @@ class EnumModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"enum_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"enum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
 
@@ -47,7 +65,7 @@ class IntEnumModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"intenum_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"intenum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
 
@@ -60,7 +78,7 @@ class EnumAutoModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"enum_auto_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"enum_auto_{state.pc}")
         return ModelResult(
             value=result, constraints=[constraint, result.is_int, result.z3_int >= 1]
         )
@@ -75,7 +93,7 @@ class EnumValueModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"enum_value_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"enum_value_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -88,7 +106,7 @@ class EnumNameModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"enum_name_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"enum_name_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -103,7 +121,7 @@ class DataclassModel(FunctionModel):
     ) -> ModelResult:
         if args:
             return ModelResult(value=args[0])
-        result, constraint = SymbolicValue.symbolic(f"dataclass_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dataclass_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -121,9 +139,9 @@ class DataclassFieldModel(FunctionModel):
         if default is not None:
             return ModelResult(value=default)
         if default_factory is not None:
-            result, constraint = SymbolicValue.symbolic(f"field_factory_{state .pc }")
+            result, constraint = SymbolicValue.symbolic(f"field_factory_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
-        result, constraint = SymbolicValue.symbolic(f"field_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"field_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -136,7 +154,7 @@ class AsDataclassModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicDict.symbolic(f"asdict_{state .pc }")
+        result, constraint = SymbolicDict.symbolic(f"asdict_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -149,7 +167,7 @@ class AstupleModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"astuple_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"astuple_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -162,7 +180,7 @@ class FieldsModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"fields_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"fields_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 0])
 
 
@@ -177,14 +195,14 @@ class ReplaceModel(FunctionModel):
     ) -> ModelResult:
         if args:
             addr = next_address()
-            result, constraint = SymbolicObject.symbolic(f"replaced_{state .pc }", addr)
+            result, constraint = SymbolicObject.symbolic(f"replaced_{state.pc}", addr)
             obj_state = {}
             if kwargs:
                 for k, v in kwargs.items():
                     obj_state[k] = v
             state.memory[addr] = obj_state
             return ModelResult(value=result, constraints=[constraint])
-        result, constraint = SymbolicValue.symbolic(f"replace_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"replace_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -197,7 +215,7 @@ class OperatorItemgetterModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"itemgetter_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"itemgetter_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -210,7 +228,7 @@ class OperatorAttrgetterModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"attrgetter_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"attrgetter_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -229,7 +247,7 @@ class OperatorAddModel(FunctionModel):
                 return ModelResult(value=a + b)
             if isinstance(a, (int, float)) and isinstance(b, (int, float)):
                 return ModelResult(value=SymbolicValue.from_const(a + b))
-        result, constraint = SymbolicValue.symbolic(f"op_add_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_add_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -248,7 +266,7 @@ class OperatorSubModel(FunctionModel):
                 return ModelResult(value=a - b)
             if isinstance(a, (int, float)) and isinstance(b, (int, float)):
                 return ModelResult(value=SymbolicValue.from_const(a - b))
-        result, constraint = SymbolicValue.symbolic(f"op_sub_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_sub_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -267,7 +285,7 @@ class OperatorMulModel(FunctionModel):
                 return ModelResult(value=a * b)
             if isinstance(a, (int, float)) and isinstance(b, (int, float)):
                 return ModelResult(value=SymbolicValue.from_const(a * b))
-        result, constraint = SymbolicValue.symbolic(f"op_mul_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_mul_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -284,7 +302,7 @@ class OperatorTruedivModel(FunctionModel):
             a, b = args[0], args[1]
             if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
                 return ModelResult(value=a / b)
-        result, constraint = SymbolicValue.symbolic(f"op_truediv_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_truediv_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -301,7 +319,7 @@ class OperatorFloordivModel(FunctionModel):
             a, b = args[0], args[1]
             if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
                 return ModelResult(value=a // b)
-        result, constraint = SymbolicValue.symbolic(f"op_floordiv_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_floordiv_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -318,7 +336,7 @@ class OperatorModModel(FunctionModel):
             a, b = args[0], args[1]
             if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
                 return ModelResult(value=a % b)
-        result, constraint = SymbolicValue.symbolic(f"op_mod_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_mod_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -333,7 +351,7 @@ class OperatorNegModel(FunctionModel):
     ) -> ModelResult:
         if args and isinstance(args[0], SymbolicValue):
             return ModelResult(value=-args[0])
-        result, constraint = SymbolicValue.symbolic(f"op_neg_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"op_neg_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 

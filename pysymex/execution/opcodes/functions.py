@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Function call opcodes."""
 
 from __future__ import annotations
@@ -7,30 +25,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 import dis
-from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Protocol, cast
 
 import z3
 
 from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.analysis.summaries import SummaryBuilder, instantiate_summary
+from pysymex.analysis.summaries import FunctionSummary, SummaryBuilder, instantiate_summary
+from pysymex.core.copy_on_write import CowDict
 from pysymex.core.havoc import HavocValue, union_taint
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 from pysymex.core.solver import get_model, is_satisfiable
-from pysymex.core.copy_on_write import CowDict
 from pysymex.core.state import wrap_cow_dict
 from pysymex.core.types import (
     Z3_TRUE,
-    SymbolicDict,
-    SymbolicList,
     SymbolicNone,
-    SymbolicObject,
     SymbolicString,
     SymbolicValue,
 )
+from pysymex.core.types_containers import SymbolicDict, SymbolicList, SymbolicObject
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 from pysymex.models.builtins import FunctionModel, default_model_registry
 from pysymex.models.stdlib import get_stdlib_model
+
+_MAX_SUMMARY_CACHE_CONSTRAINTS = 24
+_MAX_SUMMARY_CACHE_ARGS = 12
+_MAX_CALLABILITY_CHECK_CONSTRAINTS = 64
 
 
 def _resolve_model(model_name: str) -> FunctionModel | None:
@@ -63,6 +83,130 @@ if TYPE_CHECKING:
     from pysymex.execution.dispatcher import OpcodeDispatcher
 
 
+class _TaintTrackerProtocol(Protocol):
+    """Protocol for taint trackers attached to VMState."""
+
+    def check_sink(
+        self,
+        sink: object,
+        *args: object,
+        location: str = "",
+        line: int = 0,
+    ) -> list[object]: ...
+
+
+class _SummaryCacheProtocol(Protocol):
+    """Protocol for cross-function summary cache."""
+
+    def get(
+        self,
+        name: str,
+        args: list[StackValue],
+        constraints: list[z3.BoolRef],
+    ) -> object: ...
+
+
+class _CrossFunctionProtocol(Protocol):
+    """Protocol for cross-function analyzer objects."""
+
+    function_summary_cache: _SummaryCacheProtocol
+
+
+def _to_z3_expr(value: StackValue) -> z3.ExprRef | None:
+    """Best-effort conversion from stack values to Z3 expressions."""
+    if isinstance(value, SymbolicValue):
+        return value.to_z3()
+    if isinstance(value, int) and not isinstance(value, bool):
+        return z3.IntVal(value)
+    if isinstance(value, bool):
+        return z3.BoolVal(value)
+    if isinstance(value, float):
+        return z3.RealVal(value)
+    if isinstance(value, str):
+        return z3.StringVal(value)
+    return None
+
+
+def _get_pending_taint_issues(state: VMState) -> list[Issue]:
+    """Read pending taint issues from state in a type-safe way."""
+    pending = state.pending_taint_issues
+    return [issue for issue in pending if isinstance(issue, Issue)]
+
+
+def _set_pending_taint_issues(state: VMState, issues: list[Issue]) -> None:
+    """Set pending taint issues on state."""
+    state.pending_taint_issues = list(issues)
+
+
+def _append_pending_taint_issue(state: VMState, issue: Issue) -> None:
+    """Append one pending taint issue to state."""
+    pending = _get_pending_taint_issues(state)
+    pending.append(issue)
+    _set_pending_taint_issues(state, pending)
+
+
+def _extend_pending_taint_issues(state: VMState, issues: list[Issue]) -> None:
+    """Append many pending taint issues to state."""
+    if not issues:
+        return
+    pending = _get_pending_taint_issues(state)
+    pending.extend(issues)
+    _set_pending_taint_issues(state, pending)
+
+
+def _consume_pending_taint_issues(state: VMState) -> list[Issue]:
+    """Pop pending taint issues from state."""
+    pending = _get_pending_taint_issues(state)
+    state.pending_taint_issues = []
+    return pending
+
+
+def _as_mapping(value: object) -> Mapping[str, object] | None:
+    """Return a mapping view when value behaves like dict[str, object]."""
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def _as_stack_value(value: object) -> StackValue:
+    """Best-effort conversion into the StackValue domain used by VMState."""
+    if value is None:
+        return None
+    if isinstance(
+        value,
+        (
+            SymbolicValue,
+            SymbolicNone,
+            SymbolicString,
+            SymbolicList,
+            SymbolicDict,
+            SymbolicObject,
+            int,
+            bool,
+            str,
+            float,
+            bytes,
+            type,
+            list,
+            dict,
+            tuple,
+        ),
+    ):
+        return cast("StackValue", value)
+    if callable(value):
+        return cast("StackValue", value)
+    return SymbolicValue.from_const(value)
+
+
+def _as_attr_map(value: object) -> dict[str, StackValue] | None:
+    """Narrow heap objects that can store dynamic attributes."""
+    if isinstance(value, dict):
+        return cast("dict[str, StackValue]", value)
+    if isinstance(value, CowDict):
+        return cast("dict[str, StackValue]", dict(value))
+    return None
+
+
 @opcode_handler("PRECALL")
 def handle_precall(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Handle setup before a function call."""
@@ -92,14 +236,14 @@ def _check_taint_sinks(state: VMState, call_name: str, args: list[StackValue]) -
         TaintSink.LOG_OUTPUT: IssueKind.FORMAT_STRING_INJECTION,
     }
 
-    flows = state.taint_tracker.check_sink(
+    tracker = cast("_TaintTrackerProtocol", state.taint_tracker)
+    flows = tracker.check_sink(
         sink_type,
         *args,
         location=call_name,
         line=state.pc,
     )
-    # Fallback: if tracker metadata is missing but symbolic taint labels are
-    # present on arguments, still emit a sink issue.
+
     has_direct_taint = any(bool(getattr(arg, "taint_labels", None)) for arg in args)
     if not flows and has_direct_taint:
         flows = [object()]
@@ -117,9 +261,6 @@ def _check_taint_sinks(state: VMState, call_name: str, args: list[StackValue]) -
     return issues
 
 
-
-
-
 def _apply_model(
     state: VMState,
     func_obj: object,
@@ -128,7 +269,7 @@ def _apply_model(
 ) -> OpcodeResult | None:
     """Apply a built-in or stdlib model if available."""
     kwargs = kwargs or {}
-    model_name = getattr(func_obj, "model_name", None)
+    model_name = func_obj if isinstance(func_obj, str) else getattr(func_obj, "model_name", None)
     if not model_name:
         return None
 
@@ -141,29 +282,31 @@ def _apply_model(
 
     if result.side_effects:
         if "potential_exception" in result.side_effects:
-            exc = result.side_effects["potential_exception"]
-            # ... existing exception logic ...
+            exc = _as_mapping(result.side_effects["potential_exception"])
+            if exc is None:
+                exc = {}
+
             cond = exc.get("condition")
             full_cond = list(state.path_constraints)
-            if cond is not None:
+            if isinstance(cond, z3.BoolRef):
+                full_cond.append(cond)
+            elif cond is not None:
                 if isinstance(cond, str) and cond == "element_not_found":
-                     # For models that use a string placeholder
-                     pass
-                else:
-                     full_cond.append(cond)
+                    pass
             if is_satisfiable(full_cond):
                 kind = IssueKind.TYPE_ERROR
-                if exc["type"] == "KeyError":
+                exc_type = str(exc.get("type", "TypeError"))
+                if exc_type == "KeyError":
                     kind = IssueKind.KEY_ERROR
-                elif exc["type"] == "IndexError":
+                elif exc_type == "IndexError":
                     kind = IssueKind.INDEX_ERROR
-                elif exc["type"] == "ValueError":
+                elif exc_type == "ValueError":
                     kind = IssueKind.VALUE_ERROR
 
                 opcode_res.issues.append(
                     Issue(
                         kind=kind,
-                        message=exc["message"],
+                        message=str(exc.get("message", "Modeled call raised an exception")),
                         constraints=full_cond,
                         model=get_model(full_cond),
                         pc=state.pc,
@@ -171,40 +314,45 @@ def _apply_model(
                 )
 
         if "list_mutation" in result.side_effects:
-            mut = result.side_effects["list_mutation"]
+            mut = _as_mapping(result.side_effects["list_mutation"])
+            if mut is None:
+                mut = {}
             orig_lst = mut.get("original_list")
             updated_lst = mut.get("updated_list")
             if orig_lst and updated_lst:
-                # Find which object this list belongs to
+                updated_stack_val = _as_stack_value(updated_lst)
+
                 found_in_memory = False
                 for addr, obj in state.memory.items():
                     if obj is orig_lst:
-                        state.memory[addr] = updated_lst
+                        state.memory[addr] = updated_stack_val
                         found_in_memory = True
                         break
                 if not found_in_memory:
-                    # If it was a list directly on the stack (not in memory)
                     for i, item in enumerate(state.stack):
                         if item is orig_lst:
-                            state.stack[i] = updated_lst
+                            state.stack[i] = updated_stack_val
                             found_in_memory = True
                             break
 
         if "dict_mutation" in result.side_effects:
-            mut = result.side_effects["dict_mutation"]
+            mut = _as_mapping(result.side_effects["dict_mutation"])
+            if mut is None:
+                mut = {}
             orig_dict = mut.get("original_dict")
             updated_dict = mut.get("updated_dict")
             if orig_dict and updated_dict:
+                updated_stack_val = _as_stack_value(updated_dict)
                 found_in_memory = False
                 for addr, obj in state.memory.items():
                     if obj is orig_dict:
-                        state.memory[addr] = updated_dict
+                        state.memory[addr] = updated_stack_val
                         found_in_memory = True
                         break
                 if not found_in_memory:
                     for i, item in enumerate(state.stack):
                         if item is orig_dict:
-                            state.stack[i] = updated_dict
+                            state.stack[i] = updated_stack_val
                             found_in_memory = True
                             break
 
@@ -216,14 +364,14 @@ def _apply_model(
 
 
 def _perform_interprocedural_call(
-    state: VMState, 
-    ctx: OpcodeDispatcher, 
-    func_obj: object, 
+    state: VMState,
+    ctx: OpcodeDispatcher,
+    func_obj: object,
     args: list[StackValue],
-    kwargs: dict[str, StackValue] | None = None
+    kwargs: dict[str, StackValue] | None = None,
 ) -> OpcodeResult | None:
     """Attempt to perform an inter-procedural call to a user-defined function.
-    
+
     Supports:
     - Standard functions and methods.
     - Python 3.12+ Generic Functions (calling the generic parameter code object).
@@ -233,13 +381,11 @@ def _perform_interprocedural_call(
     if state.call_depth() >= MAX_CALL_DEPTH:
         return None
 
-    from pysymex.core.types import SymbolicValue, SymbolicDict
-    from pysymex.core.state import CallFrame, wrap_cow_dict
+    from pysymex.core.state import CallFrame
 
     kwargs = kwargs or {}
     func_code = getattr(func_obj, "__code__", None) or getattr(func_obj, "_func_code", None)
-    
-    # Unwrap if wrapped in SymbolicValue (common for LOAD_CONST)
+
     if func_code is None and hasattr(func_obj, "value"):
         inner = getattr(func_obj, "value", None)
         if inner is not None:
@@ -261,15 +407,14 @@ def _perform_interprocedural_call(
     except (TypeError, ValueError):
         return None
 
-    # Parameter matching logic
     arg_count = func_code.co_argcount
     pos_arg_names = func_code.co_varnames[:arg_count]
-    
+
     builder = None
     if ctx.cross_function and hasattr(ctx.cross_function, "function_summary_cache"):
         builder = SummaryBuilder(func_name)
         builder.set_qualname(func_name)
-        builder._initial_args = args
+        builder.set_initial_args(cast("list[object]", list(args)))
         for name in pos_arg_names:
             builder.add_parameter(name)
 
@@ -284,7 +429,7 @@ def _perform_interprocedural_call(
     state = state.push_call(frame)
 
     new_locals = {}
-    # Carry closure cells into callee locals for LOAD_DEREF resolution.
+
     try:
         closure = getattr(func_obj, "__closure__", None)
         freevars = list(getattr(func_code, "co_freevars", ()))
@@ -297,34 +442,32 @@ def _perform_interprocedural_call(
     except (AttributeError, TypeError):
         pass
 
-    # 1. Fill positional args
     for i, name in enumerate(pos_arg_names):
         if i < len(args):
             new_locals[name] = args[i]
         elif name in kwargs:
             new_locals[name] = kwargs[name]
         else:
-            # Missing arg -> Symbolic arg
             val, constraint = SymbolicValue.symbolic(f"arg_{name}")
             new_locals[name] = val
             state = state.add_constraint(constraint)
 
-    # 2. Handle *args (co_flags 0x04)
     if func_code.co_flags & 0x04:
         vararg_name = func_code.co_varnames[arg_count]
         extra_pos = args[arg_count:] if len(args) > arg_count else []
-        # Simplified list creation for varargs
-        new_locals[vararg_name] = SymbolicList.from_const(extra_pos)
+
+        vararg_items = cast("list[object]", list(extra_pos))
+        vararg_list = SymbolicList.empty(vararg_name).extend(vararg_items)
+        new_locals[vararg_name] = vararg_list
         arg_count += 1
 
-    # 3. Handle **kwargs (co_flags 0x08)
     if func_code.co_flags & 0x08:
         kwarg_name = func_code.co_varnames[arg_count]
         unused_kwargs = {k: v for k, v in kwargs.items() if k not in pos_arg_names}
-        new_locals[kwarg_name] = SymbolicDict.from_const(unused_kwargs)
+        new_locals[kwarg_name] = unused_kwargs
 
     state.local_vars = wrap_cow_dict(new_locals)
-    state.current_instructions = list(callee_instructions)
+    state.current_instructions = cast("list[object]", list(callee_instructions))
     ctx.set_instructions(list(callee_instructions))
     state = state.set_pc(0)
     state.depth += 1
@@ -375,13 +518,14 @@ def _try_enhanced_class_call(
             return None
 
         obj_state = ObjectState()
+        kwargs_obj = cast("dict[str, object]", dict(kwargs))
         instance, constraints = create_enhanced_instance(
-            enhanced_cls, obj_state, tuple(args), kwargs, pc=state.pc
+            enhanced_cls, obj_state, tuple(args), kwargs_obj, pc=state.pc
         )
 
         result_val, type_constraint = SymbolicValue.symbolic(f"instance_{class_name}_{state.pc}")
 
-        result_val._enhanced_object = instance
+        object.__setattr__(result_val, "_enhanced_object", instance)
         state = state.push(result_val)
         state = state.add_constraint(type_constraint)
         for c in constraints:
@@ -399,7 +543,9 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     args: list[StackValue] = []
     for _ in range(argc):
         if state.stack:
-            args.insert(0, state.pop())
+            args.append(state.pop())
+    if len(args) > 1:
+        args.reverse()
 
     kwargs: dict[str, StackValue] = {}
     kw_names = getattr(state, "pending_kw_names", None)
@@ -422,31 +568,46 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
         args.insert(0, receiver_or_null)
 
     if isinstance(func_obj, (SymbolicNone, SymbolicValue)):
-
         is_none = Z3_TRUE if isinstance(func_obj, SymbolicNone) else func_obj.is_none
-        none_check = [*state.path_constraints, is_none]
-        if is_satisfiable(none_check):
-            must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(is_none)])
-            is_unconstrained_var = z3.is_const(is_none) and is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
-            
-            if must_be_none or not is_unconstrained_var:
-                issue = Issue(
-                    kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: object '{getattr(func_obj, 'name', 'obj')}' is not callable (is None)",
-                    constraints=list(none_check),
-                    model=get_model(none_check),
-                    pc=state.pc,
-                )
+        simplified_none = z3.simplify(is_none)
+        if z3.is_true(simplified_none):
+            none_check = [*state.path_constraints, is_none]
+            issue = Issue(
+                kind=IssueKind.TYPE_ERROR,
+                message=f"Possible TypeError: object '{getattr(func_obj, 'name', 'obj')}' is not callable (is None)",
+                constraints=list(none_check),
+                model=get_model(none_check),
+                pc=state.pc,
+            )
+            _append_pending_taint_issue(state, issue)
+            return OpcodeResult.error(issue, state=state)
 
-                if not hasattr(state, "_pending_taint_issues"):
-                    state._pending_taint_issues = []
-                state._pending_taint_issues.append(issue)
+        if not z3.is_false(simplified_none):
+            if len(state.path_constraints) <= _MAX_CALLABILITY_CHECK_CONSTRAINTS:
+                none_check = [*state.path_constraints, is_none]
+                if is_satisfiable(none_check):
+                    must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(is_none)])
+                    is_unconstrained_var = (
+                        z3.is_const(is_none) and is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+                    )
 
-                if must_be_none:
-                    return OpcodeResult.error(issue, state=state)
+                    if must_be_none or not is_unconstrained_var:
+                        issue = Issue(
+                            kind=IssueKind.TYPE_ERROR,
+                            message=f"Possible TypeError: object '{getattr(func_obj, 'name', 'obj')}' is not callable (is None)",
+                            constraints=list(none_check),
+                            model=get_model(none_check),
+                            pc=state.pc,
+                        )
 
-            # Prune the 'is None' path for generic variables to avoid cascades
-            state = state.add_constraint(z3.Not(is_none))
+                        _append_pending_taint_issue(state, issue)
+
+                        if must_be_none:
+                            return OpcodeResult.error(issue, state=state)
+
+                    state = state.add_constraint(z3.Not(is_none))
+            else:
+                state = state.add_constraint(z3.Not(is_none))
 
     call_name = (
         getattr(func_obj, "model_name", None)
@@ -456,40 +617,61 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     )
     taint_issues = _check_taint_sinks(state, call_name, args)
     if taint_issues:
-        if not hasattr(state, "_pending_taint_issues"):
-            state._pending_taint_issues = []
-        state._pending_taint_issues.extend(taint_issues)
+        _extend_pending_taint_issues(state, taint_issues)
 
     result = _apply_model(state, func_obj, args, kwargs)
     if result:
-        if hasattr(state, "_pending_taint_issues"):
-            result.issues.extend(state._pending_taint_issues)
-            delattr(state, "_pending_taint_issues")
+        result.issues.extend(_consume_pending_taint_issues(state))
         return result
 
     oop_result = _try_enhanced_class_call(state, func_obj, args, kwargs)
     if oop_result is not None:
-        if hasattr(state, "_pending_taint_issues"):
-            oop_result.issues.extend(state._pending_taint_issues)
-            delattr(state, "_pending_taint_issues")
+        oop_result.issues.extend(_consume_pending_taint_issues(state))
         return oop_result
 
     if ctx.cross_function and hasattr(ctx.cross_function, "function_summary_cache"):
-        cache = ctx.cross_function.function_summary_cache
-        summary = cache.get(call_name, args, list(state.path_constraints))
-        if summary:
-            pre, post, ret_val = instantiate_summary(summary, list(args), kwargs)
-            state = state.add_constraint(pre)
-            state = state.add_constraint(post)
-            state = state.push(ret_val)
+        cross_function = cast("_CrossFunctionProtocol", ctx.cross_function)
+        cache = cross_function.function_summary_cache
+        path_constraints_snapshot = list(state.path_constraints)
+        summary = None
+        if (
+            len(path_constraints_snapshot) <= _MAX_SUMMARY_CACHE_CONSTRAINTS
+            and len(args) <= _MAX_SUMMARY_CACHE_ARGS
+        ):
+            summary = cache.get(call_name, args, path_constraints_snapshot)
+        if isinstance(summary, FunctionSummary):
+            z3_args: list[z3.ExprRef] = []
+            for arg in args:
+                expr = _to_z3_expr(arg)
+                if expr is None:
+                    z3_args = []
+                    break
+                z3_args.append(expr)
 
-            state = state.advance_pc()
-            return OpcodeResult.continue_with(state)
+            z3_kwargs: dict[str, z3.ExprRef] = {}
+            if z3_args:
+                for key, value in kwargs.items():
+                    expr = _to_z3_expr(value)
+                    if expr is None:
+                        z3_kwargs = {}
+                        z3_args = []
+                        break
+                    z3_kwargs[key] = expr
+
+            if z3_args:
+                pre, post, ret_val = instantiate_summary(summary, z3_args, z3_kwargs)
+                state = state.add_constraint(pre)
+                state = state.add_constraint(post)
+                if ret_val is None:
+                    state = state.push(SymbolicNone())
+                else:
+                    state = state.push(SymbolicValue.from_z3(ret_val))
+                state = state.advance_pc()
+                return OpcodeResult.continue_with(state)
 
     result = _perform_interprocedural_call(state, ctx, func_obj, args)
     if result:
-        if hasattr(state, "_pending_taint_issues"):
-            result.issues.extend(state._pending_taint_issues)
+        result.issues.extend(_get_pending_taint_issues(state))
         return result
 
     combined_taint = union_taint(args)
@@ -499,9 +681,7 @@ def handle_call(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     state = state.advance_pc()
 
     result = OpcodeResult.continue_with(state)
-    if hasattr(state, "_pending_taint_issues"):
-        result.issues.extend(state._pending_taint_issues)
-        delattr(state, "_pending_taint_issues")
+    result.issues.extend(_consume_pending_taint_issues(state))
     return result
 
 
@@ -512,22 +692,21 @@ def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
     kw_names = None
     if state.stack:
         kw_names = state.pop()
-    
+
     args: list[StackValue] = []
     for _ in range(argc):
         if state.stack:
             args.insert(0, state.pop())
-            
+
     receiver_or_null = state.pop() if state.stack else SymbolicNone()
     func_obj = state.pop() if state.stack else receiver_or_null
-    
+
     if func_obj is receiver_or_null:
         receiver_or_null = SymbolicNone()
-    
+
     if not isinstance(receiver_or_null, SymbolicNone):
         args.insert(0, receiver_or_null)
 
-    # Convert positional args to kwargs based on kw_names
     kwargs: dict[str, StackValue] = {}
     if kw_names is not None:
         kw_names_val = getattr(kw_names, "value", kw_names)
@@ -539,27 +718,24 @@ def handle_call_kw(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
                 for k, v in zip(names, kw_vals, strict=False):
                     kwargs[str(k)] = v
 
-    # Reuse handle_call logic for the actual execution
-    # We'll manually call the shared logic since handle_call expects stack to be intact
-    # but here we've already popped everything.
     return _dispatch_call(instr, state, ctx, func_obj, args, kwargs)
 
 
 def _dispatch_call(
-    instr: dis.Instruction, 
-    state: VMState, 
-    ctx: OpcodeDispatcher, 
-    func_obj: object, 
-    args: list[StackValue], 
-    kwargs: dict[str, StackValue]
+    instr: dis.Instruction,
+    state: VMState,
+    ctx: OpcodeDispatcher,
+    func_obj: object,
+    args: list[StackValue],
+    kwargs: dict[str, StackValue],
 ) -> OpcodeResult:
     """Shared dispatch logic for CALL, CALL_KW, etc."""
     from pysymex.analysis.detectors import Issue, IssueKind
     from pysymex.core.solver import get_model, is_satisfiable
 
-    # Handle None/Symbolic check
     if isinstance(func_obj, (SymbolicNone, SymbolicValue)):
         import z3
+
         is_none = Z3_TRUE if isinstance(func_obj, SymbolicNone) else func_obj.is_none
         none_check = [*state.path_constraints, is_none]
         if is_satisfiable(none_check):
@@ -567,7 +743,7 @@ def _dispatch_call(
             if must_be_none:
                 issue = Issue(
                     kind=IssueKind.TYPE_ERROR,
-                    message=f"Possible TypeError: object is not callable (is None)",
+                    message="Possible TypeError: object is not callable (is None)",
                     constraints=list(none_check),
                     model=get_model(none_check),
                     pc=state.pc,
@@ -575,19 +751,16 @@ def _dispatch_call(
                 return OpcodeResult.error(issue, state=state)
             state = state.add_constraint(z3.Not(is_none))
 
-    # Apply models
     model_name = getattr(func_obj, "model_name", None)
     if model_name:
         res = _apply_model(state, func_obj, args, kwargs)
         if res:
             return res
 
-    # Try interprocedural
     result = _perform_interprocedural_call(state, ctx, func_obj, args, kwargs)
     if result:
         return result
 
-    # Fallback to Havoc
     combined_taint = union_taint(args)
     ret, tc = HavocValue.havoc(f"havoc_call@{state.pc}", taint_labels=combined_taint)
     state = state.push(ret)
@@ -602,7 +775,8 @@ def handle_call_method(
 ) -> OpcodeResult:
     """Handle method calls, including symbolic list/dict methods."""
     argc = int(instr.argval) if instr.argval else 0
-    method_args: list[object] = []
+    method_args: list[StackValue] = []
+    self_val: StackValue = SymbolicNone()
     for _ in range(argc):
         if state.stack:
             method_args.insert(0, state.pop())
@@ -611,17 +785,18 @@ def handle_call_method(
         method_args.insert(0, self_val)
     if state.stack:
         method_name_obj = state.pop()
-        method_name = getattr(method_name_obj, "name", str(method_name_obj))
+        method_name_raw = getattr(method_name_obj, "name", None)
+        method_name = method_name_raw if isinstance(method_name_raw, str) else str(method_name_obj)
     else:
         method_name = "unknown"
 
-    # Try to resolve model based on self_val and method_name
     model_name = None
     container = self_val
     if isinstance(self_val, SymbolicObject):
-        if self_val.address in state.memory:
-            container = state.memory[self_val.address]
-    
+        memory_by_addr = cast("dict[int, object]", state.memory)
+        if self_val.address in memory_by_addr:
+            container = memory_by_addr[self_val.address]
+
     if isinstance(container, SymbolicList):
         model_name = f"list.{method_name.split('.')[-1]}"
     elif isinstance(container, SymbolicDict):
@@ -668,11 +843,15 @@ def handle_load_method(
             push_null = True
 
     if isinstance(obj, HavocValue):
-        if attr_name in obj._attributes:
-            havoc_attr, havoc_tc = obj._attributes[attr_name]
+        havoc_attr_map = getattr(obj, "_attributes", None)
+        if not isinstance(havoc_attr_map, dict):
+            havoc_attr_map = {}
+            setattr(obj, "_attributes", havoc_attr_map)
+        if attr_name in havoc_attr_map:
+            havoc_attr, havoc_tc = havoc_attr_map[attr_name]
         else:
             havoc_attr, havoc_tc = obj.__getattr__(attr_name)
-            obj._attributes[attr_name] = (havoc_attr, havoc_tc)
+            havoc_attr_map[attr_name] = (havoc_attr, havoc_tc)
 
         if push_null:
             state = state.push(obj)
@@ -683,24 +862,26 @@ def handle_load_method(
     result_val: object = None
     type_name = "unknown"
     if isinstance(obj, SymbolicObject):
-        if obj.address != -1:  # type: ignore[union-attr]
-            obj_state = state.memory.get(obj.address)  # type: ignore[union-attr]
+        if obj.address != -1:
+            obj_state = state.memory.get(obj.address)
             if isinstance(obj_state, SymbolicList):
                 type_name = "list"
             elif isinstance(obj_state, SymbolicDict):
                 type_name = "dict"
             elif obj_state is None:
                 obj_state = {}
-                state.memory[obj.address] = obj_state  # type: ignore[union-attr]
+                state.memory[obj.address] = obj_state
             elif isinstance(obj_state, (dict, CowDict)):
-                module_name = obj_state.get("__module_name__")  # type: ignore[call-overload]
+                module_name = obj_state.get("__module_name__")
                 if isinstance(module_name, str) and module_name:
                     type_name = module_name
 
             if type_name != "unknown":
                 model_name = f"{type_name}.{attr_name}"
                 if _resolve_model(model_name):
-                    res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
+                    res_val, tc = SymbolicValue.symbolic(
+                        f"{getattr(obj, 'name', 'obj')}.{attr_name}"
+                    )
                     res_val.model_name = model_name
                     state = state.push(res_val)
                     if push_null:
@@ -709,27 +890,34 @@ def handle_load_method(
                     state = state.advance_pc()
                     return OpcodeResult.continue_with(state)
 
-            if isinstance(obj_state, (dict, CowDict)) and attr_name in obj_state:
-                result_val = obj_state[attr_name]  # type: ignore[index]
+            attr_map = _as_attr_map(obj_state)
+            if attr_map is not None and attr_name in attr_map:
+                result_val = attr_map[attr_name]
             else:
-                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
-                obj_state[attr_name] = result_val  # type: ignore[index]
+                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
+                if attr_map is not None:
+                    attr_map[attr_name] = result_val
+                    state.memory[obj.address] = attr_map
                 state = state.add_constraint(type_constraint)
         else:
-            addresses = list(obj.potential_addresses)  # type: ignore[union-attr]
+            addresses = list(obj.potential_addresses)
             if not addresses:
-                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
+                result_val, type_constraint = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")
                 state = state.add_constraint(type_constraint)
             else:
                 values: list[tuple[object, object]] = []
                 for addr in addresses:
-                    mem = state.memory.get(addr, {})  # type: ignore[arg-type]
-                    if attr_name in mem:  # type: ignore[operator]
-                        val = mem[attr_name]  # type: ignore[index]
+                    mem_obj = state.memory.get(addr)
+                    attr_map = _as_attr_map(mem_obj)
+                    if attr_map is None:
+                        attr_map = {}
+                    if attr_name in attr_map:
+                        val = attr_map[attr_name]
                     else:
                         val, _ = SymbolicValue.symbolic(f"obj_{addr}.{attr_name}")
-                        mem[attr_name] = val  # type: ignore[index]
-                    values.append((addr, val))  # type: ignore[arg-type]
+                        attr_map[attr_name] = val
+                        state.memory[addr] = attr_map
+                    values.append((addr, val))
                 if len(values) == 1:
                     result_val = values[0][1]
                 else:
@@ -743,13 +931,13 @@ def handle_load_method(
                     for addr, val in reversed(values[:-1]):
                         if not isinstance(val, SymbolicValue):
                             val = SymbolicValue.from_const(val)
-                        cond = obj.z3_addr == addr  # type: ignore[union-attr]
+                        cond = obj.z3_addr == addr
                         merged_z3_int = z3.If(cond, val.z3_int, merged_z3_int)
                         merged_z3_bool = z3.If(cond, val.z3_bool, merged_z3_bool)
                         merged_is_int = z3.If(cond, val.is_int, merged_is_int)
                         merged_is_bool = z3.If(cond, val.is_bool, merged_is_bool)
                     result_val = SymbolicValue(
-                        _name=f"{obj.name}.{attr_name}",  # type: ignore[union-attr]
+                        _name=f"{obj.name}.{attr_name}",
                         z3_int=merged_z3_int,
                         is_int=merged_is_int,
                         z3_bool=merged_z3_bool,
@@ -769,7 +957,7 @@ def handle_load_method(
     if type_name != "unknown":
         model_name = f"{type_name}.{attr_name}"
         if _resolve_model(model_name):
-            res_val, tc = SymbolicValue.symbolic(f"{obj.name}.{attr_name}")  # type: ignore[union-attr]
+            res_val, tc = SymbolicValue.symbolic(f"{getattr(obj, 'name', 'obj')}.{attr_name}")
             res_val.model_name = model_name
             state = state.push(res_val)
             if push_null:
@@ -778,12 +966,13 @@ def handle_load_method(
             state = state.advance_pc()
             return OpcodeResult.continue_with(state)
     if isinstance(obj, SymbolicValue):
-
         none_check = [*state.path_constraints, obj.is_none]
         if is_satisfiable(none_check):
             must_be_none = not is_satisfiable([*state.path_constraints, z3.Not(obj.is_none)])
-            is_unconstrained_var = z3.is_const(obj.is_none) and obj.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
-            
+            is_unconstrained_var = (
+                z3.is_const(obj.is_none) and obj.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            )
+
             if must_be_none or not is_unconstrained_var:
                 issue = Issue(
                     kind=IssueKind.NULL_DEREFERENCE,
@@ -793,19 +982,15 @@ def handle_load_method(
                     pc=state.pc,
                 )
 
-                if not hasattr(state, "_pending_taint_issues"):
-                    state._pending_taint_issues = []
-                state._pending_taint_issues.append(issue)
-                
+                _append_pending_taint_issue(state, issue)
+
                 if must_be_none:
                     return OpcodeResult(new_states=[], issues=[issue], terminal=True)
 
             state = state.add_constraint(z3.Not(obj.is_none))
 
     if result_val is None:
-        # If the object state itself exists but is not a dict (e.g., a SymbolicList),
-        # then it's a builtin type that doesn't support arbitrary attributes.
-        res_type = type(obj_state).__name__ if obj_state is not None else "unknown"  # type: ignore
+        res_type = type(obj_state).__name__ if obj_state is not None else "unknown"
         if obj_state is not None and not isinstance(obj_state, (dict, CowDict)):
             issue = Issue(
                 kind=IssueKind.ATTRIBUTE_ERROR,
@@ -814,24 +999,27 @@ def handle_load_method(
                 model=get_model(state.path_constraints),
                 pc=state.pc,
             )
-            # If it's a concrete collision or must be this type, return terminal
+
             return OpcodeResult(new_states=[], issues=[issue], terminal=True)
-            
+
         result_val, type_constraint = SymbolicValue.symbolic(
             f"{getattr(obj, 'name', 'obj')}.{attr_name}"
         )
         result_val.model_name = f"{type_name}.{attr_name}"
         if isinstance(obj_state, (dict, CowDict)):
-            obj_state[attr_name] = result_val  # type: ignore[index]
+            obj_state[attr_name] = result_val
         state = state.add_constraint(type_constraint)
-        
+
         import z3 as _z3
+
         state = state.add_constraint(_z3.Not(result_val.is_none))
 
-    state = state.push(result_val)  # type: ignore[arg-type]
+    state = state.push(_as_stack_value(result_val))
     if push_null:
-        state.push(
-            obj if isinstance(obj, SymbolicObject) or type_name != "unknown" else SymbolicNone()
+        state = state.push(
+            _as_stack_value(obj)
+            if isinstance(obj, SymbolicObject) or type_name != "unknown"
+            else SymbolicNone()
         )
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -842,7 +1030,7 @@ def handle_store_attr(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store attribute on object, updating heap memory."""
-    # Python 3.13+: TOS is the object, TOS1 is the value
+
     if state.stack:
         obj = state.pop()
     else:
@@ -857,25 +1045,25 @@ def handle_store_attr(
         )
     attr_name = str(instr.argval)
     if isinstance(obj, SymbolicObject):
-        if obj.address != -1:  # type: ignore[union-attr]
-            obj_state = state.memory.get(obj.address)  # type: ignore[union-attr]
+        if obj.address != -1:
+            obj_state = state.memory.get(obj.address)
             if obj_state is None:
-                obj_state = wrap_cow_dict({})
-            elif not isinstance(obj_state, (dict, CowDict)):
-                issue = Issue(
-                    kind=IssueKind.ATTRIBUTE_ERROR,
-                    message=f"AttributeError: '{type(obj_state).__name__}' object has no attribute '{attr_name}'",
-                    constraints=list(state.path_constraints),
-                    model=get_model(state.path_constraints),
-                    pc=state.pc,
-                )
-                return OpcodeResult.error(issue, state=state)
+                attr_map: dict[str, StackValue] = {}
             else:
+                narrowed = _as_attr_map(obj_state)
+                if narrowed is None:
+                    issue = Issue(
+                        kind=IssueKind.ATTRIBUTE_ERROR,
+                        message=f"AttributeError: '{type(obj_state).__name__}' object has no attribute '{attr_name}'",
+                        constraints=list(state.path_constraints),
+                        model=get_model(state.path_constraints),
+                        pc=state.pc,
+                    )
+                    return OpcodeResult.error(issue, state=state)
+                attr_map = dict(narrowed)
 
-                obj_state = wrap_cow_dict(obj_state).cow_fork()  # type: ignore[arg-type]
-
-            obj_state[attr_name] = value
-            state.memory[obj.address] = obj_state  # type: ignore[union-attr]
+            attr_map[attr_name] = value
+            state.memory[obj.address] = attr_map
     elif isinstance(obj, SymbolicNone) or (
         isinstance(obj, SymbolicValue)
         and not is_satisfiable([*state.path_constraints, z3.Not(obj.is_none)])
@@ -944,8 +1132,8 @@ def handle_load_build_class(
     try:
         from pysymex.core.oop_support import enhanced_class_registry
 
-        state._building_class = True
-        state._class_registry = enhanced_class_registry
+        state.building_class = True
+        state.class_registry = enhanced_class_registry
     except (ImportError, AttributeError):
         pass
     builtin_val = SymbolicValue(
@@ -978,14 +1166,12 @@ def handle_import_name(
     if state.stack:
         state.pop()
     module_name = str(instr.argval) if instr.argval else "unknown_module"
-    
-    # Modules should not be None
-    # We use a unique address for each module to represent its identity
+
     addr = hash(module_name) & 0xFFFFFFFF
     module_val = SymbolicObject(module_name, addr, z3.IntVal(addr), {addr})
-    # Keep lightweight module metadata in heap so LOAD_ATTR can build
-    # qualified names like "os.system" for model/sink resolution.
-    state.memory[addr] = {"__module_name__": module_name}
+
+    memory_map = cast("dict[int, object]", state.memory)
+    memory_map[addr] = {"__module_name__": module_name}
 
     state = state.push(module_val)
     state = state.advance_pc()
@@ -1000,10 +1186,9 @@ def handle_import_from(
     attr_name = str(instr.argval) if instr.argval else "unknown_attr"
     attr_val, type_constraint = SymbolicValue.symbolic(f"import_{attr_name}")
     attr_val.model_name = attr_name
-    
-    # Assume imports are usually valid (not None) to reduce noise
+
     state = state.add_constraint(z3.Not(attr_val.is_none))
-    
+
     state = state.push(attr_val)
     state = state.add_constraint(type_constraint)
     state = state.advance_pc()

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for os.path, json, datetime, random, types modules.
 
 Models:
@@ -38,7 +56,7 @@ class OsPathExistsModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"exists_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"exists_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
@@ -51,7 +69,7 @@ class OsPathIsfileModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"isfile_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isfile_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
@@ -64,7 +82,7 @@ class OsPathIsdirModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"isdir_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isdir_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
@@ -84,7 +102,7 @@ class OsPathJoinModel(FunctionModel):
             return ModelResult(
                 value=SymbolicString.from_const(os.path.join(*cast("list[str]", args)))
             )
-        result, constraint = SymbolicString.symbolic(f"pathjoin_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"pathjoin_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -101,7 +119,7 @@ class OsPathDirnameModel(FunctionModel):
             import os.path
 
             return ModelResult(value=SymbolicString.from_const(os.path.dirname(args[0])))
-        result, constraint = SymbolicString.symbolic(f"dirname_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"dirname_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -118,7 +136,7 @@ class OsPathBasenameModel(FunctionModel):
             import os.path
 
             return ModelResult(value=SymbolicString.from_const(os.path.basename(args[0])))
-        result, constraint = SymbolicString.symbolic(f"basename_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"basename_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -141,8 +159,8 @@ class OsPathSplitModel(FunctionModel):
                     SymbolicString.from_const(tail),
                 )
             )
-        head, c1 = SymbolicString.symbolic(f"split_head_{state .pc }")
-        tail, c2 = SymbolicString.symbolic(f"split_tail_{state .pc }")
+        head, c1 = SymbolicString.symbolic(f"split_head_{state.pc}")
+        tail, c2 = SymbolicString.symbolic(f"split_tail_{state.pc}")
         return ModelResult(value=(head, tail), constraints=[c1, c2])
 
 
@@ -155,7 +173,7 @@ class OsPathAbspathModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"abspath_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"abspath_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
 
 
@@ -168,7 +186,7 @@ class JsonLoadsModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"json_loads_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"json_loads_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -181,7 +199,7 @@ class JsonDumpsModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"json_dumps_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"json_dumps_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 2])
 
 
@@ -194,7 +212,7 @@ class JsonLoadModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"json_load_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"json_load_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint],
@@ -226,7 +244,7 @@ class DatetimeNowModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"now_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"now_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int > 1672531200],
@@ -242,7 +260,7 @@ class DatetimeConstructorModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"datetime_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"datetime_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
 
@@ -255,7 +273,7 @@ class TimedeltaConstructorModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"timedelta_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"timedelta_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
 
 
@@ -268,7 +286,7 @@ class RandomRandomModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"random_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"random_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[
@@ -289,7 +307,7 @@ class RandomRandintModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"randint_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"randint_{state.pc}")
         constraints = [constraint, result.is_int]
         if len(args) >= 2:
             a, b = args[0], args[1]
@@ -314,15 +332,15 @@ class RandomChoiceModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         if args and isinstance(args[0], (list, tuple)) and args[0]:
-            result, constraint = SymbolicValue.symbolic(f"choice_{state .pc }")
+            result, constraint = SymbolicValue.symbolic(f"choice_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
         if args and isinstance(args[0], SymbolicList):
-            result, constraint = SymbolicValue.symbolic(f"choice_{state .pc }")
+            result, constraint = SymbolicValue.symbolic(f"choice_{state.pc}")
             return ModelResult(
                 value=result,
                 constraints=[constraint, args[0].z3_len > 0],
             )
-        result, constraint = SymbolicValue.symbolic(f"choice_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"choice_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -350,7 +368,7 @@ class RandomSampleModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"sample_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"sample_{state.pc}")
         if len(args) >= 2:
             k = args[1]
             if isinstance(k, int):
@@ -375,8 +393,8 @@ class RandomUniformModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"uniform_{state .pc }")
-        constraints: list[object] = [constraint, result.is_float]
+        result, constraint = SymbolicValue.symbolic(f"uniform_{state.pc}")
+        constraints: list[z3.BoolRef] = [constraint, result.is_float]
         if len(args) >= 2:
             a, b = args[0], args[1]
             if isinstance(a, (int, float)):
@@ -396,7 +414,7 @@ class SimpleNamespaceModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         addr = next_address()
-        result, constraint = SymbolicObject.symbolic(f"namespace_{state .pc }", addr)
+        result, constraint = SymbolicObject.symbolic(f"namespace_{state.pc}", addr)
         obj_state = {}
         if kwargs:
             for k, v in kwargs.items():

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """False Positive Filter for pysymex.
 
 This module provides filtering mechanisms to reduce false positives from:
@@ -13,12 +31,33 @@ import logging
 logger = logging.getLogger(__name__)
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import Protocol, TypeVar
 
-if TYPE_CHECKING:
-    from pysymex.analysis.detectors import Issue
+
+class IssueLike(Protocol):
+    @property
+    def kind(self) -> object: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def function_name(self) -> str | None: ...
+
+    @property
+    def model(self) -> object | None: ...
+
+    @property
+    def line_number(self) -> int | None: ...
+
+    @property
+    def pc(self) -> int: ...
+
+
+TIssue = TypeVar("TIssue", bound=IssueLike)
 
 
 class Confidence(Enum):
@@ -118,7 +157,7 @@ class FilterResult:
     context: AssertionContext = AssertionContext.UNKNOWN
 
 
-def is_typing_false_positive(issue: Issue) -> bool:
+def is_typing_false_positive(issue: IssueLike) -> bool:
     """Check if issue is a known typing-related false positive.
 
     Args:
@@ -131,7 +170,7 @@ def is_typing_false_positive(issue: Issue) -> bool:
     return any(pattern in message for pattern in TYPING_FP_PATTERNS)
 
 
-def is_type_checking_block_issue(issue: Issue) -> bool:
+def is_type_checking_block_issue(issue: IssueLike) -> bool:
     """Check if issue comes from a TYPE_CHECKING block.
 
     Args:
@@ -145,7 +184,7 @@ def is_type_checking_block_issue(issue: Issue) -> bool:
 
 
 def detect_assertion_context(
-    issue: Issue,
+    issue: IssueLike,
     source_code: str | None = None,
 ) -> AssertionContext:
     """Determine the context of an assertion-related issue.
@@ -185,12 +224,18 @@ def detect_assertion_context(
     return AssertionContext.UNKNOWN
 
 
-def _model_involves_havoc(issue: Issue) -> bool:
+def _model_involves_havoc(issue: IssueLike) -> bool:
     """Return True if the issue's Z3 counter-example uses havoc variables."""
     if issue.model is None:
         return False
     try:
-        for decl in issue.model.decls():
+        decls_fn = getattr(issue.model, "decls", None)
+        if not callable(decls_fn):
+            return False
+        decls = decls_fn()
+        if not isinstance(decls, list):
+            return False
+        for decl in decls:
             if decl.name().startswith("havoc_"):
                 return True
     except Exception:
@@ -198,7 +243,7 @@ def _model_involves_havoc(issue: Issue) -> bool:
     return False
 
 
-def calculate_confidence(issue: Issue) -> Confidence:
+def calculate_confidence(issue: IssueLike) -> Confidence:
     """Calculate confidence level for an issue.
 
     Args:
@@ -236,7 +281,7 @@ def calculate_confidence(issue: Issue) -> Confidence:
     return Confidence.LOW
 
 
-def filter_issue(issue: Issue, source_code: str | None = None) -> FilterResult:
+def filter_issue(issue: IssueLike, source_code: str | None = None) -> FilterResult:
     """Apply all filters to an issue and determine if it should be reported.
 
     Args:
@@ -279,12 +324,12 @@ def filter_issue(issue: Issue, source_code: str | None = None) -> FilterResult:
 
 
 def filter_issues(
-    issues: list[Issue],
+    issues: Sequence[TIssue],
     filter_typing: bool = True,
     filter_intentional: bool = True,
     min_confidence: Confidence = Confidence.LOW,
     source_code: str | None = None,
-) -> list[Issue]:
+) -> list[TIssue]:
     """Filter a list of issues based on configured criteria.
 
     Args:
@@ -300,7 +345,7 @@ def filter_issues(
     confidence_order = [Confidence.LOW, Confidence.MEDIUM, Confidence.HIGH]
     min_idx = confidence_order.index(min_confidence)
 
-    filtered: list[Issue] = []
+    filtered: list[TIssue] = []
     for issue in issues:
         result = filter_issue(issue, source_code)
 
@@ -325,7 +370,7 @@ def filter_issues(
     return filtered
 
 
-def deduplicate_issues(issues: list[Issue]) -> list[Issue]:
+def deduplicate_issues(issues: Sequence[TIssue]) -> list[TIssue]:
     """Remove duplicate issues based on location and type.
 
     Args:
@@ -335,7 +380,7 @@ def deduplicate_issues(issues: list[Issue]) -> list[Issue]:
         List with duplicates removed
     """
     seen: set[tuple[object, ...]] = set()
-    result: list[Issue] = []
+    result: list[TIssue] = []
 
     for issue in issues:
         message_key = issue.message or ""

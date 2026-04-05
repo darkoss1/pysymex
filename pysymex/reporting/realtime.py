@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Real-time network map visualizer for pysymex."""
 
 from __future__ import annotations
@@ -11,7 +29,7 @@ import webbrowser
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +45,17 @@ from pysymex.scanner.core import get_code_objects_with_context
 from pysymex.scanner.types import ScanResult
 
 if TYPE_CHECKING:
+    from pysymex.core.state import VMState
     from pysymex.execution.executor import SymbolicExecutor as SymbolicEngine
+
+    class RealtimeStats(TypedDict):
+        paths: int
+        total_issues: int
+        files: int
+        active_func: str
+        pc: int
+        opname: str
+
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -236,7 +264,7 @@ class GlobalState:
         self.nodes: list[dict[str, object]] = []
         self.edges: list[dict[str, str]] = []
         self.active_file: Path | None = None
-        self.stats: dict[str, object] = {
+        self.stats: RealtimeStats = {
             "paths": 0,
             "total_issues": 0,
             "pc": 0,
@@ -333,25 +361,22 @@ class RealtimeVisualizationPlugin(HookPlugin):
             if hasattr(engine, "register_hook"):
                 engine.register_hook(hook_name, handler)
 
-    def _pre_step_hook(self, executor_self: object, state: object) -> None:
+    def _pre_step_hook(self, executor_self: SymbolicExecutor, state: VMState) -> None:
         """Update :data:`global_state` before each execution step."""
-        instr = (
-            executor_self._instructions[state.pc]
-            if state.pc < len(executor_self._instructions)
-            else None
-        )
+        instrs = getattr(executor_self, "_instructions", [])
+        instr = instrs[state.pc] if state.pc < len(instrs) else None
         opname: str = getattr(instr, "opname", "OOB") if instr else "EOF"
 
         with global_state.lock:
             global_state.stats["pc"] = state.pc
             global_state.stats["opname"] = opname
-            global_state.stats["paths"] = executor_self._paths_explored
+            global_state.stats["paths"] = getattr(executor_self, "_paths_explored", 0)
 
         if state.pc % self._throttle_every == 0:
             time.sleep(self._sleep_seconds)
 
 
-def start_realtime_visualization(executor: object) -> RealtimeVisualizationPlugin:
+def start_realtime_visualization(executor: SymbolicExecutor) -> RealtimeVisualizationPlugin:
     """Create and register a :class:`RealtimeVisualizationPlugin` on *executor*.
 
     This is the backward-compatible helper that existing call-sites
@@ -392,7 +417,7 @@ def run_realtime_scan(
         return []
 
     with global_state.lock:
-        nodes = [
+        nodes: list[dict[str, object]] = [
             {
                 "id": str(root_dir.resolve()),
                 "label": root_dir.name,
@@ -530,7 +555,7 @@ def run_realtime_scan(
 
             seen: set[str] = set()
             for issue in all_issues:
-                msg = f"[{issue .kind .name }] {issue .message } (Line {issue .line_number })"
+                msg = f"[{issue.kind.name}] {issue.message} (Line {issue.line_number})"
                 if msg not in seen:
                     seen.add(msg)
                     result.issues.append(

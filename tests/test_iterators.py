@@ -32,6 +32,24 @@ from pysymex.core.iterators import (
 )
 from pysymex.core.symbolic_types import SymbolicInt
 
+
+def _to_concrete(value: object) -> object:
+    if hasattr(value, "z3_int"):
+        z3_int = getattr(value, "z3_int")
+        if hasattr(z3_int, "as_long"):
+            return z3_int.as_long()
+    if hasattr(value, "z3_str"):
+        z3_str = getattr(value, "z3_str")
+        if hasattr(z3_str, "as_string"):
+            return z3_str.as_string()
+    if hasattr(value, "z3_bool"):
+        z3_bool = getattr(value, "z3_bool")
+        if z3.is_true(z3_bool):
+            return True
+        if z3.is_false(z3_bool):
+            return False
+    return value
+
 # =============================================================================
 # SymbolicRange Tests
 # =============================================================================
@@ -347,7 +365,7 @@ class TestSymbolicZip:
             if result.exhausted:
                 break
             elems = result.value.elements
-            pairs.append((elems[0], elems[1]))
+            pairs.append((_to_concrete(elems[0]), _to_concrete(elems[1])))
             it = result.iterator
 
         assert pairs == [(1, "a"), (2, "b"), (3, "c")]
@@ -364,7 +382,7 @@ class TestSymbolicZip:
             if result.exhausted:
                 break
             elems = result.value.elements
-            pairs.append((elems[0], elems[1]))
+            pairs.append((_to_concrete(elems[0]), _to_concrete(elems[1])))
             it = result.iterator
 
         assert pairs == [(1, "x"), (2, "y")]  # Stops at shortest
@@ -382,7 +400,9 @@ class TestSymbolicZip:
             if result.exhausted:
                 break
             elems = result.value.elements
-            tuples.append((elems[0], elems[1], elems[2]))
+            tuples.append(
+                (_to_concrete(elems[0]), _to_concrete(elems[1]), _to_concrete(elems[2]))
+            )
             it = result.iterator
 
         assert tuples == [(1, "a", True), (2, "b", False)]
@@ -572,7 +592,7 @@ class TestDictIterators:
             if result.exhausted:
                 break
             elems = result.value.elements
-            pairs.append((elems[0], elems[1]))
+            pairs.append((_to_concrete(elems[0]), _to_concrete(elems[1])))
             it = result.iterator
 
         assert set(pairs) == {("x", 10), ("y", 20)}
@@ -760,7 +780,7 @@ class TestIteratorIntegration:
                 idx = idx.z3_int.as_long()
             inner = outer[1].elements
 
-            results.append((idx, inner[0], inner[1]))
+            results.append((idx, _to_concrete(inner[0]), _to_concrete(inner[1])))
             enumed = result.iterator
 
         assert results == [(0, 10, "x"), (1, 20, "y"), (2, 30, "z")]

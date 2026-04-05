@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Quantifier Core for pysymex.
 Phase 21: Express "for all" and "exists" in contracts.
@@ -45,7 +63,7 @@ class QuantifierParser:
     RANGE_PATTERN = re.compile(r"(\d+|\w+)\s*(<=?)\s*(\w+)\s*(<|<=)\s*(\d+|\w+|\w+\([^)]+\))")
     IN_PATTERN = re.compile(r"(\w+)\s+in\s+(\w+)")
 
-    def __init__(self, context: dict[str, z3.ExprRef] | None = None):
+    def __init__(self, context: dict[str, z3.ExprRef] | None = None) -> None:
         self.context = context or {}
 
     def parse(self, text: str) -> Quantifier | None:
@@ -104,7 +122,7 @@ class QuantifierParser:
         if expr_str.startswith("len(") and expr_str.endswith(")"):
             inner = expr_str[4:-1]
             if inner in self.context:
-                return z3.Int(f"len_{inner }")
+                return z3.Int(f"len_{inner}")
         return z3.Int(expr_str)
 
     def _parse_body(self, body_str: str, local_vars: dict[str, z3.ExprRef | None]) -> z3.BoolRef:
@@ -115,9 +133,12 @@ class QuantifierParser:
             if v is not None:
                 full_context[k] = v
         try:
-            return parse_condition_to_z3(body_str, full_context)
+            res = parse_condition_to_z3(body_str, full_context)
+            if not z3.is_bool(res):
+                return z3.Bool(f"body_{body_str[:20]}")
+            return res
         except (SyntaxError, KeyError, TypeError, z3.Z3Exception):
-            return z3.Bool(f"body_{body_str [:20 ]}")
+            return z3.Bool(f"body_{body_str[:20]}")
 
 
 def parse_condition_to_z3(
@@ -135,15 +156,18 @@ def parse_condition_to_z3(
     """
     try:
         tree = ast.parse(condition, mode="eval")
-        return ConditionTranslator(context).visit(tree.body)
+        res = ConditionTranslator(context).visit(tree.body)
+        if not z3.is_bool(res):
+            return z3.Bool(f"cond_{hash(condition)}")
+        return res
     except SyntaxError:
-        return z3.Bool(f"cond_{hash (condition )}")
+        return z3.Bool(f"cond_{hash(condition)}")
 
 
 class ConditionTranslator(ast.NodeVisitor):
     """Translates a Python AST condition node to an equivalent Z3 expression."""
 
-    def __init__(self, context: dict[str, z3.ExprRef]):
+    def __init__(self, context: dict[str, z3.ExprRef]) -> None:
         self.context = context
 
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
@@ -167,7 +191,7 @@ class ConditionTranslator(ast.NodeVisitor):
                 case ast.NotEq():
                     comparisons.append(prev != right)
                 case _:
-                    raise ValueError(f"Unsupported comparison: {type (op )}")
+                    raise ValueError(f"Unsupported comparison: {type(op)}")
             prev = right
         return z3.And(*comparisons) if len(comparisons) > 1 else comparisons[0]
 
@@ -180,20 +204,20 @@ class ConditionTranslator(ast.NodeVisitor):
             case ast.Or():
                 return z3.Or(*values)
             case _:
-                raise ValueError(f"Unsupported bool op: {type (node .op )}")
+                raise ValueError(f"Unsupported bool op: {type(node.op)}")
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> z3.ExprRef:
         """Handle unary operators."""
         operand = self.visit(node.operand)
         match node.op:
             case ast.Not():
-                return cast(z3.ExprRef, z3.Not(operand))
+                return cast("z3.ExprRef", z3.Not(operand))
             case ast.USub():
                 return -operand
             case ast.UAdd():
                 return operand
             case _:
-                raise ValueError(f"Unsupported unary op: {type (node .op )}")
+                raise ValueError(f"Unsupported unary op: {type(node.op)}")
 
     def visit_BinOp(self, node: ast.BinOp) -> z3.ExprRef:
         """Handle binary operators."""
@@ -208,17 +232,20 @@ class ConditionTranslator(ast.NodeVisitor):
                 return left * right
             case ast.FloorDiv():
                 trunc = left / right
-                return cast(z3.ExprRef, z3.If(
-                    z3.Or(left % right == 0, right > 0),
-                    trunc,
-                    trunc - 1,
-                ))
+                return cast(
+                    "z3.ExprRef",
+                    z3.If(
+                        z3.Or(left % right == 0, right > 0),
+                        trunc,
+                        trunc - 1,
+                    ),
+                )
             case ast.Mod():
                 return left % right
             case ast.Pow():
                 return left**right
             case _:
-                raise ValueError(f"Unsupported binary op: {type (node .op )}")
+                raise ValueError(f"Unsupported binary op: {type(node.op)}")
 
     def visit_Subscript(self, node: ast.Subscript) -> z3.ExprRef:
         """Handle indexing."""
@@ -232,9 +259,9 @@ class ConditionTranslator(ast.NodeVisitor):
             obj_name = node.value.id
             attr_name = node.attr
             if attr_name == "length":
-                return z3.Int(f"len_{obj_name }")
-            return z3.Int(f"{obj_name }_{attr_name }")
-        return z3.Int(f"attr_{node .attr }")
+                return z3.Int(f"len_{obj_name}")
+            return z3.Int(f"{obj_name}_{attr_name}")
+        return z3.Int(f"attr_{node.attr}")
 
     def visit_Name(self, node: ast.Name) -> z3.ExprRef:
         """Handle variable names."""
@@ -255,7 +282,7 @@ class ConditionTranslator(ast.NodeVisitor):
             case None:
                 return z3.BoolVal(False)
             case _:
-                raise ValueError(f"Unsupported constant type: {type (node.value )}")
+                raise ValueError(f"Unsupported constant type: {type(node.value)}")
 
     def visit_Call(self, node: ast.Call) -> z3.ExprRef:
         """Handle function calls."""
@@ -264,7 +291,7 @@ class ConditionTranslator(ast.NodeVisitor):
             if func_name == "len" and len(node.args) == 1:
                 arg = node.args[0]
                 if isinstance(arg, ast.Name):
-                    return z3.Int(f"len_{arg .id }")
+                    return z3.Int(f"len_{arg.id}")
             if func_name == "abs" and len(node.args) == 1:
                 arg = self.visit(node.args[0])
                 return z3.If(arg >= 0, arg, -arg)
@@ -274,11 +301,11 @@ class ConditionTranslator(ast.NodeVisitor):
             if func_name == "max" and len(node.args) == 2:
                 a, b = [self.visit(arg) for arg in node.args]
                 return z3.If(a >= b, a, b)
-        return z3.Int(f"call_{next_address ()}")
+        return z3.Int(f"call_{next_address()}")
 
     def generic_visit(self, node: ast.AST) -> z3.ExprRef:
         """Fallback for unsupported nodes."""
-        return z3.Int(f"unknown_{type (node ).__name__ }")
+        return z3.Int(f"unknown_{type(node).__name__}")
 
 
 def forall(
@@ -295,17 +322,17 @@ def forall(
     parser = QuantifierParser()
     if isinstance(range_spec, tuple):
         lower, upper = range_spec
-        range_str = f"{lower } <= {var } < {upper }"
+        range_str = f"{lower} <= {var} < {upper}"
     else:
         range_str = range_spec
     if isinstance(condition, str):
         cond_str = condition
     else:
         cond_str = str(condition)
-    text = f"forall({var }, {range_str }, {cond_str })"
+    text = f"forall({var}, {range_str}, {cond_str})"
     result = parser.parse(text)
     if result is None:
-        raise ValueError(f"Failed to parse universal quantifier: {text }")
+        raise ValueError(f"Failed to parse universal quantifier: {text}")
     return result
 
 
@@ -323,17 +350,17 @@ def exists(
     parser = QuantifierParser()
     if isinstance(range_spec, tuple):
         lower, upper = range_spec
-        range_str = f"{lower } <= {var } < {upper }"
+        range_str = f"{lower} <= {var} < {upper}"
     else:
         range_str = range_spec
     if isinstance(condition, str):
         cond_str = condition
     else:
         cond_str = str(condition)
-    text = f"exists({var }, {range_str }, {cond_str })"
+    text = f"exists({var}, {range_str}, {cond_str})"
     result = parser.parse(text)
     if result is None:
-        raise ValueError(f"Failed to parse existential quantifier: {text }")
+        raise ValueError(f"Failed to parse existential quantifier: {text}")
     return result
 
 
@@ -350,17 +377,17 @@ def exists_unique(
     parser = QuantifierParser()
     if isinstance(range_spec, tuple):
         lower, upper = range_spec
-        range_str = f"{lower } <= {var } < {upper }"
+        range_str = f"{lower} <= {var} < {upper}"
     else:
         range_str = range_spec
     if isinstance(condition, str):
         cond_str = condition
     else:
         cond_str = str(condition)
-    text = f"exists!({var }, {range_str }, {cond_str })"
+    text = f"exists!({var}, {range_str}, {cond_str})"
     result = parser.parse(text)
     if result is None:
-        raise ValueError(f"Failed to parse unique existential quantifier: {text }")
+        raise ValueError(f"Failed to parse unique existential quantifier: {text}")
     return result
 
 
@@ -375,7 +402,7 @@ class QuantifierInstantiator:
         max_instantiations: Upper limit on enumerated instances.
     """
 
-    def __init__(self, max_instantiations: int = 100):
+    def __init__(self, max_instantiations: int = 100) -> None:
         self.max_instantiations = max_instantiations
 
     def instantiate_bounded(
@@ -400,9 +427,12 @@ class QuantifierInstantiator:
                     range_size = upper - lower
                     if range_size > self.max_instantiations:
                         continue
+                    if var.z3_var is None:
+                        continue
                     for i in range(lower, upper):
                         instance = z3.substitute(quantifier.body, (var.z3_var, z3.IntVal(i)))
-                        instances.append(cast("z3.BoolRef", instance))
+                        if isinstance(instance, z3.BoolRef):
+                            instances.append(instance)
                 except z3.Z3Exception:
                     continue
         return instances
@@ -414,7 +444,7 @@ class QuantifierInstantiator:
     ) -> int | None:
         """Try to get concrete value for expression."""
         if z3.is_int_value(expr):
-            return cast(z3.IntNumRef, expr).as_long()
+            return expr.as_long()
         solver.push()
         v = z3.Int("__bound")
         solver.add(v == expr)
@@ -423,7 +453,7 @@ class QuantifierInstantiator:
             result = model.eval(v)
             solver.pop()
             if z3.is_int_value(result):
-                return cast(z3.IntNumRef, result).as_long()
+                return result.as_long()
         solver.pop()
         return None
 
@@ -464,7 +494,7 @@ class QuantifierVerifier:
         timeout_ms: Solver timeout in milliseconds.
     """
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
 
     def verify_forall(
@@ -577,14 +607,42 @@ def replace_quantifiers_with_z3(
     Returns the full contract as Z3.
     """
     quantifiers = extract_quantifiers(contract_string)
-    remaining = contract_string
+    if not quantifiers:
+        return parse_condition_to_z3(contract_string, context)
+
     z3_parts: list[z3.BoolRef] = []
+
+    quantifiers.sort(key=lambda q: contract_string.find(q.original_text))
+
+    current_idx = 0
     for q in quantifiers:
+        start_idx = contract_string.find(q.original_text, current_idx)
+        if start_idx == -1:
+            continue
+
+        prefix = contract_string[current_idx:start_idx].strip()
+        if prefix and prefix not in ("and", "or", "not"):
+            if not prefix.endswith("and") and not prefix.endswith("or"):
+                z3_parts.append(parse_condition_to_z3(prefix, context))
+            else:
+                clean_prefix = (
+                    prefix[:-3].strip() if prefix.endswith("and") else prefix[:-2].strip()
+                )
+                if clean_prefix:
+                    z3_parts.append(parse_condition_to_z3(clean_prefix, context))
+
         z3_parts.append(q.to_z3())
-        remaining = remaining.replace(q.original_text, "True")
-    if remaining.strip() and remaining.strip() != "True":
-        remaining_z3 = parse_condition_to_z3(remaining, context)
-        z3_parts.append(remaining_z3)
+        current_idx = start_idx + len(q.original_text)
+
+    suffix = contract_string[current_idx:].strip()
+    if suffix:
+        if suffix.startswith("and"):
+            suffix = suffix[3:].strip()
+        elif suffix.startswith("or"):
+            suffix = suffix[2:].strip()
+        if suffix:
+            z3_parts.append(parse_condition_to_z3(suffix, context))
+
     if not z3_parts:
         return z3.BoolVal(True)
     elif len(z3_parts) == 1:

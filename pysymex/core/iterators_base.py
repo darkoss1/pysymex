@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Iterator base types, ABC, and core iterators: Range and Sequence."""
 
 from __future__ import annotations
@@ -6,7 +24,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 import z3
 
@@ -28,7 +45,7 @@ class IteratorState(Enum):
 class IterationResult:
     """Result of calling next() on an iterator."""
 
-    value: Any
+    value: object
     exhausted: bool
     constraint: z3.BoolRef
     iterator: SymbolicIterator
@@ -96,15 +113,9 @@ class SymbolicRange(SymbolicIterator):
     _iteration_count: int = field(default=0, init=False)
     _name: str = field(default="range")
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post init."""
         self.current = self.start
-        if not isinstance(self.start, (int, z3.ArithRef)):
-            self.start = self.start.value if hasattr(self.start, "value") else int(self.start)
-        if not isinstance(self.stop, (int, z3.ArithRef)):
-            self.stop = self.stop.value if hasattr(self.stop, "value") else int(self.stop)
-        if not isinstance(self.step, (int, z3.ArithRef)):
-            self.step = self.step.value if hasattr(self.step, "value") else int(self.step)
 
     @classmethod
     def from_args(cls, *args: int | z3.ArithRef, name: str = "range") -> SymbolicRange:
@@ -116,7 +127,7 @@ class SymbolicRange(SymbolicIterator):
         elif len(args) == 3:
             return cls(start=args[0], stop=args[1], step=args[2], _name=name)
         else:
-            raise ValueError(f"range() takes 1-3 arguments, got {len (args )}")
+            raise ValueError(f"range() takes 1-3 arguments, got {len(args)}")
 
     def __next__(self) -> IterationResult:
         """Return the next item from the iterator."""
@@ -202,7 +213,7 @@ class SymbolicRange(SymbolicIterator):
         stop = self.stop if isinstance(self.stop, z3.ArithRef) else z3.IntVal(self.stop)
         step = self.step if isinstance(self.step, z3.ArithRef) else z3.IntVal(self.step)
         diff = stop - curr
-        # Z3 integer division returns an Int, so ToInt is not needed and throws an error
+
         return z3.If(
             step > 0,
             z3.If(diff > 0, (diff + step - 1) / step, z3.IntVal(0)),
@@ -240,7 +251,7 @@ class SymbolicRange(SymbolicIterator):
         stop = self.stop if isinstance(self.stop, z3.ArithRef) else z3.IntVal(self.stop)
         step = self.step if isinstance(self.step, z3.ArithRef) else z3.IntVal(self.step)
         diff = stop - start
-        # Z3 integer division returns an Int, so ToInt is not needed and throws an error
+
         return z3.If(
             step > 0,
             z3.If(diff > 0, (diff + step - 1) / step, z3.IntVal(0)),
@@ -261,7 +272,7 @@ class SymbolicSequenceIterator(SymbolicIterator):
     index: int | z3.ArithRef = field(default=0)
     _name: str = field(default="iter")
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if isinstance(self.index, SymbolicInt):
             self.index = self.index.value
 

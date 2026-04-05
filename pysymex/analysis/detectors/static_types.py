@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Enhanced detector types, enums, and base class.
 
 Provides:
@@ -93,11 +111,11 @@ class Issue:
         """Format the issue for display."""
         sev = self.severity.name.lower()
         kind = self.kind.name.replace("_", " ").lower()
-        loc = f"{self .file }:{self .line }"
+        loc = f"{self.file}:{self.line}"
         if self.column:
-            loc += f":{self .column }"
-        conf = f" ({self .confidence :.0%} confident)" if self.confidence < 1.0 else ""
-        return f"[{sev }] {kind } at {loc }{conf }: {self .message }"
+            loc += f":{self.column}"
+        conf = f" ({self.confidence:.0%} confident)" if self.confidence < 1.0 else ""
+        return f"[{sev}] {kind} at {loc}{conf}: {self.message}"
 
 
 @dataclass
@@ -145,7 +163,8 @@ class DetectionContext:
         patterns = self.pattern_info.matcher.get_patterns_at(self.pc)
         for pattern in patterns:
             if pattern.kind == PatternKind.TRY_EXCEPT_PATTERN:
-                caught = pattern.variables.get("caught_exceptions", set())
+                raw_caught = pattern.variables.get("caught_exceptions", set())
+                caught = raw_caught if isinstance(raw_caught, set) else set()
                 if exception_type in caught or "Exception" in caught:
                     return True
         return False

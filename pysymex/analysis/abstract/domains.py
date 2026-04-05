@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract Interpretation Layer for pysymex.
 
 Implementation split for maintainability:
@@ -185,7 +203,7 @@ class AbstractInterpreter:
     Provides sound over-approximation of program behavior.
     """
 
-    def __init__(self, widening_threshold: int = 3):
+    def __init__(self, widening_threshold: int = 3) -> None:
         self.widening_threshold = widening_threshold
 
     def analyze_assignment(
@@ -260,7 +278,6 @@ class AbstractInterpreter:
         if s2.value == SignValue.ZERO:
             return s1
         if s1.value == SignValue.ZERO:
-
             if s2.value == SignValue.POS:
                 return Sign.negative()
             if s2.value == SignValue.NEG:

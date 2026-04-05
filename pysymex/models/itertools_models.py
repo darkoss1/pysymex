@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Models for the itertools module.
 
 This module provides symbolic models for itertools functions:
@@ -16,7 +34,7 @@ This module provides symbolic models for itertools functions:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import z3
 
@@ -80,7 +98,7 @@ def model_islice(
                 iterable.z3_len,
                 z3.IntVal(stop),
             )
-            result.z3_len = cast("z3.ArithRef", clamped)
+            result.z3_len = clamped
     elif len(args) >= 2:
         start, stop = args[0], args[1]
         step = args[2] if len(args) > 2 else 1
@@ -280,7 +298,7 @@ def model_zip_longest(
     if iterables:
         max_len: z3.ArithRef | z3.ExprRef = iterables[0].z3_len
         for it in iterables[1:]:
-            max_len = cast("z3.ArithRef", z3.If(it.z3_len > max_len, it.z3_len, max_len))
+            max_len = z3.If(it.z3_len > max_len, it.z3_len, max_len)
         result.z3_len = max_len
 
     return result

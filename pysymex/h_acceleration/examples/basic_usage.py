@@ -1,3 +1,20 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 PySyMex GPU Acceleration Example.
@@ -15,9 +32,40 @@ This example:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterable
+from typing import Protocol, cast
 
 
-def main():
+class _BackendTypeLike(Protocol):
+    name: str
+
+
+class _BackendInfoLike(Protocol):
+    name: str
+    backend_type: _BackendTypeLike
+    max_treewidth: int
+    device_memory_mb: int | None
+    compute_units: int | None
+
+
+class _CompiledLike(Protocol):
+    instruction_count: int
+    register_count: int
+
+
+class _BackendUsedLike(Protocol):
+    name: str
+
+
+class _EvalResultLike(Protocol):
+    backend_used: _BackendUsedLike
+    total_time_ms: float
+    bitmap: object
+
+    def count_satisfying(self) -> int: ...
+
+
+def main() -> int:
     """Main example function."""
 
     print("PySyMex GPU Acceleration Example")
@@ -32,14 +80,28 @@ def main():
 
     try:
         from pysymex.h_acceleration import (
-            compile_constraint,
-            evaluate_bag,
-            get_backend_info,
+            compile_constraint as _compile_constraint,
         )
-        from pysymex.h_acceleration.dispatcher import iter_satisfying, warmup
+        from pysymex.h_acceleration import (
+            evaluate_bag as _evaluate_bag,
+        )
+        from pysymex.h_acceleration import (
+            get_backend_info as _get_backend_info,
+        )
+        from pysymex.h_acceleration.dispatcher import iter_satisfying as _iter_satisfying
+        from pysymex.h_acceleration.dispatcher import warmup as _warmup
     except ImportError as e:
         print(f"Error: GPU module not available: {e}")
         return 1
+
+    compile_constraint = cast("Callable[..., _CompiledLike]", _compile_constraint)
+    evaluate_bag = cast("Callable[[_CompiledLike], _EvalResultLike]", _evaluate_bag)
+    get_backend_info = cast("Callable[[], _BackendInfoLike]", _get_backend_info)
+    iter_satisfying = cast(
+        "Callable[[object, int, list[str]], Iterable[dict[str, bool]]]",
+        _iter_satisfying,
+    )
+    warmup = _warmup
 
     print("\nBackend Information:")
     print("-" * 40)
@@ -63,7 +125,7 @@ def main():
     print("Example 1: Simple Constraint")
     print("=" * 60)
 
-    a, b, c = z3.Bools('a b c')
+    a, b, c = z3.Bools("a b c")
     constraint = z3.And(
         z3.Or(a, b),
         z3.Or(z3.Not(b), c),
@@ -75,7 +137,7 @@ def main():
     print(f"Total assignments: {2**3} = 8")
 
     t0 = time.perf_counter()
-    compiled = compile_constraint(constraint, ['a', 'b', 'c'])
+    compiled = compile_constraint(constraint, ["a", "b", "c"])
     compile_time = (time.perf_counter() - t0) * 1000
 
     print("\nCompilation:")
@@ -85,7 +147,6 @@ def main():
 
     t0 = time.perf_counter()
     result = evaluate_bag(compiled)
-    eval_time = (time.perf_counter() - t0) * 1000
 
     print("\nEvaluation:")
     print(f"  Backend: {result.backend_used.name}")
@@ -93,7 +154,7 @@ def main():
     print(f"  Satisfying: {result.count_satisfying()}/8")
 
     print("\nSatisfying Assignments:")
-    for assignment in iter_satisfying(result.bitmap, 3, ['a', 'b', 'c']):
+    for assignment in iter_satisfying(result.bitmap, 3, ["a", "b", "c"]):
         print(f"  {assignment}")
 
     print("\n" + "=" * 60)
@@ -101,20 +162,20 @@ def main():
     print("=" * 60)
 
     import random
+
     random.seed(42)
 
     num_vars = 12
     num_clauses = int(num_vars * 4.3)
 
-    vars_list = [z3.Bool(f'x{i}') for i in range(num_vars)]
-    var_names = [f'x{i}' for i in range(num_vars)]
+    vars_list = [z3.Bool(f"x{i}") for i in range(num_vars)]
+    var_names = [f"x{i}" for i in range(num_vars)]
 
     clauses = []
     for _ in range(num_clauses):
         indices = random.sample(range(num_vars), 3)
         literals = [
-            vars_list[i] if random.random() > 0.5 else z3.Not(vars_list[i])
-            for i in indices
+            vars_list[i] if random.random() > 0.5 else z3.Not(vars_list[i]) for i in indices
         ]
         clauses.append(z3.Or(*literals))
 
@@ -135,7 +196,6 @@ def main():
 
     t0 = time.perf_counter()
     result = evaluate_bag(compiled)
-    eval_time = (time.perf_counter() - t0) * 1000
 
     sat_count = result.count_satisfying()
     sat_ratio = sat_count / (2**num_vars) * 100
@@ -153,9 +213,11 @@ def main():
     print("Example 3: Scaling with Treewidth")
     print("=" * 60)
 
-    print("\n{:>5} {:>12} {:>10} {:>12} {:>12}".format(
-        "Width", "States", "Instrs", "Time (ms)", "Mop/s"
-    ))
+    print(
+        "\n{:>5} {:>12} {:>10} {:>12} {:>12}".format(
+            "Width", "States", "Instrs", "Time (ms)", "Mop/s"
+        )
+    )
     print("-" * 55)
 
     for w in [8, 10, 12, 14, 16]:
@@ -163,8 +225,8 @@ def main():
             print(f"{w:>5} (exceeds backend limit)")
             continue
 
-        vars_list = [z3.Bool(f'v{i}') for i in range(w)]
-        var_names = [f'v{i}' for i in range(w)]
+        vars_list = [z3.Bool(f"v{i}") for i in range(w)]
+        var_names = [f"v{i}" for i in range(w)]
 
         clauses = []
         for i in range(w - 1):
@@ -180,13 +242,16 @@ def main():
             times.append((time.perf_counter() - t0) * 1000)
 
         import numpy as np
+
         median_time = np.median(times)
 
         ops = (2**w) * compiled.instruction_count
         throughput = ops / (median_time / 1000) / 1e6
 
-        print(f"{w:>5} {2**w:>12,} {compiled.instruction_count:>10} "
-              f"{median_time:>12.3f} {throughput:>12.1f}")
+        print(
+            f"{w:>5} {2**w:>12,} {compiled.instruction_count:>10} "
+            f"{median_time:>12.3f} {throughput:>12.1f}"
+        )
 
     print("\n" + "=" * 60)
     print("Example completed successfully!")
@@ -194,6 +259,8 @@ def main():
 
     return 0
 
+
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

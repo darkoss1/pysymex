@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract domain base classes and Interval domain.
 
 Provides the AbstractValue ABC (lattice operations) and the Interval domain.
@@ -5,7 +23,6 @@ Provides the AbstractValue ABC (lattice operations) and the Interval domain.
 
 from __future__ import annotations
 
-import icontract
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
@@ -13,9 +30,20 @@ from typing import (
     TypeVar,
 )
 
+import icontract
 import z3
 
 T = TypeVar("T")
+
+
+def _post_join(self: Interval, other: Interval, result: Interval) -> bool:
+    return (self.is_bottom() or result.contains(self.lo) if self.lo is not None else True) and (
+        other.is_bottom() or result.contains(other.lo) if other.lo is not None else True
+    )
+
+
+def _post_meet(self: Interval, other: Interval, result: Interval) -> bool:
+    return result.is_bottom() or (self.contains(result.lo) if result.lo is not None else True)
 
 
 class AbstractValue(ABC, Generic[T]):
@@ -84,7 +112,7 @@ class Interval(AbstractValue["Interval"]):
     hi: int | None = None
     _is_bottom: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post init."""
         if (
             self.lo is not None
@@ -118,7 +146,7 @@ class Interval(AbstractValue["Interval"]):
             return False
         return True
 
-    @icontract.ensure(lambda self, other, result: (self.is_bottom() or result.contains(self.lo) if self.lo is not None else True) and (other.is_bottom() or result.contains(other.lo) if other.lo is not None else True))
+    @icontract.ensure(_post_join)
     def join(self, other: Interval) -> Interval:
         """Least upper bound: [min(lo), max(hi)]"""
         if self.is_bottom():
@@ -133,7 +161,7 @@ class Interval(AbstractValue["Interval"]):
             new_hi = max(self.hi, other.hi)
         return Interval(new_lo, new_hi)
 
-    @icontract.ensure(lambda self, other, result: result.is_bottom() or (self.contains(result.lo) if result.lo is not None else True))
+    @icontract.ensure(_post_meet)
     def meet(self, other: Interval) -> Interval:
         """Greatest lower bound: [max(lo), min(hi)]"""
         if self.is_bottom() or other.is_bottom():
@@ -185,8 +213,10 @@ class Interval(AbstractValue["Interval"]):
         return z3.And(*constraints)
 
     @classmethod
-    def from_concrete(cls, value: int) -> Interval:
+    def from_concrete(cls, value: object) -> Interval:
         """Create singleton interval."""
+        if not isinstance(value, int):
+            raise TypeError(f"Interval.from_concrete expects int, got {type(value).__name__}")
         return cls(value, value)
 
     @classmethod
@@ -247,7 +277,6 @@ class Interval(AbstractValue["Interval"]):
         endpoints = [self.lo, self.hi, other.lo, other.hi]
 
         if any(e is None for e in endpoints):
-
             if self.is_constant() and self.lo == 0:
                 return Interval(0, 0)
             if other.is_constant() and other.lo == 0:
@@ -261,7 +290,6 @@ class Interval(AbstractValue["Interval"]):
                     if a is not None and b is not None:
                         corners.append(a * b)
                     elif a is not None and b is None:
-
                         if a > 0:
                             if not b_is_lo:
                                 unbounded_hi = True
@@ -285,7 +313,6 @@ class Interval(AbstractValue["Interval"]):
                             else:
                                 unbounded_hi = True
                     else:
-
                         unbounded_lo = True
                         unbounded_hi = True
             result_lo: int | None = None
@@ -320,4 +347,4 @@ class Interval(AbstractValue["Interval"]):
             return "⊥"
         lo_str = str(self.lo) if self.lo is not None else "-∞"
         hi_str = str(self.hi) if self.hi is not None else "+∞"
-        return f"[{lo_str }, {hi_str }]"
+        return f"[{lo_str}, {hi_str}]"

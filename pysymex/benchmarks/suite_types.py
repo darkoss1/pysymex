@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Benchmarking suite types for pysymex.
 Dataclasses and enums used by the benchmarking framework.
 """
@@ -128,7 +146,7 @@ class RegressionResult:
     def change_description(self) -> str:
         """Human-readable change description."""
         direction = "slower" if self.change_percent > 0 else "faster"
-        return f"{abs (self .change_percent ):.1f}% {direction }"
+        return f"{abs(self.change_percent):.1f}% {direction}"
 
 
 __all__ = [

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Models for the contextlib module.
 
 This module provides models for Python's contextlib standard library,
@@ -8,18 +26,52 @@ from __future__ import annotations
 
 import logging
 import types
-from collections.abc import Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Protocol, Self, runtime_checkable
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class ContextManagerProtocol(Protocol):
+    """Protocol for objects that support the context manager interface."""
+
+    def __enter__(self) -> object: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool | None: ...
+
+
+@runtime_checkable
+class AsyncContextManagerProtocol(Protocol):
+    """Protocol for objects that support the async context manager interface."""
+
+    async def __aenter__(self) -> object: ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool | None: ...
+
+
+ExitCallback = Callable[
+    [type[BaseException] | None, BaseException | None, types.TracebackType | None],
+    bool | None,
+]
 
 
 @dataclass
 class ContextManagerModel:
     """Model for contextmanager decorator."""
 
-    def __call__(self, func: Callable[..., object]) -> object:
+    def __call__(self, func: Callable[..., Generator[object, object, object]]) -> object:
         """Transform a generator function into a context manager."""
         return _ContextManager(func)
 
@@ -27,10 +79,10 @@ class ContextManagerModel:
 class _ContextManager:
     """Wrapper that transforms a generator into a context manager."""
 
-    def __init__(self, func: Callable[..., object]) -> None:
+    def __init__(self, func: Callable[..., Generator[object, object, object]]) -> None:
         """Initialize a new _ContextManager instance."""
-        self._func: Callable[..., object] = func
-        self._generator: Generator[Any, Any, Any] | None = None
+        self._func: Callable[..., Generator[object, object, object]] = func
+        self._generator: Generator[object, object, object] | None = None
 
     def __enter__(self) -> object:
         """Enter the context."""
@@ -42,13 +94,16 @@ class _ContextManager:
             raise RuntimeError("Generator didn't yield") from exc
 
     def __exit__(
-        self, exc_type: type[BaseException] | None, exc_val: object, exc_tb: object
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
     ) -> bool | None:
         """Exit the context."""
         if self._generator is None:
             return None
 
-        gen: Generator[Any, Any, Any] = self._generator
+        gen: Generator[object, object, object] = self._generator
         try:
             if exc_type is None:
                 try:
@@ -72,7 +127,7 @@ class _ContextManager:
 class AsyncContextManagerModel:
     """Model for asynccontextmanager decorator."""
 
-    def __call__(self, func: Callable[..., object]) -> object:
+    def __call__(self, func: Callable[..., AsyncGenerator[object, object]]) -> object:
         """Transform an async generator function into an async context manager."""
         return _AsyncContextManager(func)
 
@@ -80,10 +135,10 @@ class AsyncContextManagerModel:
 class _AsyncContextManager:
     """Wrapper that transforms an async generator into an async context manager."""
 
-    def __init__(self, func: Callable[..., object]) -> None:
+    def __init__(self, func: Callable[..., AsyncGenerator[object, object]]) -> None:
         """Initialize a new _AsyncContextManager instance."""
-        self._func: Callable[..., object] = func
-        self._generator: object = None
+        self._func: Callable[..., AsyncGenerator[object, object]] = func
+        self._generator: AsyncGenerator[object, object] | None = None
 
     async def __aenter__(self) -> object:
         """Enter the async context."""
@@ -94,13 +149,16 @@ class _AsyncContextManager:
             raise RuntimeError("Async generator didn't yield") from exc
 
     async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: object, exc_tb: object
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
     ) -> bool | None:
         """Exit the async context."""
         if self._generator is None:
             return None
 
-        gen: object = self._generator
+        gen: AsyncGenerator[object, object] = self._generator
         try:
             if exc_type is None:
                 try:
@@ -176,9 +234,9 @@ class ExitStackModel:
                 logger.debug("ExitStack callback failed", exc_info=True)
         return suppressed
 
-    def push(self, exit: object) -> object:
+    def push(self, exit: ContextManagerProtocol | ExitCallback) -> object:
         """Add a context manager or exit callback to the stack."""
-        if hasattr(exit, "__exit__"):
+        if isinstance(exit, ContextManagerProtocol):
             self._exit_callbacks.append((exit.__exit__, (), {}))
             return exit.__enter__()
         else:
@@ -206,14 +264,23 @@ class AsyncExitStackModel:
     def __init__(self) -> None:
         """Initialize a new AsyncExitStackModel instance."""
         self._exit_callbacks: list[
-            tuple[Callable[..., object], tuple[object, ...], dict[str, object]]
+            tuple[
+                Callable[..., Awaitable[object]],
+                tuple[object, ...],
+                dict[str, object],
+            ]
         ] = []
 
     async def __aenter__(self) -> AsyncExitStackModel:
         """Aenter."""
         return self
 
-    async def __aexit__(self, exc_type: type | None, exc_val: object, exc_tb: object) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool:
         """Aexit."""
         suppressed: bool = False
         for callback, args, kwargs in reversed(self._exit_callbacks):
@@ -226,19 +293,22 @@ class AsyncExitStackModel:
                 logger.debug("AsyncExitStack callback failed", exc_info=True)
         return suppressed
 
-    async def enter_async_context(self, cm: object) -> object:
+    async def enter_async_context(self, cm: AsyncContextManagerProtocol) -> object:
         """Enter an async context manager and add its __aexit__ to the stack."""
         result = await cm.__aenter__()
         self._exit_callbacks.append((cm.__aexit__, (), {}))
         return result
 
-    def push_async_exit(self, exit: Callable[..., object]) -> None:
+    def push_async_exit(self, exit: Callable[..., Awaitable[object]]) -> None:
         """Add an async exit callback to the stack."""
         self._exit_callbacks.append((exit, (), {}))
 
     def push_async_callback(
-        self, callback: Callable[..., object], *args: object, **kwargs: object
-    ) -> Callable[..., object]:
+        self,
+        callback: Callable[..., Awaitable[object]],
+        *args: object,
+        **kwargs: object,
+    ) -> Callable[..., Awaitable[object]]:
         """Register an async callback to be called on exit."""
 
         async def wrapper() -> object:
@@ -258,29 +328,59 @@ def _stub_aclosing(obj: object) -> object:
     return obj
 
 
-def _stub_redirect_stdout(_new_target: object) -> object:
+class _RedirectStdout:
+    """Stub context manager for redirect_stdout."""
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
+        return None
+
+
+class _RedirectStderr:
+    """Stub context manager for redirect_stderr."""
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
+        return None
+
+
+class _Suppress:
+    """Stub context manager for suppress."""
+
+    def __enter__(self) -> _Suppress:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool:
+        return True
+
+
+def _stub_redirect_stdout(_new_target: object) -> _RedirectStdout:
     """Stub redirect stdout."""
-    return type(
-        "redirect_stdout",
-        (),
-        {"__enter__": lambda self: None, "__exit__": lambda self, *args: None},
-    )()
+    return _RedirectStdout()
 
 
-def _stub_redirect_stderr(_new_target: object) -> object:
+def _stub_redirect_stderr(_new_target: object) -> _RedirectStderr:
     """Stub redirect stderr."""
-    return type(
-        "redirect_stderr",
-        (),
-        {"__enter__": lambda self: None, "__exit__": lambda self, *args: None},
-    )()
-
-
-_SUPPRESS_TYPE: type = type(
-    "suppress",
-    (),
-    {"__enter__": lambda self: self, "__exit__": lambda self, *args: True},
-)
+    return _RedirectStderr()
 
 
 CONTEXTLIB_MODELS: dict[str, object] = {
@@ -291,7 +391,7 @@ CONTEXTLIB_MODELS: dict[str, object] = {
     "AsyncExitStack": AsyncExitStackModel,
     "closing": _stub_closing,
     "aclosing": _stub_aclosing,
-    "suppress": _SUPPRESS_TYPE,
+    "suppress": _Suppress,
     "redirect_stdout": _stub_redirect_stdout,
     "redirect_stderr": _stub_redirect_stderr,
 }

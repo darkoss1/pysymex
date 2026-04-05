@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Floating-point symbolic analysis for pysymex.
 This module provides symbolic reasoning about floating-point numbers
 using Z3's FP theory.
@@ -81,7 +99,7 @@ class SymbolicFloat:
         value: float | None = None,
         z3_expr: z3.FPRef | None = None,
         config: FloatConfig | None = None,
-    ):
+    ) -> None:
         self.config = config or FloatConfig()
         self._sort = get_fp_sort(self.config.precision)
         self._rm = self.config.get_rounding_mode()
@@ -152,9 +170,9 @@ class SymbolicFloat:
 
     def __floordiv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
         other_expr = self._to_fp(other)
-        # Z3 FP does not have a native floordiv, so we divide and round towards negative infinity
+
         div_expr = z3.fpDiv(self._rm, self._expr, other_expr)
-        # RTN is Round Towards Negative Infinity
+
         floored = z3.fpRoundToIntegral(z3.RTN(), div_expr)
         return SymbolicFloat(
             z3_expr=floored,
@@ -220,11 +238,11 @@ class SymbolicFloat:
 
     def is_positive_infinity(self) -> z3.BoolRef:
         """Check if value is positive infinity."""
-        return z3.And(z3.fpIsInf(self._expr, z3.fpIsPositive(self._expr)))
+        return z3.And(z3.fpIsInf(self._expr), z3.fpIsPositive(self._expr))
 
     def is_negative_infinity(self) -> z3.BoolRef:
         """Check if value is negative infinity."""
-        return z3.And(z3.fpIsInf(self._expr, z3.fpIsNegative(self._expr)))
+        return z3.And(z3.fpIsInf(self._expr), z3.fpIsNegative(self._expr))
 
     def is_zero(self) -> z3.BoolRef:
         """Check if value is zero (+0 or -0)."""
@@ -232,11 +250,11 @@ class SymbolicFloat:
 
     def is_positive_zero(self) -> z3.BoolRef:
         """Check if value is positive zero."""
-        return z3.And(z3.fpIsZero(self._expr, z3.fpIsPositive(self._expr)))
+        return z3.And(z3.fpIsZero(self._expr), z3.fpIsPositive(self._expr))
 
     def is_negative_zero(self) -> z3.BoolRef:
         """Check if value is negative zero."""
-        return z3.And(z3.fpIsZero(self._expr, z3.fpIsNegative(self._expr)))
+        return z3.And(z3.fpIsZero(self._expr), z3.fpIsNegative(self._expr))
 
     def is_denormal(self) -> z3.BoolRef:
         """Check if value is denormalized (subnormal)."""
@@ -291,17 +309,23 @@ class SymbolicFloat:
         """Stable hash of the Z3 expression."""
         return self._expr.hash()
 
-    def conditional_merge(self, other: SymbolicFloat | float | int, condition: z3.BoolRef) -> AnySymbolic:
+    def conditional_merge(
+        self, other: SymbolicFloat | float | int, condition: z3.BoolRef
+    ) -> AnySymbolic:
         """Merge with another float based on a condition."""
         other_fp = self._to_fp(other)
-        return SymbolicFloat(
-            z3_expr=cast(z3.FPRef, z3.If(condition, self._expr, other_fp)),
-            config=self.config,
+        return cast(
+            "AnySymbolic",
+            SymbolicFloat(
+                z3_expr=z3.If(condition, self._expr, other_fp),
+                config=self.config,
+            ),
         )
 
     def as_unified(self) -> object:
         """Convert to unified SymbolicValue."""
         from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicValue
+
         return SymbolicValue(
             _name=self.name,
             z3_int=self.to_int(),
@@ -320,7 +344,7 @@ class SymbolicFloat:
         if isinstance(value, SymbolicFloat):
             if value._sort == self._sort:
                 return value._expr
-            # Different precision — promote/demote to self's sort.
+
             return z3.fpToFP(self._rm, value._expr, self._sort)
         return z3.FPVal(float(value), self._sort)
 
@@ -331,7 +355,7 @@ class SymbolicFloat:
 class FloatAnalyzer:
     """Analyzer for floating-point issues."""
 
-    def __init__(self, config: FloatConfig | None = None):
+    def __init__(self, config: FloatConfig | None = None) -> None:
         self.config = config or FloatConfig()
         self._issues: list[dict[str, object]] = []
 
@@ -347,7 +371,7 @@ class FloatAnalyzer:
         from pysymex.core.solver import get_model, is_satisfiable
 
         if self.config.check_nan:
-            nan_check = constraints + [result.is_nan()]
+            nan_check = [*constraints, result.is_nan()]
             if is_satisfiable(nan_check):
                 issues.append(
                     {
@@ -357,7 +381,7 @@ class FloatAnalyzer:
                     }
                 )
         if self.config.check_infinity:
-            inf_check = constraints + [result.is_infinity()]
+            inf_check = [*constraints, result.is_infinity()]
             if is_satisfiable(inf_check):
                 issues.append(
                     {
@@ -367,7 +391,7 @@ class FloatAnalyzer:
                     }
                 )
         if op in ("div", "truediv", "/") and len(operands) >= 2:
-            div_zero = constraints + [operands[1].is_zero()]
+            div_zero = [*constraints, operands[1].is_zero()]
             if is_satisfiable(div_zero):
                 issues.append(
                     {
@@ -377,7 +401,7 @@ class FloatAnalyzer:
                     }
                 )
         if self.config.check_denormal:
-            denorm_check = constraints + [result.is_denormal()]
+            denorm_check = [*constraints, result.is_denormal()]
             if is_satisfiable(denorm_check):
                 issues.append(
                     {
@@ -399,7 +423,7 @@ class FloatAnalyzer:
         issues: list[dict[str, object]] = []
         from pysymex.core.solver import get_model, is_satisfiable
 
-        nan_cmp = constraints + [z3.Or(left.is_nan(), right.is_nan())]
+        nan_cmp = [*constraints, z3.Or(left.is_nan(), right.is_nan())]
         if is_satisfiable(nan_cmp):
             issues.append(
                 {
@@ -418,7 +442,7 @@ class FloatAnalyzer:
 class AccuracyAnalyzer:
     """Analyzes numerical accuracy and error propagation."""
 
-    def __init__(self, precision: FloatPrecision = FloatPrecision.DOUBLE):
+    def __init__(self, precision: FloatPrecision = FloatPrecision.DOUBLE) -> None:
         self.precision = precision
         self._sort = get_fp_sort(precision)
         if precision == FloatPrecision.SINGLE:
@@ -470,11 +494,12 @@ class AccuracyAnalyzer:
 
         sum_mag = z3.fpAdd(z3.RNE(), z3.fpAbs(a.z3_expr), z3.fpAbs(b.z3_expr))
         diff_mag = z3.fpAbs(result.z3_expr)
-        ratio_check = constraints + [
+        ratio_check = [
+            *constraints,
             z3.fpLT(
                 diff_mag,
                 z3.fpMul(z3.RNE(), sum_mag, z3.FPVal(0.001, get_fp_sort(a.config.precision))),
-            )
+            ),
         ]
         return is_satisfiable(ratio_check)
 

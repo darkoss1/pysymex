@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Loop analysis core logic for pysymex.
 Loop detection, bound inference, induction variable detection,
 summarization, invariant generation, and widening.
@@ -6,13 +24,9 @@ summarization, invariant generation, and widening.
 from __future__ import annotations
 
 import dis
-from typing import (
-    TYPE_CHECKING,
-    cast,
-)
+from typing import TYPE_CHECKING, cast
 
 import z3
-from typing import TYPE_CHECKING, cast
 
 from pysymex.analysis.loops.types import (
     InductionVariable,
@@ -32,7 +46,7 @@ class LoopDetector:
     loop bodies, exit PCs, and nesting information.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._loops: list[LoopInfo] = []
         self._back_edges: list[tuple[int, int]] = []
 
@@ -42,6 +56,9 @@ class LoopDetector:
         entry_pc: int = 0,
     ) -> list[LoopInfo]:
         """Analyze control flow graph to detect loops."""
+
+        self._loops = []
+        self._back_edges = []
         cfg = self._build_cfg(instructions)
         dominators = self._compute_dominators(cfg, entry_pc)
         self._back_edges = self._find_back_edges(cfg, dominators)
@@ -51,14 +68,15 @@ class LoopDetector:
         self._compute_nesting()
         return self._loops
 
+    @property
+    def loops(self) -> list[LoopInfo]:
+        """Expose detected loops for tests and formal checks."""
+        return self._loops
+
     def _build_cfg(self, instructions: list[dis.Instruction]) -> dict[int, set[int]]:
         """Build control flow graph from instructions."""
         cfg: dict[int, set[int]] = {}
-        # BUG-008 fix: include all unconditional jump variants emitted by CPython.
-        # JUMP_BACKWARD_NO_INTERRUPT and JUMP_NO_INTERRUPT are used in tight loops
-        # to skip the signal-check overhead of JUMP_BACKWARD.  Without them, loops
-        # using those opcodes are not recognised as back edges and widening is never
-        # triggered.
+
         _unconditional_jumps = frozenset(
             {
                 "JUMP_FORWARD",
@@ -192,7 +210,7 @@ class LoopBoundInference:
     Caches results per loop header PC.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._cached_bounds: dict[int, LoopBound] = {}
 
     def infer_bound(
@@ -241,9 +259,9 @@ class LoopBoundInference:
 
     def _is_range_loop(self, loop: LoopInfo, state: VMState) -> bool:
         """Check if loop is a for i in range(...) loop by looking at stack/locals."""
-        # The previous implementation was accessing state._instructions which doesn't exist.
-        # We can look for SymbolicRange on the stack.
+
         from pysymex.core.iterators import SymbolicRange
+
         for item in state.stack:
             if isinstance(item, SymbolicRange):
                 return True
@@ -268,9 +286,9 @@ class LoopBoundInference:
                     return LoopBound.constant(length)
                 else:
                     return LoopBound.symbolic(length)
-        for _addr, obj in state.memory.items():
+        for obj in state.memory.values():
             if isinstance(obj, dict):
-                for _key, val in cast("dict[str, object]", obj).items():
+                for val in cast("dict[str, object]", obj).values():
                     if isinstance(val, SymbolicRange):
                         length = val.length
                         if isinstance(length, int):
@@ -298,10 +316,16 @@ class LoopBoundInference:
                 else:
                     step = None
                 if step is not None and step > 0:
-                    var_expr = getattr(var, "z3_int", var)
-                    for constraint in state.path_constraints:
+                    var_expr_raw = getattr(var, "z3_int", None)
+                    if var_expr_raw is None or not isinstance(var_expr_raw, z3.ExprRef):
+                        continue
+                    var_expr: z3.ExprRef = var_expr_raw
+                    for constraint in reversed(state.path_constraints):
+                        if isinstance(constraint, list):
+                            continue
+                        constraint_expr = cast("z3.ExprRef", constraint)
                         if z3.is_lt(constraint) or z3.is_le(constraint):
-                            children = constraint.children()
+                            children = constraint_expr.children()
                             if len(children) == 2:
                                 lhs, rhs = children[0], children[1]
                                 if z3.eq(lhs, var_expr) or str(lhs) == str(var_expr):
@@ -324,8 +348,19 @@ class LoopBoundInference:
 class InductionVariableDetector:
     """Detects induction variables in loop bodies."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._detected: dict[str, InductionVariable] = {}
+
+    @staticmethod
+    def _coerce_z3_int(value: object) -> z3.ArithRef:
+        if isinstance(value, z3.ArithRef):
+            return value
+        z3_int = getattr(value, "z3_int", None)
+        if isinstance(z3_int, z3.ArithRef):
+            return z3_int
+        if isinstance(value, (int, float)):
+            return z3.IntVal(int(value))
+        return z3.IntVal(0)
 
     def detect(
         self,
@@ -389,18 +424,10 @@ class InductionVariableDetector:
                 step_val = prev_instrs[1].argval
                 if isinstance(step_val, (int, float)):
                     initial = state.locals.get(name)
-                    if initial is None:
-                        initial = z3.IntVal(0)
-                    elif hasattr(initial, "z3_int"):
-                        initial = getattr(initial, "z3_int")
-                    elif not isinstance(initial, z3.ExprRef):
-                        initial = z3.IntVal(
-                            int(initial) if isinstance(initial, (int, float)) else 0
-                        )
                     direction = 1 if step_val > 0 else -1
                     return InductionVariable(
                         name=name,
-                        initial=initial,
+                        initial=self._coerce_z3_int(initial),
                         step=z3.IntVal(int(step_val)),
                         direction=direction,
                     )
@@ -415,15 +442,9 @@ class InductionVariableDetector:
                 and "ADD" in prev_instrs[2].opname
             ):
                 initial = state.locals.get(name)
-                if initial is None:
-                    initial = z3.IntVal(0)
-                elif hasattr(initial, "z3_int"):
-                    initial = getattr(initial, "z3_int")
-                elif not isinstance(initial, z3.ExprRef):
-                    initial = z3.IntVal(0)
                 return InductionVariable(
                     name=name,
-                    initial=initial,
+                    initial=self._coerce_z3_int(initial),
                     step=z3.IntVal(1),
                     direction=1,
                 )
@@ -466,39 +487,49 @@ class LoopSummarizer:
     ) -> dict[str, z3.ExprRef]:
         """Detect accumulator patterns like sum += iv (Arithmetic Series)."""
         effects: dict[str, z3.ExprRef] = {}
-        
+
         instructions = getattr(state, "current_instructions", None)
         if not instructions:
             return effects
 
         iv_names = set(loop.induction_vars.keys())
-        
+
         for i in range(len(instructions) - 3):
             instr1 = instructions[i]
             if getattr(instr1, "offset", -1) not in loop.body_pcs:
                 continue
-                
+
             if instr1.opname in ("LOAD_FAST", "LOAD_NAME"):
                 acc_name = instr1.argval
                 if isinstance(acc_name, str):
                     instr2 = instructions[i + 1]
-                    
+
                     if instr2.opname in ("LOAD_FAST", "LOAD_NAME") and instr2.argval in iv_names:
                         iv_name = instr2.argval
                         instr3 = instructions[i + 2]
-                        
-                        if instr3.opname == "BINARY_OP" and getattr(instr3, "argrepr", "") in ("+", "+="):
+
+                        if instr3.opname == "BINARY_OP" and getattr(instr3, "argrepr", "") in (
+                            "+",
+                            "+=",
+                        ):
                             instr4 = instructions[i + 3]
-                            
-                            if instr4.opname in ("STORE_FAST", "STORE_NAME") and instr4.argval == acc_name:
+
+                            if (
+                                instr4.opname in ("STORE_FAST", "STORE_NAME")
+                                and instr4.argval == acc_name
+                            ):
                                 iv = loop.induction_vars[str(iv_name)]
                                 acc_val = state.locals.get(acc_name)
-                                
+
                                 if acc_val is not None:
                                     acc_initial = getattr(acc_val, "z3_int", acc_val)
                                     if isinstance(acc_initial, z3.ExprRef):
-                                        n = z3.IntVal(iterations) if isinstance(iterations, int) else iterations
-                                        # Arithmetic series sum: n * initial + step * (n * (n - 1)) / 2
+                                        n = (
+                                            z3.IntVal(iterations)
+                                            if isinstance(iterations, int)
+                                            else iterations
+                                        )
+
                                         sum_n = (n * (n - z3.IntVal(1))) / z3.IntVal(2)
                                         total_addition = (n * iv.initial) + (sum_n * iv.step)
                                         effects[acc_name] = acc_initial + total_addition
@@ -518,16 +549,25 @@ class LoopSummarizer:
                 new_state.locals[name] = SymbolicValue.from_z3(final_value, name)
         for addr, effects in summary.memory_effects.items():
             if addr in new_state.memory:
-                for attr, value in effects.items():
-                    new_state.memory[addr][attr] = value
+                mem_obj = new_state.memory[addr]
+                if isinstance(mem_obj, dict):
+                    from pysymex.core.types import SymbolicValue as SV
+
+                    for attr, value in effects.items():
+                        mem_obj[attr] = SV.from_z3(value, f"mem_{addr}_{attr}")
         return new_state
 
 
 class LoopInvariantGenerator:
     """Generates loop invariants for verification."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._invariants: dict[int, list[z3.BoolRef]] = {}
+
+    @staticmethod
+    def _get_z3_int(value: object) -> z3.ArithRef | None:
+        z3_int = getattr(value, "z3_int", None)
+        return z3_int if isinstance(z3_int, z3.ArithRef) else None
 
     def generate_invariants(
         self,
@@ -538,17 +578,18 @@ class LoopInvariantGenerator:
         invariants: list[z3.BoolRef] = []
         for name, iv in loop.induction_vars.items():
             sym_var = state.locals.get(name)
-            if sym_var and hasattr(sym_var, "z3_int"):
+            z3_int = self._get_z3_int(sym_var)
+            if z3_int is not None:
                 if iv.direction >= 0:
-                    invariants.append(sym_var.z3_int >= iv.initial)
+                    invariants.append(z3_int >= iv.initial)
                 else:
-                    invariants.append(sym_var.z3_int <= iv.initial)
+                    invariants.append(z3_int <= iv.initial)
                 if loop.bound is not None:
                     final = iv.final_value(loop.bound.upper)
                     if iv.direction > 0:
-                        invariants.append(sym_var.z3_int <= final)
+                        invariants.append(z3_int <= final)
                     else:
-                        invariants.append(sym_var.z3_int >= final)
+                        invariants.append(z3_int >= final)
         from pysymex.core.iterators import SymbolicRange
 
         for item in state.stack:
@@ -575,14 +616,14 @@ class LoopInvariantGenerator:
         """Verify that an invariant holds."""
         from pysymex.core.solver import is_satisfiable
 
-        constraints = list(state.path_constraints) + [z3.Not(invariant)]
+        constraints = [*list(state.path_constraints), z3.Not(invariant)]
         return not is_satisfiable(constraints)
 
 
 class LoopWidening:
     """Applies widening to accelerate loop analysis."""
 
-    def __init__(self, widening_threshold: int = 3):
+    def __init__(self, widening_threshold: int = 3) -> None:
         self.widening_threshold = widening_threshold
         self._iteration_count: dict[int, int] = {}
 
@@ -609,18 +650,16 @@ class LoopWidening:
         constraints from ``SymbolicValue.symbolic()`` are added to the path
         so widened values retain proper typing.
         """
-        from pysymex.core.types import SymbolicValue, SymbolicString, merge_taint
+        from pysymex.core.types import SymbolicString, SymbolicValue, merge_taint
 
         widened = new_state.copy()
-        
-        # Track which variables we've already handled via induction variable analysis
+
         handled_vars: set[str] = set()
 
         for name, iv in loop.induction_vars.items():
             old_val = old_state.locals.get(name)
             new_val = new_state.locals.get(name)
             if old_val is not None and new_val is not None:
-                # Use specialized symbolic constructors based on affinity if possible
                 val_affinity = getattr(new_val, "affinity_type", None)
                 if val_affinity == "int":
                     widened_sym, type_constraint = SymbolicValue.symbolic_int(f"{name}_widened")
@@ -628,34 +667,38 @@ class LoopWidening:
                     widened_sym, type_constraint = SymbolicValue.symbolic_bool(f"{name}_widened")
                 else:
                     widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
-                
+
                 widened.locals[name] = widened_sym
                 widened.path_constraints = widened.path_constraints.append(type_constraint)
                 handled_vars.add(name)
 
-                # Add induction variable bounds
-                if isinstance(widened_sym, SymbolicValue):
-                    if iv.direction >= 0:
-                        widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= iv.initial)
-                    else:
-                        widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= iv.initial)
-                    
-                    if loop.bound is not None:
-                        final = iv.final_value(loop.bound.upper)
-                        if iv.direction > 0:
-                            widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int <= final)
-                        else:
-                            widened.path_constraints = widened.path_constraints.append(widened_sym.z3_int >= final)
+                if iv.direction >= 0:
+                    widened.path_constraints = widened.path_constraints.append(
+                        widened_sym.z3_int >= iv.initial
+                    )
+                else:
+                    widened.path_constraints = widened.path_constraints.append(
+                        widened_sym.z3_int <= iv.initial
+                    )
 
-        # Handle other loop-variant variables
+                if loop.bound is not None:
+                    final = iv.final_value(loop.bound.upper)
+                    if iv.direction > 0:
+                        widened.path_constraints = widened.path_constraints.append(
+                            widened_sym.z3_int <= final
+                        )
+                    else:
+                        widened.path_constraints = widened.path_constraints.append(
+                            widened_sym.z3_int >= final
+                        )
+
         for name in set(old_state.locals.keys()) | set(new_state.locals.keys()):
             if name in handled_vars:
                 continue
-                
+
             old_val = old_state.locals.get(name)
             new_val = new_state.locals.get(name)
-            
-            # If the value hasn't changed, don't havoc it!
+
             try:
                 if old_val == new_val:
                     continue
@@ -665,35 +708,40 @@ class LoopWidening:
 
             if old_val is not None and new_val is not None:
                 if name in new_state.locals:
-                    # Preserve type affinity during havoc
                     old_affinity = getattr(old_val, "affinity_type", None)
                     new_affinity = getattr(new_val, "affinity_type", None)
                     if old_affinity == new_affinity and old_affinity != "NoneType":
                         if old_affinity == "int":
-                            widened_sym, type_constraint = SymbolicValue.symbolic_int(f"{name}_widened")
+                            widened_sym, type_constraint = SymbolicValue.symbolic_int(
+                                f"{name}_widened"
+                            )
                         elif old_affinity == "bool":
-                            widened_sym, type_constraint = SymbolicValue.symbolic_bool(f"{name}_widened")
+                            widened_sym, type_constraint = SymbolicValue.symbolic_bool(
+                                f"{name}_widened"
+                            )
                         elif old_affinity == "str":
-                            widened_sym, type_constraint = SymbolicString.symbolic(f"{name}_widened")
+                            widened_sym, type_constraint = SymbolicString.symbolic(
+                                f"{name}_widened"
+                            )
                         else:
                             widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
                     else:
                         widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
-                        
-                    # Carry over basic safety properties (Taint)
-                    if (hasattr(old_val, "taint_labels") and old_val.taint_labels) or \
-                       (hasattr(new_val, "taint_labels") and new_val.taint_labels):
+
+                    old_taint = getattr(old_val, "taint_labels", None)
+                    new_taint = getattr(new_val, "taint_labels", None)
+                    if old_taint or new_taint:
                         import dataclasses as _dc
-                        widened_sym = _dc.replace(widened_sym, taint_labels=merge_taint(
-                            getattr(old_val, "taint_labels", set()), 
-                            getattr(new_val, "taint_labels", set())
-                        ))
-                    
+
+                        widened_sym = _dc.replace(
+                            widened_sym,
+                            taint_labels=merge_taint(old_taint or set(), new_taint or set()),
+                        )
+
                     widened.locals[name] = widened_sym
                     widened.path_constraints = widened.path_constraints.append(type_constraint)
-        
-        return widened
 
+        return widened
 
 
 __all__ = [

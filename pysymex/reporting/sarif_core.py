@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """SARIF generation logic for pysymex.
 Contains the SARIFGenerator class and helper functions for converting
 pysymex analysis results into SARIF 2.1.0 format.
@@ -7,6 +25,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from pysymex.reporting.sarif_types import (
     CodeFlow,
@@ -309,7 +328,7 @@ def vulnerability_to_sarif_result(vuln: VulnerabilityReport) -> SARIFResult:
             code_flows.append(
                 CodeFlow(
                     locations=flow_locations,
-                    message=f"Taint flows from {vuln .source } to {vuln .sink }",
+                    message=f"Taint flows from {vuln.source} to {vuln.sink}",
                 )
             )
     properties: dict[str, object] = {}
@@ -331,7 +350,8 @@ def vulnerability_to_sarif_result(vuln: VulnerabilityReport) -> SARIFResult:
 
 def issue_to_sarif_result(issue: dict[str, object]) -> SARIFResult:
     """Convert an issue dictionary to a SARIF result."""
-    issue_type = issue.get("type") or issue.get("kind") or "unknown"
+    raw_type = issue.get("type") or issue.get("kind") or "unknown"
+    issue_type = str(raw_type)
     rule_id = vuln_type_to_rule_id(issue_type)
     level = "warning"
     if "error" in issue_type.lower():
@@ -341,20 +361,26 @@ def issue_to_sarif_result(issue: dict[str, object]) -> SARIFResult:
         line = issue.get("line")
         try:
             if isinstance(line, bool):
-                line = 1
-            line_int = int(line) if line is not None else 1
-            if line_int < 1:
-                line_int = 1
+                line_val = 1
+            elif isinstance(line, (int, str)):
+                line_val = int(line)
+            else:
+                line_val = 1
+
+            if line_val < 1:
+                line_val = 1
+            line_int = line_val
         except (ValueError, TypeError):
             line_int = 1
 
         locations.append(
             PhysicalLocation(
-                file_path=issue.get("file", "unknown"),
+                file_path=str(issue.get("file", "unknown")),
                 start_line=line_int,
             )
         )
-    message = issue.get("message", issue.get("description", f"Issue: {issue_type }"))
+    raw_message = issue.get("message", issue.get("description", f"Issue: {issue_type}"))
+    message = str(raw_message)
     properties: dict[str, object] = {}
     if "triggering_input" in issue:
         properties["triggeringInput"] = issue["triggering_input"]
@@ -372,7 +398,7 @@ class SARIFGenerator:
 
     **Mapping Strategy:**
     Transforms internal engine artifacts into the standard Static Analysis
-    Results Interchange Format (SARIF). 
+    Results Interchange Format (SARIF).
     - **Vulnerabilities**: Mapped to SARIF `result` objects with associated rule IDs.
     - **Path Constraints**: Encoded in the `codeFlows` property to allow
       step-by-step path reproduction in SARIF viewers.
@@ -387,7 +413,7 @@ class SARIFGenerator:
         self,
         tool_name: str = "pysymex",
         tool_version: str = "1.0.0",
-    ):
+    ) -> None:
         self.tool_name = tool_name
         self.tool_version = tool_version
 
@@ -416,7 +442,7 @@ class SARIFGenerator:
                 ReportingDescriptor(
                     id=rule_id,
                     name=rule_id,
-                    short_description=f"Issue {rule_id }",
+                    short_description=f"Issue {rule_id}",
                 ),
             )
             for rule_id in sorted(used_rule_ids)
@@ -455,14 +481,23 @@ class SARIFGenerator:
         """Generate SARIF from an AnalysisResult object."""
         issues: list[dict[str, object]] = []
         files: list[str] = []
-        if hasattr(analysis_result, "issues"):
-            issues = analysis_result.issues
-        elif hasattr(analysis_result, "findings"):
-            issues = analysis_result.findings
-        if hasattr(analysis_result, "file_path"):
-            files = [str(analysis_result.file_path)]
-        elif hasattr(analysis_result, "analyzed_files"):
-            files = [str(f) for f in analysis_result.analyzed_files]
+
+        issues_val = getattr(analysis_result, "issues", None)
+        if issues_val is not None:
+            issues = cast("list[dict[str, object]]", issues_val)
+        else:
+            findings_val = getattr(analysis_result, "findings", None)
+            if findings_val is not None:
+                issues = cast("list[dict[str, object]]", findings_val)
+
+        file_path_val = getattr(analysis_result, "file_path", None)
+        if file_path_val is not None:
+            files = [str(file_path_val)]
+        else:
+            analyzed_files_val = getattr(analysis_result, "analyzed_files", None)
+            if analyzed_files_val is not None:
+                files = [str(f) for f in cast("list[object]", analyzed_files_val)]
+
         return self.generate(issues=issues, analyzed_files=files)
 
 

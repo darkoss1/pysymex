@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Concrete enhanced detector implementations.
 
 Provides all concrete detector classes:
@@ -21,6 +39,14 @@ from .static_types import (
     IssueKind,
     StaticDetector,
 )
+
+
+def _caught_by_handler_reason(type_env: object) -> str:
+    analyzer = getattr(type_env, "analyzer", None)
+    if analyzer is None:
+        return "Caught by exception handler"
+    reason = getattr(analyzer, "CAUGHT_BY_HANDLER", None)
+    return reason if isinstance(reason, str) else "Caught by exception handler"
 
 
 class StaticDivisionByZeroDetector(StaticDetector):
@@ -82,11 +108,7 @@ class StaticDivisionByZeroDetector(StaticDetector):
             )
             return self.suppress_issue(
                 issue,
-                (
-                    ctx.type_env.analyzer.CAUGHT_BY_HANDLER
-                    if hasattr(ctx.type_env, "analyzer")
-                    else "Caught by exception handler"
-                ),
+                _caught_by_handler_reason(ctx.type_env),
             )
         if divisor_var and self._has_prior_assertion(ctx):
             return None
@@ -229,11 +251,7 @@ class StaticKeyErrorDetector(StaticDetector):
             )
             return self.suppress_issue(
                 issue,
-                (
-                    ctx.type_env.analyzer.CAUGHT_BY_HANDLER
-                    if hasattr(ctx.type_env, "analyzer")
-                    else "Caught by exception handler"
-                ),
+                _caught_by_handler_reason(ctx.type_env),
             )
         if self._has_key_check(ctx, container_var, key_var, key_value):
             return None
@@ -398,7 +416,7 @@ class StaticIndexErrorDetector(StaticDetector):
             return None
         if self._in_safe_iteration(ctx, container_var, index_var):
             return None
-        if index_value is not None and container_type.length is not None:
+        if isinstance(index_value, int) and container_type.length is not None:
             if 0 <= index_value < container_type.length or (
                 index_value < 0 and abs(index_value) <= container_type.length
             ):
@@ -413,11 +431,7 @@ class StaticIndexErrorDetector(StaticDetector):
             )
             return self.suppress_issue(
                 issue,
-                (
-                    ctx.type_env.analyzer.CAUGHT_BY_HANDLER
-                    if hasattr(ctx.type_env, "analyzer")
-                    else "Caught by exception handler"
-                ),
+                _caught_by_handler_reason(ctx.type_env),
             )
         if self._is_safe_access_pattern(ctx, container_var, index_var, index_value):
             return None

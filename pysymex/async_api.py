@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Async versions of the public pysymex API.
 
 Provides non-blocking wrappers around the synchronous analysis functions
@@ -16,18 +34,42 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from pysymex.execution.executor import ExecutionResult
+
+if TYPE_CHECKING:
+    from pysymex.execution.executor_types import ExecutionConfig
+
+
+class AnalyzeConfigKwargs(TypedDict, total=False):
+    config: ExecutionConfig | None
+    max_paths: int
+    max_depth: int
+    max_iterations: int
+    timeout: float
+    verbose: bool
+    detect_division_by_zero: bool
+    detect_assertion_errors: bool
+    detect_index_errors: bool
+    detect_type_errors: bool
+    detect_overflow: bool
+
+
+def _timeout_from_kwargs(kwargs: AnalyzeConfigKwargs) -> float:
+    timeout_val = kwargs.get("timeout", 60.0)
+    return float(timeout_val)
+
 
 logger = logging.getLogger(__name__)
 
 
 async def analyze_async(
-    func: object,
+    func: Callable[..., object],
     symbolic_args: Mapping[str, str] | None = None,
-    **kwargs: object,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
 ) -> ExecutionResult:
     """Async version of :func:`pysymex.api.analyze`.
 
@@ -44,7 +86,7 @@ async def analyze_async(
     """
     from pysymex.api import analyze
 
-    timeout_secs: float = kwargs.get("timeout", 60.0)
+    timeout_secs = _timeout_from_kwargs(kwargs)
     async with asyncio.timeout(timeout_secs + 5.0):
         return await asyncio.to_thread(analyze, func, symbolic_args, **kwargs)
 
@@ -52,7 +94,7 @@ async def analyze_async(
 async def analyze_code_async(
     code: str,
     symbolic_vars: Mapping[str, str] | None = None,
-    **kwargs: object,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
 ) -> ExecutionResult:
     """Async version of :func:`pysymex.api.analyze_code`.
 
@@ -66,7 +108,7 @@ async def analyze_code_async(
     """
     from pysymex.api import analyze_code
 
-    timeout_secs: float = kwargs.get("timeout", 60.0)
+    timeout_secs = _timeout_from_kwargs(kwargs)
     async with asyncio.timeout(timeout_secs + 5.0):
         return await asyncio.to_thread(analyze_code, code, symbolic_vars, **kwargs)
 
@@ -75,7 +117,7 @@ async def analyze_file_async(
     filepath: str | Path,
     function_name: str,
     symbolic_args: Mapping[str, str] | None = None,
-    **kwargs: object,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
 ) -> ExecutionResult:
     """Async version of :func:`pysymex.api.analyze_file`.
 
@@ -92,7 +134,7 @@ async def analyze_file_async(
     """
     from pysymex.api import analyze_file
 
-    timeout_secs: float = kwargs.get("timeout", 60.0)
+    timeout_secs = _timeout_from_kwargs(kwargs)
     async with asyncio.timeout(timeout_secs + 5.0):
         return await asyncio.to_thread(
             analyze_file, filepath, function_name, symbolic_args, **kwargs
@@ -172,7 +214,7 @@ async def scan_directory_async(
                             status = "ERROR"
                         elif result.issues:
                             status = f"{len(result.issues)} issue(s)"
-                        print(f"[{completed}/{total}] ({pct}%) " f"{file_path.name} {status}")
+                        print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

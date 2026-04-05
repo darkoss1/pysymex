@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Benchmarking suite logic for pysymex.
 Provides benchmark execution, reporting, comparison, and built-in workloads.
 """
@@ -12,17 +30,16 @@ import tracemalloc
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import (
-    Any,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from pysymex.benchmarks.suite_types import (
     BenchmarkCategory,
     BenchmarkResult,
     RegressionResult,
 )
+
+if TYPE_CHECKING:
+    from pysymex._typing import StackValue
 
 
 def _bench_list_factory() -> list[Benchmark]:
@@ -75,10 +92,10 @@ class Benchmark:
     def __init__(
         self,
         name: str,
-        func: Callable[[], Any],
+        func: Callable[[], object],
         category: BenchmarkCategory = BenchmarkCategory.END_TO_END,
         description: str = "",
-    ):
+    ) -> None:
         self.name = name
         self.func = func
         self.category = category
@@ -96,7 +113,7 @@ class Benchmark:
         times: list[float] = []
         peak_memory = 0.0
         total_allocated = 0.0
-        result: Any = None
+        result: object | None = None
         for _ in range(warmup):
             gc.collect()
             self.func()
@@ -119,10 +136,12 @@ class Benchmark:
         instructions = 0
         solver_calls = 0
         if isinstance(result, dict):
-            result_dict = cast("dict[str, int]", result)
-            paths = result_dict.get("paths", 0)
-            instructions = result_dict.get("instructions", 0)
-            solver_calls = result_dict.get("solver_calls", 0)
+            paths_val = result.get("paths", 0)
+            instructions_val = result.get("instructions", 0)
+            solver_calls_val = result.get("solver_calls", 0)
+            paths = paths_val if isinstance(paths_val, int) else 0
+            instructions = instructions_val if isinstance(instructions_val, int) else 0
+            solver_calls = solver_calls_val if isinstance(solver_calls_val, int) else 0
         return BenchmarkResult(
             name=self.name,
             category=self.category,
@@ -164,8 +183,15 @@ def benchmark(
     def decorator(func: F) -> F:
         """Decorator."""
         bench_name = name or func.__name__
-        func._benchmark = Benchmark(
-            name=bench_name, func=func, category=category, description=func.__doc__ or ""
+        setattr(
+            func,
+            "_benchmark",
+            Benchmark(
+                name=bench_name,
+                func=func,
+                category=category,
+                description=func.__doc__ or "",
+            ),
         )
         return func
 
@@ -185,17 +211,17 @@ class BenchmarkReporter:
         print("pysymex Benchmark Results")
         print("=" * 70)
         for result in results:
-            print(f"\n{result .name } ({result .category .name })")
+            print(f"\n{result.name} ({result.category.name})")
             print("-" * 40)
-            print(f"  Mean time:     {result .mean_seconds *1000 :.2f} ms")
-            print(f"  Std dev:       {result .stddev_seconds *1000 :.2f} ms")
+            print(f"  Mean time:     {result.mean_seconds * 1000:.2f} ms")
+            print(f"  Std dev:       {result.stddev_seconds * 1000:.2f} ms")
             print(
-                f"  Min/Max:       {result .min_seconds *1000 :.2f}/{result .max_seconds *1000 :.2f} ms"
+                f"  Min/Max:       {result.min_seconds * 1000:.2f}/{result.max_seconds * 1000:.2f} ms"
             )
-            print(f"  Peak memory:   {result .peak_memory_mb :.2f} MB")
-            print(f"  Throughput:    {result .throughput :.0f} instr/sec")
+            print(f"  Peak memory:   {result.peak_memory_mb:.2f} MB")
+            print(f"  Throughput:    {result.throughput:.0f} instr/sec")
             if result.paths_explored > 0:
-                print(f"  Paths/sec:     {result .paths_per_second :.2f}")
+                print(f"  Paths/sec:     {result.paths_per_second:.2f}")
         print("\n" + "=" * 70)
 
     @staticmethod
@@ -220,9 +246,9 @@ class BenchmarkReporter:
         ]
         for r in results:
             lines.append(
-                f"| {r .name } | {r .category .name } | "
-                f"{r .mean_seconds *1000 :.2f} | {r .stddev_seconds *1000 :.2f} | "
-                f"{r .peak_memory_mb :.2f} | {r .throughput :.0f} instr/s |"
+                f"| {r.name} | {r.category.name} | "
+                f"{r.mean_seconds * 1000:.2f} | {r.stddev_seconds * 1000:.2f} | "
+                f"{r.peak_memory_mb:.2f} | {r.throughput:.0f} instr/s |"
             )
         return "\n".join(lines)
 
@@ -235,7 +261,7 @@ class BenchmarkComparator:
             regression.
     """
 
-    def __init__(self, threshold_percent: float = 10.0):
+    def __init__(self, threshold_percent: float = 10.0) -> None:
         """
         Args:
             threshold_percent: Percent change that triggers regression.
@@ -276,17 +302,17 @@ class BenchmarkComparator:
         lines = ["# Benchmark Comparison Report\n"]
         failures = [r for r in regressions if r.is_regression]
         if failures:
-            lines.append(f"## [WARN] {len (failures )} Regression(s) Detected\n")
+            lines.append(f"## [WARN] {len(failures)} Regression(s) Detected\n")
             for r in failures:
-                lines.append(f"- **{r .benchmark_name }**: {r .change_description }")
-                lines.append(f"  - Baseline: {r .baseline_mean *1000 :.2f} ms")
-                lines.append(f"  - Current: {r .current_mean *1000 :.2f} ms\n")
+                lines.append(f"- **{r.benchmark_name}**: {r.change_description}")
+                lines.append(f"  - Baseline: {r.baseline_mean * 1000:.2f} ms")
+                lines.append(f"  - Current: {r.current_mean * 1000:.2f} ms\n")
         else:
             lines.append("## [OK] No Regressions Detected\n")
         lines.append("## All Results\n")
         for r in regressions:
             status = "[REGRESSION]" if r.is_regression else "[OK]"
-            lines.append(f"{status } {r .benchmark_name }: {r .change_description }")
+            lines.append(f"{status} {r.benchmark_name}: {r.change_description}")
         return "\n".join(lines)
 
 
@@ -385,7 +411,7 @@ def bench_branching() -> dict[str, int]:
     """Benchmark: 20-way branch explosion with Z3."""
     import z3
 
-    vars_ = [z3.Int(f"b{i }") for i in range(20)]
+    vars_ = [z3.Int(f"b{i}") for i in range(20)]
     solver = z3.Solver()
     solver.set("timeout", 5000)
     paths = 0
@@ -429,7 +455,7 @@ def bench_linear_constraints() -> dict[str, int]:
 
     solver = z3.Solver()
     solver.set("timeout", 10000)
-    vars_ = [z3.Int(f"v{i }") for i in range(100)]
+    vars_ = [z3.Int(f"v{i}") for i in range(100)]
     for i in range(99):
         solver.add(vars_[i] + 1 <= vars_[i + 1])
     solver.add(vars_[0] >= 0)
@@ -471,8 +497,8 @@ def bench_state_forking() -> dict[str, int]:
 
     state = VMState()
     for i in range(50):
-        v = z3.Int(f"var_{i }")
-        state.local_vars[f"var_{i }"] = v
+        v = z3.Int(f"var_{i}")
+        state.local_vars[f"var_{i}"] = cast("StackValue", v)
         state.add_constraint(v >= 0)
 
     forks = 0
@@ -522,9 +548,9 @@ def bench_race_detection() -> dict[str, int]:
     ops = 0
 
     for var_idx in range(5):
-        addr = f"shared_var_{var_idx }"
+        addr = f"shared_var_{var_idx}"
 
-        analyzer.record_write("thread_0", addr, f"val_{ops }")
+        analyzer.record_write("thread_0", addr, f"val_{ops}")
         ops += 1
 
         analyzer.record_read("thread_1", addr)

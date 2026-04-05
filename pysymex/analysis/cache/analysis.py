@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Parallel analysis infrastructure: tasks, results, progress reporting,
 parallel execution, and cached analysis wrapper.
 """
@@ -11,7 +29,6 @@ import time
 from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
 
 from pysymex.analysis.cache.core import CacheKey, TieredCache
 
@@ -23,7 +40,7 @@ class AnalysisTask:
     """A task for parallel analysis."""
 
     task_id: str
-    target: Any
+    target: object
     priority: int = 0
     dependencies: list[str] = field(default_factory=lambda: [])
 
@@ -45,7 +62,7 @@ class AnalysisResult:
 class ProgressReporter:
     """Reports progress of parallel analysis."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.total = 0
         self.completed = 0
         self.failed = 0
@@ -104,7 +121,7 @@ class ParallelAnalyzer:
         max_workers: int | None = None,
         use_processes: bool = False,
         cache: TieredCache | None = None,
-    ):
+    ) -> None:
         self.max_workers = max_workers or min(os.cpu_count() or 4, 8)
         self.use_processes = use_processes
         self.cache = cache
@@ -119,6 +136,7 @@ class ParallelAnalyzer:
         """Analyze a batch of tasks in parallel."""
         results: list[AnalysisResult] = []
         ordered = self._order_tasks(tasks)
+        task_map = {t.task_id: t for t in tasks}
         self.progress.set_total(len(ordered))
         executor_class = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
         with executor_class(max_workers=self.max_workers) as executor:
@@ -126,8 +144,19 @@ class ParallelAnalyzer:
             completed_ids: set[str] = set()
             pending = list(ordered)
             while pending or futures:
-                ready = [t for t in pending if all(d in completed_ids for d in t.dependencies)]
-                # Ensure we submit highest priority tasks first
+                ready = []
+                for t in pending:
+                    can_run = True
+                    for d in t.dependencies:
+                        if d in completed_ids:
+                            continue
+                        if d not in task_map:
+                            continue
+                        can_run = False
+                        break
+                    if can_run:
+                        ready.append(t)
+
                 ready.sort()
 
                 if not ready and not futures:
@@ -225,7 +254,7 @@ class CachedAnalysis:
         analyze_fn: Callable[[object], object],
         key_fn: Callable[[object], CacheKey],
         cache: TieredCache | None = None,
-    ):
+    ) -> None:
         self.analyze_fn = analyze_fn
         self.key_fn = key_fn
         self.cache = cache or TieredCache()

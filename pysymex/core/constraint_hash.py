@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Structural constraint hashing for pysymex.
 
 Provides content-addressable hashing for Z3 constraints using native
@@ -28,7 +46,6 @@ def structural_hash(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
     h = 0x3456789A
     mult = 1000000007
     for c in constraints:
-        # Prevent arbitrary precision integer explosion by masking inside the loop
         ch = c.hash() & 0xFFFFFFFFFFFFFFFF
         h = ((h ^ ch) * mult) & 0xFFFFFFFFFFFFFFFF
         mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU Bytecode Instruction Set Architecture and Z3-to-Bytecode Compiler.
 
 This module defines a minimal, GPU-optimized instruction set for evaluating
@@ -19,6 +37,8 @@ from typing import TYPE_CHECKING, Final
 
 import numpy as np
 import numpy.typing as npt
+
+from pysymex.core.constraint_hash import structural_hash
 
 if TYPE_CHECKING:
     import z3
@@ -42,6 +62,7 @@ MAX_INSTRUCTIONS: Final[int] = 8192
 
 _compile_cache: dict[tuple[int, tuple[str, ...]], CompiledConstraint] = {}
 _compile_lock = threading.Lock()
+
 
 class Opcode(IntEnum):
     """GPU bytecode opcodes.
@@ -72,18 +93,25 @@ class Opcode(IntEnum):
     ITE = 0x30
     HALT = 0xFF
 
-INSTRUCTION_DTYPE: Final[np.dtype[np.void]] = np.dtype([
-    ('opcode', np.uint16),
-    ('dst', np.uint16),
-    ('src1', np.uint16),
-    ('src2', np.uint16),
-    ('flags', np.uint16),
-    ('immediate', np.uint16),
-    ('padding1', np.uint16),
-    ('padding2', np.uint16),
-], align=True)
 
-assert INSTRUCTION_DTYPE.itemsize == 16, f"Instruction size must be 16 bytes, got {INSTRUCTION_DTYPE.itemsize}"
+INSTRUCTION_DTYPE: Final[np.dtype[np.void]] = np.dtype(
+    [
+        ("opcode", np.uint16),
+        ("dst", np.uint16),
+        ("src1", np.uint16),
+        ("src2", np.uint16),
+        ("flags", np.uint16),
+        ("immediate", np.uint16),
+        ("padding1", np.uint16),
+        ("padding2", np.uint16),
+    ],
+    align=True,
+)
+
+assert INSTRUCTION_DTYPE.itemsize == 16, (
+    f"Instruction size must be 16 bytes, got {INSTRUCTION_DTYPE.itemsize}"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Instruction:
@@ -110,18 +138,17 @@ class Instruction:
     def __post_init__(self) -> None:
         """Validate instruction fields."""
         if not (0 <= self.dst < MAX_REGISTERS):
-            raise ValueError(f"dst must be 0-{MAX_REGISTERS-1}, got {self.dst}")
+            raise ValueError(f"dst must be 0-{MAX_REGISTERS - 1}, got {self.dst}")
         if not (0 <= self.src1 < MAX_REGISTERS):
-            raise ValueError(f"src1 must be 0-{MAX_REGISTERS-1}, got {self.src1}")
+            raise ValueError(f"src1 must be 0-{MAX_REGISTERS - 1}, got {self.src1}")
         if not (0 <= self.src2 < MAX_REGISTERS):
-            raise ValueError(f"src2 must be 0-{MAX_REGISTERS-1}, got {self.src2}")
+            raise ValueError(f"src2 must be 0-{MAX_REGISTERS - 1}, got {self.src2}")
         if not (0 <= self.immediate < 65536):
             raise ValueError(f"immediate must be 0-65535, got {self.immediate}")
 
     def to_tuple(self) -> tuple[int, int, int, int, int, int, int, int]:
         """Convert to tuple for NumPy assignment."""
-        return (int(self.opcode), self.dst, self.src1, self.src2,
-                self.flags, self.immediate, 0, 0)
+        return (int(self.opcode), self.dst, self.src1, self.src2, self.flags, self.immediate, 0, 0)
 
     def __repr__(self) -> str:
         op_name = self.opcode.name
@@ -137,6 +164,7 @@ class Instruction:
             return f"{op_name} R{self.dst}, R{self.src1}, {self.immediate}"
         else:
             return f"{op_name} R{self.dst}, R{self.src1}, R{self.src2}"
+
 
 @dataclass(frozen=True, slots=True)
 class CompiledConstraint:
@@ -186,8 +214,11 @@ class CompiledConstraint:
         return int(self.instructions.nbytes) + self.output_bitmap_size
 
     def __repr__(self) -> str:
-        return (f"CompiledConstraint(vars={self.num_variables}, "
-                f"instrs={self.instruction_count}, regs={self.register_count})")
+        return (
+            f"CompiledConstraint(vars={self.num_variables}, "
+            f"instrs={self.instruction_count}, regs={self.register_count})"
+        )
+
 
 class BytecodeCompiler:
     """Compiles Z3 Boolean expressions to GPU bytecode.
@@ -254,13 +285,15 @@ class BytecodeCompiler:
         self._emit(Opcode.HALT)
 
         if len(self._instructions) > MAX_INSTRUCTIONS:
-            raise ValueError(f"Too many instructions: {len(self._instructions)} > {MAX_INSTRUCTIONS}")
+            raise ValueError(
+                f"Too many instructions: {len(self._instructions)} > {MAX_INSTRUCTIONS}"
+            )
 
         instr_array = np.zeros(len(self._instructions), dtype=INSTRUCTION_DTYPE)
         for i, instr in enumerate(self._instructions):
             instr_array[i] = instr.to_tuple()
 
-        source_hash = hash(str(expr)) & 0xFFFFFFFF
+        source_hash = structural_hash([expr]) & 0xFFFFFFFF
 
         return CompiledConstraint(
             instructions=instr_array,
@@ -290,13 +323,12 @@ class BytecodeCompiler:
         immediate: int = 0,
     ) -> None:
         """Emit an instruction to the stream."""
-        self._instructions.append(
-            Instruction(opcode, dst, src1, src2, flags, immediate)
-        )
+        self._instructions.append(Instruction(opcode, dst, src1, src2, flags, immediate))
 
     def _order_variables_by_frequency(self, expr: z3.ExprRef, variables: list[str]) -> list[str]:
         """Reorder variables so the most referenced ones are at indices 0-5."""
         import z3
+
         freq: dict[str, int] = dict.fromkeys(variables, 0)
         seen: set[int] = set()
 
@@ -306,15 +338,19 @@ class BytecodeCompiler:
                 return
             seen.add(e_id)
 
-            if z3.is_const(e) and str(e) in freq:
-                freq[str(e)] += 1
+            if z3.is_const(e) and e.sort() == z3.BoolSort():
+                try:
+                    name = e.decl().name()
+                except Exception:
+                    name = None
+                if isinstance(name, str) and name in freq:
+                    freq[name] += 1
             for i in range(e.num_args()):
                 count(e.arg(i))
 
         try:
             count(expr)
         except Exception:
-
             return variables
 
         return sorted(variables, key=lambda v: -freq.get(v, 0))
@@ -323,7 +359,7 @@ class BytecodeCompiler:
         """Structural hash key for Common Subexpression Elimination."""
         import z3
 
-        if not hasattr(self, '_canonical_cache'):
+        if not hasattr(self, "_canonical_cache"):
             self._canonical_cache: dict[int, str] = {}
 
         e_id = expr.get_id()
@@ -331,7 +367,7 @@ class BytecodeCompiler:
             return self._canonical_cache[e_id]
 
         if z3.is_const(expr):
-            res = f"v:{expr!s}"
+            res = f"v:{expr.hash()}"
             self._canonical_cache[e_id] = res
             return res
         if z3.is_true(expr):
@@ -362,7 +398,7 @@ class BytecodeCompiler:
             return self._expr_cache[expr_id]
 
         ck = self._canonical_key(expr)
-        if hasattr(self, '_cse_cache') and ck in self._cse_cache:
+        if hasattr(self, "_cse_cache") and ck in self._cse_cache:
             res = self._cse_cache[ck]
             self._expr_cache[expr_id] = res
             return res
@@ -370,7 +406,7 @@ class BytecodeCompiler:
         result_reg = self._compile_expr_uncached(expr)
 
         self._expr_cache[expr_id] = result_reg
-        if hasattr(self, '_cse_cache'):
+        if hasattr(self, "_cse_cache"):
             self._cse_cache[ck] = result_reg
 
         return result_reg
@@ -390,7 +426,7 @@ class BytecodeCompiler:
             return reg
 
         if z3.is_const(expr) and expr.sort() == z3.BoolSort():
-            var_name = str(expr)
+            var_name = expr.decl().name()
             if var_name not in self._var_to_index:
                 raise ValueError(
                     f"Unknown variable '{var_name}'. "
@@ -453,7 +489,7 @@ class BytecodeCompiler:
             f"Unsupported Z3 expression kind {kind}: {expr}. "
             "Treating as TRUE (conservative approximation).",
             RuntimeWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         reg = self._alloc_register()
         self._emit(Opcode.LOAD_TRUE, dst=reg)
@@ -487,7 +523,6 @@ class BytecodeCompiler:
                     self._emit(Opcode.LOAD_TRUE, dst=reg)
                     return reg
                 if opcode == Opcode.XOR:
-
                     filtered_children.append(child)
                     continue
 
@@ -526,6 +561,7 @@ class BytecodeCompiler:
 
         return result_reg
 
+
 def compile_constraint(
     expr: z3.ExprRef,
     variables: Sequence[str],
@@ -543,7 +579,7 @@ def compile_constraint(
         CompiledConstraint ready for GPU execution
     """
 
-    key = (hash(str(expr)), tuple(variables))
+    key = (structural_hash([expr]), tuple(variables))
 
     with _compile_lock:
         if key in _compile_cache:
@@ -556,6 +592,7 @@ def compile_constraint(
         _compile_cache[key] = result
 
     return result
+
 
 def disassemble(constraint: CompiledConstraint) -> str:
     """Disassemble compiled constraint to human-readable format.
@@ -577,11 +614,11 @@ def disassemble(constraint: CompiledConstraint) -> str:
     ]
 
     for i, instr_data in enumerate(constraint.instructions):
-        op = Opcode(int(instr_data['opcode']))
-        dst = int(instr_data['dst'])
-        src1 = int(instr_data['src1'])
-        src2 = int(instr_data['src2'])
-        imm = int(instr_data['immediate'])
+        op = Opcode(int(instr_data["opcode"]))
+        dst = int(instr_data["dst"])
+        src1 = int(instr_data["src1"])
+        src2 = int(instr_data["src2"])
+        imm = int(instr_data["immediate"])
 
         if op in (Opcode.NOP, Opcode.HALT):
             asm = op.name

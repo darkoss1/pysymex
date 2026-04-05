@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Dependency guards for PySyMex runtime requirements."""
 
 from __future__ import annotations
@@ -8,12 +26,25 @@ import threading
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
 _REQUIRED_Z3_API = ("Int", "Solver", "BoolVal", "sat", "unsat")
 _cached_z3: ModuleType | None = None
 _z3_lock = threading.Lock()
+
+
+if TYPE_CHECKING:
+    from typing import TypedDict
+
+    class Z3Diagnostics(TypedDict):
+        module_repr: str
+        module_path: str | None
+        z3_version: str | None
+        z3_solver_version: str | None
+        has_required_api: dict[str, bool]
+        missing_api: list[str]
 
 
 def _package_version(name: str) -> str | None:
@@ -29,7 +60,7 @@ def _is_z3_ready(module: ModuleType) -> bool:
     return all(hasattr(module, api) for api in _REQUIRED_Z3_API)
 
 
-def z3_diagnostics(module: ModuleType | None = None) -> dict[str, object]:
+def z3_diagnostics(module: ModuleType | None = None) -> Z3Diagnostics:
     """Collect diagnostics for the currently imported z3 module."""
     if module is None:
         try:
@@ -57,10 +88,10 @@ def _build_z3_error() -> RuntimeError:
     details = [
         "pysymex requires a working z3-solver Python module.",
         "",
-        f"Detected module path: {diag ['module_path']}",
-        f"Detected 'z3' package version: {diag ['z3_version']}",
-        f"Detected 'z3-solver' package version: {diag ['z3_solver_version']}",
-        f"Missing API symbols: {', '.join (diag ['missing_api'])or 'none'}",
+        f"Detected module path: {diag['module_path']}",
+        f"Detected 'z3' package version: {diag['z3_version']}",
+        f"Detected 'z3-solver' package version: {diag['z3_solver_version']}",
+        f"Missing API symbols: {', '.join(diag['missing_api']) or 'none'}",
         "",
         "Fix your environment with:",
         "  python -m pip uninstall -y z3",

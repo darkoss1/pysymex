@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Contract types and dataclasses for PySyMex contract verification.
 
 Contains the fundamental enums and data structures used throughout
@@ -45,14 +63,14 @@ class ContractViolation:
 
     def format(self) -> str:
         """Format violation for display."""
-        location = f" at line {self .line_number }" if self.line_number else ""
-        func = f" in {self .function_name }" if self.function_name else ""
-        result = f"[{self .kind .name }]{func }{location }: {self .message }\n"
-        result += f"  Condition: {self .condition }\n"
+        location = f" at line {self.line_number}" if self.line_number else ""
+        func = f" in {self.function_name}" if self.function_name else ""
+        result = f"[{self.kind.name}]{func}{location}: {self.message}\n"
+        result += f"  Condition: {self.condition}\n"
         if self.counterexample:
             result += "  Counterexample:\n"
             for var, val in self.counterexample.items():
-                result += f"    {var } = {val }\n"
+                result += f"    {var} = {val}\n"
         return result
 
 
@@ -93,7 +111,7 @@ class FunctionContract:
             Contract(
                 kind=ContractKind.REQUIRES,
                 condition=condition,
-                message=message or f"Precondition: {condition }",
+                message=message or f"Precondition: {condition}",
                 line_number=line,
             )
         )
@@ -106,7 +124,7 @@ class FunctionContract:
             Contract(
                 kind=ContractKind.ENSURES,
                 condition=condition,
-                message=message or f"Postcondition: {condition }",
+                message=message or f"Postcondition: {condition}",
                 line_number=line,
             )
         )
@@ -121,7 +139,7 @@ class FunctionContract:
             Contract(
                 kind=ContractKind.LOOP_INVARIANT,
                 condition=condition,
-                message=message or f"Loop invariant: {condition }",
+                message=message or f"Loop invariant: {condition}",
                 line_number=line,
             )
         )

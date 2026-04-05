@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Parallel path exploration types for pysymex.
 
 Dataclasses, enums, and type-only definitions used by the parallel
@@ -17,8 +35,8 @@ from typing import (
 class ExplorationStrategy(Enum):
     """Path exploration strategies."""
 
-    DFS = auto()
-    BFS = auto()
+    ADAPTIVE = auto()
+    CHTD_NATIVE = auto()
     RANDOM = auto()
     COVERAGE = auto()
     PRIORITY = auto()
@@ -29,7 +47,7 @@ class ExplorationConfig:
     """Configuration for parallel exploration."""
 
     max_workers: int = 4
-    strategy: ExplorationStrategy = ExplorationStrategy.DFS
+    strategy: ExplorationStrategy = ExplorationStrategy.ADAPTIVE
     max_paths_per_worker: int = 250
     sync_interval_ms: int = 100
     enable_state_merging: bool = True

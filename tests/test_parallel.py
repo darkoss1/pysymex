@@ -50,17 +50,17 @@ class TestExplorationConfig:
     def test_default_config(self):
         config = ExplorationConfig()
         assert config.max_workers == 4
-        assert config.strategy == ExplorationStrategy.DFS
+        assert config.strategy == ExplorationStrategy.ADAPTIVE
         assert config.max_paths_per_worker == 250
 
     def test_custom_config(self):
         config = ExplorationConfig(
             max_workers=8,
-            strategy=ExplorationStrategy.BFS,
+            strategy=ExplorationStrategy.RANDOM,
             timeout_seconds=120.0,
         )
         assert config.max_workers == 8
-        assert config.strategy == ExplorationStrategy.BFS
+        assert config.strategy == ExplorationStrategy.RANDOM
         assert config.timeout_seconds == 120.0
 
 

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Dynamic Partial Order Reduction (DPOR) for thread interleaving exploration.
 
 Implements the DPOR algorithm to efficiently explore thread interleavings
@@ -166,14 +184,12 @@ class DPORExplorer:
 
             enabled = self._get_enabled_threads(state)
             if not enabled:
-
                 if state.schedule:
                     self._complete_schedules.append(list(state.schedule))
                 continue
 
             to_explore = state.backtrack_set - state.done_set
             if not to_explore:
-
                 to_explore = {enabled[0]} if enabled else set[str]()
 
             for thread_id in to_explore:
@@ -206,7 +222,8 @@ class DPORExplorer:
         These are potential data race candidates identified during exploration.
         """
         candidates: list[tuple[int, int]] = []
-        all_ops = list(self._hb_graph._operations.items())
+        operations = getattr(self._hb_graph, "_operations", {})
+        all_ops = list(operations.items()) if isinstance(operations, dict) else []
         for i, (id1, op1) in enumerate(all_ops):
             for id2, op2 in all_ops[i + 1 :]:
                 if op1.conflicts_with(op2) and self._hb_graph.are_concurrent(id1, id2):

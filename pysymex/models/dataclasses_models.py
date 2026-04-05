@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Models for the dataclasses module.
 
 This module provides models for Python's dataclasses standard library,
@@ -9,7 +27,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, cast
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +39,9 @@ class FieldInfo:
     """Model representing a dataclass field."""
 
     name: str
-    type: type | Any
+    type: type | object
     default: object = field(default=None)
-    default_factory: Callable[[], Any] | None = None
+    default_factory: Callable[[], object] | None = None
     init: bool = True
     repr: bool = True
     compare: bool = True
@@ -54,23 +72,27 @@ def dataclass_model(
 
     def wrap(cls: type) -> type:
         """Wrap."""
-        cls.__dataclass_fields__ = {}
-        cls.__dataclass_params__ = type(
-            "Params",
-            (),
-            {
-                "init": init,
-                "repr": repr,
-                "eq": eq,
-                "order": order,
-                "unsafe_hash": unsafe_hash,
-                "frozen": frozen,
-                "match_args": match_args,
-                "kw_only": kw_only,
-                "slots": slots,
-                "weakref_slot": weakref_slot,
-            },
-        )()
+        setattr(cls, "__dataclass_fields__", {})
+        setattr(
+            cls,
+            "__dataclass_params__",
+            type(
+                "Params",
+                (),
+                {
+                    "init": init,
+                    "repr": repr,
+                    "eq": eq,
+                    "order": order,
+                    "unsafe_hash": unsafe_hash,
+                    "frozen": frozen,
+                    "match_args": match_args,
+                    "kw_only": kw_only,
+                    "slots": slots,
+                    "weakref_slot": weakref_slot,
+                },
+            )(),
+        )
 
         if init and "__init__" not in cls.__dict__:
 
@@ -78,31 +100,31 @@ def dataclass_model(
                 for k, v in kwargs.items():
                     setattr(self, k, v)
 
-            cls.__init__ = __init__
+            setattr(cls, "__init__", __init__)
 
         if repr and "__repr__" not in cls.__dict__:
 
-            def __repr__(self):
-                return f"{cls .__name__ }(...)"
+            def __repr__(self: object) -> str:
+                return f"{cls.__name__}(...)"
 
-            cls.__repr__ = __repr__
+            setattr(cls, "__repr__", __repr__)
 
         if eq and "__eq__" not in cls.__dict__:
 
-            def __eq__(self, other):
+            def __eq__(self: object, other: object) -> bool:
                 if not isinstance(other, cls):
-                    return NotImplemented
+                    return False
                 return True
 
-            cls.__eq__ = __eq__
+            setattr(cls, "__eq__", __eq__)
 
         if unsafe_hash and "__hash__" not in cls.__dict__:
 
-            def __hash__(self):
+            def __hash__(self: object) -> int:
                 """Hash."""
                 return 0
 
-            cls.__hash__ = __hash__
+            setattr(cls, "__hash__", __hash__)
 
         return cls
 
@@ -114,7 +136,7 @@ def dataclass_model(
 def field_model(
     *,
     default: object = None,
-    default_factory: Callable[[], Any] | None = None,
+    default_factory: Callable[[], object] | None = None,
     init: bool = True,
     repr: bool = True,
     compare: bool = True,
@@ -129,7 +151,7 @@ def field_model(
     """
     return FieldInfo(
         name="",
-        type=Any,
+        type=object,
         default=default,
         default_factory=default_factory,
         init=init,
@@ -144,8 +166,9 @@ def field_model(
 def asdict_model(obj: object, *, dict_factory: type = dict) -> dict[str, object]:
     """Model for dataclasses.asdict() - convert dataclass to dict."""
     result = dict_factory()
-    if hasattr(obj, "__dataclass_fields__"):
-        for name in obj.__dataclass_fields__:
+    dataclass_fields = getattr(obj, "__dataclass_fields__", None)
+    if isinstance(dataclass_fields, dict):
+        for name in dataclass_fields:
             value = getattr(obj, name, None)
             result[name] = value
     else:
@@ -160,9 +183,10 @@ def asdict_model(obj: object, *, dict_factory: type = dict) -> dict[str, object]
 
 def astuple_model(obj: object, *, tuple_factory: type = tuple) -> tuple[object, ...]:
     """Model for dataclasses.astuple() - convert dataclass to tuple."""
-    if hasattr(obj, "__dataclass_fields__"):
+    dataclass_fields = getattr(obj, "__dataclass_fields__", None)
+    if isinstance(dataclass_fields, dict):
         values: list[object] = []
-        for name in obj.__dataclass_fields__:
+        for name in dataclass_fields:
             values.append(getattr(obj, name, None))
         return tuple_factory(values)
     else:
@@ -171,7 +195,7 @@ def astuple_model(obj: object, *, tuple_factory: type = tuple) -> tuple[object, 
 
 def make_dataclass_model(
     cls_name: str,
-    fields: list[str | tuple[str, type] | tuple[str, type, Any]],
+    fields: list[str | tuple[str, type] | tuple[str, type, object]],
     *,
     bases: tuple[type, ...] = (),
     namespace: dict[str, object] | None = None,
@@ -194,7 +218,7 @@ def make_dataclass_model(
     for field_spec in fields:
         if isinstance(field_spec, str):
             name = field_spec
-            annotations[name] = Any
+            annotations[name] = object
         elif len(field_spec) == 2:
             name, typ = field_spec
             annotations[name] = typ
@@ -207,7 +231,7 @@ def make_dataclass_model(
 
     cls = type(cls_name, bases, ns)
 
-    return dataclass_model(
+    decorated = dataclass_model(
         cls,
         init=init,
         repr=repr,
@@ -220,18 +244,21 @@ def make_dataclass_model(
         slots=slots,
         weakref_slot=weakref_slot,
     )
+    if isinstance(decorated, type):
+        return decorated
+    return cls
 
 
 def replace_model(obj: object, /, **changes: object) -> object:
     """Model for dataclasses.replace() - create a copy with changes."""
     new_obj: object = type(obj).__new__(type(obj))
     if hasattr(obj, "__dict__"):
-        getattr(new_obj, "__dict__").update(getattr(obj, "__dict__"))
+        new_obj.__dict__.update(obj.__dict__)
 
     for key, value in changes.items():
         setattr(new_obj, key, value)
 
-    return cast("Any", new_obj)
+    return new_obj
 
 
 def is_dataclass_model(obj: object) -> bool:
@@ -254,7 +281,7 @@ def fields_model(obj: object) -> tuple[FieldInfo, ...]:
         if isinstance(info, FieldInfo):
             result.append(info)
         else:
-            result.append(FieldInfo(name=name, type=Any))
+            result.append(FieldInfo(name=name, type=object))
 
     return tuple(result)
 
@@ -262,6 +289,16 @@ def fields_model(obj: object) -> tuple[FieldInfo, ...]:
 def dataclass_fields_model(obj: object) -> dict[str, object]:
     """Model to get the fields dictionary from a dataclass."""
     return getattr(obj, "__dataclass_fields__", {})
+
+
+class _MissingSentinel:
+    def __repr__(self) -> str:
+        return "MISSING"
+
+
+class _KWOnlySentinel:
+    def __repr__(self) -> str:
+        return "KW_ONLY"
 
 
 DATACLASSES_MODELS = {
@@ -274,8 +311,8 @@ DATACLASSES_MODELS = {
     "replace": replace_model,
     "is_dataclass": is_dataclass_model,
     "fields": fields_model,
-    "MISSING": type("MISSING", (), {"__repr__": lambda self: "MISSING"})(),
-    "KW_ONLY": type("KW_ONLY", (), {"__repr__": lambda self: "KW_ONLY"})(),
+    "MISSING": _MissingSentinel(),
+    "KW_ONLY": _KWOnlySentinel(),
 }
 
 

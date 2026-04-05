@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Dead Code Detection for pysymex.
 
@@ -16,6 +34,8 @@ Implementation split across:
 """
 
 from __future__ import annotations
+
+from types import CodeType
 
 from ..cross_function import CallGraphBuilder
 from .core import (
@@ -66,7 +86,7 @@ class DeadCodeAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Analyze a function for dead code."""
@@ -80,7 +100,7 @@ class DeadCodeAnalyzer:
 
     def analyze_module(
         self,
-        module_code: object,
+        module_code: CodeType,
         source: str,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
@@ -101,7 +121,7 @@ class DeadCodeAnalyzer:
 
     def _analyze_nested_functions(
         self,
-        code: object,
+        code: CodeType,
         file_path: str,
         results: list[DeadCode],
         *,
@@ -124,15 +144,12 @@ class DeadCodeAnalyzer:
                 continue
 
             if is_class_body(const):
-
                 is_dc = bool(dataclass_names and const.co_name in dataclass_names)
 
                 if is_dc:
-
                     results.extend(self.unreachable_detector.detect(const, file_path))
                     results.extend(self.redundant_cond_detector.detect(const, file_path))
                 else:
-
                     func_results = self.analyze_function(const, file_path)
                     method_names = get_class_method_names(const)
                     for dc in func_results:
@@ -149,7 +166,6 @@ class DeadCodeAnalyzer:
                     class_attrs_used=attrs_used,
                 )
             else:
-
                 results.extend(self.analyze_function(const, file_path))
                 self._analyze_nested_functions(
                     const,
@@ -172,7 +188,7 @@ class DeadCodeAnalyzer:
                     kind=DeadCodeKind.UNREACHABLE_CODE,
                     file=file_path,
                     line=e.lineno or 0,
-                    message=f"Syntax error prevents analysis: {e .msg }",
+                    message=f"Syntax error prevents analysis: {e.msg}",
                 )
             ]
         except Exception as exc:

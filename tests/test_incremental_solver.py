@@ -1,5 +1,6 @@
 """Tests for IncrementalSolver."""
 
+import pytest
 import z3
 
 from pysymex.core.solver import IncrementalSolver, ShadowSolver, SolverResult
@@ -134,6 +135,82 @@ class TestCaching:
         solver.add(x > 20)
         assert solver.is_sat([x < 10]) is False
         assert solver._query_count == queries_after_first + 1
+
+
+class TestKnownPrefixSync:
+    """True incremental synchronization using known SAT prefix lengths."""
+
+    def test_known_prefix_sat_delta(self):
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+
+        base = [x > 0, x < 100]
+        with_extra = [*base, x != 50]
+
+        assert solver.is_sat(base, known_sat_prefix_len=len(base)) is True
+        assert solver.is_sat(with_extra, known_sat_prefix_len=len(base)) is True
+
+    def test_known_prefix_unsat_delta(self):
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+
+        base = [x > 0, x < 100]
+        with_conflict = [*base, x < 0]
+
+        assert solver.is_sat(base, known_sat_prefix_len=len(base)) is True
+        assert solver.is_sat(with_conflict, known_sat_prefix_len=len(base)) is False
+
+    def test_known_prefix_switches_branches(self):
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+
+        path_a = [x > 0, x < 10]
+        path_b = [x > 0, x >= 10, x < 20]
+
+        assert solver.is_sat(path_a, known_sat_prefix_len=1) is True
+        assert solver.is_sat(path_b, known_sat_prefix_len=1) is True
+
+    def test_known_prefix_backward_slices_ambient_constraints(self):
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+        y = z3.Int("y")
+
+        prefix = [x > 0, x < 10, y > 1000, y < 2000]
+        with_delta = [*prefix, x == 5]
+
+        assert solver.is_sat(with_delta, known_sat_prefix_len=len(prefix)) is True
+        assert len(solver._active_path) == 2
+        assert all("y" not in str(c) for c in solver._active_path)
+
+
+class _HashedConstraints:
+    def __init__(self, constraints: list[z3.BoolRef], hv: int) -> None:
+        self._constraints = constraints
+        self._hv = hv
+
+    def __iter__(self):
+        return iter(self._constraints)
+
+    def hash_value(self) -> int:
+        return self._hv
+
+
+class TestConstraintHashFastPath:
+    def test_uses_hash_value_without_structural_hash(self, monkeypatch: pytest.MonkeyPatch):
+        import pysymex.core.solver as solver_mod
+
+        solver = IncrementalSolver()
+        x = z3.Int("x")
+        wrapped = _HashedConstraints([x > 0, x < 10], hv=0xABCDEF)
+
+        def _fail_structural_hash(_: object) -> int:
+            raise AssertionError("structural_hash should not be called for hash-aware constraints")
+
+        monkeypatch.setattr(solver_mod, "structural_hash", _fail_structural_hash)
+
+        assert solver.is_sat(wrapped) is True
+        assert solver.is_sat(wrapped) is True
+        assert solver._cache_hits >= 1
 
 
 class TestCheckSatCached:

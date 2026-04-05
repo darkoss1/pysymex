@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic container types: String, Bytes, Tuple, List, Dict, Set.
 
 Each type maps Python container semantics to Z3 theories:
@@ -35,7 +53,7 @@ class SymbolicString(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("str")
 
@@ -127,14 +145,13 @@ class SymbolicString(SymbolicType):
     def __ge__(self, other: SymbolicString) -> SymbolicBool:
         return SymbolicBool(self.z3_str >= other.z3_str)
 
-    def __eq__(self, other: object) -> SymbolicBool:
-        if isinstance(other, SymbolicString):
-            return SymbolicBool(self.z3_str == other.z3_str)
-        return SymbolicBool.concrete(False)
+    def __eq__(self, other: object) -> SymbolicBool:  # type: ignore[override]
+        if not isinstance(other, SymbolicString):
+            return SymbolicBool(z3.BoolVal(False))
+        return SymbolicBool(self.z3_str == other.z3_str)
 
-    def __ne__(self, other: object) -> SymbolicBool:
-        eq = self.__eq__(other)
-        return SymbolicBool(z3.Not(eq.z3_bool))
+    def __ne__(self, other: object) -> SymbolicBool:  # type: ignore[override]
+        return SymbolicBool(z3.Not(self.__eq__(other).z3_bool))
 
     @staticmethod
     def symbolic(name: str | None = None) -> SymbolicString:
@@ -174,7 +191,7 @@ class SymbolicBytes(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("bytes")
 
@@ -253,7 +270,7 @@ class SymbolicTuple(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("tuple")
 
@@ -355,7 +372,7 @@ class SymbolicList(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("list")
 
@@ -461,7 +478,7 @@ class SymbolicDict(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post init."""
         if not self._name:
             self._name = fresh_name("dict")
@@ -501,13 +518,19 @@ class SymbolicDict(SymbolicType):
 
     def __setitem__(self, key: SymbolicInt, value: SymbolicInt) -> SymbolicDict:
         """Return new dict with updated key."""
+        membership = self._membership
+        if membership is None:
+            membership = z3.K(self.key_sort, False)
         new_arr = z3.Store(self.z3_array, key.z3_int, value.z3_int)
-        new_mem = z3.Store(self._membership, key.z3_int, True)
+        new_mem = z3.Store(membership, key.z3_int, True)
         return SymbolicDict(new_arr, self.key_sort, self.value_sort, _membership=new_mem)
 
     def get(self, key: SymbolicInt, default: SymbolicInt) -> SymbolicInt:
         """Get with default — returns default when key is absent."""
-        has_key = z3.Select(self._membership, key.z3_int)
+        membership = self._membership
+        if membership is None:
+            membership = z3.K(self.key_sort, False)
+        has_key = z3.Select(membership, key.z3_int)
         return SymbolicInt(
             cast(
                 "z3.ArithRef", z3.If(has_key, z3.Select(self.z3_array, key.z3_int), default.z3_int)
@@ -525,7 +548,13 @@ class SymbolicDict(SymbolicType):
 
     def contains(self, key: SymbolicInt) -> z3.BoolRef:
         """Check if key exists using membership array."""
-        return z3.Select(self._membership, key.z3_int)
+        membership = self._membership
+        if membership is None:
+            return z3.BoolVal(False)
+        selected = z3.Select(membership, key.z3_int)
+        if isinstance(selected, z3.BoolRef):
+            return selected
+        return z3.BoolVal(False)
 
     @staticmethod
     def symbolic_int_dict(name: str | None = None) -> SymbolicDict:
@@ -569,7 +598,7 @@ class SymbolicSet(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("set")
 

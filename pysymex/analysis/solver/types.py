@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Z3 Engine — Data types and enumerations.
 
@@ -10,16 +28,16 @@ from __future__ import annotations
 __version__ = "2.0.0"
 __author__ = "PySyMex Team"
 
+import dis
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 from pysymex._deps import ensure_z3_ready
 
 _z3_import_error: RuntimeError | None = None
 
-z3: Any
+z3 = None
 _z3_available = False
 try:
     z3 = ensure_z3_ready()
@@ -113,7 +131,7 @@ class TaintInfo:
         return TaintInfo(
             is_tainted=True,
             sources=self.sources.copy(),
-            propagation_path=self.propagation_path + [operation],
+            propagation_path=[*self.propagation_path, operation],
         )
 
 
@@ -283,7 +301,7 @@ class BasicBlock:
     """
 
     id: int
-    instructions: list[object] = field(default_factory=list)
+    instructions: list[dis.Instruction] = field(default_factory=list)
     successors: list[tuple[int, str]] = field(default_factory=list[tuple[int, str]])
     predecessors: list[int] = field(default_factory=list[int])
     dominators: set[int] = field(default_factory=set[int])

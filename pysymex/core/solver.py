@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Z3 Solver wrapper for pysymex.
 
 This module provides a high-level interface to the Z3 theorem prover,
@@ -18,12 +36,14 @@ import logging
 import os
 import time
 from collections import OrderedDict, deque
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 
 import z3
 
+from pysymex._typing import SolverProtocol
 from pysymex.core.constraint_hash import structural_hash
 from pysymex.core.constraint_independence import ConstraintIndependenceOptimizer
 from pysymex.core.unsat_core import UnsatCoreResult, extract_unsat_core
@@ -68,14 +88,12 @@ class SolverResult:
 
     @staticmethod
     def unsat() -> SolverResult:
-        """Create a result indicating the constraints are mathematically impossible.
-        """
+        """Create a result indicating the constraints are mathematically impossible."""
         return SolverResult(is_sat=False, is_unsat=True, is_unknown=False)
 
     @staticmethod
     def unknown() -> SolverResult:
-        """Create a result indicating that Z3 could not decide within the timeout.
-        """
+        """Create a result indicating that Z3 could not decide within the timeout."""
         return SolverResult(is_sat=False, is_unsat=False, is_unknown=True)
 
 
@@ -115,6 +133,7 @@ class _StructuralCache:
 
 class _ClearableCache(Protocol):
     """Clear."""
+
     def clear(self) -> None: ...
 
 
@@ -174,6 +193,8 @@ class IncrementalSolver:
         self._theory_hits: dict[str, int] = {"qflia": 0, "qfs": 0, "qfbv": 0, "mixed": 0}
         self._escalations: int = 0
 
+        self._active_path: list[z3.BoolRef] = []
+
     def reset(self) -> None:
         """Reset the solver state and clear all caches.
 
@@ -192,6 +213,44 @@ class IncrementalSolver:
         self._last_models.clear()
         self._optimizer.reset()
         self._is_unsat_context.clear()
+        self._active_path.clear()
+
+    @staticmethod
+    def _expr_equal(a: z3.BoolRef, b: z3.BoolRef) -> bool:
+        """Return semantic equality for two constraints with a fast hash pre-check."""
+        if a is b:
+            return True
+        if a.hash() != b.hash():
+            return False
+        try:
+            return bool(z3.eq(a, b))
+        except z3.Z3Exception:
+            return str(a) == str(b)
+
+    def _common_prefix_len(self, target: list[z3.BoolRef]) -> int:
+        """Return common prefix length between synchronized and target paths."""
+        limit = min(len(self._active_path), len(target))
+        idx = 0
+        while idx < limit and self._expr_equal(self._active_path[idx], target[idx]):
+            idx += 1
+        return idx
+
+    def _sync_path(self, target_prefix: list[z3.BoolRef]) -> None:
+        """Synchronize solver ambient context to *target_prefix* in O(delta) scopes.
+
+        Each prefix element is represented by one push-scope frame, so we can
+        pop exactly the divergent suffix and push only the missing delta.
+        """
+        lcp = self._common_prefix_len(target_prefix)
+
+        while len(self._active_path) > lcp:
+            self.pop()
+            self._active_path.pop()
+
+        for constraint in target_prefix[lcp:]:
+            self.push()
+            self.add(constraint)
+            self._active_path.append(constraint)
 
     @staticmethod
     def _mix_cache_context(seed: int, value: int) -> int:
@@ -206,6 +265,22 @@ class IncrementalSolver:
         """Create a scope-aware cache key for a constraint set."""
         return self._mix_cache_context(self._current_cache_context(), structural_hash(constraints))
 
+    def _make_cache_key_for_constraints(
+        self,
+        constraints_obj: Iterable[z3.BoolRef],
+        constraints: list[z3.BoolRef],
+    ) -> int:
+        """Create a scope-aware cache key with optional O(1) chain hashing."""
+        hash_value_getter = getattr(constraints_obj, "hash_value", None)
+        if callable(hash_value_getter):
+            try:
+                hv = hash_value_getter()
+            except Exception:
+                hv = None
+            if isinstance(hv, int):
+                return self._mix_cache_context(self._current_cache_context(), hv)
+        return self._make_cache_key(constraints)
+
     @staticmethod
     def _constraints_discriminator(constraints: list[z3.BoolRef]) -> tuple[int, ...]:
         """Secondary discriminator to safely resolve potential structural hash collisions.
@@ -218,6 +293,41 @@ class IncrementalSolver:
         if not constraints:
             return ()
         return tuple(sorted(c.hash() for c in constraints))
+
+    def _constraints_discriminator_for_constraints(
+        self,
+        constraints_obj: Iterable[z3.BoolRef],
+        constraints: list[z3.BoolRef],
+    ) -> tuple[int, ...]:
+        """Secondary discriminator with O(1) support for hashed constraint chains."""
+        hash_value_getter = getattr(constraints_obj, "hash_value", None)
+        if callable(hash_value_getter):
+            try:
+                hv = hash_value_getter()
+            except Exception:
+                hv = None
+            if isinstance(hv, int):
+                return (len(constraints), hv)
+        return self._constraints_discriminator(constraints)
+
+    def _slice_prefix_for_suffix(
+        self,
+        prefix: list[z3.BoolRef],
+        suffix: list[z3.BoolRef],
+    ) -> list[z3.BoolRef]:
+        """Backward slice ambient prefix constraints relevant to suffix variables."""
+        if not prefix or not suffix:
+            return prefix
+
+        for c in prefix:
+            self._optimizer.register_constraint(c)
+
+        query = suffix[0] if len(suffix) == 1 else z3.And(*suffix)
+        sliced = self._optimizer.slice_for_query(prefix, query)
+
+        if not sliced:
+            return prefix
+        return sliced
 
     def _cache_lookup(self, primary: int, discriminator: tuple[int, ...]) -> SolverResult | None:
         """Lookup a cached result, verifying the secondary discriminator."""
@@ -237,7 +347,9 @@ class IncrementalSolver:
         self._cache.move_to_end(key)
         return result
 
-    def _cache_store(self, primary: int, discriminator: tuple[int, ...], result: SolverResult) -> None:
+    def _cache_store(
+        self, primary: int, discriminator: tuple[int, ...], result: SolverResult
+    ) -> None:
         """Store a cache entry, maintaining LRU order and index."""
         key = (primary, discriminator)
         if key in self._cache:
@@ -255,6 +367,10 @@ class IncrementalSolver:
                     del self._cache_index[old_primary]
         self._cache[key] = result
         self._cache_index.setdefault(primary, set()).add(discriminator)
+
+    def constraint_optimizer(self) -> ConstraintIndependenceOptimizer:
+        """Expose the shared constraint optimizer for graph-based analyses."""
+        return self._optimizer
 
     def push(self) -> None:
         """Push a new constraint scope."""
@@ -340,7 +456,7 @@ class IncrementalSolver:
             constraint_vars.append(var_names)
 
         clusters: dict[str, list[z3.BoolRef]] = {}
-        for c, var_names in zip(constraints, constraint_vars):
+        for c, var_names in zip(constraints, constraint_vars, strict=False):
             if not var_names:
                 root = "CONST"
             else:
@@ -352,7 +468,11 @@ class IncrementalSolver:
 
         return list(clusters.values())
 
-    def is_sat(self, constraints: list[z3.BoolRef]) -> bool:
+    def is_sat(
+        self,
+        constraints: Iterable[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> bool:
         """Check if constraints are satisfiable, with caching.
 
         Uses constraint independence optimization: when constraints can be
@@ -365,40 +485,73 @@ class IncrementalSolver:
         Returns:
             True if satisfiable, False otherwise.
         """
-        if not constraints:
+        constraint_list = constraints if isinstance(constraints, list) else list(constraints)
+
+        if not constraint_list:
             return True
 
-        if len(constraints) == 1:
-            c = constraints[0]
+        if len(constraint_list) == 1:
+            c = constraint_list[0]
             if z3.is_true(c):
                 return True
             if z3.is_false(c):
                 return False
 
-        # Try full-query cache first
-        cache_key = self._make_cache_key(constraints)
-        cache_disc = self._constraints_discriminator(constraints)
+        if known_sat_prefix_len is not None and 0 < known_sat_prefix_len <= len(constraint_list):
+            prefix = constraint_list[:known_sat_prefix_len]
+            suffix = constraint_list[known_sat_prefix_len:]
+
+            sliced_prefix = self._slice_prefix_for_suffix(prefix, suffix)
+
+            self._sync_path(sliced_prefix)
+
+            if not suffix:
+                return True
+
+            self._solver.push()
+            try:
+                for c in suffix:
+                    self._solver.add(c)
+                result = self.check()
+            finally:
+                self._solver.pop()
+
+            if result.is_unknown:
+                return True
+            return result.is_sat
+
+        cache_key = self._make_cache_key_for_constraints(constraints, constraint_list)
+        cache_disc = self._constraints_discriminator_for_constraints(constraints, constraint_list)
         cached = self._cache_lookup(cache_key, cache_disc)
         if cached is not None:
             return cached.is_sat
 
-        # Try cluster-level caching for multi-constraint queries
-        if len(constraints) >= 2:
-            clusters = self._get_independent_clusters(constraints)
+        if len(constraint_list) <= 3:
+            self._solver.push()
+            try:
+                for c in constraint_list:
+                    self._solver.add(c)
+                result = self.check()
+            finally:
+                self._solver.pop()
+            if result.is_unknown:
+                return True
+            self._cache_store(cache_key, cache_disc, result)
+            return result.is_sat
+
+        if len(constraint_list) >= 2:
+            clusters = self._get_independent_clusters(constraint_list)
             if len(clusters) > 1:
-                # Check each cluster independently
                 for cluster in clusters:
                     cluster_key = self._make_cache_key(cluster)
                     cluster_disc = self._constraints_discriminator(cluster)
                     cached_cluster = self._cache_lookup(cluster_key, cluster_disc)
                     if cached_cluster is not None:
                         if not cached_cluster.is_sat:
-                            # One cluster UNSAT → whole thing UNSAT
                             result = SolverResult.unsat()
                             self._cache_store(cache_key, cache_disc, result)
                             return False
                     else:
-                        # Cluster not cached — solve it
                         self._solver.push()
                         try:
                             for c in cluster:
@@ -414,7 +567,7 @@ class IncrementalSolver:
 
                 self._solver.push()
                 try:
-                    for c in constraints:
+                    for c in constraint_list:
                         self._solver.add(c)
                     full_result = self.check()
                 finally:
@@ -424,18 +577,13 @@ class IncrementalSolver:
                     return True
                 return full_result.is_sat
 
-        # Single cluster or single constraint — solve directly
-        # Theory-aware configuration: detect the dominant theory and
-        # tune Z3 parameters before the solve to get the fastest path.
-        # NOTE: We configure before push/solve and reset after to avoid
-        # leaking theory-specific params into subsequent queries.
-        theory = self._detect_theory(constraints)
+        theory = self._detect_theory(constraint_list)
         self._configure_for_theory(theory)
 
         self._solver.push()
         start_ns = time.perf_counter()
         try:
-            for c in constraints:
+            for c in constraint_list:
                 self._solver.add(c)
             result = self.check()
         finally:
@@ -443,21 +591,12 @@ class IncrementalSolver:
             self._reset_theory_config()
         elapsed_ms = (time.perf_counter() - start_ns) * 1000
 
-        # Auto-escalate slow/unknown queries to portfolio solver.
-        # Unknown results always use force=True to bypass the time guard —
-        # Z3 may return unknown quickly (internal resource exhaustion) and
-        # must still be escalated to avoid incorrect UNSAT conclusions.
         if result.is_unknown or elapsed_ms >= self._escalation_threshold_ms:
-            escalated = self._try_escalate(
-                constraints, elapsed_ms, force=result.is_unknown
-            )
+            escalated = self._try_escalate(constraint_list, elapsed_ms, force=result.is_unknown)
             if escalated is not None and not escalated.is_unknown:
                 self._cache_store(cache_key, cache_disc, escalated)
                 return escalated.is_sat
 
-        # If the result is still unknown, conservatively return True (SAT):
-        # treating unknown as UNSAT would prune potentially-feasible paths,
-        # which is unsound for path completeness.
         if result.is_unknown:
             return True
 
@@ -618,7 +757,6 @@ class IncrementalSolver:
         """
         return extract_unsat_core(constraints, timeout_ms=self._timeout_ms)
 
-
     @staticmethod
     def _detect_theory(constraints: list[z3.BoolRef]) -> str:
         """Classify the dominant SMT theory of *constraints*.
@@ -637,7 +775,6 @@ class IncrementalSolver:
         has_bv = False
         has_nonlinear = False
 
-        # Budget — cap tree-walk to avoid blowup on huge formulas
         budget = 2000
         stack: list[z3.ExprRef] = list(constraints)
         visited: set[int] = set()
@@ -657,14 +794,13 @@ class IncrementalSolver:
             elif sort_kind == z3.Z3_BV_SORT:
                 has_bv = True
 
-            # Early exit: once we know the result will be "mixed", stop scanning.
             if sum([has_string, has_bv, has_nonlinear]) >= 2:
                 break
 
             if z3.is_app(expr):
                 decl = expr.decl()
                 dk = decl.kind()
-                # z3.Z3_OP_MUL between two non-constant args → nonlinear
+
                 if dk == z3.Z3_OP_MUL and expr.num_args() >= 2:
                     non_const = sum(
                         1
@@ -680,9 +816,6 @@ class IncrementalSolver:
                     if child.get_id() not in visited:
                         stack.append(child)
 
-        # Classify: if more than one non-LIA theory is present, call it mixed
-        # so the caller doesn't apply a single-theory optimisation to a query
-        # that spans multiple theories.
         theory_count = sum([has_string, has_bv, has_nonlinear])
         if theory_count > 1:
             return "mixed"
@@ -703,19 +836,16 @@ class IncrementalSolver:
         self._theory_hits[theory] = self._theory_hits.get(theory, 0) + 1
 
         if theory == "qflia":
-            # Simplex with Gomory cuts — fastest for pure linear integer
             try:
                 self._solver.set("smt.arith.solver", 6)
             except z3.Z3Exception:
                 pass
         elif theory == "qfs":
-            # Use the 'seq' solver for string-heavy queries
             try:
                 self._solver.set("smt.string_solver", "seq")
             except z3.Z3Exception:
                 pass
         else:
-            # Default — reset arith solver to auto
             try:
                 self._solver.set("smt.arith.solver", 2)
             except z3.Z3Exception:
@@ -797,7 +927,13 @@ class ShadowSolver(IncrementalSolver):
     context. Use ``IncrementalSolver`` directly instead.
     """
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(
+        self,
+        timeout_ms: int = 5000,
+        cache_size: int = 10000,
+        warm_start: bool = True,
+        use_cache: bool = True,
+    ) -> None:
         import warnings
 
         warnings.warn(
@@ -805,7 +941,12 @@ class ShadowSolver(IncrementalSolver):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            timeout_ms=timeout_ms,
+            cache_size=cache_size,
+            warm_start=warm_start,
+            use_cache=use_cache,
+        )
 
 
 class PortfolioSolver:
@@ -904,13 +1045,14 @@ def _portfolio_worker(smt_str: str, tactic_name: str, timeout_ms: int) -> Solver
                 tactic = z3.Tactic(tactic_name)
                 goal = z3.Goal()
                 for a in solver.assertions():
-                    goal.add(a)
+                    goal.add(cast("z3.BoolRef", a))
                 result_goals = tactic(goal)
 
                 solver = z3.Solver()
                 solver.set("timeout", timeout_ms)
                 for subgoal in result_goals:
-                    solver.add(subgoal.as_expr())
+                    expr = subgoal.as_expr()
+                    solver.add(expr)
             except z3.Z3Exception:
                 logger.debug("Z3 tactic %s failed", tactic_name, exc_info=True)
 
@@ -955,14 +1097,18 @@ _PROVE_CACHE = _StructuralCache(maxsize=512)
 _SOLVER_CACHES.extend([_IS_SAT_CACHE, _MODEL_CACHE, _PROVE_CACHE])
 
 
-_active_solver_var: contextvars.ContextVar[IncrementalSolver | None] = contextvars.ContextVar(
+_active_solver_var: contextvars.ContextVar[SolverProtocol | None] = contextvars.ContextVar(
     "_active_solver_var", default=None
 )
 
 active_incremental_solver = _active_solver_var
 
 
-def is_satisfiable(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> bool:
+def is_satisfiable(
+    constraints: Iterable[z3.BoolRef],
+    *,
+    known_sat_prefix_len: int | None = None,
+) -> bool:
     """Check if a list of constraints is satisfiable.
 
     When an IncrementalSolver is active (set by the executor), delegates
@@ -971,8 +1117,8 @@ def is_satisfiable(constraints: tuple[z3.BoolRef, ...] | list[z3.BoolRef]) -> bo
     """
     solver = _active_solver_var.get()
     if solver is not None:
-        return solver.is_sat(constraints if isinstance(constraints, list) else list(constraints))
-    if isinstance(constraints, list):
+        return solver.is_sat(constraints, known_sat_prefix_len=known_sat_prefix_len)
+    if not isinstance(constraints, tuple):
         constraints = tuple(constraints)
     return _is_satisfiable_cached(constraints)
 
@@ -1001,10 +1147,9 @@ def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
     return result
 
 
-def get_model(constraints: Any) -> z3.ModelRef | None:
+def get_model(constraints: Iterable[z3.BoolRef]) -> z3.ModelRef | None:
     """Get a Z3 model for satisfiable constraints."""
     if not isinstance(constraints, (list, tuple)):
-        # Handle ConstraintChain or other iterables
         constraints = tuple(constraints)
     elif isinstance(constraints, list):
         constraints = tuple(constraints)

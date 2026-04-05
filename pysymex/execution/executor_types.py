@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Executor types — configuration, result dataclass, and constants."""
 
 from __future__ import annotations
@@ -47,7 +65,7 @@ class ExecutionConfig:
         max_depth: Maximum call/recursion depth per path.
         max_iterations: Global iteration budget across all paths.
         timeout_seconds: Wall-clock timeout for the entire analysis.
-        strategy: Path exploration strategy (DFS, BFS, coverage, etc.).
+        strategy: Path exploration strategy (CHTD-native, adaptive, coverage, etc.).
         max_loop_iterations: Per-loop iteration cap before widening/pruning.
         unroll_loops: Whether to unroll loops during exploration.
         solver_timeout_ms: Z3 solver timeout per query in milliseconds.
@@ -81,7 +99,7 @@ class ExecutionConfig:
     max_depth: int = 1000
     max_iterations: int = 100000
     timeout_seconds: float = 300.0
-    strategy: ExplorationStrategy = ExplorationStrategy.DFS
+    strategy: ExplorationStrategy = ExplorationStrategy.ADAPTIVE
     max_loop_iterations: int = 100
     unroll_loops: bool = True
     solver_timeout_ms: int = 10000
@@ -112,6 +130,16 @@ class ExecutionConfig:
     enable_solver_cache: bool = True
     heuristic_assume_non_null_self: bool = True
     enable_interaction_graph: bool = True
+    enable_chtd: bool = True
+    enable_h_acceleration: bool = True
+    deterministic_mode: bool = False
+    random_seed: int = 42
+    chtd_max_branch_infos: int = 256
+    chtd_check_interval: int = 64
+    chtd_adaptive_interval: bool = True
+    chtd_min_check_interval: int = 8
+    chtd_max_check_interval: int = 128
+    chtd_growth_trigger: int = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,16 +256,23 @@ class ExecutionResult:
         )
         sarif_dict = sarif_log.to_dict()
 
-        if sarif_dict.get("runs"):
-            run = sarif_dict["runs"][0]
-            if run.get("invocations"):
-                run["invocations"][0]["properties"] = {
-                    "pathsExplored": self.paths_explored,
-                    "pathsCompleted": self.paths_completed,
-                    "pathsPruned": self.paths_pruned,
-                    "coverageInstructions": len(self.coverage),
-                    "totalTimeSeconds": round(self.total_time_seconds, 3),
-                }
+        runs_obj = sarif_dict.get("runs")
+        if isinstance(runs_obj, list) and runs_obj:
+            run = runs_obj[0]
+            if isinstance(run, dict):
+                invocations = run.get("invocations")
+                if (
+                    isinstance(invocations, list)
+                    and invocations
+                    and isinstance(invocations[0], dict)
+                ):
+                    invocations[0]["properties"] = {
+                        "pathsExplored": self.paths_explored,
+                        "pathsCompleted": self.paths_completed,
+                        "pathsPruned": self.paths_pruned,
+                        "coverageInstructions": len(self.coverage),
+                        "totalTimeSeconds": round(self.total_time_seconds, 3),
+                    }
 
         if output_path:
             import json

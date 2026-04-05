@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract value domains for the abstract interpretation framework.
 
 Provides the core abstract domain hierarchy:
@@ -11,7 +29,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Any
 from enum import Enum, auto
 
 
@@ -87,6 +104,7 @@ _SIGN_SUBSETS: dict[Sign, frozenset[Sign]] = {
     Sign.NON_ZERO: frozenset({Sign.NON_ZERO, Sign.TOP}),
     Sign.TOP: frozenset({Sign.TOP}),
 }
+
 
 @dataclass(frozen=True)
 class SignValue(AbstractValue):
@@ -259,6 +277,24 @@ class SignValue(AbstractValue):
         may_raise = other.may_be_zero()
         if other.must_be_non_zero():
             return self.mul(other), False
+        return SignValue.top(), may_raise
+
+    def mod(self, other: SignValue) -> tuple[SignValue, bool]:
+        """Abstract modulo. Returns (result, may_raise)."""
+        if self.is_bottom() or other.is_bottom():
+            return SignValue.bottom(), False
+        may_raise = other.may_be_zero()
+
+        if other.must_be_positive():
+            if self.sign == Sign.ZERO:
+                return SignValue(Sign.ZERO), may_raise
+            return SignValue(Sign.NON_NEGATIVE), may_raise
+
+        if other.must_be_negative():
+            if self.sign == Sign.ZERO:
+                return SignValue(Sign.ZERO), may_raise
+            return SignValue(Sign.NON_POSITIVE), may_raise
+
         return SignValue.top(), may_raise
 
 
@@ -567,6 +603,35 @@ class Interval(AbstractValue):
                 return Interval(min(quotients), max(quotients)), False
         return Interval.top(), may_raise
 
+    def mod(self, other: Interval) -> tuple[Interval, bool]:
+        """Interval modulo. Returns (result, may_raise_div_by_zero)."""
+        if self._is_bottom or other._is_bottom:
+            return Interval.bottom(), False
+        may_raise = other.contains(0)
+        if other.is_const() and other.low == 0:
+            return Interval.bottom(), True
+
+        if self.is_const() and other.is_const():
+            assert self.low is not None and other.low is not None
+            return Interval.const(self.low % other.low), may_raise
+
+        if other.low is not None and other.low > 0:
+            high = other.high - 1 if other.high is not None else None
+            if (
+                self.low is not None
+                and self.low >= 0
+                and self.high is not None
+                and self.high < other.low
+            ):
+                return Interval(self.low, self.high), may_raise
+            return Interval(0, high), may_raise
+
+        if other.high is not None and other.high < 0:
+            low = other.low + 1 if other.low is not None else None
+            return Interval(low, 0), may_raise
+
+        return Interval.top(), may_raise
+
 
 def _extended_gcd(a: int, b: int) -> tuple[int, int, int]:
     """Extended Euclidean algorithm. Returns (gcd, x, y) where a*x + b*y = gcd."""
@@ -677,8 +742,8 @@ class Congruence(AbstractValue):
             return self
         import math
 
-        m1 = self.modulus if self.modulus else 0
-        m2 = other.modulus if other.modulus else 0
+        m1 = self.modulus or 0
+        m2 = other.modulus or 0
         r1, r2 = self.remainder, other.remainder
         if m1 == 0 and m2 == 0:
             return self if r1 == r2 else Congruence.bottom()
@@ -690,7 +755,7 @@ class Congruence(AbstractValue):
         if (r1 - r2) % g != 0:
             return Congruence.bottom()
         new_mod = (m1 // g) * m2
-        # Extended GCD to find CRT solution
+
         _, x, _ = _extended_gcd(m1, m2)
         new_rem = (r1 + m1 * ((r2 - r1) // g) * x) % new_mod
         return Congruence(new_mod, new_rem)

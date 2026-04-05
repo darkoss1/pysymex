@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Core symbolic types for pysymex.
 This module defines the symbolic type system that bridges Python's dynamic
 typing with Z3's static typing. Each Python value is represented as a
@@ -10,14 +28,32 @@ import dataclasses as _dataclasses
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
 from typing import cast as _cast
 
 import z3
 
 from pysymex.core.addressing import next_address
 
-AnySymbolic = Any
+if TYPE_CHECKING:
+    from typing import Union
+
+    from pysymex.core.types_containers import (
+        SymbolicDict,
+        SymbolicList,
+        SymbolicObject,
+    )
+
+    AnySymbolic = Union[
+        "SymbolicValue",
+        "SymbolicNone",
+        "SymbolicString",
+        "SymbolicList",
+        "SymbolicDict",
+        "SymbolicObject",
+    ]
+else:
+    AnySymbolic = object
 
 
 _FROM_CONST_CACHE_LOCK = threading.Lock()
@@ -29,15 +65,31 @@ Z3_ZERO: z3.ArithRef = z3.IntVal(0)
 
 
 _BV_WIDTH: int = 64
+_Z3_OP_BV2INT: int = int(getattr(z3, "Z3_OP_BV2INT", -1))
+_Z3_OP_BXOR: int = int(getattr(z3, "Z3_OP_BXOR", -1))
 
 
 def _int_to_bv(expr: z3.ArithRef) -> z3.BitVecRef:
     """Convert a Z3 integer expression to a 64-bit bitvector."""
+    try:
+        if expr.decl().kind() == _Z3_OP_BV2INT and expr.num_args() == 1:
+            underlying_bv = expr.arg(0)
+            if z3.is_bv(underlying_bv):
+                width = underlying_bv.size()
+                if width == _BV_WIDTH:
+                    return underlying_bv
+                if width < _BV_WIDTH:
+                    return z3.SignExt(_BV_WIDTH - width, underlying_bv)
+                return z3.Extract(_BV_WIDTH - 1, 0, underlying_bv)
+    except (AttributeError, z3.Z3Exception):
+        pass
     return z3.Int2BV(expr, _BV_WIDTH)
 
 
-def _bv_to_int(expr: z3.BitVecRef) -> z3.ArithRef:
+def _bv_to_int(expr: z3.ExprRef) -> z3.ArithRef:
     """Convert a Z3 bitvector back to a (signed) integer."""
+    if not z3.is_bv(expr):
+        raise TypeError("Expected BitVecRef expression")
     return z3.BV2Int(expr, is_signed=True)
 
 
@@ -73,6 +125,7 @@ def _merge_taint(
 int_to_bv = _int_to_bv
 bv_to_int = _bv_to_int
 merge_taint = _merge_taint
+BV_WIDTH: int = _BV_WIDTH
 
 
 def fresh_name(prefix: str) -> str:
@@ -118,12 +171,12 @@ def _py_mod(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:
 class SymbolicType(ABC):
     """Abstract base class for the PySyMex symbolic type system.
 
-    Defines the interface for bridge types that translate between Python's 
-    dynamic, late-bound objects and Z3's static, strongly-typed SMT 
+    Defines the interface for bridge types that translate between Python's
+    dynamic, late-bound objects and Z3's static, strongly-typed SMT
     expressions.
 
     **Core Design Principle:**
-    Every symbolic value in the engine must be able to express its 
+    Every symbolic value in the engine must be able to express its
     potential truthiness/falsiness as a Z3 boolean expression to allow
     the Explorer to make branch-splitting decisions based on solver SAT results.
     """
@@ -163,8 +216,10 @@ class SymbolicNone(SymbolicType):
     _name: str = "None"
     _h_active: bool = field(default=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._name:
+            if len(self._name) > 256:
+                self._name = self._name[:128] + "..." + self._name[-125:]
             ln = self._name.lower()
             if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
                 object.__setattr__(self, "_h_active", True)
@@ -218,16 +273,16 @@ class SymbolicValue(SymbolicType):
     """An optimized 'any' type representing a union of potential Python values.
 
     **Encoding Strategy:**
-    PySyMex represents dynamic types as a collection of Z3 expressions with 
-    associated boolean 'discriminators' (e.g., `is_int`, `is_bool`). Only one 
+    PySyMex represents dynamic types as a collection of Z3 expressions with
+    associated boolean 'discriminators' (e.g., `is_int`, `is_bool`). Only one
     discriminator is True in any given satisfying model, allowing the engine
     to model type-polymorphic operations (like `+`) as multiplexed Z3
     Condition-Action trees.
 
     **Optimization: Memory Cache Locality**
-    Fields are declared such that the most frequently accessed Z3 references 
-    (`z3_int`, `is_int`, `z3_bool`, `is_bool`) are adjacent in the object's 
-    memory slot layout. This maximizes L1 cache hits during the high-frequency 
+    Fields are declared such that the most frequently accessed Z3 references
+    (`z3_int`, `is_int`, `z3_bool`, `is_bool`) are adjacent in the object's
+    memory slot layout. This maximizes L1 cache hits during the high-frequency
     branch-evaluation loops of the symbolic explorer.
 
     Attributes:
@@ -266,11 +321,14 @@ class SymbolicValue(SymbolicType):
     affinity_type: str = field(default="NoneType", compare=False)
     _h_active: bool = field(default=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._name:
+            if len(self._name) > 256:
+                self._name = self._name[:128] + "..." + self._name[-125:]
             ln = self._name.lower()
             if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
                 object.__setattr__(self, "_h_active", True)
+
     min_val: int | float | None = field(default=None, compare=False)
     max_val: int | float | None = field(default=None, compare=False)
 
@@ -285,6 +343,7 @@ class SymbolicValue(SymbolicType):
     model_name: str | None = field(default=None, init=False, repr=False, compare=False)
     _enhanced_object: object | None = field(default=None, init=False, repr=False, compare=False)
     _type: str | None = field(default=None, init=False, repr=False, compare=False)
+    pattern: str | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def name(self) -> str:
@@ -358,9 +417,9 @@ class SymbolicValue(SymbolicType):
             z3.And(self.is_int, self.z3_int != 0),
             z3.And(self.is_str, z3.Length(self.z3_str) > 0),
             z3.And(self.is_float, z3.Not(z3.fpIsZero(self.z3_float))),
+            z3.And(self.is_list, self.z3_int != 0),
+            z3.And(self.is_dict, self.z3_int != 0),
             self.is_path,
-            self.is_list,
-            self.is_dict,
             self.is_obj,
         )
         self._truthy_cache = result
@@ -377,6 +436,8 @@ class SymbolicValue(SymbolicType):
             z3.And(self.is_int, self.z3_int == 0),
             z3.And(self.is_float, z3.fpIsZero(self.z3_float)),
             z3.And(self.is_str, z3.Length(self.z3_str) == 0),
+            z3.And(self.is_list, self.z3_int == 0),
+            z3.And(self.is_dict, self.z3_int == 0),
             self.is_none,
         )
         self._falsy_cache = result
@@ -394,8 +455,11 @@ class SymbolicValue(SymbolicType):
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> SymbolicValue:
         """Merge with another value based on a condition: If(condition, self, other)."""
         if isinstance(other, SymbolicNone):
-            return other.conditional_merge(self, z3.Not(condition))
-        if not isinstance(other, (SymbolicValue, SymbolicType)):
+            merged = other.conditional_merge(self, z3.Not(condition))
+            if isinstance(merged, SymbolicValue):
+                return merged
+            return SymbolicValue.from_const(merged)
+        if not hasattr(other, "to_z3"):
             other = SymbolicValue.from_const(other)
 
         other_int = getattr(other, "z3_int", Z3_ZERO)
@@ -410,7 +474,8 @@ class SymbolicValue(SymbolicType):
         other_is_path = getattr(other, "is_path", Z3_FALSE)
         other_float = getattr(other, "z3_float", z3.FPVal(0.0, z3.Float64()))
         other_is_float = getattr(other, "is_float", Z3_FALSE)
-        other_array = getattr(other, "z3_array", None)
+        maybe_array = getattr(other, "z3_array", None)
+        other_array = maybe_array if isinstance(maybe_array, z3.ArrayRef) else None
         other_is_list = getattr(other, "is_list", Z3_FALSE)
         other_is_dict = getattr(other, "is_dict", Z3_FALSE)
 
@@ -432,16 +497,19 @@ class SymbolicValue(SymbolicType):
                 z3.If(condition, self.z3_array, other_array)
                 if (self.z3_array is not None and other_array is not None)
                 else (self.z3_array if self.z3_array is not None else other_array)
-            ) if (self.z3_array is not None or other_array is not None) else None,
+            )
+            if (self.z3_array is not None or other_array is not None)
+            else None,
             is_list=z3.If(condition, self.is_list, other_is_list),
             is_dict=z3.If(condition, self.is_dict, other_is_dict),
             taint_labels=_merge_taint(self.taint_labels, getattr(other, "taint_labels", None)),
             _h_active=self._h_active or getattr(other, "_h_active", False),
         )
 
-    def as_string(self) -> "SymbolicString":
+    def as_string(self) -> SymbolicString:
         """Downcast this unified value back to a SymbolicString."""
         from pysymex.core.types import SymbolicString
+
         return SymbolicString(
             _z3_str=self.z3_str,
             _z3_len=z3.Length(self.z3_str),
@@ -464,6 +532,7 @@ class SymbolicValue(SymbolicType):
         z3_bool = z3.Bool(f"{name}_{id_suffix}_bool")
         z3_str = z3.String(f"{name}_{id_suffix}_str")
         z3_addr = z3.Int(f"{name}_{id_suffix}_addr")
+        z3_float = z3.FP(f"{name}_{id_suffix}_float", z3.Float64())
         is_int = z3.Bool(f"{name}_{id_suffix}_is_int")
         is_bool = z3.Bool(f"{name}_{id_suffix}_is_bool")
         is_str = z3.Bool(f"{name}_{id_suffix}_is_str")
@@ -476,9 +545,8 @@ class SymbolicValue(SymbolicType):
 
         type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
 
-        # At least one must be true
         at_least_one = z3.Or(*type_vars)
-        # At most one must be true (pairwise exclusion)
+
         at_most_one = []
         for i in range(len(type_vars)):
             for j in range(i + 1, len(type_vars)):
@@ -498,6 +566,7 @@ class SymbolicValue(SymbolicType):
                 is_obj=is_obj,
                 is_path=is_path,
                 is_none=is_none,
+                z3_float=z3_float,
                 is_float=is_float,
                 is_list=is_list,
                 is_dict=is_dict,
@@ -544,8 +613,9 @@ class SymbolicValue(SymbolicType):
     @staticmethod
     def from_specialized(value: object) -> SymbolicValue:
         """Convert a specialized SymbolicType to a unified SymbolicValue."""
-        if hasattr(value, "as_unified"):
-            return _cast("SymbolicValue", _cast("Any", value).as_unified())
+        as_unified = getattr(value, "as_unified", None)
+        if callable(as_unified):
+            return _cast("SymbolicValue", as_unified())
         return SymbolicValue.from_const(value)
 
     @staticmethod
@@ -642,7 +712,7 @@ class SymbolicValue(SymbolicType):
                 z3_int = z3.IntVal(int_val)
             except (ValueError, OverflowError):
                 z3_int = Z3_ZERO
-                
+
             sv = SymbolicValue(
                 _name=str(value),
                 z3_int=z3_int,
@@ -654,17 +724,18 @@ class SymbolicValue(SymbolicType):
                 is_path=Z3_FALSE,
                 _constant_value=value,
                 affinity_type="float",
-
                 min_val=value,
                 max_val=value,
             )
             return sv
 
-        if hasattr(value, "as_unified"):
-            return _cast("SymbolicValue", _cast("Any", value).as_unified())
+        as_unified = getattr(value, "as_unified", None)
+        if callable(as_unified):
+            return _cast("SymbolicValue", as_unified())
 
         if isinstance(value, str):
             from pysymex.core.types import SymbolicString
+
             return SymbolicString.from_const(value).as_unified()
 
         sv = SymbolicValue(
@@ -721,28 +792,34 @@ class SymbolicValue(SymbolicType):
         """Create a fresh symbolic path."""
         val, constraint = SymbolicValue.symbolic(name)
         path_constraint = z3.And(constraint, val.is_path)
-        
+
         if not val._h_active and name:
             if name.lower().startswith(("self", "cls")):
                 object.__setattr__(val, "_h_active", True)
-                
+
         return val, path_constraint
 
     def __add__(self, other: object) -> SymbolicValue:
         """Python addition operator."""
         other = SymbolicValue.from_const(other)
         res_int = self.z3_int + other.z3_int
-        is_int_res = z3.And(self.is_int, other.is_int)
-        
-        left_fp = z3.If(self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64()))
-        right_fp = z3.If(other.is_float, other.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()))
-        res_float = z3.fpAdd(z3.RNE(), left_fp, right_fp)
+        is_int_like_self = z3.Or(self.is_int, self.is_bool)
+        is_int_like_other = z3.Or(other.is_int, other.is_bool)
+        is_int_res = z3.And(is_int_like_self, is_int_like_other)
+
+        self_real = z3.ToReal(self.z3_int)
+        other_real = z3.ToReal(other.z3_int)
+
+        real_base = z3.If(self.is_float, z3.fpToReal(self.z3_float), self_real)
+        real_add = z3.If(other.is_float, z3.fpToReal(other.z3_float), other_real)
+
+        res_float = z3.fpToFP(z3.RNE(), real_base + real_add, z3.Float64())
         is_float_res = z3.Or(self.is_float, other.is_float)
 
         res_str = z3.If(
             z3.And(self.is_str, other.is_str),
             z3.Concat(self.z3_str, other.z3_str),
-            z3.StringVal("")
+            z3.StringVal(""),
         )
         is_str_res = z3.And(self.is_str, other.is_str)
 
@@ -763,10 +840,16 @@ class SymbolicValue(SymbolicType):
         """Python subtraction operator."""
         other = SymbolicValue.from_const(other)
         res_int = self.z3_int - other.z3_int
-        is_int_res = z3.And(self.is_int, other.is_int)
-        
-        left_fp = z3.If(self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64()))
-        right_fp = z3.If(other.is_float, other.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()))
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
+
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
         res_float = z3.fpSub(z3.RNE(), left_fp, right_fp)
         is_float_res = z3.Or(self.is_float, other.is_float)
 
@@ -785,10 +868,16 @@ class SymbolicValue(SymbolicType):
         """Python multiplication operator."""
         other = SymbolicValue.from_const(other)
         res_int = self.z3_int * other.z3_int
-        is_int_res = z3.And(self.is_int, other.is_int)
-        
-        left_fp = z3.If(self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64()))
-        right_fp = z3.If(other.is_float, other.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()))
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
+
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
         res_float = z3.fpMul(z3.RNE(), left_fp, right_fp)
         is_float_res = z3.Or(self.is_float, other.is_float)
 
@@ -822,22 +911,46 @@ class SymbolicValue(SymbolicType):
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
-        
+
         raw_res = _py_mod(self.z3_int, safe_divisor)
         cv = getattr(other, "_constant_value", None)
         if cv is not None and cv != 0:
             guarded_res = raw_res
         else:
             guarded_res = z3.If(other.z3_int != 0, raw_res, Z3_ZERO)
-        
+
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
+
+        safe_right_fp = z3.If(z3.fpIsZero(right_fp), z3.FPVal(1.0, z3.Float64()), right_fp)
+
+        raw_fp_div = z3.fpDiv(z3.RNE(), left_fp, safe_right_fp)
+        fp_floored = z3.fpRoundToIntegral(z3.RTN(), raw_fp_div)
+        fp_mod_res = z3.fpSub(z3.RNE(), left_fp, z3.fpMul(z3.RNE(), fp_floored, safe_right_fp))
+        guarded_fp_res = z3.If(z3.Not(z3.fpIsZero(right_fp)), fp_mod_res, z3.fpNaN(z3.Float64()))
+
+        is_float_res = z3.And(
+            z3.Or(self.is_float, other.is_float),
+            z3.Or(self.is_int, self.is_bool, self.is_float),
+            z3.Or(other.is_int, other.is_bool, other.is_float),
+        )
+
         return SymbolicValue(
             _name=f"({self._name}%{other._name})",
             z3_int=guarded_res,
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool)),
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
+            z3_float=guarded_fp_res,
+            is_float=is_float_res,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
-            affinity_type="int",
+            affinity_type="float",
         )
 
     def __floordiv__(self, other: object) -> SymbolicValue:
@@ -846,31 +959,37 @@ class SymbolicValue(SymbolicType):
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
         safe_divisor = _guarded_nonzero_divisor(other.z3_int)
-        
+
         raw_res = _py_floor_div(self.z3_int, safe_divisor)
         cv = getattr(other, "_constant_value", None)
         if cv is not None and cv != 0:
             guarded_res = raw_res
         else:
             guarded_res = z3.If(other.z3_int != 0, raw_res, Z3_ZERO)
-            
-        left_fp = z3.If(self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64()))
-        right_fp = z3.If(other.is_float, other.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()))
-        
+
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
+
         safe_right_fp = z3.If(z3.fpIsZero(right_fp), z3.FPVal(1.0, z3.Float64()), right_fp)
         raw_fp_div = z3.fpDiv(z3.RNE(), left_fp, safe_right_fp)
-        # Python's float // float returns a float, rounded towards negative infinity
+
         fp_floored = z3.fpRoundToIntegral(z3.RTN(), raw_fp_div)
         guarded_fp_res = z3.If(z3.Not(z3.fpIsZero(right_fp)), fp_floored, z3.fpNaN(z3.Float64()))
-        
+
         return SymbolicValue(
             _name=f"({self._name}//{other._name})",
             z3_int=guarded_res,
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool)),
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             z3_float=guarded_fp_res,
-            is_float=z3.Not(z3.And(self.is_int, other.is_int)), # If either is float, result is float
+            is_float=z3.Not(z3.And(self.is_int, other.is_int)),
             is_path=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
             affinity_type="float",
@@ -881,24 +1000,27 @@ class SymbolicValue(SymbolicType):
         other = SymbolicValue.from_const(other)
         if z3.is_int_value(other.z3_int) and other.z3_int.as_long() == 0:
             raise ZeroDivisionError("division by zero")
-        
-        left_fp = z3.If(self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64()))
-        right_fp = z3.If(other.is_float, other.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()))
-        
+
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
+
         cv = getattr(other, "_constant_value", None)
         if cv is not None and cv != 0:
             guarded_float = z3.fpDiv(z3.RNE(), left_fp, right_fp)
             z3_int_placeholder = Z3_ZERO
         else:
-            # Division fallback avoids float-divide-by-zero Z3 crashes
             safe_right = z3.If(z3.fpIsZero(right_fp), z3.FPVal(1.0, z3.Float64()), right_fp)
             raw_float = z3.fpDiv(z3.RNE(), left_fp, safe_right)
             guarded_float = z3.If(z3.Not(z3.fpIsZero(right_fp)), raw_float, z3.fpNaN(z3.Float64()))
-            
-            # Explicit guard even for z3_int to satisfy test expectations ("If" in str)
-            # and ensure symbolic division results have an associated safety guard.
+
             z3_int_placeholder = z3.If(other.z3_int != 0, Z3_ZERO, Z3_ZERO)
-        
+
         return SymbolicValue(
             _name=f"({self._name}/{other._name})",
             z3_int=z3_int_placeholder,
@@ -916,11 +1038,12 @@ class SymbolicValue(SymbolicType):
         left_bv = int_to_bv(self.z3_int)
         right_bv = int_to_bv(other.z3_int)
         res_bv = left_bv & right_bv
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
 
         return SymbolicValue(
             _name=f"({self._name}&{other._name})",
             z3_int=bv_to_int(res_bv),
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=is_int_res,
             z3_bool=z3.And(self.z3_bool, other.z3_bool),
             is_bool=z3.And(self.is_bool, other.is_bool),
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
@@ -928,7 +1051,7 @@ class SymbolicValue(SymbolicType):
 
     def __rand__(self, other: object) -> SymbolicValue:
         """Reflected bitwise AND operator."""
-        # AND is commutative, so just delegate to __and__
+
         return self.__and__(other)
 
     def __or__(self, other: object) -> SymbolicValue:
@@ -937,11 +1060,12 @@ class SymbolicValue(SymbolicType):
         left_bv = int_to_bv(self.z3_int)
         right_bv = int_to_bv(other.z3_int)
         res_bv = left_bv | right_bv
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
 
         return SymbolicValue(
             _name=f"({self._name}|{other._name})",
             z3_int=bv_to_int(res_bv),
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=is_int_res,
             z3_bool=z3.Or(self.z3_bool, other.z3_bool),
             is_bool=z3.And(self.is_bool, other.is_bool),
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
@@ -949,7 +1073,7 @@ class SymbolicValue(SymbolicType):
 
     def __ror__(self, other: object) -> SymbolicValue:
         """Reflected bitwise OR operator."""
-        # OR is commutative, so just delegate to __or__
+
         return self.__or__(other)
 
     def __xor__(self, other: object) -> SymbolicValue:
@@ -957,12 +1081,34 @@ class SymbolicValue(SymbolicType):
         other = SymbolicValue.from_const(other)
         left_bv = int_to_bv(self.z3_int)
         right_bv = int_to_bv(other.z3_int)
-        res_bv = left_bv ^ right_bv
+        if z3.eq(left_bv, right_bv):
+            res_bv = z3.BitVecVal(0, BV_WIDTH)
+        elif left_bv.decl().kind() == _Z3_OP_BXOR and left_bv.num_args() == 2:
+            a = left_bv.arg(0)
+            b = left_bv.arg(1)
+            if z3.eq(a, right_bv):
+                res_bv = b
+            elif z3.eq(b, right_bv):
+                res_bv = a
+            else:
+                res_bv = left_bv ^ right_bv
+        elif right_bv.decl().kind() == _Z3_OP_BXOR and right_bv.num_args() == 2:
+            a = right_bv.arg(0)
+            b = right_bv.arg(1)
+            if z3.eq(a, left_bv):
+                res_bv = b
+            elif z3.eq(b, left_bv):
+                res_bv = a
+            else:
+                res_bv = left_bv ^ right_bv
+        else:
+            res_bv = left_bv ^ right_bv
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
 
         return SymbolicValue(
             _name=f"({self._name}^{other._name})",
             z3_int=bv_to_int(res_bv),
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=is_int_res,
             z3_bool=z3.Xor(self.z3_bool, other.z3_bool),
             is_bool=z3.And(self.is_bool, other.is_bool),
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
@@ -970,21 +1116,21 @@ class SymbolicValue(SymbolicType):
 
     def __rxor__(self, other: object) -> SymbolicValue:
         """Reflected bitwise XOR operator."""
-        # XOR is commutative, so just delegate to __xor__
+
         return self.__xor__(other)
 
     def __invert__(self) -> SymbolicValue:
         """Python bitwise inversion operator."""
         res_bv = ~int_to_bv(self.z3_int)
-
-        z3_bool_res = z3.Not(self.z3_bool)
+        res_int = bv_to_int(res_bv)
+        is_int_res = z3.simplify(z3.Or(self.is_int, self.is_bool))
 
         return SymbolicValue(
             _name=f"(~{self._name})",
-            z3_int=bv_to_int(res_bv),
-            is_int=self.is_int,
-            z3_bool=z3_bool_res,
-            is_bool=self.is_bool,
+            z3_int=res_int,
+            is_int=is_int_res,
+            z3_bool=Z3_FALSE,
+            is_bool=Z3_FALSE,
             taint_labels=self.taint_labels,
         )
 
@@ -1000,14 +1146,15 @@ class SymbolicValue(SymbolicType):
         """
         other = SymbolicValue.from_const(other)
         left_bv = int_to_bv(self.z3_int)
-        # Z3's bvshl expects same-width bitvectors
+
         right_bv = int_to_bv(other.z3_int)
         res_bv = left_bv << right_bv
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
 
         return SymbolicValue(
             _name=f"({self._name}<<{other._name})",
             z3_int=bv_to_int(res_bv),
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=is_int_res,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
@@ -1033,15 +1180,16 @@ class SymbolicValue(SymbolicType):
         """
         other = SymbolicValue.from_const(other)
         left_bv = int_to_bv(self.z3_int)
-        # Z3's bvashr expects same-width bitvectors
+
         right_bv = int_to_bv(other.z3_int)
-        # Use arithmetic right shift to preserve sign (Python semantics)
+
         res_bv = left_bv >> right_bv
+        is_int_res = z3.And(z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool))
 
         return SymbolicValue(
             _name=f"({self._name}>>{other._name})",
             z3_int=bv_to_int(res_bv),
-            is_int=z3.And(self.is_int, other.is_int),
+            is_int=is_int_res,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
@@ -1059,16 +1207,45 @@ class SymbolicValue(SymbolicType):
     def __pow__(self, other: object) -> SymbolicValue:
         """Python exponentiation operator."""
         other = SymbolicValue.from_const(other)
-        # Note: Z3's ** operator is only defined for real/int and can be
-        # extremely expensive or non-linear.
+
+        res_int = self.z3_int**other.z3_int
+        is_int_res = z3.And(
+            z3.Or(self.is_int, self.is_bool), z3.Or(other.is_int, other.is_bool), other.z3_int >= 0
+        )
+
+        self_real = z3.ToReal(self.z3_int)
+        other_real = z3.ToReal(other.z3_int)
+
+        real_base = z3.If(self.is_float, z3.fpToReal(self.z3_float), self_real)
+        real_exp = z3.If(other.is_float, z3.fpToReal(other.z3_float), other_real)
+
+        res_real = real_base**real_exp
+        res_float = z3.fpToFP(z3.RNE(), res_real, z3.Float64())
+
+        is_float_res = z3.And(
+            z3.Or(self.is_int, self.is_bool, self.is_float),
+            z3.Or(other.is_int, other.is_bool, other.is_float),
+            z3.Or(
+                self.is_float,
+                other.is_float,
+                z3.And(
+                    z3.Or(self.is_int, self.is_bool),
+                    z3.Or(other.is_int, other.is_bool),
+                    other.z3_int < 0,
+                ),
+            ),
+        )
+
         return SymbolicValue(
             _name=f"({self._name}**{other._name})",
-            z3_int=self.z3_int**other.z3_int,
-            is_int=z3.And(self.is_int, other.is_int),
+            z3_int=res_int,
+            is_int=is_int_res,
+            z3_float=res_float,
+            is_float=is_float_res,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
             taint_labels=_merge_taint(self.taint_labels, other.taint_labels),
-            affinity_type="int",
+            affinity_type="float",
         )
 
     def logical_not(self) -> SymbolicValue:
@@ -1086,7 +1263,7 @@ class SymbolicValue(SymbolicType):
     def __eq__(self, other: object) -> SymbolicValue:  # type: ignore[override]
         """Python '==' operator."""
         other = SymbolicValue.from_const(other)
-        # Convert int to FP for cross-type comparison (Python: 1 == 1.0 is True)
+
         self_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
         other_as_fp = z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64())
         cond = z3.Or(
@@ -1098,10 +1275,16 @@ class SymbolicValue(SymbolicType):
             z3.And(self.is_obj, other.is_obj, self.z3_addr == other.z3_addr),
             z3.And(self.is_int, other.is_float, other.z3_float == self_as_fp),
             z3.And(self.is_float, other.is_int, self.z3_float == other_as_fp),
-            z3.And(self.is_bool, other.is_int,
-                   z3.If(self.z3_bool, z3.IntVal(1), Z3_ZERO) == other.z3_int),
-            z3.And(self.is_int, other.is_bool,
-                   self.z3_int == z3.If(other.z3_bool, z3.IntVal(1), Z3_ZERO)),
+            z3.And(
+                self.is_bool,
+                other.is_int,
+                z3.If(self.z3_bool, z3.IntVal(1), Z3_ZERO) == other.z3_int,
+            ),
+            z3.And(
+                self.is_int,
+                other.is_bool,
+                self.z3_int == z3.If(other.z3_bool, z3.IntVal(1), Z3_ZERO),
+            ),
         )
         return SymbolicValue(
             _name=f"({self._name}=={other._name})",
@@ -1328,7 +1511,7 @@ class SymbolicString(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=is_contained,
             is_bool=Z3_TRUE,
-            affinity_type="bool"
+            affinity_type="bool",
         )
 
     def startswith(self, prefix: object) -> SymbolicValue:
@@ -1343,9 +1526,8 @@ class SymbolicString(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=cond,
             is_bool=Z3_TRUE,
-            affinity_type="bool"
+            affinity_type="bool",
         )
-
 
     def endswith(self, suffix: object) -> SymbolicValue:
         """Check if string ends with suffix."""
@@ -1359,20 +1541,16 @@ class SymbolicString(SymbolicType):
             is_int=Z3_FALSE,
             z3_bool=cond,
             is_bool=Z3_TRUE,
-            affinity_type="bool"
+            affinity_type="bool",
         )
-
-
 
     def substring(self, start: object, end: object) -> SymbolicString:
         """Extract a substring from start to end, propagating taint."""
-        s = _cast(z3.ArithRef, getattr(start, "z3_int", start))
-        e = _cast(z3.ArithRef, getattr(end, "z3_int", end))
+        s = _cast("z3.ArithRef", getattr(start, "z3_int", start))
+        e = _cast("z3.ArithRef", getattr(end, "z3_int", end))
         len_s = e - s
         sub = z3.If(
-            z3.And(s >= 0, len_s >= 0),
-            z3.SubString(self.z3_str, s, len_s),
-            z3.StringVal("")
+            z3.And(s >= 0, len_s >= 0), z3.SubString(self.z3_str, s, len_s), z3.StringVal("")
         )
         return SymbolicString(
             _z3_str=sub,
@@ -1389,13 +1567,14 @@ class SymbolicString(SymbolicType):
         return self.as_unified().conditional_merge(other, condition)
 
 
-# Re-export container types for legacy imports lazily to break circularity.
 def __getattr__(name: str) -> type:
     if name in ("SymbolicDict", "SymbolicList", "SymbolicObject"):
         from pysymex.core.types_containers import SymbolicDict, SymbolicList, SymbolicObject
-        if name == "SymbolicDict": return SymbolicDict
-        if name == "SymbolicList": return SymbolicList
-        if name == "SymbolicObject": return SymbolicObject
+
+        if name == "SymbolicDict":
+            return SymbolicDict
+        if name == "SymbolicList":
+            return SymbolicList
+        if name == "SymbolicObject":
+            return SymbolicObject
     raise AttributeError(f"module {__name__} has no attribute {name}")
-
-

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU Bytecode Optimizer - Advanced Optimization Passes.
 
 Provides optimization passes for GPU bytecode:
@@ -25,9 +43,11 @@ __all__ = ["OptimizationStats", "optimize"]
 _opt_cache: dict[tuple[int, int], tuple[CompiledConstraint, OptimizationStats]] = {}
 _opt_lock = threading.Lock()
 
+
 @dataclass
 class OptimizationStats:
     """Statistics from optimization passes."""
+
     original_instructions: int = 0
     optimized_instructions: int = 0
     copies_eliminated: int = 0
@@ -41,9 +61,11 @@ class OptimizationStats:
             return 0.0
         return 100.0 * (1 - self.optimized_instructions / self.original_instructions)
 
+
 @dataclass
 class OptInstruction:
     """Mutable instruction wrapper for optimization."""
+
     opcode: Opcode
     dst: int = 0
     src1: int = 0
@@ -55,12 +77,12 @@ class OptInstruction:
     @classmethod
     def from_numpy(cls, arr: np.void) -> OptInstruction:
         return cls(
-            opcode=Opcode(int(arr['opcode'])),
-            dst=int(arr['dst']),
-            src1=int(arr['src1']),
-            src2=int(arr['src2']),
-            flags=int(arr['flags']),
-            immediate=int(arr['immediate']),
+            opcode=Opcode(int(arr["opcode"])),
+            dst=int(arr["dst"]),
+            src1=int(arr["src1"]),
+            src2=int(arr["src2"]),
+            flags=int(arr["flags"]),
+            immediate=int(arr["immediate"]),
         )
 
     def to_tuple(self) -> tuple[int, int, int, int, int, int, int, int]:
@@ -74,7 +96,13 @@ class OptInstruction:
 
     def reads(self) -> list[int]:
         """Return the registers read by this instruction."""
-        if self.opcode in (Opcode.LOAD_VAR, Opcode.LOAD_TRUE, Opcode.LOAD_FALSE, Opcode.NOP, Opcode.HALT):
+        if self.opcode in (
+            Opcode.LOAD_VAR,
+            Opcode.LOAD_TRUE,
+            Opcode.LOAD_FALSE,
+            Opcode.NOP,
+            Opcode.HALT,
+        ):
             return []
         if self.opcode in (Opcode.NOT, Opcode.COPY, Opcode.EQ_CONST):
             return [self.src1]
@@ -84,7 +112,7 @@ class OptInstruction:
 
     def canonical_key(self) -> str:
         """Return canonical representation for CSE."""
-        if self.opcode in (Opcode.LOAD_VAR,):
+        if self.opcode == Opcode.LOAD_VAR:
             return f"{self.opcode.name}:{self.immediate}"
         if self.opcode in (Opcode.LOAD_TRUE, Opcode.LOAD_FALSE):
             return self.opcode.name
@@ -97,6 +125,7 @@ class OptInstruction:
             s1, s2 = sorted([self.src1, self.src2])
             return f"{self.opcode.name}:{s1}:{s2}"
         return f"{self.opcode.name}:{self.src1}:{self.src2}"
+
 
 def optimize(constraint: CompiledConstraint) -> tuple[CompiledConstraint, OptimizationStats]:
     """Apply all optimization passes to a compiled constraint.
@@ -147,8 +176,13 @@ def optimize(constraint: CompiledConstraint) -> tuple[CompiledConstraint, Optimi
     next_avail_reg = constraint.num_variables + 1
 
     for instr in alive_instrs:
-
-        if instr.opcode not in (Opcode.LOAD_VAR, Opcode.LOAD_TRUE, Opcode.LOAD_FALSE, Opcode.NOP, Opcode.HALT):
+        if instr.opcode not in (
+            Opcode.LOAD_VAR,
+            Opcode.LOAD_TRUE,
+            Opcode.LOAD_FALSE,
+            Opcode.NOP,
+            Opcode.HALT,
+        ):
             if instr.src1 not in reg_map:
                 reg_map[instr.src1] = next_avail_reg
                 next_avail_reg += 1
@@ -195,6 +229,7 @@ def optimize(constraint: CompiledConstraint) -> tuple[CompiledConstraint, Optimi
             del _opt_cache[oldest]
 
     return result, stats
+
 
 def _pass_constant_folding(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
     """Fold constant expressions at compile time."""
@@ -246,14 +281,12 @@ def _pass_constant_folding(instrs: list[OptInstruction], stats: OptimizationStat
                 changed = True
             elif s1_const:
                 if constants[instr.src1] == 0:
-
                     instr.opcode = Opcode.LOAD_FALSE
                     instr.src1 = instr.src2 = 0
                     constants[instr.dst] = 0
                     stats.constants_folded += 1
                     changed = True
                 elif constants[instr.src1] == 0xFFFFFFFFFFFFFFFF:
-
                     instr.opcode = Opcode.COPY
                     instr.src1 = instr.src2
                     instr.src2 = 0
@@ -326,11 +359,11 @@ def _pass_constant_folding(instrs: list[OptInstruction], stats: OptimizationStat
             else:
                 constants.pop(instr.dst, None)
         else:
-
             if instr.writes() is not None:
                 constants.pop(instr.dst, None)
 
     return changed
+
 
 def _pass_copy_propagation(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
     """Propagate copy sources to eliminate redundant copies."""
@@ -341,10 +374,7 @@ def _pass_copy_propagation(instrs: list[OptInstruction], stats: OptimizationStat
             continue
 
         if instr.dst == 0:
-            has_later_r0_write = any(
-                j.alive and j.writes() == 0
-                for j in instrs[i + 1:]
-            )
+            has_later_r0_write = any(j.alive and j.writes() == 0 for j in instrs[i + 1 :])
             if not has_later_r0_write:
                 continue
 
@@ -355,7 +385,13 @@ def _pass_copy_propagation(instrs: list[OptInstruction], stats: OptimizationStat
             if not later.alive:
                 continue
 
-            if later.opcode not in (Opcode.LOAD_VAR, Opcode.LOAD_TRUE, Opcode.LOAD_FALSE, Opcode.NOP, Opcode.HALT):
+            if later.opcode not in (
+                Opcode.LOAD_VAR,
+                Opcode.LOAD_TRUE,
+                Opcode.LOAD_FALSE,
+                Opcode.NOP,
+                Opcode.HALT,
+            ):
                 if later.src1 == dst:
                     later.src1 = src
                     changed = True
@@ -370,6 +406,7 @@ def _pass_copy_propagation(instrs: list[OptInstruction], stats: OptimizationStat
                 break
 
     return changed
+
 
 def _pass_cse(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
     """Eliminate common subexpressions."""
@@ -396,20 +433,17 @@ def _pass_cse(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
             stats.subexpressions_eliminated += 1
             changed = True
         else:
-
             if instr.writes() is not None:
                 available[key] = (instr.dst, i)
 
         written = instr.writes()
         if written is not None:
-            to_remove = [
-                k for k, (reg, _) in available.items()
-                if reg == written
-            ]
+            to_remove = [k for k, (reg, _) in available.items() if reg == written]
             for k in to_remove:
                 del available[k]
 
     return changed
+
 
 def _pass_dce(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
     """Eliminate dead code (instructions whose results are never used)."""
@@ -434,23 +468,21 @@ def _pass_dce(instrs: list[OptInstruction], stats: OptimizationStats) -> bool:
         written = instr.writes()
         if written is not None:
             if written in live:
-
                 if written != 0:
                     live.discard(written)
                 for src in instr.reads():
                     live.add(src)
             else:
-
                 instr.alive = False
                 stats.dead_code_eliminated += 1
                 changed = True
         else:
-
             if instr.opcode == Opcode.NOP:
                 instr.alive = False
                 changed = True
 
     return changed
+
 
 def clear_cache() -> None:
     """Clear the optimization cache."""

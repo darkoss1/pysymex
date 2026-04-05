@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Extended builtin function models.
 
 Contains models for less-commonly-used Python builtins:
@@ -8,7 +26,7 @@ id, hash, callable, repr, format, input, open.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import z3
 
@@ -203,9 +221,7 @@ class ReversedModel(FunctionModel):
             result, constraint = SymbolicList.symbolic(f"reversed_{state.pc}")
             return ModelResult(value=result, constraints=[constraint, result.z3_len == val.z3_len])
         if isinstance(val, (list, tuple, str)):
-            return ModelResult(
-                value=list(reversed(cast("list[object] | tuple[object, ...] | str", val)))
-            )
+            return ModelResult(value=list(reversed(val)))
         result, constraint = SymbolicList.symbolic(f"reversed_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -228,10 +244,12 @@ class AllModel(FunctionModel):
         if isinstance(val, (list, tuple)):
             if not val:
                 return ModelResult(value=SymbolicValue.from_const(True))
-            val_seq = cast("list[object] | tuple[object, ...]", val)
+            val_seq: list[object] | tuple[object, ...] = cast(
+                "list[object] | tuple[object, ...]", val
+            )
             if all(isinstance(x, SymbolicValue) for x in val_seq):
-                sv_list = cast("list[SymbolicValue]", list(val_seq))
-                conditions: list[z3.BoolRef] = [cast("Any", x).is_truthy() for x in sv_list]
+                sv_list: list[SymbolicValue] = cast("list[SymbolicValue]", list(val_seq))
+                conditions: list[z3.BoolRef] = [x.could_be_truthy() for x in sv_list]
                 result, constraint = SymbolicValue.symbolic(f"all_{state.pc}")
                 return ModelResult(
                     value=result,
@@ -260,10 +278,12 @@ class AnyModel(FunctionModel):
         if isinstance(val, (list, tuple)):
             if not val:
                 return ModelResult(value=SymbolicValue.from_const(False))
-            val_seq = cast("list[object] | tuple[object, ...]", val)
+            val_seq: list[object] | tuple[object, ...] = cast(
+                "list[object] | tuple[object, ...]", val
+            )
             if all(isinstance(x, SymbolicValue) for x in val_seq):
-                sv_list = cast("list[SymbolicValue]", list(val_seq))
-                conditions: list[z3.BoolRef] = [cast("Any", x).is_truthy() for x in sv_list]
+                sv_list: list[SymbolicValue] = cast("list[SymbolicValue]", list(val_seq))
+                conditions: list[z3.BoolRef] = [x.could_be_truthy() for x in sv_list]
                 result, constraint = SymbolicValue.symbolic(f"any_{state.pc}")
                 return ModelResult(
                     value=result,
@@ -355,11 +375,14 @@ class PowModel(FunctionModel):
         if len(args) < 2:
             result, constraint = SymbolicValue.symbolic(f"pow_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
-        base, exp = args[0], args[1]
-        mod = args[2] if len(args) > 2 else None
+        base: StackValue = args[0]
+        exp: StackValue = args[1]
+        mod: StackValue | None = args[2] if len(args) > 2 else None
         if isinstance(base, (int, float)) and isinstance(exp, (int, float)):
             if mod is not None and isinstance(mod, int):
-                return ModelResult(value=SymbolicValue.from_const(pow(base, exp, mod)))
+                return ModelResult(
+                    value=SymbolicValue.from_const(pow(cast("int", base), cast("int", exp), mod))
+                )
             return ModelResult(value=SymbolicValue.from_const(pow(base, exp)))
         result, constraint = SymbolicValue.symbolic(f"pow_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
@@ -381,10 +404,10 @@ class RoundModel(FunctionModel):
             result, constraint = SymbolicValue.symbolic(f"round_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
         val = args[0]
-        ndigits = args[1] if len(args) > 1 else None
+        ndigits: int | None = cast("int | None", args[1] if len(args) > 1 else None)
         if isinstance(val, (int, float)):
-            result = round(val, ndigits)
-            return ModelResult(value=result)
+            rounded_result: int | float = round(val, ndigits)
+            return ModelResult(value=rounded_result)
         result, constraint = SymbolicValue.symbolic(f"round_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -403,7 +426,8 @@ class DivmodModel(FunctionModel):
     ) -> ModelResult:
         if len(args) < 2:
             return ModelResult(value=(SymbolicValue.from_const(0), SymbolicValue.from_const(0)))
-        a, b = args[0], args[1]
+        a: StackValue = args[0]
+        b: StackValue = args[1]
         if isinstance(a, (int, float)) and isinstance(b, (int, float)):
             q, r = divmod(a, b)
             return ModelResult(value=(SymbolicValue.from_const(q), SymbolicValue.from_const(r)))
@@ -446,7 +470,8 @@ class HasattrModel(FunctionModel):
         if len(args) < 2:
             result, constraint = SymbolicValue.symbolic(f"hasattr_{state.pc}")
             return ModelResult(value=result, constraints=[constraint, result.is_bool])
-        obj, name = args[0], args[1]
+        obj: StackValue = args[0]
+        name: StackValue = args[1]
         if not isinstance(obj, SymbolicValue) and isinstance(name, str):
             return ModelResult(value=SymbolicValue.from_const(hasattr(obj, name)))
         result, constraint = SymbolicValue.symbolic(f"hasattr_{state.pc}")
@@ -468,8 +493,9 @@ class GetattrModel(FunctionModel):
         if len(args) < 2:
             result, constraint = SymbolicValue.symbolic(f"getattr_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
-        obj, name = args[0], args[1]
-        default = args[2] if len(args) > 2 else None
+        obj: StackValue = args[0]
+        name: StackValue = args[1]
+        default: StackValue | None = args[2] if len(args) > 2 else None
         if not isinstance(obj, SymbolicValue) and isinstance(name, str):
             try:
                 return ModelResult(value=getattr(obj, name))
@@ -529,7 +555,7 @@ class HashModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         if args:
-            obj = args[0]
+            obj: StackValue = args[0]
             if isinstance(obj, (int, str, float, tuple, frozenset, type(None))):
                 return ModelResult(
                     value=SymbolicValue.from_const(
@@ -558,7 +584,7 @@ class CallableModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         if args:
-            obj = args[0]
+            obj: StackValue = args[0]
             if not isinstance(obj, SymbolicValue):
                 return ModelResult(value=SymbolicValue.from_const(callable(obj)))
         result, constraint = SymbolicValue.symbolic(f"callable_{state.pc}")
@@ -578,7 +604,7 @@ class ReprModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         if args:
-            obj = args[0]
+            obj: StackValue = args[0]
             if not isinstance(obj, SymbolicValue):
                 return ModelResult(value=SymbolicString.from_const(repr(obj)))
         result, constraint = SymbolicString.symbolic(f"repr_{state.pc}")
@@ -598,8 +624,8 @@ class FormatModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         if args:
-            obj = args[0]
-            spec = args[1] if len(args) > 1 else ""
+            obj: StackValue = args[0]
+            spec: StackValue = args[1] if len(args) > 1 else ""
             if not isinstance(obj, SymbolicValue) and isinstance(spec, str):
                 return ModelResult(value=SymbolicString.from_const(format(obj, spec)))
         result, constraint = SymbolicString.symbolic(f"format_{state.pc}")
@@ -655,7 +681,7 @@ class ExecModel(FunctionModel):
             "sink_type": "exec",
         }
         if args:
-            code_arg = args[0]
+            code_arg: StackValue = args[0]
             if isinstance(code_arg, (SymbolicString, SymbolicValue)):
                 side_effects["tainted_input"] = True
                 side_effects["severity"] = "critical"
@@ -682,7 +708,7 @@ class EvalModel(FunctionModel):
             "sink_type": "eval",
         }
         if args:
-            code_arg = args[0]
+            code_arg: StackValue = args[0]
             if isinstance(code_arg, (SymbolicString, SymbolicValue)):
                 side_effects["tainted_input"] = True
                 side_effects["severity"] = "critical"
@@ -727,9 +753,9 @@ class BinModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"bin_{state.pc}")
-        constraints = [constraint]
+        constraints: list[z3.BoolRef] = [constraint]
         if args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
                 constraints.append(result.z3_len >= 3)
         return ModelResult(value=result, constraints=constraints)
@@ -748,9 +774,9 @@ class OctModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"oct_{state.pc}")
-        constraints = [constraint]
+        constraints: list[z3.BoolRef] = [constraint]
         if args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
                 constraints.append(result.z3_len >= 3)
         return ModelResult(value=result, constraints=constraints)
@@ -769,9 +795,9 @@ class HexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicString.symbolic(f"hex_{state.pc}")
-        constraints = [constraint]
+        constraints: list[z3.BoolRef] = [constraint]
         if args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
                 constraints.append(result.z3_len >= 3)
         return ModelResult(value=result, constraints=constraints)
@@ -790,11 +816,11 @@ class BytesModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"bytes_{state.pc}")
-        constraints = [constraint]
+        constraints: list[z3.BoolRef] = [constraint]
         if not args:
             constraints.append(result.z3_len == 0)
         elif args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
                 constraints.append(result.z3_len == val)
                 constraints.append(val >= 0)
@@ -814,11 +840,11 @@ class BytearrayModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"bytearray_{state.pc}")
-        constraints = [constraint]
+        constraints: list[z3.BoolRef] = [constraint]
         if not args:
             constraints.append(result.z3_len == 0)
         elif args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
                 constraints.append(result.z3_len == val)
                 constraints.append(val >= 0)
@@ -838,8 +864,8 @@ class FrozensetModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         result, constraint = SymbolicList.symbolic(f"frozenset_{state.pc}")
-        cast("Any", result)._type = "frozenset"
-        constraints = [constraint]
+        setattr(result, "_type", "frozenset")
+        constraints: list[z3.BoolRef] = [constraint]
         if not args:
             constraints.append(result.z3_len == 0)
         return ModelResult(value=result, constraints=constraints)
@@ -1006,9 +1032,13 @@ class MemoryviewTobytesModel(FunctionModel):
     name = "tobytes"
     qualname = "memoryview.tobytes"
 
-    def apply(self, args, kwargs, state):
-        """Apply the MemoryviewTobytesModel model."""
-        result, constraint = SymbolicValue.symbolic(f"tobytes_{state.pc}", bytes)
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        result, constraint = SymbolicValue.symbolic(f"tobytes_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -1016,29 +1046,40 @@ class MemoryviewTolistModel(FunctionModel):
     name = "tolist"
     qualname = "memoryview.tolist"
 
-    def apply(self, args, kwargs, state):
-        """Apply the MemoryviewTolistModel model."""
-        from pysymex.core.types import SymbolicList
-
-        return ModelResult(value=SymbolicList([]), constraints=[])
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        result, constraint = SymbolicList.symbolic(f"tolist_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint, result.z3_len == 0])
 
 
 class MemoryviewHexModel(FunctionModel):
     name = "hex"
     qualname = "memoryview.hex"
 
-    def apply(self, args, kwargs, state):
-        """Apply the MemoryviewHexModel model."""
-        result, constraint = SymbolicValue.symbolic(f"hex_{state.pc}", str)
-        return ModelResult(value=result, constraints=[constraint, result.is_string])
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        result, constraint = SymbolicString.symbolic(f"hex_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
 
 
 class MemoryviewReleaseModel(FunctionModel):
     name = "release"
     qualname = "memoryview.release"
 
-    def apply(self, args, kwargs, state):
-        """Apply the MemoryviewReleaseModel model."""
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
         return ModelResult(value=None, constraints=[])
 
 
@@ -1046,8 +1087,12 @@ class MemoryviewCastModel(FunctionModel):
     name = "cast"
     qualname = "memoryview.cast"
 
-    def apply(self, args, kwargs, state):
-        """Apply the MemoryviewCastModel model."""
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
         if not args:
             return ModelResult(value=None, constraints=[])
         return ModelResult(value=args[0], constraints=[])
@@ -1057,8 +1102,12 @@ class ComplexRealModel(FunctionModel):
     name = "real"
     qualname = "complex.real"
 
-    def apply(self, args, kwargs, state):
-        """Apply the ComplexRealModel model."""
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
         if not args:
             return ModelResult(0.0, [], {})
         return ModelResult(args[0], [], {})
@@ -1068,8 +1117,12 @@ class ComplexImagModel(FunctionModel):
     name = "imag"
     qualname = "complex.imag"
 
-    def apply(self, args, kwargs, state):
-        """Apply the ComplexImagModel model."""
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
         return ModelResult(0.0, [], {})
 
 
@@ -1077,8 +1130,12 @@ class ComplexConjugateModel(FunctionModel):
     name = "conjugate"
     qualname = "complex.conjugate"
 
-    def apply(self, args, kwargs, state):
-        """Apply the ComplexConjugateModel model."""
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
         if not args:
             return ModelResult(0.0, [], {})
         return ModelResult(args[0], [], {})

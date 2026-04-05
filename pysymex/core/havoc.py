@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """HavocValue — precision-preserving value for unmodeled function calls.
 
 When the symbolic executor encounters a call to an **unmodeled** function
@@ -25,7 +43,9 @@ blindly suppressed).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TypeGuard
 
 import z3
 
@@ -72,6 +92,7 @@ class HavocValue(SymbolicValue):
         """
         z3_int = z3.Int(f"{name}_int")
         z3_bool = z3.Bool(f"{name}_bool")
+        z3_float = z3.FP(f"{name}_float", z3.Float64())
         z3_str = z3.String(f"{name}_str")
         z3_addr = z3.Int(f"{name}_addr")
 
@@ -81,11 +102,12 @@ class HavocValue(SymbolicValue):
         is_path = z3.Bool(f"{name}_is_path")
         is_obj = z3.Bool(f"{name}_is_obj")
         is_none = z3.Bool(f"{name}_is_none")
+        is_float = z3.Bool(f"{name}_is_float")
 
         is_list = z3.Bool(f"{name}_is_list")
         is_dict = z3.Bool(f"{name}_is_dict")
 
-        type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_list, is_dict]
+        type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
         at_least_one = z3.Or(*type_vars)
         at_most_one = []
         for i in range(len(type_vars)):
@@ -99,6 +121,8 @@ class HavocValue(SymbolicValue):
             is_int=is_int,
             z3_bool=z3_bool,
             is_bool=is_bool,
+            z3_float=z3_float,
+            is_float=is_float,
             z3_str=z3_str,
             is_str=is_str,
             z3_addr=z3_addr,
@@ -118,11 +142,11 @@ class HavocValue(SymbolicValue):
         return HavocValue.havoc(name, taint_labels=self.taint_labels)
 
     def __getattr__(self, name: str) -> tuple[HavocValue, z3.BoolRef]:
-         """Accessing attribute on a HavocValue produces a new HavocValue."""
-         if name.startswith('_'): # Avoid internal recursion
-             raise AttributeError(name)
-         full_name = f"{self._name}.{name}"
-         return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
+        """Accessing attribute on a HavocValue produces a new HavocValue."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        full_name = f"{self._name}.{name}"
+        return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
 
     def __call__(self, *args: object, **kwargs: object) -> tuple[HavocValue, z3.BoolRef]:
         """Calling a HavocValue produces a new HavocValue."""
@@ -133,7 +157,7 @@ class HavocValue(SymbolicValue):
         return f"HavocValue({self._name})"
 
 
-def is_havoc(value: object) -> bool:
+def is_havoc(value: object) -> TypeGuard[HavocValue]:
     """Return ``True`` if *value* is a :class:`HavocValue`."""
     return isinstance(value, HavocValue)
 
@@ -143,7 +167,7 @@ def has_havoc(*values: object) -> bool:
     return any(isinstance(v, HavocValue) for v in values)
 
 
-def union_taint(values: list[object] | tuple[object, ...]) -> frozenset[str] | None:
+def union_taint(values: Sequence[object]) -> frozenset[str] | None:
     """Compute the union of ``taint_labels`` across *values*.
 
     Returns ``None`` when no value carries taint (the common case).

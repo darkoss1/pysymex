@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Type stub types — StubType, FunctionStub, ClassStub, ModuleStub."""
 
 from __future__ import annotations
@@ -144,14 +162,14 @@ class StubType:
         if self.is_callable:
             params = ", ".join(str(p) for p in self.param_types)
             ret = str(self.return_type) if self.return_type else "None"
-            return f"Callable[[{params }], {ret }]"
+            return f"Callable[[{params}], {ret}]"
         if self.is_union:
             return " | ".join(str(m) for m in self.union_members)
         if self.is_literal:
-            return f"Literal[{', '.join (repr (v )for v in self .literal_values )}]"
+            return f"Literal[{', '.join(repr(v) for v in self.literal_values)}]"
         if self.type_args:
             args = ", ".join(str(a) for a in self.type_args)
-            return f"{self .name }[{args }]"
+            return f"{self.name}[{args}]"
         return self.name
 
 

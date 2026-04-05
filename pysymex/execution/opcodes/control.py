@@ -1,22 +1,91 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Control flow opcodes (jumps, branches, returns)."""
 
 from __future__ import annotations
 
 import dis
-from typing import TYPE_CHECKING, cast
+from itertools import chain
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import z3
 
 from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.copy_on_write import CowDict
+from pysymex.analysis.summaries.core import SummaryBuilder
 from pysymex.core.solver import get_model, is_satisfiable
-from pysymex.core.types import Z3_FALSE, Z3_TRUE, SymbolicNone, SymbolicValue, fresh_name
-from pysymex.core.types_containers import SymbolicIterator, SymbolicList, SymbolicDict, SymbolicObject, SymbolicString
+from pysymex.core.types import (
+    Z3_FALSE,
+    Z3_TRUE,
+    SymbolicNone,
+    SymbolicType,
+    SymbolicValue,
+    fresh_name,
+)
+from pysymex.core.types_containers import (
+    SymbolicDict,
+    SymbolicIterator,
+    SymbolicList,
+    SymbolicObject,
+    SymbolicString,
+)
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+
+_MAX_SUMMARY_CACHE_CONSTRAINTS = 24
+_MAX_SUMMARY_CACHE_ARGS = 12
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
     from pysymex.execution.dispatcher import OpcodeDispatcher
+
+
+@runtime_checkable
+class _SummaryCacheProtocol(Protocol):
+    def put(
+        self,
+        func_name: str,
+        args: list[object],
+        path_constraints: list[z3.BoolRef],
+        summary: object,
+    ) -> None: ...
+
+
+@runtime_checkable
+class _CrossFunctionProtocol(Protocol):
+    function_summary_cache: _SummaryCacheProtocol
+
+
+def _extract_taint_labels(value: object) -> frozenset[str]:
+    labels = getattr(value, "taint_labels", None)
+    if isinstance(labels, (set, frozenset)) and labels:
+        return frozenset(labels)
+    legacy = getattr(value, "_taint", None)
+    if isinstance(legacy, (set, frozenset)) and legacy:
+        return frozenset(legacy)
+    return frozenset()
+
+
+def _is_sat_with_extra(constraints: object, extra: z3.BoolRef) -> bool:
+    base = cast("list[z3.BoolRef]", constraints)
+    return is_satisfiable(
+        chain(base, (extra,)),
+        known_sat_prefix_len=len(base),
+    )
 
 
 @opcode_handler("RESUME", "NOP")
@@ -44,22 +113,19 @@ def get_truthy_expr(value: object) -> z3.BoolRef:
     Returns:
         A Z3 boolean expression representing the truthiness of the value.
     """
-    # --- Affinity fast path (CHTD key enabler) ---
-    # Must be checked BEFORE could_be_truthy() so known-type values
-    # emit a single-sort Z3 expression without discriminator variables.
+
     if isinstance(value, SymbolicValue):
         aff = value.affinity_type
-        if aff == "bool" and value.z3_bool is not None:
+        if aff == "bool":
             return value.z3_bool
-        if aff == "int" and value.z3_int is not None:
+        if aff == "int":
             return value.z3_int != 0
-        if aff == "float" and value.z3_float is not None:
+        if aff == "float":
             return z3.Not(z3.fpIsZero(value.z3_float))
-        if aff == "str" and value.z3_str is not None:
+        if aff == "str":
             return z3.Length(value.z3_str) != 0
-        # Fall through to could_be_truthy() for NoneType / unknown affinity
 
-    if hasattr(value, "could_be_truthy"):
+    if isinstance(value, SymbolicType):
         return value.could_be_truthy()
 
     if isinstance(value, bool):
@@ -82,23 +148,16 @@ def handle_return_value(
     return_value = state.pop() if state.stack else None
     frame = state.pop_call()
 
-    if frame is not None and getattr(frame, "summary_builder", None) is not None:
+    if frame is not None and isinstance(frame.summary_builder, SummaryBuilder):
         builder = frame.summary_builder
-        initial_args = getattr(builder, "_initial_args", [])
+        initial_args = builder.initial_args
+        cross_function = ctx.cross_function
 
-        if ctx.cross_function and hasattr(ctx.cross_function, "function_summary_cache"):
+        if isinstance(cross_function, _CrossFunctionProtocol):
             constraints = list(state.path_constraints)
-
-            targets: list[z3.ExprRef] = []
-            if isinstance(return_value, SymbolicValue):
-                if return_value.z3_int is not None:
-                    targets.append(return_value.z3_int)
-                if return_value.z3_bool is not None:
-                    targets.append(return_value.z3_bool)
 
             summary_constraints = constraints
 
-            assert builder is not None
             summary = builder.build()
 
             param_map: list[tuple[z3.ExprRef, z3.ExprRef]] = []
@@ -107,57 +166,50 @@ def handle_return_value(
                     param_info = summary.parameters[i] if i < len(summary.parameters) else None
                     if param_info:
                         param_z3 = param_info.to_z3()
-                        if arg.z3_int is not None:
-                            param_map.append((arg.z3_int, param_z3))
+                        param_map.append((arg.z3_int, param_z3))
 
             canonical_return = return_value
 
             if isinstance(return_value, SymbolicValue):
-                new_z3_int = (
-                    z3.substitute(return_value.z3_int, *param_map)
-                    if return_value.z3_int is not None
-                    else None
-                )
-                new_z3_bool = (
-                    z3.substitute(return_value.z3_bool, *param_map)
-                    if return_value.z3_bool is not None
-                    else None
-                )
+                new_z3_int = cast("z3.ArithRef", z3.substitute(return_value.z3_int, *param_map))
+                new_z3_bool = cast("z3.BoolRef", z3.substitute(return_value.z3_bool, *param_map))
 
                 canonical_return = SymbolicValue(
                     _name=return_value.name,
-                    z3_int=cast("z3.ArithRef", new_z3_int),
+                    z3_int=new_z3_int,
                     is_int=return_value.is_int,
-                    z3_bool=cast("z3.BoolRef", new_z3_bool),
+                    z3_bool=new_z3_bool,
                     is_bool=return_value.is_bool,
                 )
 
-            summary.return_var = canonical_return
+            summary.return_var = (
+                canonical_return.z3_int if isinstance(canonical_return, SymbolicValue) else None
+            )
 
-            if isinstance(canonical_return, SymbolicValue):
-                summary.return_var = (
-                    canonical_return.z3_int
-                    if canonical_return.z3_int is not None
-                    else canonical_return.z3_bool
-                )
-
-            canonical_constraints: list[z3.ExprRef] = []
+            canonical_constraints: list[z3.BoolRef] = []
             for c in summary_constraints:
-                canonical_constraints.append(z3.substitute(c, *param_map))
+                canonical_constraints.append(cast("z3.BoolRef", z3.substitute(c, *param_map)))
 
             summary.postconditions = canonical_constraints
 
-            assert builder is not None
-            ctx.cross_function.function_summary_cache.put(
-                builder.summary.name, initial_args, constraints, summary
-            )
+            if (
+                len(constraints) <= _MAX_SUMMARY_CACHE_CONSTRAINTS
+                and len(initial_args) <= _MAX_SUMMARY_CACHE_ARGS
+            ):
+                cross_function.function_summary_cache.put(
+                    getattr(builder.summary, "name", "unknown"),
+                    initial_args,
+                    constraints,
+                    summary,
+                )
 
     if frame is not None:
-        state.local_vars = cast("CowDict", frame.local_vars)
+        state.local_vars = frame.local_vars
         state = state.set_pc(frame.return_pc)
         if frame.caller_instructions is not None:
-            state.current_instructions = frame.caller_instructions
-            ctx.set_instructions(frame.caller_instructions)
+            caller_instructions = cast("list[dis.Instruction]", frame.caller_instructions)
+            state.current_instructions = cast("list[object]", caller_instructions)
+            ctx.set_instructions(caller_instructions)
         if return_value is not None:
             state = state.push(return_value)
         else:
@@ -179,11 +231,12 @@ def handle_return_const(
         return_value = SymbolicValue.from_const(const_val)
     frame = state.pop_call()
     if frame is not None:
-        state.local_vars = cast("CowDict", frame.local_vars)
+        state.local_vars = frame.local_vars
         state = state.set_pc(frame.return_pc)
         if frame.caller_instructions is not None:
-            state.current_instructions = frame.caller_instructions
-            ctx.set_instructions(frame.caller_instructions)
+            caller_instructions = cast("list[dis.Instruction]", frame.caller_instructions)
+            state.current_instructions = cast("list[object]", caller_instructions)
+            ctx.set_instructions(caller_instructions)
         state = state.push(return_value)
         state.depth -= 1
         return OpcodeResult.continue_with(state)
@@ -199,7 +252,7 @@ def handle_pop_jump_if_false(
     **Branching Logic:**
     1. **Evaluation**: Converts the TOS to a Z3 boolean expression via `get_truthy_expr`.
     2. **Forking**: Clones the current `VMState` into two identical branches.
-    3. **Constraint Injection**: 
+    3. **Constraint Injection**:
        - The *True* branch (PC → PC+1) receives the constraint `value != 0`.
        - The *False* branch (PC → target) receives the constraint `value == 0`.
     4. **Path Pruning**: Queries Z3 to check satisfiability of both branches. Only
@@ -212,30 +265,31 @@ def handle_pop_jump_if_false(
     target_index = ctx.offset_to_index(int(instr.argval))
     if target_index is None:
         target_index = state.pc + 1
-    cond_taint: frozenset[str] = frozenset()
-    if hasattr(cond, "taint_labels") and cond.taint_labels:
-        cond_taint = frozenset(cond.taint_labels)
-    elif hasattr(cond, "_taint") and cond._taint:
-        cond_taint = frozenset(cond._taint)
-    true_state = state.fork()
-    true_state = true_state.add_constraint(cond_expr)
-    true_state = true_state.record_branch(cond_expr, True, state.pc)
-    true_state = true_state.set_pc(state.pc + 1)
-    if cond_taint:
-        true_state.control_taint = true_state.control_taint | cond_taint
-    false_state = state.fork()
-    false_state = false_state.add_constraint(z3.Not(cond_expr))
-    false_state = false_state.record_branch(cond_expr, False, state.pc)
-    false_state = false_state.set_pc(target_index)
-    if cond_taint:
-        false_state.control_taint = false_state.control_taint | cond_taint
-    
-    # Prune infeasible paths
+    cond_taint = _extract_taint_labels(cond)
+    not_cond_expr = z3.Not(cond_expr)
+
+    true_feasible = _is_sat_with_extra(state.path_constraints, cond_expr)
+    false_feasible = _is_sat_with_extra(state.path_constraints, not_cond_expr)
+
     branches = []
-    if is_satisfiable(true_state.path_constraints):
+    if true_feasible:
+        true_state = state.fork()
+        true_state = true_state.add_constraint(cond_expr)
+        true_state = true_state.record_branch(cond_expr, True, state.pc)
+        true_state = true_state.set_pc(state.pc + 1)
+        if cond_taint:
+            true_state.control_taint = true_state.control_taint | cond_taint
         branches.append(true_state)
-    if is_satisfiable(false_state.path_constraints):
+
+    if false_feasible:
+        false_state = state.fork()
+        false_state = false_state.add_constraint(not_cond_expr)
+        false_state = false_state.record_branch(cond_expr, False, state.pc)
+        false_state = false_state.set_pc(target_index)
+        if cond_taint:
+            false_state.control_taint = false_state.control_taint | cond_taint
         branches.append(false_state)
+
     return OpcodeResult.branch(branches)
 
 
@@ -248,7 +302,7 @@ def handle_pop_jump_if_true(
     **Branching Logic:**
     1. **Evaluation**: Converts the TOS to a Z3 boolean expression.
     2. **Forking**: Clones the state into *True* and *False* iterations.
-    3. **Constraint Injection**: 
+    3. **Constraint Injection**:
        - The *True* branch (PC → target) receives the constraint `value != 0`.
        - The *False* branch (PC → PC+1) receives the constraint `value == 0`.
     4. **Pruning**: Only returns satisfiable branches to the executor.
@@ -258,30 +312,31 @@ def handle_pop_jump_if_true(
     target_index = ctx.offset_to_index(int(instr.argval))
     if target_index is None:
         target_index = state.pc + 1
-    cond_taint: frozenset[str] = frozenset()
-    if hasattr(cond, "taint_labels") and cond.taint_labels:
-        cond_taint = frozenset(cond.taint_labels)
-    elif hasattr(cond, "_taint") and cond._taint:
-        cond_taint = frozenset(cond._taint)
-    true_state = state.fork()
-    true_state = true_state.add_constraint(cond_expr)
-    true_state = true_state.record_branch(cond_expr, True, state.pc)
-    true_state = true_state.set_pc(target_index)
-    if cond_taint:
-        true_state.control_taint = true_state.control_taint | cond_taint
-    false_state = state.fork()
-    false_state = false_state.add_constraint(z3.Not(cond_expr))
-    false_state = false_state.record_branch(cond_expr, False, state.pc)
-    false_state = false_state.set_pc(state.pc + 1)
-    if cond_taint:
-        false_state.control_taint = false_state.control_taint | cond_taint
-    
-    # Prune infeasible paths
+    cond_taint = _extract_taint_labels(cond)
+    not_cond_expr = z3.Not(cond_expr)
+
+    true_feasible = _is_sat_with_extra(state.path_constraints, cond_expr)
+    false_feasible = _is_sat_with_extra(state.path_constraints, not_cond_expr)
+
     branches = []
-    if is_satisfiable(true_state.path_constraints):
+    if true_feasible:
+        true_state = state.fork()
+        true_state = true_state.add_constraint(cond_expr)
+        true_state = true_state.record_branch(cond_expr, True, state.pc)
+        true_state = true_state.set_pc(target_index)
+        if cond_taint:
+            true_state.control_taint = true_state.control_taint | cond_taint
         branches.append(true_state)
-    if is_satisfiable(false_state.path_constraints):
+
+    if false_feasible:
+        false_state = state.fork()
+        false_state = false_state.add_constraint(not_cond_expr)
+        false_state = false_state.record_branch(cond_expr, False, state.pc)
+        false_state = false_state.set_pc(state.pc + 1)
+        if cond_taint:
+            false_state.control_taint = false_state.control_taint | cond_taint
         branches.append(false_state)
+
     return OpcodeResult.branch(branches)
 
 
@@ -294,29 +349,39 @@ def handle_pop_jump_if_none(
     target_index = ctx.offset_to_index(int(instr.argval))
     if target_index is None:
         target_index = state.pc + 1
+
+    cond_taint = _extract_taint_labels(value)
+
     is_none = isinstance(value, SymbolicNone)
     if is_none:
+        state.control_taint = state.control_taint | cond_taint
         state = state.set_pc(target_index)
         return OpcodeResult.continue_with(state)
     elif isinstance(value, SymbolicValue):
         none_expr = value.is_none
-        none_state = state.fork()
-        none_state = none_state.add_constraint(none_expr)
-        none_state = none_state.record_branch(none_expr, True, state.pc)
-        none_state = none_state.set_pc(target_index)
-        not_none_state = state.fork()
-        not_none_state = not_none_state.add_constraint(z3.Not(none_expr))
-        not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
-        not_none_state = not_none_state.set_pc(state.pc + 1)
-        
-        # Prune infeasible paths
+        not_none_expr = z3.Not(none_expr)
+
+        none_feasible = _is_sat_with_extra(state.path_constraints, none_expr)
+        not_none_feasible = _is_sat_with_extra(state.path_constraints, not_none_expr)
+
         branches = []
-        if is_satisfiable(none_state.path_constraints):
+        if none_feasible:
+            none_state = state.fork()
+            none_state = none_state.add_constraint(none_expr)
+            none_state = none_state.record_branch(none_expr, True, state.pc)
+            none_state.control_taint = none_state.control_taint | cond_taint
+            none_state = none_state.set_pc(target_index)
             branches.append(none_state)
-        if is_satisfiable(not_none_state.path_constraints):
+        if not_none_feasible:
+            not_none_state = state.fork()
+            not_none_state = not_none_state.add_constraint(not_none_expr)
+            not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
+            not_none_state.control_taint = not_none_state.control_taint | cond_taint
+            not_none_state = not_none_state.set_pc(state.pc + 1)
             branches.append(not_none_state)
         return OpcodeResult.branch(branches)
     else:
+        state.control_taint = state.control_taint | cond_taint
         state = state.advance_pc()
         return OpcodeResult.continue_with(state)
 
@@ -338,20 +403,23 @@ def handle_pop_jump_if_not_none(
         return OpcodeResult.continue_with(state)
     elif isinstance(value, SymbolicValue):
         none_expr = value.is_none
-        not_none_state = state.fork()
-        not_none_state = not_none_state.add_constraint(z3.Not(none_expr))
-        not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
-        not_none_state = not_none_state.set_pc(target_index)
-        none_state = state.fork()
-        none_state = none_state.add_constraint(none_expr)
-        none_state = none_state.record_branch(none_expr, True, state.pc)
-        none_state = none_state.set_pc(state.pc + 1)
-        
-        # Prune infeasible paths
+        not_none_expr = z3.Not(none_expr)
+
+        not_none_feasible = _is_sat_with_extra(state.path_constraints, not_none_expr)
+        none_feasible = _is_sat_with_extra(state.path_constraints, none_expr)
+
         branches = []
-        if is_satisfiable(not_none_state.path_constraints):
+        if not_none_feasible:
+            not_none_state = state.fork()
+            not_none_state = not_none_state.add_constraint(not_none_expr)
+            not_none_state = not_none_state.record_branch(none_expr, False, state.pc)
+            not_none_state = not_none_state.set_pc(target_index)
             branches.append(not_none_state)
-        if is_satisfiable(none_state.path_constraints):
+        if none_feasible:
+            none_state = state.fork()
+            none_state = none_state.add_constraint(none_expr)
+            none_state = none_state.record_branch(none_expr, True, state.pc)
+            none_state = none_state.set_pc(state.pc + 1)
             branches.append(none_state)
         return OpcodeResult.branch(branches)
     else:
@@ -387,12 +455,17 @@ def handle_jump_or_pop(
     target_index = ctx.offset_to_index(int(instr.argval))
     if target_index is None:
         target_index = state.pc + 1
+
+    cond_taint = _extract_taint_labels(cond)
+
     jump_on_true = instr.opname == "JUMP_IF_TRUE_OR_POP"
     jump_state = state.fork()
     jump_state = jump_state.add_constraint(cond_expr if jump_on_true else z3.Not(cond_expr))
+    jump_state.control_taint = jump_state.control_taint | cond_taint
     jump_state = jump_state.set_pc(target_index)
     pop_state = state.fork()
     pop_state = pop_state.add_constraint(z3.Not(cond_expr) if jump_on_true else cond_expr)
+    pop_state.control_taint = pop_state.control_taint | cond_taint
     pop_state.pop()
     pop_state = pop_state.set_pc(state.pc + 1)
 
@@ -442,6 +515,8 @@ def handle_raise_varargs(
             exc_val, constraint = SymbolicValue.symbolic(f"exception_{state.pc}")
             exc_state = exc_state.push(exc_val)
             exc_state = exc_state.add_constraint(constraint)
+            if block.handler_pc is None:
+                continue
             exc_state = exc_state.set_pc(block.handler_pc)
 
             if is_assertion and is_satisfiable(state.path_constraints):
@@ -498,7 +573,7 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
          symbolic element at the current index.
        - **Exit Branch**: Assumes `iterator.index >= len(iterable)`. Pops the iterator
          and jumps to the end of the loop.
-    3. **Container Bridge**: Successfully handles `SymbolicList` (Z3 arrays) by 
+    3. **Container Bridge**: Successfully handles `SymbolicList` (Z3 arrays) by
        linking the yielded `SymbolicValue` to the result of `z3.Select(array, index)`.
     """
     target_index = ctx.offset_to_index(int(instr.argval))
@@ -516,69 +591,67 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
         iterable = iterator
 
     from pysymex.core.types_containers import SymbolicObject
+
     if isinstance(iterable, SymbolicObject):
         addr = iterable.address
-        if addr in state.memory:
-            iterable = state.memory[addr]
+        memory = state.memory
+        if addr in memory:
+            iterable = memory[addr]
 
     continue_state = state.fork()
-    
-    # Advance the iterator if it's one
+
     if isinstance(iterator, SymbolicIterator):
-        # We replace the iterator on the stack with an advanced one
-        # to ensure state isolation even if someone uses the index.
         new_it = iterator.advance()
         continue_state.stack[-1] = new_it
-    
-    # Create the symbolic iteration value
+
     iter_val, type_constraint = SymbolicValue.symbolic(f"iter_{state.pc}_{state.path_id}")
     continue_state = continue_state.push(iter_val)
     continue_state = continue_state.add_constraint(type_constraint)
 
-    # Exit state (loop finished)
     exit_state = state.fork()
     exit_state = exit_state.set_pc(target_index)
 
-    # Continue state PC (loop body)
     continue_state = continue_state.advance_pc()
 
-    # Robust check for SymbolicList or SymbolicValue acting as list
     is_list_val = isinstance(iterable, SymbolicList)
     if not is_list_val and isinstance(iterable, SymbolicValue):
-        # Check if it was unified from a list
-        is_list_val = hasattr(iterable, "is_list") and z3.is_true(iterable.is_list) if hasattr(iterable, "is_list") else False
-    
+        is_list_val = (
+            hasattr(iterable, "is_list") and z3.is_true(iterable.is_list)
+            if hasattr(iterable, "is_list")
+            else False
+        )
+
     if is_list_val:
-        # Get array and length from either container or unified value
         z3_array = getattr(iterable, "z3_array", None)
         z3_len = getattr(iterable, "z3_len", None)
-        
+
         if z3_array is not None and z3_len is not None:
             idx = iterator.index if isinstance(iterator, SymbolicIterator) else 0
-            # If continuing, idx MUST be < length
+
             continue_state = continue_state.add_constraint(z3.IntVal(idx) < z3_len)
-            # Yielded value MUST be from list
-            continue_state = continue_state.add_constraint(iter_val.z3_int == z3.Select(z3_array, z3.IntVal(idx)))
-            # Force types since SymbolicList currently only stores integers in Z3
-            continue_state = continue_state.add_constraint(iter_val.is_int == Z3_TRUE)
-            continue_state = continue_state.add_constraint(iter_val.is_bool == Z3_FALSE)
-            continue_state = continue_state.add_constraint(iter_val.is_float == Z3_FALSE)
-            continue_state = continue_state.add_constraint(iter_val.is_str == Z3_FALSE)
-            continue_state = continue_state.add_constraint(iter_val.is_obj == Z3_FALSE)
-            continue_state = continue_state.add_constraint(iter_val.is_none == Z3_FALSE)
-            # If exiting, idx MUST be >= length
+
+            continue_state = continue_state.add_constraint(
+                iter_val.z3_int == z3.Select(z3_array, z3.IntVal(idx))
+            )
+
+            if isinstance(iterable, SymbolicList) and iterable.element_type == "int":
+                continue_state = continue_state.add_constraint(iter_val.is_int == Z3_TRUE)
+                continue_state = continue_state.add_constraint(iter_val.is_bool == Z3_FALSE)
+                continue_state = continue_state.add_constraint(iter_val.is_float == Z3_FALSE)
+                continue_state = continue_state.add_constraint(iter_val.is_str == Z3_FALSE)
+                continue_state = continue_state.add_constraint(iter_val.is_obj == Z3_FALSE)
+                continue_state = continue_state.add_constraint(iter_val.is_none == Z3_FALSE)
+
             exit_state = exit_state.add_constraint(z3.IntVal(idx) >= z3_len)
-            
-            # Prune infeasible paths immediately
+
             new_states = []
             if is_satisfiable(continue_state.path_constraints):
                 new_states.append(continue_state)
             if is_satisfiable(exit_state.path_constraints):
                 new_states.append(exit_state)
-            
+
             return OpcodeResult.branch(new_states)
         elif z3_array is not None:
-            # If we only have array, we can't safely bound idx yet, but we can still link them
             idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
             continue_state = continue_state.add_constraint(
                 iter_val.z3_int == z3.Select(z3_array, idx)
@@ -638,8 +711,10 @@ def handle_get_len(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
     """Get length of top of stack (for pattern matching/sequences)."""
     if state.stack:
         value = state.peek()
-        if hasattr(value, "length"):
-            length = value.length
+        if isinstance(value, (SymbolicList, SymbolicDict, SymbolicString)):
+            length = value.z3_len
+        elif isinstance(value, (str, bytes)):
+            length = z3.IntVal(len(value))
         else:
             length = z3.Int(f"len_{state.pc}")
         result = SymbolicValue(
@@ -763,19 +838,15 @@ def handle_match_keys(
     subject = state.peek() if state.stack else None
 
     success_expr = Z3_TRUE
-    if (
-        isinstance(subject, SymbolicDict)
-        and hasattr(keys_tuple, "_concrete_items")
-        and keys_tuple._concrete_items is not None
-    ):
-        for key in keys_tuple._concrete_items:
+    concrete_keys_obj = getattr(keys_tuple, "_concrete_items", None)
+    if isinstance(subject, SymbolicDict) and isinstance(concrete_keys_obj, list):
+        for key in concrete_keys_obj:
             if not isinstance(key, SymbolicString):
                 str_key = SymbolicString.from_const(str(key))
             else:
                 str_key = key
             success_expr = z3.And(success_expr, subject.contains_key(str_key).z3_bool)
     else:
-        # Fallback to fresh variable if subject is complex or keys are symbolic
         success_expr = z3.Bool(fresh_name("match_keys_success"))
 
     success_result = SymbolicValue(
@@ -785,8 +856,7 @@ def handle_match_keys(
         z3_bool=success_expr,
         is_bool=Z3_TRUE,
     )
-    # MATCH_KEYS also pushes a tuple of values for the matched keys if it succeeds
-    # For now we havoc it as a SymbolicValue
+
     values, constraint = SymbolicValue.symbolic(fresh_name("match_values"))
     state = state.push(values)
     state = state.add_constraint(constraint)
@@ -800,19 +870,15 @@ def handle_match_class(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     _num_positional = int(instr.argval) if instr.argval else 0
-    state.pop() if state.stack else None  # names
+    state.pop() if state.stack else None
     cls = state.pop() if state.stack else None
     subject = state.pop() if state.stack else None
-    
-    # We should really check if isinstance(subject, cls)
-    # For now, we'll havoc the results but link them to the subject
+
     success = z3.Bool(fresh_name("match_class_success"))
     attrs, constraint = SymbolicValue.symbolic(fresh_name("match_attrs"))
-    
-    # If subject is SymbolicObject, we might know its type
+
     if isinstance(subject, SymbolicObject) and isinstance(cls, type):
-        # Semi-concrete check
-        pass 
+        pass
 
     result = SymbolicValue(
         _name=f"match_class_success_{state.pc}",

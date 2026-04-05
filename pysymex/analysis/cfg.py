@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Control Flow Graph infrastructure for pysymex.
 
@@ -10,16 +28,33 @@ Provides:
 
 from __future__ import annotations
 
-import icontract
 import dis
+import types
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import Protocol
+
+import icontract
 
 from pysymex._compat import get_starts_line
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 
 from .type_inference import TypeState
+
+
+class ExceptionEntryProtocol(Protocol):
+    """Protocol for exception table entries (Python 3.11+)."""
+
+    @property
+    def target(self) -> int: ...
+
+    @property
+    def start(self) -> int: ...
+
+    @property
+    def end(self) -> int: ...
+
 
 _get_line_number = get_starts_line
 
@@ -120,7 +155,22 @@ class BasicBlock:
         return False
 
     def __repr__(self) -> str:
-        return f"BasicBlock({self .id }, pc={self .start_pc }-{self .end_pc })"
+        return f"BasicBlock({self.id}, pc={self.start_pc}-{self.end_pc})"
+
+
+def _post_add_block(self: ControlFlowGraph, block: BasicBlock) -> bool:
+    return self.blocks[block.id] == block
+
+
+def _post_dominates(
+    self: ControlFlowGraph, dominator_id: int, dominated_id: int, result: bool
+) -> bool:
+    return not result or dominator_id in self.blocks
+
+
+def _post_build_cfg(result: ControlFlowGraph) -> bool:
+    _ = result
+    return True
 
 
 @dataclass
@@ -150,7 +200,7 @@ class ControlFlowGraph:
         """Get the entry basic block."""
         return self.blocks.get(self.entry_block_id)
 
-    @icontract.ensure(lambda self, block: self.blocks[block.id] == block)
+    @icontract.ensure(_post_add_block)
     def add_block(self, block: BasicBlock) -> None:
         """Add a basic block."""
         self.blocks[block.id] = block
@@ -186,7 +236,7 @@ class ControlFlowGraph:
         """Check if a block is reachable from entry."""
         return block_id in self.dominators
 
-    @icontract.ensure(lambda self, dominator_id, dominated_id, result: not result or dominator_id in self.blocks)
+    @icontract.ensure(_post_dominates)
     def dominates(self, dominator_id: int, dominated_id: int) -> bool:
         """Check if dominator dominates dominated."""
         dom_set = self.dominators.get(dominated_id, set())
@@ -277,17 +327,17 @@ class CFGBuilder:
         "CLEANUP_THROW",
     }
 
-    @icontract.ensure(lambda result: isinstance(result, ControlFlowGraph))
-    def build(self, code: object) -> ControlFlowGraph:
+    @icontract.ensure(_post_build_cfg)
+    def build(self, code: types.CodeType) -> ControlFlowGraph:
         """Build CFG from a code object."""
         instructions = _cached_get_instructions(code)
         if not instructions:
             return ControlFlowGraph()
-        
-        exception_entries = []
+
+        exception_entries: list[ExceptionEntryProtocol] = []
         if hasattr(code, "co_exceptiontable"):
             try:
-                exception_entries = list(dis.Bytecode(code).exception_entries)
+                exception_entries = list(dis.Bytecode(code).exception_entries)  # type: ignore[attr-defined]
             except Exception:
                 pass
 
@@ -300,7 +350,7 @@ class CFGBuilder:
     def _build_from_params(
         self,
         instructions: Sequence[dis.Instruction],
-        exception_entries: list[dis.ExceptionTableEntry],
+        exception_entries: list[ExceptionEntryProtocol],
     ) -> ControlFlowGraph:
         """Internal helper to build CFG from components."""
         leaders = self._find_leaders(instructions, exception_entries)
@@ -311,16 +361,15 @@ class CFGBuilder:
         return cfg
 
     def _find_leaders(
-        self, 
+        self,
         instructions: Sequence[dis.Instruction],
-        exception_entries: list[dis.ExceptionTableEntry] | None = None
+        exception_entries: list[ExceptionEntryProtocol] | None = None,
     ) -> set[int]:
         """Find leader instructions that start basic blocks."""
         leaders: set[int] = set()
         if instructions:
             leaders.add(instructions[0].offset)
-        
-        # Add targets of exception handlers as leaders
+
         if exception_entries:
             for entry in exception_entries:
                 leaders.add(entry.target)
@@ -333,8 +382,7 @@ class CFGBuilder:
                 if instr.opname in self.CONDITIONAL_JUMP_OPS | self.LOOP_OPS:
                     if i + 1 < len(instructions):
                         leaders.add(instructions[i + 1].offset)
-            
-            # For older Python: SETUP_FINALLY and friends have jump targets
+
             if instr.opname in {"SETUP_FINALLY", "SETUP_EXCEPT", "SETUP_WITH", "SETUP_ASYNC_WITH"}:
                 target = instr.argval
                 if isinstance(target, int):
@@ -388,7 +436,7 @@ class CFGBuilder:
         self,
         cfg: ControlFlowGraph,
         instructions: Sequence[dis.Instruction],
-        exception_entries: list[dis.ExceptionTableEntry] | None = None,
+        exception_entries: list[ExceptionEntryProtocol] | None = None,
     ) -> None:
         """Add edges between basic blocks."""
         pc_to_idx = {instr.offset: i for i, instr in enumerate(instructions)}
@@ -396,8 +444,7 @@ class CFGBuilder:
             term = block.get_terminator()
             if not term:
                 continue
-            
-            # Standard edges
+
             if term.opname in self.JUMP_OPS:
                 target = term.argval
                 if isinstance(target, int):
@@ -415,8 +462,7 @@ class CFGBuilder:
                         else:
                             block.add_successor(target_block.id, EdgeKind.BRANCH_FALSE)
                         target_block.predecessors.add(block.id)
-                
-                # Fallthrough
+
                 term_idx = pc_to_idx.get(term.offset)
                 if term_idx is not None and term_idx + 1 < len(instructions):
                     next_pc = instructions[term_idx + 1].offset
@@ -434,8 +480,7 @@ class CFGBuilder:
                     if target_block:
                         block.add_successor(target_block.id, EdgeKind.LOOP_EXIT)
                         target_block.predecessors.add(block.id)
-                
-                # Fallthrough
+
                 term_idx = pc_to_idx.get(term.offset)
                 if term_idx is not None and term_idx + 1 < len(instructions):
                     next_pc = instructions[term_idx + 1].offset
@@ -445,7 +490,7 @@ class CFGBuilder:
                         next_block.predecessors.add(block.id)
             elif term.opname in self.RETURN_OPS | self.RAISE_OPS:
                 pass
-            # Handle SETUP_FINALLY and friends for older Python
+
             elif term.opname in {"SETUP_FINALLY", "SETUP_EXCEPT", "SETUP_WITH", "SETUP_ASYNC_WITH"}:
                 target = term.argval
                 if isinstance(target, int):
@@ -454,8 +499,7 @@ class CFGBuilder:
                         block.add_successor(target_block.id, EdgeKind.EXCEPTION)
                         target_block.predecessors.add(block.id)
                         target_block.is_exception_handler = True
-                
-                # Fallthrough
+
                 term_idx = pc_to_idx.get(term.offset)
                 if term_idx is not None and term_idx + 1 < len(instructions):
                     next_pc = instructions[term_idx + 1].offset
@@ -471,20 +515,16 @@ class CFGBuilder:
                     if next_block and next_block.id != block.id:
                         block.add_successor(next_block.id, EdgeKind.SEQUENTIAL)
                         next_block.predecessors.add(block.id)
-        
-        # Add exception edges for Python 3.11+ zero-cost exceptions
+
         if exception_entries:
             for entry in exception_entries:
                 handler_block = cfg.get_block_at_pc(entry.target)
                 if not handler_block:
                     continue
                 handler_block.is_exception_handler = True
-                
-                # Any block that overlaps with the try range should have an edge to the handler
+
                 for block in cfg.blocks.values():
-                    # Check if any instruction in the block is within the range [entry.start, entry.end)
                     if block.start_pc < entry.end and block.end_pc >= entry.start:
-                        # Add edge if not already present
                         if handler_block.id not in block.successors:
                             block.add_successor(handler_block.id, EdgeKind.EXCEPTION)
                             handler_block.predecessors.add(block.id)

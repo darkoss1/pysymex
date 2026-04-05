@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Core type inference engine for pysymex.
 
@@ -156,7 +174,10 @@ class TypeInferenceEngine:
             name = getattr(func, "__name__", None)
             if module and name:
                 try:
-                    stub_func = self.stub_resolver.repository.get_function_type(module, name)
+                    repository = getattr(self.stub_resolver, "repository", None)
+                    get_function_type = getattr(repository, "get_function_type", None)
+                    if callable(get_function_type):
+                        stub_func = get_function_type(module, name)
                 except (AttributeError, KeyError, TypeError):
                     pass
         sig = inspect.signature(func)
@@ -166,11 +187,16 @@ class TypeInferenceEngine:
                 param_types.append(self.infer_from_annotation(hints[param_name]))
             elif param.default is not inspect.Parameter.empty:
                 param_types.append(self.infer_from_value(param.default))
-            elif stub_func and param_name in getattr(stub_func, "params", {}):
-                stub_type = stub_func.params[param_name]
-                param_types.append(
-                    stub_type.to_pytype() if hasattr(stub_type, "to_pytype") else PyType.any_()
-                )
+            elif stub_func:
+                params_obj = getattr(stub_func, "params", None)
+                if isinstance(params_obj, dict) and param_name in params_obj:
+                    stub_type = params_obj[param_name]
+                    to_pytype = getattr(stub_type, "to_pytype", None)
+                    param_types.append(
+                        cast("PyType", to_pytype()) if callable(to_pytype) else PyType.any_()
+                    )
+                else:
+                    param_types.append(PyType.any_())
             else:
                 param_types.append(PyType.any_())
         return_type = self.infer_from_annotation(hints.get("return"))
@@ -179,11 +205,9 @@ class TypeInferenceEngine:
             and stub_func
             and getattr(stub_func, "return_type", None)
         ):
-            converted = (
-                stub_func.return_type.to_pytype()
-                if hasattr(stub_func.return_type, "to_pytype")
-                else None
-            )
+            return_type_obj = getattr(stub_func, "return_type", None)
+            to_pytype = getattr(return_type_obj, "to_pytype", None)
+            converted = cast("PyType", to_pytype()) if callable(to_pytype) else None
             if converted:
                 return_type = converted
         self.function_signatures[func_name] = (param_types, return_type)
@@ -482,9 +506,15 @@ class TypeInferenceEngine:
         if self.stub_resolver and obj.class_name:
             try:
                 module = getattr(obj, "module", "builtins")
-                stub_type = self.stub_resolver.resolve_attribute(module, obj.class_name, attr_name)
-                if stub_type is not None and hasattr(stub_type, "to_pytype"):
-                    return stub_type.to_pytype()
+                resolve_attribute = getattr(self.stub_resolver, "resolve_attribute", None)
+                stub_type = (
+                    resolve_attribute(module, obj.class_name, attr_name)
+                    if callable(resolve_attribute)
+                    else None
+                )
+                to_pytype = getattr(stub_type, "to_pytype", None)
+                if callable(to_pytype):
+                    return cast("PyType", to_pytype())
             except (AttributeError, KeyError, TypeError):
                 pass
         return PyType.any_()

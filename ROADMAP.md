@@ -2,6 +2,15 @@
 
 ## Released
 
+### v0.1.0-alpha.3 ✅
+**Released:** April 2026
+
+- [x] Sandbox hardening promoted as a core feature.
+- [x] Strict extra-files path sanitization against traversal and absolute-path escapes.
+- [x] Resolved-path containment enforcement in isolation backends.
+- [x] Windows Job Object memory-limit enforcement and safer startup fallback.
+- [x] Adversarial sandbox hardening regressions and strictness-gate expansion.
+
 ### v0.1.0-alpha.2 ✅
 **Released:** March 2026
 
@@ -102,4 +111,4 @@
 
 ---
 
-*Last updated: March 15, 2026*
+*Last updated: April 2, 2026*

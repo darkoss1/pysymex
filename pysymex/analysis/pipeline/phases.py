@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Analysis pipeline phases and suppression logic.
 
 Contains all concrete AnalysisPhase implementations and the false-positive
@@ -18,16 +36,17 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 from ..dead_code import DeadCodeAnalyzer, find_dataclass_class_names, is_class_body
 from ..detectors.static import StaticAnalyzer
+from ..detectors.static_types import Issue, IssueKind, Severity
 from ..exceptions.analysis import ExceptionAnalyzer
 from ..exceptions.handler import should_skip_issue_in_handler
-from ..false_positive_filter import filter_issue
+from ..false_positive_filter import IssueLike, filter_issue
 from ..flow_sensitive import FlowSensitiveAnalyzer
 from ..none_check import is_none_check_in_message
-from ..patterns import PatternAnalyzer, PatternKind
+from ..patterns import FunctionPatternInfo, PatternAnalyzer, PatternKind
 from ..resources.analysis import ResourceAnalyzer
 from ..string_analysis import StringAnalyzer
 from ..taint.checker import TaintChecker
@@ -41,6 +60,24 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class _PatternMatchLike(Protocol):
+    line: int | None
+    kind: PatternKind
+
+
+@runtime_checkable
+class _MatcherLike(Protocol):
+    _cache: dict[int, list[_PatternMatchLike]]
+
+
+@runtime_checkable
+class _PatternInfoLike(Protocol):
+    matcher: _MatcherLike
+    patterns: list[_PatternMatchLike]
+
 
 __all__ = [
     "BugDetectionPhase",
@@ -131,12 +168,16 @@ class BugDetectionPhase(AnalysisPhase):
     ) -> list[ScanIssue]:
         """Detect bugs with enhanced precision."""
         issues: list[ScanIssue] = []
+        pattern_info = ctx.patterns if isinstance(ctx.patterns, FunctionPatternInfo) else None
+        flow_analyzer = (
+            ctx.flow_analyzer if isinstance(ctx.flow_analyzer, FlowSensitiveAnalyzer) else None
+        )
         raw_issues = self.analyzer.analyze_function(
             ctx.code,
             ctx.file_path,
             type_env=cast("TypeEnvironment | None", ctx.types),
-            pattern_info=ctx.patterns,
-            flow_analyzer=ctx.flow_analyzer,
+            pattern_info=pattern_info,
+            flow_analyzer=flow_analyzer,
         )
         for issue in raw_issues:
             enhanced = ScanIssue(
@@ -163,16 +204,15 @@ class BugDetectionPhase(AnalysisPhase):
     ) -> None:
         """Check if issue should be suppressed."""
 
-        _apply_common_suppression(issue, ctx)
+        apply_common_suppression(issue, ctx)
 
         line = issue.line
-        if ctx.patterns and hasattr(ctx.patterns, "matcher"):
-
-            all_patterns: list[object] = []
-            for _start_pc, matches in ctx.patterns.matcher._cache.items():
-                for match in matches:
-                    if match.line is not None and match.line == line:
-                        all_patterns.append(match)
+        if isinstance(ctx.patterns, _PatternInfoLike):
+            all_patterns = [
+                match
+                for match in ctx.patterns.patterns
+                if match.line is not None and match.line == line
+            ]
             pattern_kinds = {p.kind for p in all_patterns}
             if issue.kind == "KEY_ERROR" and PatternKind.DEFAULTDICT_ACCESS in pattern_kinds:
                 issue.suppression_reasons.append("defaultdict access is safe")
@@ -184,33 +224,28 @@ class BugDetectionPhase(AnalysisPhase):
                 issue.suppression_reasons.append("enumerate provides valid indices")
                 issue.confidence *= 0.1
 
-        class MockIssue:
-            """Mock issue object for testing suppression logic."""
-            def __init__(self, kind: str, line: int, message: str, function_name: str) -> None:
-                from ..detectors.static import IssueKind
-
-                try:
-                    self.kind = IssueKind[kind]
-                except (KeyError, AttributeError):
-                    self.kind = IssueKind.UNKNOWN
-                self.line_number = line
-                self.message = message
-                self.function_name = function_name
-                self.model = None
-
-        mock = MockIssue(issue.kind, issue.line, issue.message, issue.function_name)
-        result = filter_issue(mock, ctx.source)
+        try:
+            issue_kind = IssueKind[issue.kind]
+        except KeyError:
+            issue_kind = IssueKind.UNKNOWN
+        mock = Issue(
+            kind=issue_kind,
+            severity=Severity.WARNING,
+            file=issue.file,
+            line=issue.line,
+            message=issue.message,
+        )
+        result = filter_issue(cast("IssueLike", mock), ctx.source)
         if result.should_filter:
-            issue.suppression_reasons.append(f"FP Filter: {result .reason }")
+            issue.suppression_reasons.append(f"FP Filter: {result.reason}")
             issue.confidence *= 0.5
 
 
-def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
+def apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
     """Apply common false positive suppression rules across all phases."""
 
-    if ctx.exception_handlers and should_skip_issue_in_handler(
-        issue.line, issue.kind, ctx.exception_handlers
-    ):
+    typed_handlers = list(ctx.exception_handlers)
+    if typed_handlers and should_skip_issue_in_handler(issue.line, issue.kind, typed_handlers):
         issue.confidence *= 0.1
         issue.suppression_reasons.append("inside exception handler")
 
@@ -220,9 +255,11 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
         "TYPE_ERROR",
     ):
         is_none_msg, var_name = is_none_check_in_message(issue.message)
-        if is_none_msg and var_name and ctx.none_check_analyzer.is_none_safe(var_name):
+        analyzer = ctx.none_check_analyzer
+        is_safe = bool(var_name) and bool(analyzer.is_none_safe(var_name))
+        if is_none_msg and var_name and is_safe:
             issue.confidence *= 0.1
-            issue.suppression_reasons.append(f"'{var_name }' is None-checked")
+            issue.suppression_reasons.append(f"'{var_name}' is None-checked")
     if issue.kind in ("UNUSED_VARIABLE", "DEAD_STORE"):
         msg = issue.message
         var_name = ""
@@ -289,7 +326,6 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             return
 
         if is_class_body(ctx.code):
-
             if ctx.source and "dataclass" in ctx.source:
                 dc_names = find_dataclass_class_names(ctx.source)
                 if ctx.code.co_name in dc_names:
@@ -316,7 +352,6 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             issue.confidence *= 0.3
 
         if ctx.code.co_name == "<module>" and var_name and not var_name.startswith("_"):
-
             if var_name.startswith(("on_", "test_", "setup", "teardown")):
                 issue.suppression_reasons.append("Likely decorator-assigned callback")
                 issue.confidence *= 0.3
@@ -327,7 +362,7 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             and var_name
             and ctx.source
         ):
-            if _is_used_in_annotations(var_name, ctx.source):
+            if is_used_in_annotations(var_name, ctx.source):
                 issue.suppression_reasons.append(
                     "Used in type annotations (PEP 563 postponed evaluation)"
                 )
@@ -341,8 +376,7 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             and not var_name.startswith("_")
             and ctx.source
         ):
-
-            if _is_function_or_class_def(var_name, ctx.source):
+            if is_function_or_class_def(var_name, ctx.source):
                 issue.suppression_reasons.append("Module-level function/class (likely exported)")
                 issue.confidence *= 0.3
 
@@ -446,18 +480,21 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
             issue.confidence *= 0.0
             return
 
-        if func_name.startswith(
-            (
-                "check_",
-                "add_",
-                "compose_",
-                "get_",
-                "is_",
-                "resolve_",
-                "should_",
-                "verify_",
+        if (
+            func_name.startswith(
+                (
+                    "check_",
+                    "add_",
+                    "compose_",
+                    "get_",
+                    "is_",
+                    "resolve_",
+                    "should_",
+                    "verify_",
+                )
             )
-        ) or func_name in ("apply",):
+            or func_name == "apply"
+        ):
             issue.suppression_reasons.append("Analysis interface method with standard signature")
             issue.confidence *= 0.0
             return
@@ -477,13 +514,13 @@ def _apply_common_suppression(issue: ScanIssue, ctx: AnalysisContext) -> None:
                 issue.confidence *= 0.0
                 return
 
-        var_name = _extract_var_name_from_message(issue.message)
+        var_name = extract_var_name_from_message(issue.message)
         if var_name and var_name[0].isupper() and not var_name.startswith("__"):
             issue.suppression_reasons.append("Imported type/class (likely used cross-module)")
             issue.confidence *= 0.3
 
 
-def _apply_exception_suppression(issue: ScanIssue, _ctx: AnalysisContext) -> None:
+def apply_exception_suppression(issue: ScanIssue, _ctx: AnalysisContext) -> None:
     """Apply suppression rules for exception analysis findings."""
 
     if issue.kind == "TOO_BROAD_EXCEPT" and issue.severity == "info":
@@ -500,7 +537,7 @@ def _apply_exception_suppression(issue: ScanIssue, _ctx: AnalysisContext) -> Non
         issue.confidence *= 0.5
 
 
-def _is_used_in_annotations(var_name: str, source: str) -> bool:
+def is_used_in_annotations(var_name: str, source: str) -> bool:
     """Check if a name is used in type annotations in the source."""
     import ast as _ast
 
@@ -513,6 +550,7 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
 
     class _AnnotationVisitor(_ast.NodeVisitor):
         """Internal visitor for extracting names from type annotations."""
+
         def _scan_annotation(self, node: _ast.expr | None) -> None:
             """Scan annotation."""
             if node is None:
@@ -551,7 +589,7 @@ def _is_used_in_annotations(var_name: str, source: str) -> bool:
     return var_name in annotation_names
 
 
-def _is_function_or_class_def(var_name: str, source: str) -> bool:
+def is_function_or_class_def(var_name: str, source: str) -> bool:
     """Check if a name is defined as a function or class in the source."""
     import ast as _ast
 
@@ -566,7 +604,7 @@ def _is_function_or_class_def(var_name: str, source: str) -> bool:
     return False
 
 
-def _extract_var_name_from_message(message: str) -> str:
+def extract_var_name_from_message(message: str) -> str:
     """Extract variable/parameter name from issue message.
 
     Handles patterns like ``Variable 'x' is ...``, ``Value of 'x' is ...``,
@@ -579,7 +617,7 @@ def _extract_var_name_from_message(message: str) -> str:
     return ""
 
 
-def _group_issues(
+def group_issues(  # type: ignore[reportUnusedFunction]
     issues: list[ScanIssue],
 ) -> dict[tuple[str, str, str], list[ScanIssue]]:
     """Group issues by (file, function_name, kind) for report grouping."""
@@ -624,7 +662,7 @@ class DeadCodePhase(AnalysisPhase):
                 detected_by=["dead_code_analyzer"],
             )
             if config.suppress_likely_false_positives:
-                _apply_common_suppression(enhanced, ctx)
+                apply_common_suppression(enhanced, ctx)
             if enhanced.confidence >= config.min_confidence:
                 issues.append(enhanced)
         return issues
@@ -691,17 +729,17 @@ class SecurityPhase(AnalysisPhase):
         if config.enable_taint_analysis:
             taint_issues = self.taint_checker.check_function(ctx.code)
             for ti in taint_issues:
-
                 taint_line = getattr(ti, "sink_line", None) or getattr(ti, "line", 0)
                 taint_kind = "TAINT"
                 if hasattr(ti, "sink") and hasattr(ti.sink, "kind"):
-                    taint_kind = ti.sink.kind.name
+                    sink_kind = ti.sink.kind
+                    taint_kind = str(getattr(sink_kind, "name", sink_kind))
                 elif hasattr(ti, "kind"):
-                    taint_kind = ti.kind.name if hasattr(ti.kind, "name") else str(ti.kind)
+                    taint_kind = str(getattr(ti.kind, "name", ti.kind))
 
                 taint_severity = "error"
                 if hasattr(ti, "sink") and hasattr(ti.sink, "severity"):
-                    taint_severity = ti.sink.severity
+                    taint_severity = str(getattr(ti.sink, "severity", "error"))
                 issues.append(
                     ScanIssue(
                         category=IssueCategory.SECURITY,
@@ -718,10 +756,11 @@ class SecurityPhase(AnalysisPhase):
         if config.enable_string_analysis:
             string_issues = self.string_analyzer.analyze_source(ctx.source, ctx.file_path)
             for si in string_issues:
+                si_kind = si.kind.name if hasattr(si.kind, "name") else str(si.kind)
                 issues.append(
                     ScanIssue(
                         category=IssueCategory.SECURITY,
-                        kind=si.kind.name,
+                        kind=si_kind,
                         severity=si.severity,
                         file=si.file,
                         line=si.line,
@@ -767,7 +806,7 @@ class ExceptionPhase(AnalysisPhase):
                 detected_by=["exception_analysis"],
             )
             if config.suppress_likely_false_positives:
-                _apply_exception_suppression(enhanced, ctx)
+                apply_exception_suppression(enhanced, ctx)
             if enhanced.confidence >= config.min_confidence:
                 issues.append(enhanced)
         return issues

@@ -38,16 +38,16 @@ Features
 --------
 
 - **Hardware Acceleration**: GPU Virtual Machine for evaluating trillions of states per second
+- **Sandbox**: Isolated execution with strict path checks and containment enforcement
 - **Symbolic Execution**: Explores all possible execution paths
 - **Z3 Integration**: Uses SMT solving for constraint reasoning
-- **Bug Detection**: Division by zero, assertions, index errors, and more
-- **Path Strategies**: DFS, BFS, coverage-guided exploration
+ **Bug Detection**: Division by zero, assertions, index errors, and more
+ **Path Strategies**: CHTD-native and adaptive Thompson-sampling exploration
+ **Multiple Outputs**: Text, JSON, HTML, Markdown, SARIF formatters
 - **Multiple Outputs**: Text, JSON, HTML, Markdown, SARIF formatters
 - **CLI Tool**: Command-line interface for easy integration
 - **Type-Safe**: Full type annotations with py.typed marker
 
-
-Installation
 ------------
 
 .. code-block:: bash

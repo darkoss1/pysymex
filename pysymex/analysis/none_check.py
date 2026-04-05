@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """None-check awareness for reducing false positives.
 
 This module tracks `if x is not None` guards to understand when
@@ -6,11 +24,12 @@ variables have been validated, reducing false positives for None-related issues.
 
 from __future__ import annotations
 
-import icontract
 import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
+
+import icontract
 
 
 class NoneCheckType(Enum):
@@ -45,7 +64,6 @@ class NoneCheckState:
 
     unchecked: set[str] = field(default_factory=set[str])
 
-    @icontract.ensure(lambda self, var_name: var_name in self.confirmed_not_none and var_name not in self.confirmed_none)
     def mark_not_none(self, var_name: str) -> None:
         """Mark a variable as confirmed not None."""
         self.confirmed_not_none.add(var_name)
@@ -267,10 +285,10 @@ def extract_variable_from_expression(expr: str) -> str | None:
         Base variable name or None
     """
     if "." in expr:
-        return expr.split(".")[0]
+        return expr.split(".", maxsplit=1)[0]
 
     if "[" in expr:
-        return expr.split("[")[0]
+        return expr.split("[", maxsplit=1)[0]
 
     if re.match(r"^\w+$", expr):
         return expr

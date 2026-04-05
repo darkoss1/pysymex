@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Cross-function analysis — pure data types (enums + dataclasses)."""
 
 from __future__ import annotations
@@ -122,7 +140,7 @@ class CallContext:
 
     def extend(self, caller: str, pc: int, k: int = 2) -> CallContext:
         """Extend context with a new call site."""
-        new_string = self.call_string + ((caller, pc),)
+        new_string = (*self.call_string, (caller, pc))
         if len(new_string) > k:
             new_string = new_string[-k:]
         return CallContext(new_string)
@@ -131,7 +149,7 @@ class CallContext:
         """Return a human-readable string representation."""
         if not self.call_string:
             return "<entry>"
-        return " -> ".join(f"{caller }@{pc }" for caller, pc in self.call_string)
+        return " -> ".join(f"{caller}@{pc}" for caller, pc in self.call_string)
 
 
 @dataclass

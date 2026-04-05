@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Concolic (Concrete + Symbolic) execution for pysymex.
 Concolic execution combines concrete execution with symbolic constraint
 collection, enabling more scalable analysis of real programs.
@@ -30,8 +48,6 @@ class ConcreteInput:
             try:
                 items.append((k, hash(v)))
             except TypeError:
-                # Unhashable value (e.g. list): fall back to repr() so that
-                # equal objects hash equally, preserving the hash/eq contract.
                 items.append((k, hash(repr(v))))
         return hash(tuple(items))
 
@@ -93,8 +109,8 @@ class ConcolicExecutor:
         self,
         max_iterations: int = 100,
         max_time_seconds: float = 300.0,
-        strategy: str = "dfs",
-    ):
+        strategy: str = "adaptive",
+    ) -> None:
         self.max_iterations = max_iterations
         self.max_time_seconds = max_time_seconds
         self.strategy = strategy
@@ -188,10 +204,8 @@ class ConcolicExecutor:
 
     def _get_next_input(self) -> tuple[ConcreteInput, int]:
         """Get the next input from the worklist based on strategy."""
-        if self.strategy == "dfs":
+        if self.strategy in {"adaptive", "chtd_native"}:
             return self._worklist.pop()
-        elif self.strategy == "bfs":
-            return self._worklist.pop(0)
         elif self.strategy == "random":
             idx = random.randint(0, len(self._worklist) - 1)
             return self._worklist.pop(idx)
@@ -220,7 +234,9 @@ class ConcolicExecutor:
             else:
                 symbolic_args[name] = "int"
         try:
-            result = executor.execute_function(func, symbolic_args, initial_values=concrete_input.values)
+            result = executor.execute_function(
+                func, symbolic_args, initial_values=concrete_input.values
+            )
             trace.coverage = result.coverage
             trace.result = result
             trace.branches = [
@@ -245,7 +261,9 @@ class ConcolicExecutor:
                     for decl in model.decls():
                         if decl.name() == name or decl.name().startswith(f"{name}_"):
                             val = model[decl]
-                            new_values[name] = self._z3_to_python(val)
+                            new_values[name] = (
+                                self._z3_to_python(val) if isinstance(val, z3.ExprRef) else value
+                            )
                             break
                     else:
                         new_values[name] = value
@@ -298,16 +316,16 @@ class ConcolicResult:
         """Format a summary of results."""
         lines = [
             "=== Concolic Execution Summary ===",
-            f"Iterations: {self .iterations }",
-            f"Unique paths: {self .num_paths }",
-            f"Coverage: {len (self .coverage )} instructions",
-            f"Time: {self .time_seconds :.2f}s",
+            f"Iterations: {self.iterations}",
+            f"Unique paths: {self.num_paths}",
+            f"Coverage: {len(self.coverage)} instructions",
+            f"Time: {self.time_seconds:.2f}s",
         ]
         failing = self.get_failing_inputs()
         if failing:
-            lines.append(f"\nFailing inputs: {len (failing )}")
+            lines.append(f"\nFailing inputs: {len(failing)}")
             for inp in failing[:5]:
-                lines.append(f"  {inp .values }")
+                lines.append(f"  {inp.values}")
         return "\n".join(lines)
 
 
@@ -317,7 +335,7 @@ class GenerationalSearch:
     testing technique that systematically explores paths.
     """
 
-    def __init__(self, max_generations: int = 10):
+    def __init__(self, max_generations: int = 10) -> None:
         self.max_generations = max_generations
         self._generations: list[list[ConcreteInput]] = []
 

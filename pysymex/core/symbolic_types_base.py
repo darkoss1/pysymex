@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Base types for the symbolic type system.
 
 Provides the ``TypeTag`` enum, name-generation utilities, and the
@@ -94,6 +112,42 @@ class SymbolicType(ABC):
     def as_unified(self) -> SymbolicValue:
         """Convert this specialized type to a unified SymbolicValue representation."""
 
+    @property
+    def is_int(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_bool(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_float(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_str(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_none(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_path(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_obj(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_list(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
+    @property
+    def is_dict(self) -> z3.BoolRef:
+        return z3.BoolVal(False)
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
 
@@ -126,7 +180,11 @@ class SymbolicNoneType(SymbolicType):
         return z3.BoolVal(True)
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
-        return z3.BoolVal(isinstance(other, SymbolicNoneType))
+        if isinstance(other, SymbolicNoneType):
+            return z3.BoolVal(True)
+        if hasattr(other, "is_none"):
+            return other.is_none
+        return z3.BoolVal(False)
 
     def as_unified(self) -> SymbolicValue:
         """As unified."""

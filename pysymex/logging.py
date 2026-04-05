@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Logging framework for pysymex.
 Provides structured logging with configurable verbosity and output formats.
 """
@@ -85,7 +103,7 @@ class LogEntry:
         if show_time:
             elapsed = time.strftime("%H:%M:%S", time.localtime(self.timestamp))
             if color:
-                parts.append(f"{Colors .GRAY }{elapsed }{Colors .RESET }")
+                parts.append(f"{Colors.GRAY}{elapsed}{Colors.RESET}")
             else:
                 parts.append(elapsed)
         level_str = self._level_str(color)
@@ -93,9 +111,9 @@ class LogEntry:
             parts.append(level_str)
         if self.category != "general":
             if color:
-                parts.append(f"{Colors .CYAN }[{self .category }]{Colors .RESET }")
+                parts.append(f"{Colors.CYAN}[{self.category}]{Colors.RESET}")
             else:
-                parts.append(f"[{self .category }]")
+                parts.append(f"[{self.category}]")
         parts.append(self.message)
         return " ".join(parts)
 
@@ -111,7 +129,7 @@ class LogEntry:
         }
         char, col = indicators.get(self.level, ("", ""))
         if color:
-            return f"{col }{char }{Colors .RESET }"
+            return f"{col}{char}{Colors.RESET}"
         return char
 
 
@@ -135,7 +153,7 @@ class PysymexLogger:
         color: bool = True,
         stream: TextIO | None = None,
         file_path: Path | None = None,
-    ):
+    ) -> None:
         self.level = level
         self._stream = stream or sys.stdout
         self._color = color and supports_color(self._stream)
@@ -185,29 +203,29 @@ class PysymexLogger:
         )
         self._emit(entry)
 
-    def info(self, message: str, **context: object) -> None:
+    def info(self, message: str, category: str = "general", **context: object) -> None:
         """Log an info message."""
-        self.log(LogLevel.NORMAL, message, **context)
+        self.log(LogLevel.NORMAL, message, category=category, **context)
 
-    def verbose(self, message: str, **context: object) -> None:
+    def verbose(self, message: str, category: str = "general", **context: object) -> None:
         """Log a verbose message."""
-        self.log(LogLevel.VERBOSE, message, **context)
+        self.log(LogLevel.VERBOSE, message, category=category, **context)
 
-    def debug(self, message: str, **context: object) -> None:
+    def debug(self, message: str, category: str = "general", **context: object) -> None:
         """Log a debug message."""
-        self.log(LogLevel.DEBUG, message, **context)
+        self.log(LogLevel.DEBUG, message, category=category, **context)
 
-    def trace(self, message: str, **context: object) -> None:
+    def trace(self, message: str, category: str = "general", **context: object) -> None:
         """Log a trace message."""
-        self.log(LogLevel.TRACE, message, **context)
+        self.log(LogLevel.TRACE, message, category=category, **context)
 
     def success(self, message: str) -> None:
         """Log a success message with green checkmark."""
         if self._should_log(LogLevel.NORMAL):
             if self._color:
-                self._stream.write(f"{Colors .GREEN }✓{Colors .RESET } {message }\n")
+                self._stream.write(f"{Colors.GREEN}✓{Colors.RESET} {message}\n")
             else:
-                self._stream.write(f"✓ {message }\n")
+                self._stream.write(f"✓ {message}\n")
             self._stream.flush()
 
     def warning(self, message: str) -> None:
@@ -215,12 +233,12 @@ class PysymexLogger:
         entry = LogEntry(level=LogLevel.NORMAL, message=message, category="warning")
         self._entries.append(entry)
         if self._color:
-            self._stream.write(f"{Colors .YELLOW }⚠{Colors .RESET } {message }\n")
+            self._stream.write(f"{Colors.YELLOW}⚠{Colors.RESET} {message}\n")
         else:
-            self._stream.write(f"⚠ {message }\n")
+            self._stream.write(f"⚠ {message}\n")
         self._stream.flush()
         if self._file_handle:
-            self._file_handle.write(f"⚠ {message }\n")
+            self._file_handle.write(f"⚠ {message}\n")
             self._file_handle.flush()
 
     def error(self, message: str) -> None:
@@ -228,23 +246,23 @@ class PysymexLogger:
         entry = LogEntry(level=LogLevel.QUIET, message=message, category="error")
         self._entries.append(entry)
         if self._color:
-            self._stream.write(f"{Colors .RED }✗{Colors .RESET } {message }\n")
+            self._stream.write(f"{Colors.RED}✗{Colors.RESET} {message}\n")
         else:
-            self._stream.write(f"✗ {message }\n")
+            self._stream.write(f"✗ {message}\n")
         self._stream.flush()
         if self._file_handle:
-            self._file_handle.write(f"✗ {message }\n")
+            self._file_handle.write(f"✗ {message}\n")
             self._file_handle.flush()
 
     def header(self, message: str) -> None:
         """Log a header message."""
         if self._should_log(LogLevel.NORMAL):
             if self._color:
-                self._stream.write(f"\n{Colors .BOLD }{Colors .CYAN }{message }{Colors .RESET }\n")
-                self._stream.write(f"{Colors .CYAN }{'─'*len (message )}{Colors .RESET }\n")
+                self._stream.write(f"\n{Colors.BOLD}{Colors.CYAN}{message}{Colors.RESET}\n")
+                self._stream.write(f"{Colors.CYAN}{'─' * len(message)}{Colors.RESET}\n")
             else:
-                self._stream.write(f"\n{message }\n")
-                self._stream.write(f"{'─'*len (message )}\n")
+                self._stream.write(f"\n{message}\n")
+                self._stream.write(f"{'─' * len(message)}\n")
             self._stream.flush()
 
     def rule(self, char: str = "─") -> None:
@@ -252,9 +270,9 @@ class PysymexLogger:
         if self._should_log(LogLevel.NORMAL):
             width = 60
             if self._color:
-                self._stream.write(f"{Colors .GRAY }{char *width }{Colors .RESET }\n")
+                self._stream.write(f"{Colors.GRAY}{char * width}{Colors.RESET}\n")
             else:
-                self._stream.write(f"{char *width }\n")
+                self._stream.write(f"{char * width}\n")
             self._stream.flush()
 
     def progress(self, current: int, total: int, message: str = "") -> None:
@@ -276,11 +294,11 @@ class PysymexLogger:
         filled = int(bar_width * current / total) if total > 0 else 0
         bar = "█" * filled + "░" * (bar_width - filled)
         if self._color:
-            status = f"\r{Colors .CYAN }[{bar }]{Colors .RESET } {pct :5.1f}%"
+            status = f"\r{Colors.CYAN}[{bar}]{Colors.RESET} {pct:5.1f}%"
         else:
-            status = f"\r[{bar }] {pct :5.1f}%"
+            status = f"\r[{bar}] {pct:5.1f}%"
         if message:
-            status += f" {message }"
+            status += f" {message}"
         self._stream.write(status)
         self._stream.flush()
         if current >= total:
@@ -296,7 +314,7 @@ class PysymexLogger:
             yield
         finally:
             elapsed = time.perf_counter() - start
-            self.verbose(f"{name }: {elapsed :.3f}s", category=category)
+            self.verbose(f"{name}: {elapsed:.3f}s", category=category)
             del self._timers[name]
 
     def count(self, name: str, increment: int = 1) -> int:
@@ -369,7 +387,7 @@ class PythonLoggingBridge(logging.Handler):
     structured output stream.
     """
 
-    def __init__(self, shadow_logger: PysymexLogger):
+    def __init__(self, shadow_logger: PysymexLogger) -> None:
         """Initialize the bridge with a target PySyMex logger instance."""
         super().__init__()
         self.shadow_logger = shadow_logger

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Exception Flow Analysis – Core logic.
 
@@ -7,7 +25,9 @@ ExceptionAnalyzer facade.
 
 from __future__ import annotations
 
+import dis
 import logging
+from types import CodeType
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +62,6 @@ def _try_body_calls_crashy_api(try_node: ast.Try) -> bool:
                         return True
 
             if isinstance(node, ast.Name) and node.id in KNOWN_CRASHY_APIS:
-
                 pass
     return False
 
@@ -200,12 +219,9 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
         elif isinstance(handler.type, ast.Name):
             exc_handler.exception_types.append(handler.type.id)
             if handler.type.id == "Exception":
-
                 if calls_crashy_api and intent != HandlerIntent.SILENCED:
-
                     pass
                 elif intent == HandlerIntent.SAFETY_NET:
-
                     self.warnings.append(
                         ExceptionWarning(
                             kind=ExceptionWarningKind.TOO_BROAD_EXCEPT,
@@ -216,7 +232,6 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                         )
                     )
                 elif intent == HandlerIntent.LOGGED:
-
                     self.warnings.append(
                         ExceptionWarning(
                             kind=ExceptionWarningKind.TOO_BROAD_EXCEPT,
@@ -227,7 +242,6 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                         )
                     )
                 else:
-
                     self.warnings.append(
                         ExceptionWarning(
                             kind=ExceptionWarningKind.TOO_BROAD_EXCEPT,
@@ -290,13 +304,17 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                     if stmt.func.id in {"print", "logging"}:
                         exc_handler.has_logging = True
                         break
-        if exc_handler.is_empty and not exc_handler.has_logging:
+        if (
+            not exc_handler.has_logging
+            and not exc_handler.has_reraise
+            and not exc_handler.has_return
+        ):
             self.warnings.append(
                 ExceptionWarning(
                     kind=ExceptionWarningKind.EXCEPTION_NOT_LOGGED,
                     file=self.file_path,
                     line=handler.lineno,
-                    message="Exception caught but not logged or handled",
+                    message="Exception caught but not logged, raised, or returned",
                     severity="warning",
                 )
             )
@@ -331,7 +349,6 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
             if isinstance(handler.type, ast.Name):
                 exc_type = handler.type.id
             elif isinstance(handler.type, ast.Tuple):
-
                 for elt in handler.type.elts:
                     if isinstance(elt, ast.Name):
                         elt_type = elt.id
@@ -341,22 +358,20 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                                     kind=ExceptionWarningKind.DUPLICATE_EXCEPT,
                                     file=self.file_path,
                                     line=handler.lineno,
-                                    message=f"Duplicate handler for '{elt_type }'",
+                                    message=f"Duplicate handler for '{elt_type}'",
                                     exception_type=elt_type,
                                 )
                             )
                         seen_types.add(elt_type)
-                continue
-            else:
-                continue
-            if isinstance(handler.type, ast.Name):
+            elif isinstance(handler.type, ast.Name):
+                exc_type = handler.type.id
                 if exc_type in seen_types:
                     self.warnings.append(
                         ExceptionWarning(
                             kind=ExceptionWarningKind.DUPLICATE_EXCEPT,
                             file=self.file_path,
                             line=handler.lineno,
-                            message=f"Duplicate handler for '{exc_type }'",
+                            message=f"Duplicate handler for '{exc_type}'",
                             exception_type=exc_type,
                         )
                     )
@@ -367,7 +382,7 @@ class ExceptionASTAnalyzer(ast.NodeVisitor):
                                 kind=ExceptionWarningKind.UNREACHABLE_EXCEPT,
                                 file=self.file_path,
                                 line=handler.lineno,
-                                message=f"Handler for '{exc_type }' unreachable after '{broad }'",
+                                message=f"Handler for '{exc_type}' unreachable after '{broad}'",
                                 exception_type=exc_type,
                             )
                         )
@@ -402,7 +417,7 @@ class ExceptionBytecodeAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ExceptionWarning]:
         """Analyze bytecode for exception patterns.
@@ -436,7 +451,7 @@ class UncaughtExceptionAnalyzer:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> dict[str, set[str]]:
         """
@@ -471,7 +486,7 @@ class UncaughtExceptionAnalyzer:
 
     @staticmethod
     def _build_protected_ranges(
-        instructions: Sequence[object],
+        instructions: Sequence[dis.Instruction],
         protected_ranges: list[tuple[int, int, set[str]]],
     ) -> None:
         """Populate *protected_ranges* from exception-handling bytecode.
@@ -487,15 +502,14 @@ class UncaughtExceptionAnalyzer:
             if instr.opname != "PUSH_EXC_INFO":
                 continue
             caught: set[str] = set()
-            for j in range(i + 1, min(i + 20, len(instructions))):
+            for j in range(i + 1, min(i + 40, len(instructions))):
                 if instructions[j].opname == "CHECK_EXC_MATCH":
-
                     if j > 0 and instructions[j - 1].opname in {
                         "LOAD_GLOBAL",
                         "LOAD_NAME",
                     }:
                         caught.add(str(instructions[j - 1].argval))
-                elif instructions[j].opname in {"POP_EXCEPT", "RERAISE"}:
+                elif instructions[j].opname == "RERAISE" and instructions[j].arg == 0:
                     break
             if not caught:
                 caught = {"Exception"}
@@ -512,7 +526,7 @@ class UncaughtExceptionAnalyzer:
 
 
 def _infer_caught_at(
-    instructions: list[object],
+    instructions: list[dis.Instruction],
     handler_target: int,
 ) -> set[str]:
     """Infer caught exception types from handler starting at *handler_target*."""
@@ -524,7 +538,6 @@ def _infer_caught_at(
         if not started:
             continue
         if instr.opname in {"LOAD_GLOBAL", "LOAD_NAME"}:
-
             caught.add(str(instr.argval))
         elif instr.opname in {
             "POP_EXCEPT",
@@ -579,7 +592,7 @@ class ExceptionAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[ExceptionWarning]:
         """Analyze function bytecode for exception issues."""
@@ -601,7 +614,7 @@ class ExceptionAnalyzer:
                     kind=ExceptionWarningKind.UNCAUGHT_EXCEPTION,
                     file=file_path,
                     line=e.lineno or 0,
-                    message=f"Syntax error: {e .msg }",
+                    message=f"Syntax error: {e.msg}",
                 )
             ]
         except OSError:
@@ -609,7 +622,7 @@ class ExceptionAnalyzer:
 
     def _analyze_nested(
         self,
-        code: object,
+        code: CodeType,
         file_path: str,
         warnings: list[ExceptionWarning],
     ) -> None:
@@ -621,7 +634,7 @@ class ExceptionAnalyzer:
 
     def get_potential_exceptions(
         self,
-        code: object,
+        code: CodeType,
     ) -> dict[str, set[str]]:
         """Get potential uncaught exceptions by line."""
         return self.uncaught_analyzer.analyze(code)

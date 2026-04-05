@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """CI/CD integration logic for pysymex.
 Provides integrations for:
 - GitHub Actions
@@ -10,8 +28,9 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, cast
 
 from pysymex.ci.types import CIResult, ExitCode, FailureThreshold
 from pysymex.reporting.sarif import Severity, VulnerabilityReport, generate_sarif
@@ -27,7 +46,7 @@ class GitHubActionsReporter:
         output: Text stream for workflow commands (defaults to stdout).
     """
 
-    def __init__(self, output: TextIO = sys.stdout):
+    def __init__(self, output: TextIO = sys.stdout) -> None:
         self.output = output
 
     def set_output(self, name: str, value: str) -> None:
@@ -38,9 +57,9 @@ class GitHubActionsReporter:
         github_output = Path(github_output_env) if github_output_env else None
         if github_output and github_output.exists():
             with open(github_output, "a") as f:
-                f.write(f"{name }={value }\n")
+                f.write(f"{name}={value}\n")
         else:
-            print(f"::set-output name={name }::{value }", file=self.output)
+            print(f"::set-output name={name}::{value}", file=self.output)
 
     def error(
         self,
@@ -52,7 +71,7 @@ class GitHubActionsReporter:
     ) -> None:
         """Create an error annotation."""
         params = self._build_params(file, line, col, title)
-        print(f"::error {params }::{self ._escape (message )}", file=self.output)
+        print(f"::error {params}::{self._escape(message)}", file=self.output)
 
     def warning(
         self,
@@ -64,7 +83,7 @@ class GitHubActionsReporter:
     ) -> None:
         """Create a warning annotation."""
         params = self._build_params(file, line, col, title)
-        print(f"::warning {params }::{self ._escape (message )}", file=self.output)
+        print(f"::warning {params}::{self._escape(message)}", file=self.output)
 
     def notice(
         self,
@@ -76,11 +95,11 @@ class GitHubActionsReporter:
     ) -> None:
         """Create a notice annotation."""
         params = self._build_params(file, line, col, title)
-        print(f"::notice {params }::{self ._escape (message )}", file=self.output)
+        print(f"::notice {params}::{self._escape(message)}", file=self.output)
 
     def group(self, title: str) -> None:
         """Start a collapsible group."""
-        print(f"::group::{title }", file=self.output)
+        print(f"::group::{title}", file=self.output)
 
     def endgroup(self) -> None:
         """End a collapsible group."""
@@ -106,13 +125,13 @@ class GitHubActionsReporter:
         """Build parameter string for workflow commands."""
         parts: list[str] = []
         if file:
-            parts.append(f"file={file }")
+            parts.append(f"file={file}")
         if line is not None:
-            parts.append(f"line={line }")
+            parts.append(f"line={line}")
         if col is not None:
-            parts.append(f"col={col }")
+            parts.append(f"col={col}")
         if title:
-            parts.append(f"title={title }")
+            parts.append(f"title={title}")
         return ",".join(parts)
 
     def _escape(self, message: str) -> str:
@@ -122,8 +141,8 @@ class GitHubActionsReporter:
     def report_vulnerability(self, vuln: VulnerabilityReport) -> None:
         """Report a vulnerability as a GitHub annotation."""
         severity = vuln.severity
-        cwe_label = f"CWE-{vuln .cwe_id }" if vuln.cwe_id else vuln.vuln_type
-        message = f"[{cwe_label }] {vuln .message }"
+        cwe_label = f"CWE-{vuln.cwe_id}" if vuln.cwe_id else vuln.vuln_type
+        message = f"[{cwe_label}] {vuln.message}"
         if severity in (Severity.CRITICAL, Severity.HIGH):
             self.error(
                 message,
@@ -164,25 +183,25 @@ class GitHubActionsReporter:
         lines = [
             "## PySyMex Analysis Results",
             "",
-            f"**Status**: {status }",
-            f"**Files Analyzed**: {result .files_analyzed }",
-            f"**Duration**: {result .duration_seconds :.2f}s",
+            f"**Status**: {status}",
+            f"**Files Analyzed**: {result.files_analyzed}",
+            f"**Duration**: {result.duration_seconds:.2f}s",
             "",
             "### Issues by Severity",
             "",
             "| Severity | Count |",
             "|----------|-------|",
-            f"| 🔴 Critical | {result .critical_count } |",
-            f"| 🟠 High | {result .high_count } |",
-            f"| 🟡 Medium | {result .medium_count } |",
-            f"| 🔵 Low | {result .low_count } |",
-            f"| **Total** | **{result .issues_count }** |",
+            f"| 🔴 Critical | {result.critical_count} |",
+            f"| 🟠 High | {result.high_count} |",
+            f"| 🟡 Medium | {result.medium_count} |",
+            f"| 🔵 Low | {result.low_count} |",
+            f"| **Total** | **{result.issues_count}** |",
         ]
         if result.sarif_path:
             lines.extend(
                 [
                     "",
-                    f"📄 SARIF report: `{result .sarif_path }`",
+                    f"📄 SARIF report: `{result.sarif_path}`",
                 ]
             )
         return "\n".join(lines)
@@ -222,7 +241,7 @@ class GitLabReporter:
                     },
                 },
             }
-            issues.append(issue)
+            issues.append(cast("dict[str, object]", issue))
         Path(output_path).write_text(
             json.dumps(issues, indent=2),
             encoding="utf-8",
@@ -248,6 +267,7 @@ class GitLabReporter:
                 "status": "success",
             },
         }
+        vulnerabilities_out = cast("list[dict[str, object]]", report["vulnerabilities"])
         for vuln in vulnerabilities:
             severity_map = {
                 Severity.CRITICAL: "Critical",
@@ -261,9 +281,9 @@ class GitLabReporter:
                 identifiers.append(
                     {
                         "type": "cwe",
-                        "name": f"CWE-{vuln .cwe_id }",
+                        "name": f"CWE-{vuln.cwe_id}",
                         "value": str(vuln.cwe_id),
-                        "url": f"https://cwe.mitre.org/data/definitions/{vuln .cwe_id }.html",
+                        "url": f"https://cwe.mitre.org/data/definitions/{vuln.cwe_id}.html",
                     }
                 )
             v = {
@@ -280,7 +300,7 @@ class GitLabReporter:
                 },
                 "identifiers": identifiers,
             }
-            report["vulnerabilities"].append(v)
+            vulnerabilities_out.append(cast("dict[str, object]", v))
         Path(output_path).write_text(
             json.dumps(report, indent=2),
             encoding="utf-8",
@@ -290,7 +310,7 @@ class GitLabReporter:
         """Generate a stable fingerprint for a vulnerability."""
         import hashlib
 
-        data = f"{vuln .vuln_type }:{vuln .file_path }:{vuln .line_number }:{vuln .message }"
+        data = f"{vuln.vuln_type}:{vuln.file_path}:{vuln.line_number}:{vuln.message}"
         return hashlib.sha256(data.encode()).hexdigest()[:32]
 
 
@@ -357,7 +377,7 @@ class CIRunner:
         sarif_output: str | None = None,
         github_actions: bool = False,
         gitlab_ci: bool = False,
-    ):
+    ) -> None:
         self.threshold = threshold or FailureThreshold()
         self.sarif_output = sarif_output
         self.github_actions = github_actions
@@ -379,7 +399,7 @@ class CIRunner:
         low = sum(1 for v in vulnerabilities if v.severity == Severity.LOW)
         if issues:
             for issue in issues:
-                issue_type = issue.get("type", "")
+                issue_type = str(issue.get("type", ""))
                 if "error" in issue_type.lower():
                     high += 1
                 else:
@@ -400,10 +420,10 @@ class CIRunner:
             object.__setattr__(
                 result,
                 "message",
-                f"Failed: {total } issues found ({critical } critical, {high } high)",
+                f"Failed: {total} issues found ({critical} critical, {high} high)",
             )
         else:
-            object.__setattr__(result, "message", f"Passed: {total } issues found")
+            object.__setattr__(result, "message", f"Passed: {total} issues found")
         if self.sarif_output:
             generate_sarif(
                 vulnerabilities=vulnerabilities,
@@ -443,7 +463,9 @@ def run_ci_check(
     """
     import os
 
-    from pysymex.scanner import scan_file
+    from pysymex.scanner import scan_file as _scan_file
+
+    scan_file = cast("Callable[[str], object]", _scan_file)
 
     threshold = FailureThreshold(min_severity=fail_on)
     runner = CIRunner(
@@ -457,10 +479,13 @@ def run_ci_check(
     for file_path in files:
         try:
             scan_result = scan_file(file_path)
-            if hasattr(scan_result, "issues") and scan_result.issues:
-                all_issues.extend(scan_result.issues)
+            raw_issues = getattr(scan_result, "issues", None)
+            if isinstance(raw_issues, list):
+                for issue in raw_issues:
+                    if isinstance(issue, dict):
+                        all_issues.append(cast("dict[str, object]", issue))
         except Exception as e:
-            print(f"Error analyzing {file_path }: {e }", file=sys.stderr)
+            print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
     ci_result = runner.analyze_and_report(
         files=files,
         vulnerabilities=all_vulns,

@@ -1,16 +1,33 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Pure Python Reference Backend.
 
 This backend provides a bit-exact reference implementation for testing.
 It is intentionally simple and unoptimized to serve as ground truth
 for validating other backends.
 
-Performance: O(2^w × instructions) — usable only for w ≤ 14
+Performance: O(2^w * instructions) — usable only for w ≤ 14
 """
 
 from __future__ import annotations
 
-import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -20,13 +37,23 @@ from pysymex.h_acceleration.backends import BackendInfo, BackendType
 if TYPE_CHECKING:
     from pysymex.h_acceleration.bytecode import CompiledConstraint
 
-__all__ = ["count_sat", "count_satisfying", "evaluate_bag", "get_info", "get_satisfying_assignments", "is_available", "warmup"]
+__all__ = [
+    "count_sat",
+    "count_satisfying",
+    "evaluate_bag",
+    "get_info",
+    "get_satisfying_assignments",
+    "is_available",
+    "warmup",
+]
 
 MAX_TREEWIDTH: int = 14
+
 
 def is_available() -> bool:
     """Reference backend is always available (pure Python)."""
     return True
+
 
 def get_info() -> BackendInfo:
     """Get backend information."""
@@ -39,6 +66,7 @@ def get_info() -> BackendInfo:
         device_memory_mb=0,
         compute_units=1,
     )
+
 
 def evaluate_bag(constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
     """Evaluate constraint using pure Python.
@@ -75,11 +103,11 @@ def evaluate_bag(constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
     output: npt.NDArray[np.uint8] = np.zeros(bitmap_size, dtype=np.uint8)
 
     instr = constraint.instructions
-    opcodes = instr['opcode']
-    dsts = instr['dst']
-    src1s = instr['src1']
-    src2s = instr['src2']
-    imms = instr['immediate']
+    opcodes = cast("npt.NDArray[np.uint8]", instr["opcode"])
+    dsts = cast("npt.NDArray[np.uint8]", instr["dst"])
+    src1s = cast("npt.NDArray[np.uint8]", instr["src1"])
+    src2s = cast("npt.NDArray[np.uint8]", instr["src2"])
+    imms = cast("npt.NDArray[np.uint8]", instr["immediate"])
     num_instructions = len(instr)
     num_regs = constraint.register_count
 
@@ -140,11 +168,14 @@ def evaluate_bag(constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
 
     return output
 
+
 def count_sat(bitmap: npt.NDArray[np.uint8]) -> int:
     """Count number of satisfying assignments in bitmap."""
-    return int(np.unpackbits(bitmap).sum())
+    return int(_unpackbits_little(bitmap).sum())
+
 
 count_satisfying = count_sat
+
 
 def get_satisfying_assignments(
     bitmap: npt.NDArray[np.uint8],
@@ -161,24 +192,27 @@ def get_satisfying_assignments(
     Returns:
         List of dicts mapping variable (name or index) to value
     """
-    bits = np.unpackbits(bitmap)
+    bits = _unpackbits_little(bitmap)
     assignments: list[dict[str | int, bool]] = []
 
-    for i, sat in enumerate(bits[:1 << num_vars]):
+    for i, sat in enumerate(bits[: 1 << num_vars]):
         if sat:
             if variable_names:
                 assignment: dict[str | int, bool] = {
-                    variable_names[v]: bool((i >> v) & 1)
-                    for v in range(num_vars)
+                    variable_names[v]: bool((i >> v) & 1) for v in range(num_vars)
                 }
             else:
-                assignment = {
-                    v: bool((i >> v) & 1)
-                    for v in range(num_vars)
-                }
+                assignment = {v: bool((i >> v) & 1) for v in range(num_vars)}
             assignments.append(assignment)
 
     return assignments
+
+
+def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Return unpacked bits in little-endian bit order for each byte."""
+    bits = np.unpackbits(bitmap)
+    return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
+
 
 def warmup() -> None:
     """No-op warmup for reference backend."""

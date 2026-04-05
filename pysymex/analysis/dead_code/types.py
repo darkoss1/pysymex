@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Dead code types, enums, and helper utilities.
 
 Provides:
@@ -11,6 +29,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from enum import Enum, auto
+from types import CodeType
 
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 
@@ -41,7 +60,7 @@ def find_dataclass_class_names(source: str) -> set[str]:
     return names
 
 
-def is_class_body(code: object) -> bool:
+def is_class_body(code: CodeType) -> bool:
     """Check if a code object is a class body (not a function/method).
 
     CPython class bodies always store ``__module__`` and ``__qualname__``
@@ -53,7 +72,7 @@ def is_class_body(code: object) -> bool:
     return False
 
 
-def collect_class_attrs_used(class_code: object) -> set[str]:
+def collect_class_attrs_used(class_code: CodeType) -> set[str]:
     """Collect all attribute names loaded via LOAD_ATTR across methods of a class.
 
     Note: This data is currently collected but not consumed by DeadStoreDetector
@@ -77,7 +96,7 @@ def collect_class_attrs_used(class_code: object) -> set[str]:
     return attrs_used
 
 
-def get_class_method_names(class_code: object) -> set[str]:
+def get_class_method_names(class_code: CodeType) -> set[str]:
     """Get the names of methods/functions defined in a class body."""
     names: set[str] = set()
     for const in class_code.co_consts:
@@ -130,7 +149,7 @@ class DeadCode:
 
     def format(self) -> str:
         """Format for display."""
-        location = f"{self .file }:{self .line }"
+        location = f"{self.file}:{self.line}"
         if self.end_line and self.end_line != self.line:
-            location += f"-{self .end_line }"
-        return f"[{self .kind .name }] {location }: {self .message }"
+            location += f"-{self.end_line}"
+        return f"[{self.kind.name}] {location}: {self.message}"

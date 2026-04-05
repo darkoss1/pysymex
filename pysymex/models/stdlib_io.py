@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for copy, io, heapq, and bisect modules.
 
 Models:
@@ -14,11 +32,11 @@ from typing import TYPE_CHECKING
 import z3
 
 from pysymex.core.types import (
-    SymbolicList,
     SymbolicNone,
     SymbolicString,
     SymbolicValue,
 )
+from pysymex.core.types_containers import SymbolicList
 from pysymex.models.builtins import FunctionModel, ModelResult
 
 if TYPE_CHECKING:
@@ -37,7 +55,7 @@ class CopyModel(FunctionModel):
     ) -> ModelResult:
         if args:
             return ModelResult(value=args[0])
-        result, constraint = SymbolicValue.symbolic(f"copy_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"copy_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -53,24 +71,24 @@ class DeepcopyModel(FunctionModel):
         if args:
             val = args[0]
             if isinstance(val, SymbolicValue):
-                result, constraint = SymbolicValue.symbolic(f"deepcopy_{val .name }")
+                result, constraint = SymbolicValue.symbolic(f"deepcopy_{val.name}")
                 return ModelResult(
                     value=result,
                     constraints=[constraint, result.z3_int == val.z3_int],
                 )
             if isinstance(val, SymbolicString):
-                result, constraint = SymbolicString.symbolic(f"deepcopy_{val .name }")
+                result, constraint = SymbolicString.symbolic(f"deepcopy_{val.name}")
                 return ModelResult(
                     value=result,
                     constraints=[constraint, result.z3_str == val.z3_str],
                 )
             if isinstance(val, SymbolicList):
-                result, constraint = SymbolicList.symbolic(f"deepcopy_{val .name }")
+                result, constraint = SymbolicList.symbolic(f"deepcopy_{val.name}")
                 return ModelResult(
                     value=result,
                     constraints=[constraint, result.z3_len == val.z3_len],
                 )
-        result, constraint = SymbolicValue.symbolic(f"deepcopy_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"deepcopy_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -83,7 +101,7 @@ class StringIOModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"stringio_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"stringio_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -96,7 +114,7 @@ class BytesIOModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bytesio_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytesio_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -109,7 +127,7 @@ class IOReadModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"io_read_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"io_read_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -125,14 +143,14 @@ class IOWriteModel(FunctionModel):
         if args and isinstance(args[0], SymbolicString):
             return ModelResult(
                 value=SymbolicValue(
-                    _name=f"written_{state .pc }",
+                    _name=f"written_{state.pc}",
                     z3_int=args[0].z3_len,
                     is_int=z3.BoolVal(True),
                     z3_bool=z3.BoolVal(False),
                     is_bool=z3.BoolVal(False),
                 )
             )
-        result, constraint = SymbolicValue.symbolic(f"io_write_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"io_write_{state.pc}")
         return ModelResult(
             value=result, constraints=[constraint, result.is_int, result.z3_int >= 0]
         )
@@ -147,7 +165,7 @@ class IOGetvalueModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"io_getvalue_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"io_getvalue_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -175,7 +193,7 @@ class HeappopModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"heappop_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"heappop_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint],
@@ -207,7 +225,7 @@ class HeapreplaceModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"heapreplace_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"heapreplace_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint],
@@ -224,7 +242,7 @@ class HeappushpopModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"heappushpop_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"heappushpop_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint],
@@ -241,7 +259,7 @@ class NlargestModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"nlargest_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"nlargest_{state.pc}")
         if args and isinstance(args[0], int):
             return ModelResult(
                 value=result,
@@ -259,7 +277,7 @@ class NsmallestModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"nsmallest_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"nsmallest_{state.pc}")
         if args and isinstance(args[0], int):
             return ModelResult(
                 value=result,
@@ -277,7 +295,7 @@ class BisectLeftModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bisect_left_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bisect_left_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if len(args) >= 1:
             lst = args[0]
@@ -295,7 +313,7 @@ class BisectRightModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bisect_right_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bisect_right_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if len(args) >= 1:
             lst = args[0]
@@ -313,7 +331,7 @@ class BisectModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bisect_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bisect_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if len(args) >= 1:
             lst = args[0]

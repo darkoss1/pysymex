@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Typed event schemas for the pysymex execution tracer.
 
 All event models are immutable Pydantic v2 BaseModels that serialise to a
@@ -87,7 +105,6 @@ class TracerConfig(BaseModel):
         env_val = os.environ.get("PY_SYMEX_TRACE", "0").strip().lower()
         enabled = env_val in _TRUTHY
 
-        # Professional touch: allow overriding compression level via env
         env_comp = os.environ.get("PY_SYMEX_TRACE_COMPRESSION", "6").strip()
         comp_level = int(env_comp) if env_comp.isdigit() else 6
 

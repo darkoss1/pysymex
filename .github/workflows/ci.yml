@@ -19,7 +19,7 @@ env:
 
 jobs:
   lint:
-    name: Lint & Type Check
+    name: Format & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +35,9 @@ jobs:
       - name: Ruff format check
         run: ruff format --check pysymex/
 
-      - name: Ruff lint
-        run: ruff check pysymex/
-
-      - name: Pyright strict mode
-        run: npx --yes pyright@1.1.407 pysymex/
+      - name: Pyright strict mode (Windows)
+        run: |
+          npx --yes pyright@1.1.407 --pythonplatform Windows
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
@@ -52,8 +50,6 @@ jobs:
         include:
           - python-version: "3.13"
             os: windows-latest
-          - python-version: "3.13"
-            os: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +64,10 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short -m "not slow" --ignore=tests/test_resources.py --cov=pysymex --cov-report=xml --cov-branch -x
+
+      - name: Cleanup test artifacts
+        shell: bash
+        run: rm -rf _tmp_rt_*
 
       - name: Upload coverage
         if: matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'

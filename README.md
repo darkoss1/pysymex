@@ -11,8 +11,8 @@
 **Python Symbolic Execution Engine powered by Z3 Theorem Prover**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Alpha](https://img.shields.io/badge/Status-v0.1.0--alpha-orange.svg)]()
+[![License: AGPL--3.0](https://img.shields.io/badge/License-AGPL--3.0-yellow.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Status: Alpha](https://img.shields.io/badge/Status-v0.1.0--alpha.3-orange.svg)]()
 
 *Mathematically prove your Python code won't crash.*
 
@@ -35,10 +35,11 @@
 
 ## Features
 - **Hardware Acceleration (`h_acceleration`)** — Evaluates Boolean constraints near theoretical hardware limits via **CuPy NVRTC** direct CUDA C++ compilation. Includes instruction-level parallelism (ILP) unrolling and warp shuffle reductions. Seamlessly falls back to optimized multi-threaded Numba CPU execution.
+- **Hardened Sandbox Isolation** — strict path sanitization, resolved-path containment checks, backend capability validation, and Windows Job Object memory-limit enforcement.
 - **Full Symbolic Execution Engine** — bytecode-level analysis with robust CPython 3.13 opcode support.
 - **CHTD Path Explosion Mitigation** — Constraint Hypergraph Treewidth Decomposition reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs.
 - **Constraint Independence Optimization** — KLEE-style constraint slicing partitions queries into independent clusters, reducing solver load by 60-90%.
-- **Adaptive Path Selection** — Thompson Sampling (Beta-Bernoulli bandit) balances DFS, coverage-guided, and random exploration strategies.
+- **Adaptive Path Selection** — Thompson Sampling (Beta-Bernoulli bandit) balances CHTD-native, coverage-guided, and random exploration strategies.
 - **Theory-Aware Solver Dispatch** — auto-detects QF_LIA/QF_S/QF_BV theories and tunes Z3 parameters per query.
 - **Exception Forking** — explores both success and exception paths for try/except blocks using Python 3.12+ exception tables.
 - **Interprocedural Analysis** — tracks bugs across function calls via global call graph and function summaries.
@@ -72,6 +73,21 @@ Or install from source for development:
 git clone https://github.com/darkoss1/pysymex.git
 cd pysymex
 pip install -e ".[dev]"
+```
+
+## Development
+
+Common local checks:
+
+```bash
+# Format code
+ruff format pysymex tests
+
+# Strict type checking
+pyright pysymex
+
+# Run the test suite
+pytest tests/ -v
 ```
 
 ## Quick Start
@@ -266,14 +282,15 @@ options:
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+AGPL-3.0 License — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions welcome!
+Contributions are welcome.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Run tests (`pytest tests/ -v`)
-4. Commit and push
-5. Open a Pull Request
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+- development setup
+- formatting and strict type-check commands
+- testing expectations
+- pull request guidelines

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Core builtin function models.
 
 Contains models for the most commonly used Python builtins:
@@ -7,6 +25,7 @@ sorted, sum, enumerate, zip, map, filter, float, list, tuple, None.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 import z3
@@ -16,15 +35,43 @@ if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
 from pysymex.core.types import (
-    SymbolicList,
     SymbolicNone,
     SymbolicString,
     SymbolicType,
     SymbolicValue,
-    SymbolicDict,
 )
+from pysymex.core.types_containers import SymbolicDict, SymbolicList
 
 from .builtins_base import FunctionModel, ModelResult
+
+
+def _safe_min_concrete(values: Sequence[StackValue]) -> StackValue:
+    if all(isinstance(x, (int, float, bool)) for x in values):
+        return min(cast("Sequence[int | float | bool]", values))
+    if all(isinstance(x, str) for x in values):
+        return min(cast("Sequence[str]", values))
+    if all(isinstance(x, bytes) for x in values):
+        return min(cast("Sequence[bytes]", values))
+    return None
+
+
+def _safe_max_concrete(values: Sequence[StackValue]) -> StackValue:
+    if all(isinstance(x, (int, float, bool)) for x in values):
+        return max(cast("Sequence[int | float | bool]", values))
+    if all(isinstance(x, str) for x in values):
+        return max(cast("Sequence[str]", values))
+    if all(isinstance(x, bytes) for x in values):
+        return max(cast("Sequence[bytes]", values))
+    return None
+
+
+def _safe_sum_concrete(values: Sequence[StackValue], start: StackValue) -> StackValue:
+    if not isinstance(start, (int, float, bool)):
+        return None
+    if not all(isinstance(x, (int, float, bool)) for x in values):
+        return None
+    numeric_values = cast("Sequence[int | float | bool]", values)
+    return sum(numeric_values, start)
 
 
 class LenModel(FunctionModel):
@@ -65,10 +112,17 @@ class LenModel(FunctionModel):
                     result.z3_int >= 0,
                 ],
             )
-        if getattr(obj, "_type", "") == "set" or "set" in getattr(obj, "_name", "").lower() or getattr(obj, "type_tag", "") == "dict" or isinstance(obj, SymbolicDict):
+        if (
+            getattr(obj, "_type", "") == "set"
+            or "set" in getattr(obj, "_name", "").lower()
+            or getattr(obj, "type_tag", "") == "dict"
+            or isinstance(obj, SymbolicDict)
+        ):
             z3_len = getattr(obj, "z3_len", getattr(obj, "z3_int", None))
             if z3_len is not None:
-                result, constraint = SymbolicValue.symbolic(f"len_{getattr(obj, '_name', 'container')}")
+                result, constraint = SymbolicValue.symbolic(
+                    f"len_{getattr(obj, '_name', 'container')}"
+                )
                 return ModelResult(
                     value=result,
                     constraints=[
@@ -78,13 +132,15 @@ class LenModel(FunctionModel):
                     ],
                 )
         result, constraint = SymbolicValue.symbolic(f"len_{state.pc}")
-        extra_constraints: list[object] = [constraint, result.is_int, result.z3_int >= 0]
+        extra_constraints: list[z3.ExprRef | z3.BoolRef] = [
+            constraint,
+            result.is_int,
+            result.z3_int >= 0,
+        ]
 
         if isinstance(obj, SymbolicValue):
-            import z3 as _z3
-
-            extra_constraints.append(_z3.Implies(obj.could_be_truthy(), result.z3_int > 0))
-            extra_constraints.append(_z3.Implies(obj.could_be_falsy(), result.z3_int == 0))
+            extra_constraints.append(z3.Implies(obj.could_be_truthy(), result.z3_int > 0))
+            extra_constraints.append(z3.Implies(obj.could_be_falsy(), result.z3_int == 0))
         return ModelResult(
             value=result,
             constraints=extra_constraints,
@@ -128,38 +184,43 @@ class RangeModel(FunctionModel):
                 abs_step = z3.If(step.z3_int > 0, step.z3_int, -step.z3_int)
                 length = z3.If(abs_step == 0, z3.IntVal(0), (abs_diff + abs_step - 1) / abs_step)
                 constraints.append(result.z3_len == z3.If(length > 0, length, z3.IntVal(0)))
-                
-                # Constraint elements: array[i] = start + i * step
+
                 i = z3.Int(f"range_idx_{state.pc}")
                 constraints.append(
-                    z3.ForAll([i], z3.Implies(
-                        z3.And(i >= 0, i < result.z3_len),
-                        z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int
-                    ))
+                    z3.ForAll(
+                        [i],
+                        z3.Implies(
+                            z3.And(i >= 0, i < result.z3_len),
+                            z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int,
+                        ),
+                    )
                 )
             else:
                 length = z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
                 constraints.append(result.z3_len == length)
-                
-                # Constraint elements: array[i] = start + i
+
                 i = z3.Int(f"range_idx_{state.pc}")
                 constraints.append(
-                    z3.ForAll([i], z3.Implies(
-                        z3.And(i >= 0, i < result.z3_len),
-                        z3.Select(result.z3_array, i) == start.z3_int + i
-                    ))
+                    z3.ForAll(
+                        [i],
+                        z3.Implies(
+                            z3.And(i >= 0, i < result.z3_len),
+                            z3.Select(result.z3_array, i) == start.z3_int + i,
+                        ),
+                    )
                 )
         if len(args) == 1 and isinstance(args[0], SymbolicValue):
-            # stop only case
             stop = args[0]
             length = z3.If(stop.z3_int > 0, stop.z3_int, 0)
             constraints.append(result.z3_len == length)
             i = z3.Int(f"range_idx_{state.pc}")
             constraints.append(
-                z3.ForAll([i], z3.Implies(
-                    z3.And(i >= 0, i < result.z3_len),
-                    z3.Select(result.z3_array, i) == i
-                ))
+                z3.ForAll(
+                    [i],
+                    z3.Implies(
+                        z3.And(i >= 0, i < result.z3_len), z3.Select(result.z3_array, i) == i
+                    ),
+                )
             )
         return ModelResult(value=result, constraints=constraints)
 
@@ -190,10 +251,9 @@ class AbsModel(FunctionModel):
                     result.z3_int == z3.If(x.z3_int >= 0, x.z3_int, -x.z3_int),
                 ],
             )
-        try:
+        if isinstance(x, (int, float, bool)):
             return ModelResult(value=abs(x))
-        except (TypeError, ValueError):
-            return ModelResult(value=SymbolicValue.symbolic(f"abs_{state.pc}")[0])
+        return ModelResult(value=SymbolicValue.symbolic(f"abs_{state.pc}")[0])
 
 
 class MinModel(FunctionModel):
@@ -212,24 +272,20 @@ class MinModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"min_{state.pc}")[0])
 
-        # Handle concrete sequence
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             seq = args[0]
             if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
-                try:
-                    return ModelResult(value=min(seq))
-                except (TypeError, ValueError):
-                    pass
+                concrete_min = _safe_min_concrete(cast("Sequence[StackValue]", seq))
+                if concrete_min is not None:
+                    return ModelResult(value=concrete_min)
             result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
 
-        # Handle two or more arguments
         if len(args) >= 2:
             if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in args):
-                try:
-                    return ModelResult(value=min(args))
-                except (TypeError, ValueError):
-                    pass
+                concrete_min = _safe_min_concrete(cast("Sequence[StackValue]", args))
+                if concrete_min is not None:
+                    return ModelResult(value=concrete_min)
 
             if len(args) == 2:
                 a, b = args
@@ -264,24 +320,20 @@ class MaxModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"max_{state.pc}")[0])
 
-        # Handle concrete sequence
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             seq = args[0]
             if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
-                try:
-                    return ModelResult(value=max(seq))
-                except (TypeError, ValueError):
-                    pass
+                concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", seq))
+                if concrete_max is not None:
+                    return ModelResult(value=concrete_max)
             result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
 
-        # Handle two or more arguments
         if len(args) >= 2:
             if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in args):
-                try:
-                    return ModelResult(value=max(args))
-                except (TypeError, ValueError):
-                    pass
+                concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", args))
+                if concrete_max is not None:
+                    return ModelResult(value=concrete_max)
 
             if len(args) == 2:
                 a, b = args
@@ -328,11 +380,13 @@ class IntModel(FunctionModel):
                 value=result,
                 constraints=[constraint, result.is_int, result.z3_int == z3.StrToInt(x.z3_str)],
             )
-        try:
-            return ModelResult(value=int(x))
-        except (TypeError, ValueError):
-            result, constraint = SymbolicValue.symbolic(f"int_{state.pc}")
-            return ModelResult(value=result, constraints=[constraint])
+        if isinstance(x, (int, bool, float, str, bytes)):
+            try:
+                return ModelResult(value=int(x))
+            except (TypeError, ValueError):
+                pass
+        result, constraint = SymbolicValue.symbolic(f"int_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
 
 
 class StrModel(FunctionModel):
@@ -352,7 +406,6 @@ class StrModel(FunctionModel):
             return ModelResult(value="")
         x = args[0]
         if isinstance(x, SymbolicValue):
-
             z3_expr = z3.If(
                 x.is_int,
                 x.z3_int,
@@ -530,12 +583,15 @@ class SumModel(FunctionModel):
         start = args[1] if len(args) > 1 else 0
 
         if isinstance(iterable, (list, tuple)):
-            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in iterable) and \
-               not isinstance(start, (SymbolicValue, SymbolicType)):
-                try:
-                    return ModelResult(value=sum(iterable, start))
-                except TypeError:
-                    pass
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType)) for x in iterable
+            ) and not isinstance(start, (SymbolicValue, SymbolicType)):
+                concrete_sum = _safe_sum_concrete(
+                    cast("Sequence[StackValue]", iterable), cast("StackValue", start)
+                )
+
+                if concrete_sum is not None:
+                    return ModelResult(value=concrete_sum)
 
         result, constraint = SymbolicValue.symbolic(f"sum_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_int])
@@ -624,10 +680,12 @@ class FloatModel(FunctionModel):
             if val.type_tag == "float":
                 return ModelResult(value=val)
             elif val.type_tag == "int" or val.is_int:
-                from pysymex.core.floats import SymbolicFloat
+                from pysymex.core.floats import SymbolicFloat, get_fp_sort
 
                 result = SymbolicFloat(f"float_{state.pc}")
-                fp_val = z3.fpToFP(result._rm, z3.ToReal(val.z3_int), result._sort)
+                rm = result.config.get_rounding_mode()
+                sort = get_fp_sort(result.config.precision)
+                fp_val = z3.fpToFP(rm, z3.ToReal(val.z3_int), sort)
                 return ModelResult(
                     value=result,
                     constraints=[z3.fpEQ(result.z3_expr, fp_val)],
@@ -660,12 +718,16 @@ class ListModel(FunctionModel):
         if isinstance(val, SymbolicList):
             return ModelResult(value=val)
         if isinstance(val, (list, tuple)):
-            if all(isinstance(x, int) for x in cast("list[object] | tuple[object, ...]", val)):
-                return ModelResult(
-                    value=SymbolicList.from_const(
-                        list(cast("list[object] | tuple[object, ...]", val))
-                    )
-                )
+            int_values: list[int] = []
+            all_int = True
+            for item in val:
+                if isinstance(item, int):
+                    int_values.append(item)
+                else:
+                    all_int = False
+                    break
+            if all_int:
+                return ModelResult(value=SymbolicList.from_const(int_values))
             result, constraint = SymbolicList.symbolic(f"list_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
         result, constraint = SymbolicList.symbolic(f"list_{state.pc}")
@@ -691,7 +753,7 @@ class TupleModel(FunctionModel):
             return ModelResult(value=val)
         if isinstance(val, (list, SymbolicList)):
             if isinstance(val, list):
-                return ModelResult(value=tuple(cast("list[object]", val)))
+                return ModelResult(value=tuple(cast("list[StackValue]", val)))
             result, constraint = SymbolicList.symbolic(f"tuple_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
         result, constraint = SymbolicList.symbolic(f"tuple_{state.pc}")

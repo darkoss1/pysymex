@@ -440,6 +440,9 @@ class _CUDAModule:
     def to_device(ary: npt.NDArray[_ScalarType], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[_ScalarType]: ...
     @staticmethod
     @overload
+    def to_device(ary: np.ndarray[tuple[int, ...], _ScalarType], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[_ScalarType]: ...
+    @staticmethod
+    @overload
     def to_device(ary: Sequence[int], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[np.int64]: ...
     @staticmethod
     @overload
@@ -487,6 +490,21 @@ class _CUDAModule:
     @staticmethod
     @overload
     def jit(func: _F) -> CUDADispatcher: ...
+    @staticmethod
+    @overload
+    def jit(
+        signature: _Signature = ...,
+        *,
+        device: Literal[True],
+        inline: bool | Literal["always", "never"] = False,
+        link: list[str] = ...,
+        debug: bool = False,
+        opt: bool = True,
+        lineinfo: bool = False,
+        cache: bool = False,
+        fastmath: bool = False,
+        max_registers: int | None = None,
+    ) -> Callable[[_F], _F]: ...
     @staticmethod
     @overload
     def jit(

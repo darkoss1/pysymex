@@ -96,7 +96,7 @@ class TestAnalysisConfig:
         """Test default analysis configuration."""
         config = AnalysisConfig()
 
-        assert config.strategy == "dfs"
+        assert config.strategy == "adaptive"
         assert config.loop_unroll_limit == 10
 
     def test_include_exclude_patterns(self):

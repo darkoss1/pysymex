@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Exception analysis: ExceptionAnalyzer, helper functions, and built-in
 exception catalog.
 """
@@ -26,7 +44,7 @@ class ExceptionAnalyzer:
     - Whether exceptions are properly handled
     """
 
-    def __init__(self, solver: z3.Solver | None = None):
+    def __init__(self, solver: z3.Solver | None = None) -> None:
         self.solver = solver or create_solver()
         self._exception_paths: list[ExceptionPath] = []
         self._potential_exceptions: list[SymbolicException] = []
@@ -85,14 +103,12 @@ class ExceptionAnalyzer:
         if not context_constraints:
             return True, None
 
-        # Filter to exceptions that are feasible under the given path constraints.
         feasible: list[SymbolicException] = []
         for exc in matching_exceptions:
             if exc.condition is None or z3.is_true(exc.condition):
-                # Unconditional exception — always feasible.
                 feasible.append(exc)
                 continue
-            # Check satisfiability of exc.condition ∧ context_constraints.
+
             self.solver.push()
             try:
                 for c in context_constraints:
@@ -187,9 +203,11 @@ class ExceptionAnalyzer:
                     z3_len2: z3.ExprRef = length.to_z3()  # type: ignore[union-attr]
                     condition_s: z3.BoolRef = z3.Or(z3_idx >= z3_len2, z3_idx < -z3_len2)
                 else:
+                    if not isinstance(length, int):
+                        return None
                     condition_s = z3.Or(
-                        z3_idx >= z3.IntVal(int(length)),
-                        z3_idx < z3.IntVal(-int(length)),
+                        z3_idx >= z3.IntVal(length),
+                        z3_idx < z3.IntVal(-length),
                     )
                 return SymbolicException.symbolic(
                     f"index_error_{pc}",

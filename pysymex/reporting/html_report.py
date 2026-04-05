@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """HTML report generation for pysymex.
 Generates standalone HTML reports with analysis results, visualizations,
 and interactive features.
@@ -525,8 +543,9 @@ def create_report_from_result(
         AnalysisReport ready for HTML generation
     """
     issues: list[IssueReport] = []
-    if hasattr(result, "issues"):
-        for issue in result.issues:
+    raw_issues = getattr(result, "issues", None)
+    if isinstance(raw_issues, list):
+        for issue in raw_issues:
             severity: str = "critical"
             if hasattr(issue, "severity"):
                 severity = str(issue.severity)
@@ -544,9 +563,10 @@ def create_report_from_result(
                 )
             )
     resources = None
-    if hasattr(result, "paths_explored"):
+    paths_explored = getattr(result, "paths_explored", 0)
+    if isinstance(paths_explored, int):
         resources = ResourceSnapshot(
-            paths_explored=result.paths_explored,
+            paths_explored=paths_explored,
             max_depth_reached=getattr(result, "max_depth", 0),
             elapsed_time=duration,
         )
@@ -557,7 +577,7 @@ def create_report_from_result(
         file_path=file_path,
         function_name=function_name,
         issues=issues,
-        paths_explored=getattr(result, "paths_explored", 0),
+        paths_explored=paths_explored if isinstance(paths_explored, int) else 0,
         paths_completed=getattr(result, "paths_completed", 0),
         resources=resources,
         success=not issues,

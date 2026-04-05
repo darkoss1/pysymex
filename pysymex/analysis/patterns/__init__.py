@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Python Pattern Handlers for PySyMex — hub module.
 
@@ -14,6 +32,7 @@ import dis
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from types import CodeType
 
 from pysymex._compat import get_starts_line
 from pysymex.analysis.patterns.core import (
@@ -305,7 +324,8 @@ class TryExceptHandler(PatternHandler):
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         """Can raise error."""
-        caught = match.variables.get("caught_exceptions", set())
+        caught_obj = match.variables.get("caught_exceptions", set())
+        caught = caught_obj if isinstance(caught_obj, set) else set()
         if error_type in caught:
             return False
         if "Exception" in caught or "BaseException" in caught:
@@ -372,6 +392,8 @@ class PatternMatcher:
         env: TypeEnvironment,
     ) -> list[PatternMatch]:
         """Find all patterns in the instruction sequence."""
+
+        self.clear_cache()
         matches: list[PatternMatch] = []
         for i in range(len(instructions)):
             for handler in self.registry.handlers:
@@ -417,6 +439,10 @@ class PatternMatcher:
         """Clear the pattern cache."""
         self._cache.clear()
 
+    def cache_keys(self) -> list[int]:
+        """Expose current cache keys for tests and formal checks."""
+        return list(self._cache.keys())
+
 
 class PatternAnalyzer:
     """
@@ -429,7 +455,7 @@ class PatternAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         env: TypeEnvironment | None = None,
     ) -> FunctionPatternInfo:
         """Analyze patterns in a function."""

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Pathlib Models for pysymex.
 
@@ -39,7 +57,7 @@ class PathModel(FunctionModel):
             return ModelResult(value=result)
         if args and isinstance(args[0], SymbolicString):
             return ModelResult(value=args[0])
-        result, constraint = SymbolicString.symbolic(f"path_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 0])
 
 
@@ -56,7 +74,7 @@ class PurePathModel(FunctionModel):
         if args and isinstance(args[0], str):
             result = SymbolicString.from_const(args[0])
             return ModelResult(value=result)
-        result, constraint = SymbolicString.symbolic(f"purepath_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"purepath_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -70,7 +88,7 @@ class PathExistsModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.exists()."""
-        result, constraint = SymbolicValue.symbolic(f"path_exists_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"path_exists_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -88,7 +106,7 @@ class PathIsFileModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_file()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_file_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"path_is_file_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -106,7 +124,7 @@ class PathIsDirModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_dir()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_dir_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"path_is_dir_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -124,7 +142,7 @@ class PathIsAbsoluteModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_absolute()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_absolute_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"path_is_absolute_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
@@ -138,7 +156,7 @@ class PathNameModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.name property (final component)."""
-        result, constraint = SymbolicString.symbolic(f"path_name_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_name_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -152,7 +170,7 @@ class PathStemModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.stem property (name without suffix)."""
-        result, constraint = SymbolicString.symbolic(f"path_stem_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_stem_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -166,7 +184,7 @@ class PathSuffixModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.suffix property (file extension)."""
-        result, constraint = SymbolicString.symbolic(f"path_suffix_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_suffix_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -180,7 +198,7 @@ class PathParentModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.parent property."""
-        result, constraint = SymbolicString.symbolic(f"path_parent_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_parent_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -194,7 +212,7 @@ class PathJoinpathModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.joinpath()."""
-        result, constraint = SymbolicString.symbolic(f"path_joined_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_joined_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
 
 
@@ -208,7 +226,7 @@ class PathTruedivModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.__truediv__ (the / operator)."""
-        result, constraint = SymbolicString.symbolic(f"path_div_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_div_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.z3_len >= 1])
 
 
@@ -222,7 +240,7 @@ class PathReadTextModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.read_text()."""
-        result, constraint = SymbolicString.symbolic(f"file_content_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"file_content_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.z3_len >= 0],
@@ -240,7 +258,7 @@ class PathReadBytesModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.read_bytes()."""
-        result, constraint = SymbolicValue.symbolic(f"file_bytes_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"file_bytes_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint],
@@ -258,7 +276,7 @@ class PathWriteTextModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.write_text()."""
-        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -276,7 +294,7 @@ class PathWriteBytesModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.write_bytes()."""
-        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -294,7 +312,7 @@ class PathResolveModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.resolve()."""
-        result, constraint = SymbolicString.symbolic(f"path_resolved_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"path_resolved_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.z3_len >= 1],
@@ -346,7 +364,7 @@ class PathGlobModel(FunctionModel):
         """Apply the Path.glob()."""
         from pysymex.core.types import SymbolicList
 
-        result, constraint = SymbolicList.symbolic(f"glob_results_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"glob_results_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.z3_len >= 0],
@@ -366,7 +384,7 @@ class PathRglobModel(FunctionModel):
         """Apply the Path.rglob() (recursive glob)."""
         from pysymex.core.types import SymbolicList
 
-        result, constraint = SymbolicList.symbolic(f"rglob_results_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"rglob_results_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.z3_len >= 0],

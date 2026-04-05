@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Taint analysis for pysymex.
 This module provides taint tracking to identify data flows from
 untrusted sources to sensitive sinks, useful for security analysis.
@@ -8,7 +26,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
 
 __all__ = [
     "TaintAnalyzer",
@@ -62,7 +79,7 @@ class TaintLabel:
     def __str__(self) -> str:
         """Return a human-readable string representation."""
         if self.origin:
-            return f"{self .source .name }({self .origin }@{self .line_number })"
+            return f"{self.source.name}({self.origin}@{self.line_number})"
         return self.source.name
 
 
@@ -70,7 +87,7 @@ class TaintLabel:
 class TaintedValue:
     """A value with associated taint labels."""
 
-    value: Any
+    value: object
     labels: frozenset[TaintLabel] = field(default_factory=frozenset[TaintLabel])
 
     def is_tainted(self) -> bool:
@@ -120,18 +137,18 @@ class TaintFlow:
         sources = ", ".join(str(lb) for lb in self.source_labels)
         lines = [
             "Taint Flow Detected:",
-            f"  Sources: {sources }",
-            f"  Sink: {self .sink .name } at {self .sink_location }:{self .sink_line }",
+            f"  Sources: {sources}",
+            f"  Sink: {self.sink.name} at {self.sink_location}:{self.sink_line}",
         ]
         if self.path:
-            lines.append(f"  Path: {' -> '.join (self .path )}")
+            lines.append(f"  Path: {' -> '.join(self.path)}")
         return "\n".join(lines)
 
 
 class TaintPolicy:
     """Defines which source-sink combinations are dangerous."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._dangerous_flows: set[tuple[TaintSource, TaintSink]] = set()
         self._sanitizers: dict[tuple[TaintSource, TaintSink], set[str]] = {}
         self._setup_default_policy()
@@ -250,7 +267,7 @@ class TaintTracker:
         "str.isalnum": {"sql", "command"},
     }
 
-    def __init__(self, policy: TaintPolicy | None = None):
+    def __init__(self, policy: TaintPolicy | None = None) -> None:
         self.policy = policy or TaintPolicy()
         self._flows: list[TaintFlow] = []
         self._taint_map: dict[int, TaintedValue] = {}
@@ -364,7 +381,7 @@ class TaintTracker:
 class TaintAnalyzer:
     """High-level taint analysis interface."""
 
-    def __init__(self, policy: TaintPolicy | None = None):
+    def __init__(self, policy: TaintPolicy | None = None) -> None:
         self.tracker = TaintTracker(policy)
 
     def analyze_function(

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Type constraint types and data structures.
 
 Contains the fundamental enums, dataclasses and type representations
@@ -124,13 +142,13 @@ class SymbolicType:
 
     @classmethod
     def callable_type(cls, params: list[SymbolicType], return_type: SymbolicType) -> SymbolicType:
-        return cls(TypeKind.CALLABLE, "Callable", tuple(params) + (return_type,))
+        return cls(TypeKind.CALLABLE, "Callable", (*tuple(params), return_type))
 
     @classmethod
     def type_var(
         cls, name: str, *bounds: SymbolicType, variance: Variance = Variance.INVARIANT
     ) -> SymbolicType:
-        return cls(TypeKind.TYPE_VAR, name, bounds=bounds if bounds else None, variance=variance)
+        return cls(TypeKind.TYPE_VAR, name, bounds=bounds or None, variance=variance)
 
     @classmethod
     def literal(cls, *values: object) -> SymbolicType:
@@ -145,18 +163,16 @@ class SymbolicType:
         if self.kind == TypeKind.UNION:
             return " | ".join(str(t) for t in self.args)
         elif self.kind == TypeKind.LIST:
-            return f"list[{self .args [0 ]}]"
+            return f"list[{self.args[0]}]" if self.args else "list"
         elif self.kind == TypeKind.DICT:
-            return f"dict[{self .args [0 ]}, {self .args [1 ]}]"
+            return f"dict[{self.args[0]}, {self.args[1]}]" if len(self.args) >= 2 else "dict"
         elif self.kind == TypeKind.TUPLE:
-            return f"tuple[{', '.join (str (t )for t in self .args )}]"
+            return f"tuple[{', '.join(str(t) for t in self.args)}]" if self.args else "tuple"
         elif self.kind == TypeKind.CALLABLE:
             params = ", ".join(str(t) for t in self.args[:-1])
-            return f"Callable[[{params }], {self .args [-1 ]}]"
+            return f"Callable[[{params}], {self.args[-1]}]"
         elif self.kind == TypeKind.LITERAL:
-            return (
-                f"Literal[{', '.join (repr (v )for v in (self .literal_values or frozenset ()))}]"
-            )
+            return f"Literal[{', '.join(repr(v) for v in (self.literal_values or frozenset()))}]"
         else:
             return self.name
 
@@ -200,11 +216,11 @@ class TypeIssue:
 
     def format(self) -> str:
         """Format issue for display."""
-        loc = f" at line {self .line_number }" if self.line_number else ""
+        loc = f" at line {self.line_number}" if self.line_number else ""
         types = ""
         if self.expected_type and self.actual_type:
-            types = f" (expected {self .expected_type }, got {self .actual_type })"
-        return f"[{self .kind .name }]{loc }: {self .message }{types }"
+            types = f" (expected {self.expected_type}, got {self.actual_type})"
+        return f"[{self.kind.name}]{loc}: {self.message}{types}"
 
 
 __all__ = [

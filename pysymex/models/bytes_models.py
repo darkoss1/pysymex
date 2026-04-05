@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python bytes and bytearray operations.
 
 Provides relationship-preserving symbolic models for bytes/bytearray methods.
@@ -38,7 +56,7 @@ class BytesDecodeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicString.symbolic(f"decode_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"decode_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -59,7 +77,7 @@ class BytesCountModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_count_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_count_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if b is not None:
             constraints.append(result.z3_int <= b.z3_len)
@@ -79,7 +97,7 @@ class BytesFindModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_find_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_find_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= -1]
         if b is not None:
             constraints.append(result.z3_int < b.z3_len)
@@ -99,7 +117,7 @@ class BytesRfindModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_rfind_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_rfind_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= -1]
         if b is not None:
             constraints.append(result.z3_int < b.z3_len)
@@ -119,7 +137,7 @@ class BytesIndexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_index_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_index_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         side_effects: dict[str, object] = {
             "potential_exception": {"type": "ValueError", "message": "subsection not found"}
@@ -142,7 +160,7 @@ class BytesRindexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_rindex_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_rindex_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         side_effects: dict[str, object] = {
             "potential_exception": {"type": "ValueError", "message": "subsection not found"}
@@ -164,7 +182,7 @@ class BytesJoinModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"bytes_join_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_join_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         return ModelResult(value=result, constraints=constraints)
 
@@ -182,7 +200,7 @@ class BytesSplitModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_split_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_split_{state.pc}")
         constraints = [constraint, result.z3_len >= 1]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len + 1)
@@ -202,7 +220,7 @@ class BytesRsplitModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_rsplit_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_rsplit_{state.pc}")
         constraints = [constraint, result.z3_len >= 1]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len + 1)
@@ -221,7 +239,7 @@ class BytesReplaceModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"bytes_replace_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_replace_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         return ModelResult(value=result, constraints=constraints)
 
@@ -239,7 +257,7 @@ class BytesStripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_strip_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_strip_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -259,7 +277,7 @@ class BytesLstripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_lstrip_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_lstrip_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -279,7 +297,7 @@ class BytesRstripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_rstrip_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_rstrip_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -299,7 +317,7 @@ class BytesStartswithModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_startswith_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_startswith_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -319,7 +337,7 @@ class BytesEndswithModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_endswith_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_endswith_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -339,7 +357,7 @@ class BytesUpperModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_upper_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_upper_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
@@ -359,7 +377,7 @@ class BytesLowerModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_lower_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_lower_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
@@ -379,7 +397,7 @@ class BytesTitleModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_title_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_title_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
@@ -399,7 +417,7 @@ class BytesCapitalizeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_capitalize_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_capitalize_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
@@ -419,7 +437,7 @@ class BytesSwapcaseModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_swapcase_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_swapcase_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
@@ -439,7 +457,7 @@ class BytesContainsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_contains_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -461,14 +479,14 @@ class BytesLenModel(FunctionModel):
         b = _get_symbolic_bytes(args[0]) if args else None
         if b is not None:
             result = SymbolicValue(
-                _name=f"len_bytes_{state .pc }",
+                _name=f"len_bytes_{state.pc}",
                 z3_int=b.z3_len,
                 is_int=z3.BoolVal(True),
                 z3_bool=z3.BoolVal(False),
                 is_bool=z3.BoolVal(False),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"bytes_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_len_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -488,7 +506,7 @@ class BytesHexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicString.symbolic(f"bytes_hex_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"bytes_hex_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len * 2)
@@ -507,7 +525,7 @@ class BytesPartitionModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"bytes_partition_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_partition_{state.pc}")
         constraints = [constraint, result.z3_len == 3]
         return ModelResult(value=result, constraints=constraints)
 
@@ -524,7 +542,7 @@ class BytesRpartitionModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"bytes_rpartition_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_rpartition_{state.pc}")
         constraints = [constraint, result.z3_len == 3]
         return ModelResult(value=result, constraints=constraints)
 
@@ -542,7 +560,7 @@ class BytesSplitlinesModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_splitlines_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_splitlines_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -563,7 +581,7 @@ class BytesCenterModel(FunctionModel):
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
         width = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"bytes_center_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_center_{state.pc}")
         constraints = [constraint]
         if b is not None and width is not None:
             w = getattr(width, "z3_int", None)
@@ -586,7 +604,7 @@ class BytesLjustModel(FunctionModel):
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
         width = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"bytes_ljust_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_ljust_{state.pc}")
         constraints = [constraint]
         if b is not None and width is not None:
             w = getattr(width, "z3_int", None)
@@ -609,7 +627,7 @@ class BytesRjustModel(FunctionModel):
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
         width = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"bytes_rjust_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_rjust_{state.pc}")
         constraints = [constraint]
         if b is not None and width is not None:
             w = getattr(width, "z3_int", None)
@@ -632,7 +650,7 @@ class BytesZfillModel(FunctionModel):
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
         width = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"bytes_zfill_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_zfill_{state.pc}")
         constraints = [constraint]
         if b is not None and width is not None:
             w = getattr(width, "z3_int", None)
@@ -654,7 +672,7 @@ class BytesTranslateModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_translate_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_translate_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -673,7 +691,7 @@ class BytesMaketransModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"bytes_maketrans_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_maketrans_{state.pc}")
         constraints = [constraint, result.z3_len == 256]
         return ModelResult(value=result, constraints=constraints)
 
@@ -691,7 +709,7 @@ class BytesExpandtabsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_expandtabs_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_expandtabs_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len >= b.z3_len)
@@ -711,7 +729,7 @@ class BytesIsdigitModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_isdigit_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_isdigit_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -731,7 +749,7 @@ class BytesIsalphaModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_isalpha_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_isalpha_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -751,7 +769,7 @@ class BytesIsalnumModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_isalnum_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_isalnum_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -771,7 +789,7 @@ class BytesIsspaceModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_isspace_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_isspace_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -791,7 +809,7 @@ class BytesIslowerModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_islower_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_islower_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -811,7 +829,7 @@ class BytesIsupperModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_isupper_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_isupper_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -831,7 +849,7 @@ class BytesIstitleModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytes_istitle_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytes_istitle_{state.pc}")
         constraints = [constraint, result.is_bool]
         if b is not None:
             constraints.append(z3.Implies(b.z3_len == 0, z3.Not(result.z3_bool)))
@@ -851,7 +869,7 @@ class BytesRemovePrefixModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_removeprefix_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_removeprefix_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -871,7 +889,7 @@ class BytesRemoveSuffixModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytes_removesuffix_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytes_removesuffix_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if b is not None:
             constraints.append(result.z3_len <= b.z3_len)
@@ -894,7 +912,7 @@ class BytearrayAppendModel(FunctionModel):
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         side_effects: dict[str, object] = {}
         if b is not None:
-            new_len = z3.Int(f"bytearray_len_{state .pc }")
+            new_len = z3.Int(f"bytearray_len_{state.pc}")
             constraints.append(new_len == b.z3_len + 1)
             b.z3_len = new_len
             side_effects["bytearray_mutation"] = {"operation": "append"}
@@ -917,7 +935,7 @@ class BytearrayExtendModel(FunctionModel):
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         side_effects: dict[str, object] = {}
         if b is not None:
-            new_len = z3.Int(f"bytearray_len_{state .pc }")
+            new_len = z3.Int(f"bytearray_len_{state.pc}")
             constraints.append(new_len >= b.z3_len)
             b.z3_len = new_len
             side_effects["bytearray_mutation"] = {"operation": "extend"}
@@ -940,7 +958,7 @@ class BytearrayInsertModel(FunctionModel):
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         side_effects: dict[str, object] = {}
         if b is not None:
-            new_len = z3.Int(f"bytearray_len_{state .pc }")
+            new_len = z3.Int(f"bytearray_len_{state.pc}")
             constraints.append(new_len == b.z3_len + 1)
             b.z3_len = new_len
             side_effects["bytearray_mutation"] = {"operation": "insert"}
@@ -960,7 +978,7 @@ class BytearrayPopModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"bytearray_pop_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"bytearray_pop_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0, result.z3_int <= 255]
         side_effects: dict[str, object] = {}
         if b is not None:
@@ -969,7 +987,7 @@ class BytearrayPopModel(FunctionModel):
                 "condition": b.z3_len == 0,
                 "message": "pop from empty bytearray",
             }
-            new_len = z3.Int(f"bytearray_len_{state .pc }")
+            new_len = z3.Int(f"bytearray_len_{state.pc}")
             constraints.append(new_len == b.z3_len - 1)
             constraints.append(new_len >= 0)
             b.z3_len = new_len
@@ -995,7 +1013,7 @@ class BytearrayRemoveModel(FunctionModel):
             "potential_exception": {"type": "ValueError", "message": "value not found in bytearray"}
         }
         if b is not None:
-            new_len = z3.Int(f"bytearray_len_{state .pc }")
+            new_len = z3.Int(f"bytearray_len_{state.pc}")
             constraints.append(new_len == b.z3_len - 1)
             constraints.append(new_len >= 0)
             b.z3_len = new_len
@@ -1050,14 +1068,14 @@ class BytearrayCopyModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         b = _get_symbolic_bytes(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"bytearray_copy_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"bytearray_copy_{state.pc}")
         constraints = [constraint]
         if b is not None:
             constraints.append(result.z3_len == b.z3_len)
         return ModelResult(value=result, constraints=constraints)
 
 
-BYTES_MODELS = [
+BYTES_MODELS: list[FunctionModel] = [
     BytesDecodeModel(),
     BytesCountModel(),
     BytesFindModel(),

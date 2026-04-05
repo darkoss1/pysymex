@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Function Summary type definitions for pysymex.
 Phase 20: Inter-procedural analysis through function summaries.
@@ -32,7 +50,7 @@ class ParameterInfo:
         """Create or get Z3 variable for this parameter."""
         if self.z3_var is not None:
             return self.z3_var
-        name = f"{prefix }{self .name }" if prefix else self.name
+        name = f"{prefix}{self.name}" if prefix else self.name
         if self.type_hint == "int":
             return z3.Int(name)
         elif self.type_hint == "bool":
@@ -111,12 +129,12 @@ class FunctionSummary:
     return_constraint: z3.BoolRef | None = None
     return_var: z3.ExprRef | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post init."""
         if not self.qualname:
             self.qualname = self.name
         if self.return_var is None:
-            self.return_var = z3.Int(f"{self .name }_result")
+            self.return_var = z3.Int(f"{self.name}_result")
 
     def get_parameter(self, name: str) -> ParameterInfo | None:
         """Get parameter by name."""

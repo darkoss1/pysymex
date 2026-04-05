@@ -1,3 +1,20 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 PySymEx h_acceleration - Performance Benchmark
@@ -26,7 +43,7 @@ from pysymex.h_acceleration.backends import gpu
 from pysymex.h_acceleration.bytecode import compile_constraint
 
 
-def run_benchmark():
+def run_benchmark() -> None:
     print("=" * 70)
     print("PySymEx h_acceleration - Extreme Performance Benchmark")
     print("=" * 70)
@@ -54,16 +71,22 @@ def run_benchmark():
     print(f"{'Treewidth':<12} {'States':<18} {'Time':<12} {'Throughput':<18} {'Verify'}")
     print("-" * 70)
 
-    test_cases = [(15, "Small"), (20, "Medium"), (25, "Large"),
-                  (30, "Very Large"), (32, "Extreme"), (35, "Maximum")]
+    test_cases = [
+        (15, "Small"),
+        (20, "Medium"),
+        (25, "Large"),
+        (30, "Very Large"),
+        (32, "Extreme"),
+        (35, "Maximum"),
+    ]
 
-    for w, label in test_cases:
+    for w, _label in test_cases:
         if w > info.max_treewidth:
             print(f"w={w:<10} Skipped (exceeds GPU limit)")
             continue
 
-        vars_list = [z3.Bool(f'x{i}') for i in range(w)]
-        var_names = [f'x{i}' for i in range(w)]
+        vars_list = [z3.Bool(f"x{i}") for i in range(w)]
+        var_names = [f"x{i}" for i in range(w)]
         expr = z3.Or(*vars_list[:6])
         compiled = compile_constraint(expr, var_names)
 
@@ -71,6 +94,7 @@ def run_benchmark():
         gpu.count_sat(compiled)
 
         times = []
+        count = 0
         for _ in range(5):
             gpu.clear_bitmap_cache()
             t0 = time.perf_counter()
@@ -84,11 +108,11 @@ def run_benchmark():
         expected = num_states - (1 << (w - 6)) if w >= 6 else num_states - 1
         verify = "OK" if count == expected else "FAIL"
 
-        states_str = f"{num_states:,}" if num_states < 1e9 else f"{num_states/1e9:.2f}B"
+        states_str = f"{num_states:,}" if num_states < 1e9 else f"{num_states / 1e9:.2f}B"
         if num_states >= 1e12:
-            states_str = f"{num_states/1e12:.2f}T"
+            states_str = f"{num_states / 1e12:.2f}T"
 
-        tp_str = f"{throughput:.2f} B/s" if throughput < 1000 else f"{throughput/1000:.2f} T/s"
+        tp_str = f"{throughput:.2f} B/s" if throughput < 1000 else f"{throughput / 1000:.2f} T/s"
 
         print(f"w={w:<10} {states_str:<18} {median_ms:>8.3f} ms   {tp_str:<18} {verify}")
 
@@ -106,8 +130,8 @@ def run_benchmark():
         if w > info.max_treewidth:
             continue
 
-        vars_list = [z3.Bool(f'x{i}') for i in range(w)]
-        var_names = [f'x{i}' for i in range(w)]
+        vars_list = [z3.Bool(f"x{i}") for i in range(w)]
+        var_names = [f"x{i}" for i in range(w)]
         expr = z3.Or(*vars_list[:6])
         compiled = compile_constraint(expr, var_names)
 
@@ -124,10 +148,12 @@ def run_benchmark():
         bitmap_mb = len(bitmap) / (1024 * 1024)
         transfer_rate = bitmap_mb / (elapsed_ms / 1000) if elapsed_ms > 0 else 0
 
-        tp_str = f"{throughput:.2f} B/s" if throughput < 1000 else f"{throughput/1000:.2f} T/s"
-        size_str = f"{bitmap_mb:.1f} MB" if bitmap_mb >= 1 else f"{len(bitmap)/1024:.1f} KB"
+        tp_str = f"{throughput:.2f} B/s" if throughput < 1000 else f"{throughput / 1000:.2f} T/s"
+        size_str = f"{bitmap_mb:.1f} MB" if bitmap_mb >= 1 else f"{len(bitmap) / 1024:.1f} KB"
 
-        print(f"w={w:<10} {size_str:<14} {elapsed_ms:>10.3f} ms   {tp_str:<18} {transfer_rate:.0f} MB/s")
+        print(
+            f"w={w:<10} {size_str:<14} {elapsed_ms:>10.3f} ms   {tp_str:<18} {transfer_rate:.0f} MB/s"
+        )
 
     print("-" * 70)
     print()
@@ -148,6 +174,7 @@ def run_benchmark():
     print("  - For w > 30, PCIe transfer becomes the bottleneck")
     print()
     print("=" * 70)
+
 
 if __name__ == "__main__":
     run_benchmark()

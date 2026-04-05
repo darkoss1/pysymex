@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Core symbolic executor engine.
 
 Provides :class:`SymbolicExecutor`, the main entry point for
@@ -8,7 +26,7 @@ explores execution paths via Z3-backed constraint solving.
 Key responsibilities:
 
 * Bytecode dispatch via :class:`OpcodeDispatcher`.
-* Path management (DFS/BFS/coverage-guided).
+* Path management (CHTD-native/adaptive-coverage).
 * Bug detection via pluggable :class:`Detector` instances.
 * Loop detection, widening, and state merging.
 * Resource limit enforcement (paths, depth, time, memory).
@@ -21,13 +39,16 @@ from __future__ import annotations
 import dis
 import inspect
 import logging
+import time
 import types
 from collections.abc import Callable
-from typing import TYPE_CHECKING, get_type_hints
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, get_type_hints
 
 import z3
 
 if TYPE_CHECKING:
+    from pysymex._typing import SolverProtocol, StackValue
+    from pysymex.core.treewidth import BranchInfo, TreeDecomposition
     from pysymex.plugins.base import PluginManager
 
 import pysymex.core.solver as solver_mod
@@ -54,16 +75,15 @@ from pysymex.analysis.taint import TaintTracker
 from pysymex.analysis.type_inference import TypeAnalyzer
 from pysymex.core.addressing import next_address
 from pysymex.core.copy_on_write import CowDict
+from pysymex.core.floats import SymbolicFloat
 from pysymex.core.solver import IncrementalSolver
 from pysymex.core.state import VMState
 from pysymex.core.treewidth import ConstraintInteractionGraph
 from pysymex.core.types import (
-    SymbolicDict,
-    SymbolicList,
     SymbolicString,
     SymbolicValue,
-    SymbolicObject,
 )
+from pysymex.core.types_containers import SymbolicDict, SymbolicList, SymbolicObject
 from pysymex.execution.dispatcher import OpcodeDispatcher, OpcodeHandler, OpcodeResult
 from pysymex.execution.executor_types import (
     BRANCH_OPCODES,
@@ -72,24 +92,60 @@ from pysymex.execution.executor_types import (
 )
 from pysymex.resources import LimitExceeded, ResourceLimits, ResourceTracker
 
-# GPU acceleration for CHTD (lazy-loaded)
-_gpu_bag_solver = None
 
-def _get_gpu_bag_solver():
-    """Lazy-load GPU bag solver."""
-    global _gpu_bag_solver
-    if _gpu_bag_solver is None:
+class _GpuBagSolver(Protocol):
+    """Minimal protocol for GPU CHTD solvers."""
+
+    is_gpu_available: bool
+
+    def propagate_all(self, td: TreeDecomposition, branch_info: dict[int, BranchInfo]) -> bool: ...
+
+
+_CHTD_SOLVER_UNAVAILABLE = object()
+_chtd_solvers: dict[bool, _GpuBagSolver | object] = {}
+
+
+def _get_chtd_solver(*, use_gpu: bool) -> _GpuBagSolver | None:
+    """Lazy-load the unified CHTD solver with backend preference.
+
+    The solver implements the same CHTD algorithm in both modes:
+    - ``use_gpu=True``: prefer GPU backend, CPU fallback inside solver when unavailable
+    - ``use_gpu=False``: force CPU backend path
+    """
+    cached = _chtd_solvers.get(use_gpu)
+    if cached is None:
         try:
             from pysymex.h_acceleration.chtd_solver import create_gpu_bag_solver
-            _gpu_bag_solver = create_gpu_bag_solver(use_gpu=True)
-            logger.info(f"GPU CHTD solver initialized: GPU={_gpu_bag_solver.is_gpu_available}")
+
+            loaded_solver = create_gpu_bag_solver(use_gpu=use_gpu)
+            solver = cast("_GpuBagSolver", loaded_solver)
+            _chtd_solvers[use_gpu] = solver
+            logger.info(
+                "CHTD solver initialized: use_gpu=%s gpu_available=%s",
+                use_gpu,
+                solver.is_gpu_available,
+            )
+            return solver
         except ImportError:
-            _gpu_bag_solver = False  # Mark as unavailable
-    return _gpu_bag_solver if _gpu_bag_solver else None
+            _chtd_solvers[use_gpu] = _CHTD_SOLVER_UNAVAILABLE
+            return None
+
+    if cached is _CHTD_SOLVER_UNAVAILABLE:
+        return None
+    return cast("_GpuBagSolver", cached)
+
 
 logger = logging.getLogger(__name__)
 
+_CHTD_MAX_BRANCH_INFOS = 256
+_CHTD_CHECK_INTERVAL = 64
+_CHTD_GPU_MIN_BRANCH_INFOS = 32
+
 __all__ = ["SymbolicExecutor"]
+
+SymbolicCreatedValue: TypeAlias = (
+    SymbolicValue | SymbolicString | SymbolicList | SymbolicDict | SymbolicObject | SymbolicFloat
+)
 
 
 class SymbolicExecutor:
@@ -116,13 +172,12 @@ class SymbolicExecutor:
         config: ExecutionConfig | None = None,
         detector_registry: DetectorRegistry | None = None,
         **config_overrides: object,
-    ):
-        # Ensure default opcode handlers are registered even when importing
-        # SymbolicExecutor directly from executor_core.
-        import pysymex.execution.opcodes as _opcodes  # noqa: F401
+    ) -> None:
+        import pysymex.execution.opcodes as _opcodes  # type: ignore[reportUnusedImport]  # noqa: F401
 
         if config is None:
-            self.config = ExecutionConfig(**config_overrides)
+            config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+            self.config = config_ctor(**config_overrides)
         elif config_overrides:
             from dataclasses import replace as _dc_replace
 
@@ -131,13 +186,13 @@ class SymbolicExecutor:
             self.config = config
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
-        self.solver = IncrementalSolver(
+        self.solver: SolverProtocol = IncrementalSolver(
             timeout_ms=self.config.solver_timeout_ms,
             use_cache=self.config.enable_solver_cache,
         )
         self._instructions: list[dis.Instruction] = []
         self._pc_to_line: dict[int, int] = {}
-        self._worklist: PathManager | None = None
+        self._worklist: PathManager[VMState] | None = None
         self._issues: list[Issue] = []
         self._abstract_hints: list[tuple[str, int, int]] = []
         self._coverage: set[int] = set()
@@ -157,8 +212,35 @@ class SymbolicExecutor:
         self._abstract_analyzer: AbstractAnalyzer | None = None
         self._effect_summaries: dict[str, object] = {}
         self._degraded_passes: list[str] = []
+        self._reported_hacc_fallback: bool = False
         self._prev_loop_states: dict[int, VMState] = {}
-        self._interaction_graph = ConstraintInteractionGraph(self.solver._optimizer)
+        self._interaction_graph = ConstraintInteractionGraph(self.solver.constraint_optimizer())
+        self._current_chtd_interval: int = max(1, self.config.chtd_check_interval)
+        self._next_chtd_check_iteration: int = 0
+        self._last_chtd_branch_count: int = 0
+        self._chtd_runs: int = 0
+        self._chtd_unsat_hits: int = 0
+        self._chtd_unsat_validations: int = 0
+        self._chtd_unsat_mismatches: int = 0
+        self._chtd_solver_unavailable: int = 0
+        self._chtd_skipped_unstable: int = 0
+        self._chtd_skipped_size: int = 0
+        self._chtd_skipped_treewidth: int = 0
+        self._chtd_total_time_seconds: float = 0.0
+        self._phase_timers_seconds: dict[str, float] = {
+            "execute_step": 0.0,
+            "process_execution_result": 0.0,
+            "path_feasibility": 0.0,
+            "chtd_decomposition": 0.0,
+            "chtd_propagation": 0.0,
+        }
+        self._phase_counts: dict[str, int] = {
+            "execute_step": 0,
+            "process_execution_result": 0,
+            "path_feasibility": 0,
+            "chtd_decomposition": 0,
+            "chtd_propagation": 0,
+        }
         if self.config.enable_taint_tracking:
             self._taint_tracker = TaintTracker()
         if self.config.enable_caching:
@@ -261,7 +343,7 @@ class SymbolicExecutor:
         cache_key = None
         if self.config.enable_caching and self._result_cache is not None:
             code = func.__code__
-            cache_key = hash_function(func.__name__, code.co_code, str(symbolic_args))
+            cache_key = hash_function(func.__name__, code, str(symbolic_args))
             cached = self._result_cache.get(cache_key)
             if cached is not None:
                 return cached
@@ -271,12 +353,14 @@ class SymbolicExecutor:
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
         try:
-            self.dispatcher.set_exception_entries(list(dis.Bytecode(func).exception_entries))
+            bytecode_obj = dis.Bytecode(func)
+            entries = getattr(bytecode_obj, "exception_entries", ())
+            self.dispatcher.set_exception_entries(list(entries))
         except (AttributeError, TypeError):
             self.dispatcher.set_exception_entries([])
         self._build_line_mapping(code)
         initial_state = self._create_initial_state(func, symbolic_args or {}, initial_values)
-        # Bind closure cell contents (LOAD_DEREF targets) into locals.
+
         try:
             closure = getattr(func, "__closure__", None)
             freevars = list(getattr(code, "co_freevars", ()))
@@ -285,26 +369,28 @@ class SymbolicExecutor:
                     try:
                         initial_state.local_vars[fv_name] = cell.cell_contents
                     except ValueError:
-                        # Empty closure cell; skip.
                         continue
         except (AttributeError, TypeError):
             pass
-        # Seed module-local function globals so LOAD_GLOBAL can resolve
-        # inter-procedural calls in the analyzed function.
+
         try:
-            module_funcs: dict[str, object] = {}
+            module_funcs: dict[str, StackValue] = {}
             for g_name, g_val in func.__globals__.items():
                 if inspect.isfunction(g_val) and getattr(g_val, "__module__", None) == getattr(
                     func, "__module__", None
                 ):
-                    module_funcs[g_name] = g_val
+                    module_funcs[g_name] = cast("StackValue", g_val)
             if module_funcs:
                 initial_state.global_vars = CowDict(module_funcs)
         except (AttributeError, TypeError):
             pass
         if self._taint_tracker is not None:
             initial_state.taint_tracker = self._taint_tracker
-        self._worklist = create_path_manager(self.config.strategy)
+        self._worklist = create_path_manager(
+            self.config.strategy,
+            deterministic=self.config.deterministic_mode,
+            random_seed=self.config.random_seed,
+        )
         self._worklist.add_state(initial_state)
         if self.config.use_loop_analysis:
             self._loop_detector = LoopDetector()
@@ -360,7 +446,11 @@ class SymbolicExecutor:
             final_locals=getattr(self, "_last_locals", {}),
             branches=getattr(self, "_last_branches", []),
             treewidth_stats=self._interaction_graph.get_stats(),
-            solver_stats=self.solver.get_stats(),
+            solver_stats={
+                **self.solver.get_stats(),
+                "chtd": self._collect_chtd_stats(),
+                "state_merger": self._collect_state_merger_stats(),
+            },
             degraded_passes=self._degraded_passes,
         )
         if cache_key is not None and self._result_cache is not None:
@@ -371,7 +461,7 @@ class SymbolicExecutor:
         self,
         code: types.CodeType,
         symbolic_vars: dict[str, str] | None = None,
-        initial_globals: dict[str, object] | None = None,
+        initial_globals: dict[str, StackValue] | None = None,
     ) -> VMState:
         initial_state = VMState()
         if initial_globals:
@@ -426,13 +516,23 @@ class SymbolicExecutor:
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
         try:
-            self.dispatcher.set_exception_entries(list(dis.Bytecode(code).exception_entries))
+            bytecode_obj = dis.Bytecode(code)
+            entries = getattr(bytecode_obj, "exception_entries", ())
+            self.dispatcher.set_exception_entries(list(entries))
         except (AttributeError, TypeError):
             self.dispatcher.set_exception_entries([])
         self._build_line_mapping(code)
 
-        initial_state = self._create_code_initial_state(code, symbolic_vars, initial_globals)
-        self._worklist = create_path_manager(self.config.strategy)
+        initial_state = self._create_code_initial_state(
+            code,
+            symbolic_vars,
+            cast("dict[str, StackValue] | None", initial_globals),
+        )
+        self._worklist = create_path_manager(
+            self.config.strategy,
+            deterministic=self.config.deterministic_mode,
+            random_seed=self.config.random_seed,
+        )
         self._worklist.add_state(initial_state)
         if self.config.use_loop_analysis:
             self._loop_detector = LoopDetector()
@@ -473,7 +573,11 @@ class SymbolicExecutor:
             final_locals=getattr(self, "_last_locals", {}),
             branches=getattr(self, "_last_branches", []),
             treewidth_stats=self._interaction_graph.get_stats(),
-            solver_stats=self.solver.get_stats(),
+            solver_stats={
+                **self.solver.get_stats(),
+                "chtd": self._collect_chtd_stats(),
+                "state_merger": self._collect_state_merger_stats(),
+            },
             degraded_passes=self._degraded_passes,
         )
 
@@ -494,6 +598,32 @@ class SymbolicExecutor:
         self._paths_completed = 0
         self._paths_pruned = 0
         self._iterations = 0
+        self._current_chtd_interval = max(1, self.config.chtd_check_interval)
+        self._next_chtd_check_iteration = 0
+        self._last_chtd_branch_count = 0
+        self._chtd_runs = 0
+        self._chtd_unsat_hits = 0
+        self._chtd_unsat_validations = 0
+        self._chtd_unsat_mismatches = 0
+        self._chtd_solver_unavailable = 0
+        self._chtd_skipped_unstable = 0
+        self._chtd_skipped_size = 0
+        self._chtd_skipped_treewidth = 0
+        self._chtd_total_time_seconds = 0.0
+        self._phase_timers_seconds = {
+            "execute_step": 0.0,
+            "process_execution_result": 0.0,
+            "path_feasibility": 0.0,
+            "chtd_decomposition": 0.0,
+            "chtd_propagation": 0.0,
+        }
+        self._phase_counts = {
+            "execute_step": 0,
+            "process_execution_result": 0,
+            "path_feasibility": 0,
+            "chtd_decomposition": 0,
+            "chtd_propagation": 0,
+        }
         self._last_branches = []
         self._degraded_passes: list[str] = []
         self._loop_detector = None
@@ -536,7 +666,7 @@ class SymbolicExecutor:
             elif last_line:
                 self._pc_to_line[i] = last_line
 
-    def _run_abstract_interpretation(self, code: object) -> None:
+    def _run_abstract_interpretation(self, code: types.CodeType) -> None:
         """Run fast abstract interpretation pass.
 
         Stores warnings as hints rather than immediately creating Issues.
@@ -612,9 +742,11 @@ class SymbolicExecutor:
     ) -> VMState:
         """Create initial VM state with symbolic arguments."""
         state = VMState()
+        parameters: dict[str, inspect.Parameter] = {}
         try:
             sig = inspect.signature(func)
             params = list(sig.parameters.keys())
+            parameters = dict(sig.parameters)
         except (ValueError, TypeError):
             params = list(func.__code__.co_varnames[: func.__code__.co_argcount])
         inferred_types: dict[str, str] = {}
@@ -626,20 +758,38 @@ class SymbolicExecutor:
                         inferred_types[param] = self._hint_to_type_str(hint)
             except (TypeError, NameError, AttributeError, ValueError):
                 logger.debug("Type hint extraction failed for %s", func.__name__, exc_info=True)
-        for name, param in sig.parameters.items():
-            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+        for name in params:
+            param = parameters.get(name)
+            param_kind = (
+                param.kind if param is not None else inspect.Parameter.POSITIONAL_OR_KEYWORD
+            )
+            if param_kind == inspect.Parameter.VAR_POSITIONAL:
                 type_hint = "list"
-            elif param.kind == inspect.Parameter.VAR_KEYWORD:
+            elif param_kind == inspect.Parameter.VAR_KEYWORD:
                 type_hint = "dict"
             else:
                 type_hint = symbolic_args.get(name) or inferred_types.get(name, "int")
 
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
-            if self.config and self.config.enable_taint_tracking and hasattr(sym_val, "with_taint"):
-                try:
-                    sym_val = sym_val.with_taint("user_input")
-                except (AttributeError, TypeError):
-                    pass
+            if self.config and self.config.enable_taint_tracking:
+                with_taint = getattr(sym_val, "with_taint", None)
+                if callable(with_taint):
+                    try:
+                        tainted = with_taint("user_input")
+                        if isinstance(
+                            tainted,
+                            (
+                                SymbolicValue,
+                                SymbolicString,
+                                SymbolicList,
+                                SymbolicDict,
+                                SymbolicObject,
+                                SymbolicFloat,
+                            ),
+                        ):
+                            sym_val = tainted
+                    except (AttributeError, TypeError):
+                        pass
             state.local_vars[name] = sym_val
             state = state.add_constraint(constraint)
 
@@ -655,20 +805,22 @@ class SymbolicExecutor:
                     )
                 except (ImportError, AttributeError, TypeError):
                     pass
-            
-            # Apply Noise Reduction Heuristic: Assume 'self'/'cls' is non-None
+
             if self.config and self.config.heuristic_assume_non_null_self:
                 ln_name = name.lower()
                 if ln_name in ("self", "cls") or ln_name.startswith(("self_", "cls_")):
                     import z3
-                    if hasattr(sym_val, "is_none"):
-                        state = state.add_constraint(z3.Not(sym_val.is_none))
-                    elif hasattr(sym_val, "z3_addr"):
-                        state = state.add_constraint(sym_val.z3_addr != 0)
+
+                    maybe_none_expr = getattr(sym_val, "is_none", None)
+                    if isinstance(maybe_none_expr, z3.BoolRef):
+                        state = state.add_constraint(z3.Not(maybe_none_expr))
+                    else:
+                        maybe_addr_expr = getattr(sym_val, "z3_addr", None)
+                        if isinstance(maybe_addr_expr, z3.ExprRef):
+                            state = state.add_constraint(maybe_addr_expr != 0)
 
             if initial_values and name in initial_values:
                 val = initial_values[name]
-                from pysymex.core.types import SymbolicValue
                 if isinstance(sym_val, SymbolicValue):
                     if isinstance(val, int) and not isinstance(val, bool):
                         state = state.add_constraint(sym_val.z3_int == val)
@@ -697,7 +849,7 @@ class SymbolicExecutor:
 
     def _create_symbolic_for_type(
         self, name: str, type_hint: str
-    ) -> tuple[SymbolicValue | SymbolicString | SymbolicList | SymbolicDict | SymbolicObject, z3.BoolRef]:
+    ) -> tuple[SymbolicCreatedValue, z3.BoolRef]:
         """Create a symbolic value and its type constraint."""
         type_hint = type_hint.lower()
 
@@ -705,22 +857,26 @@ class SymbolicExecutor:
             type_hint = "object"
 
         if type_hint in ("int", "integer"):
-            return SymbolicValue.symbolic_int(name)
+            value_int, constraint_int = SymbolicValue.symbolic_int(name)
+            return cast("SymbolicCreatedValue", value_int), constraint_int
         elif type_hint in ("float", "real"):
-            from pysymex.core.floats import SymbolicFloat
-
             sf = SymbolicFloat(name)
             return sf, z3.BoolVal(True)
         elif type_hint in ("str", "string"):
-            return SymbolicString.symbolic(name)
+            value_str, constraint_str = SymbolicString.symbolic(name)
+            return cast("SymbolicCreatedValue", value_str), constraint_str
         elif type_hint in ("list", "array", "tuple"):
-            return SymbolicList.symbolic(name)
+            value_list, constraint_list = SymbolicList.symbolic(name)
+            return cast("SymbolicCreatedValue", value_list), constraint_list
         elif type_hint in ("bool", "boolean"):
-            return SymbolicValue.symbolic_bool(name)
+            value_bool, constraint_bool = SymbolicValue.symbolic_bool(name)
+            return cast("SymbolicCreatedValue", value_bool), constraint_bool
         elif type_hint in ("path", "pathlib.path"):
-            return SymbolicValue.symbolic_path(name)
+            value_path, constraint_path = SymbolicValue.symbolic_path(name)
+            return cast("SymbolicCreatedValue", value_path), constraint_path
         elif type_hint in ("dict", "mapping", "kwargs"):
-            return SymbolicDict.symbolic(name)
+            value_dict, constraint_dict = SymbolicDict.symbolic(name)
+            return cast("SymbolicCreatedValue", value_dict), constraint_dict
         elif type_hint == "object":
             id_suffix = next_address()
             z3_addr = z3.Int(f"{name}_{id_suffix}_addr")
@@ -732,7 +888,9 @@ class SymbolicExecutor:
             sym_val, constraint = SymbolicValue.symbolic(name)
             import z3 as _z3
 
-            return sym_val, _z3.And(constraint, _z3.Not(sym_val.is_none))
+            return cast("SymbolicCreatedValue", sym_val), _z3.And(
+                constraint, _z3.Not(sym_val.is_none)
+            )
 
     def _execute_loop(self) -> None:
         """Main execution engine heartbeat.
@@ -758,6 +916,7 @@ class SymbolicExecutor:
         solver_mod.active_incremental_solver.set(self.solver)
         try:
             while not self._worklist.is_empty():
+                self._iterations += 1
                 try:
                     if self._resource_tracker is not None:
                         self._resource_tracker.check_all_limits()
@@ -771,9 +930,11 @@ class SymbolicExecutor:
                 coverage_before = len(self._coverage)
                 issues_before = len(self._issues)
 
+                step_start = time.perf_counter()
                 self._execute_step(state)
+                self._phase_timers_seconds["execute_step"] += time.perf_counter() - step_start
+                self._phase_counts["execute_step"] += 1
 
-                # Feed reward signals to the adaptive path manager
                 if isinstance(self._worklist, AdaptivePathManager):
                     new_coverage = len(self._coverage) - coverage_before
                     new_issues = len(self._issues) - issues_before
@@ -813,7 +974,14 @@ class SymbolicExecutor:
         self, state: VMState
     ) -> tuple[dis.Instruction | None, list[dis.Instruction]]:
         """Determine active instruction list and fetch current instruction."""
-        active_instructions = state.current_instructions or self._instructions
+        current = state.current_instructions
+        if current is not None:
+            if not current or isinstance(current[0], dis.Instruction):
+                active_instructions = cast("list[dis.Instruction]", current)
+            else:
+                active_instructions = self._instructions
+        else:
+            active_instructions = self._instructions
         if state.pc >= len(active_instructions):
             return None, active_instructions
         return active_instructions[state.pc], active_instructions
@@ -827,18 +995,25 @@ class SymbolicExecutor:
         if state.pending_constraint_count <= 0:
             return True
 
-        if not self.solver.is_sat(list(state.path_constraints)):
-            self._paths_pruned += 1
-            for _hook in self._hooks.get("on_prune", ()):
-                try:
-                    _hook(self, state, "infeasible")
-                except Exception:
-                    logger.exception("Plugin hook execution failed")
-            return False
+        start = time.perf_counter()
+        self._phase_counts["path_feasibility"] += 1
+        try:
+            known_prefix_len = max(0, len(state.path_constraints) - state.pending_constraint_count)
+            if not self.solver.is_sat(
+                state.path_constraints, known_sat_prefix_len=known_prefix_len
+            ):
+                self._paths_pruned += 1
+                for _hook in self._hooks.get("on_prune", ()):
+                    try:
+                        _hook(self, state, "infeasible")
+                    except Exception:
+                        logger.exception("Plugin hook execution failed")
+                return False
 
-        # Reset the pending counter after a confirmed SAT result
-        state.pending_constraint_count = 0
-        return True
+            state.pending_constraint_count = 0
+            return True
+        finally:
+            self._phase_timers_seconds["path_feasibility"] += time.perf_counter() - start
 
     def _handle_loop_logic(
         self, state: VMState, active_instructions: list[dis.Instruction]
@@ -920,143 +1095,224 @@ class SymbolicExecutor:
         self, result: OpcodeResult, state: VMState, active_instructions: list[dis.Instruction]
     ) -> None:
         """Process the result of an opcode execution."""
-        if result.issues:
-            for issue in result.issues:
-                line_no = self._get_line_number(issue.pc, active_instructions)
-                if line_no != issue.line_number:
-                    from dataclasses import replace as _dc_replace
+        process_start = time.perf_counter()
+        self._phase_counts["process_execution_result"] += 1
+        try:
+            if result.issues:
+                for issue in result.issues:
+                    line_no = self._get_line_number(issue.pc, active_instructions)
+                    if line_no != issue.line_number:
+                        from dataclasses import replace as _dc_replace
 
-                    issue = _dc_replace(issue, line_number=line_no)
-                self._issues.append(issue)
-                for _hook in self._hooks.get("on_issue", ()):
+                        issue = _dc_replace(issue, line_number=line_no)
+                    self._issues.append(issue)
+                    for _hook in self._hooks.get("on_issue", ()):
+                        try:
+                            _hook(self, state, issue)
+                        except Exception:
+                            logger.exception("Plugin hook execution failed")
+
+            if result.terminal:
+                self._paths_completed += 1
+                self._last_branches = state.branch_trace.to_list()
+                self._last_globals = state.global_vars
+                self._last_locals = state.local_vars
+                return
+
+            sat = True
+
+            if len(result.new_states) >= 2 and self.config.enable_chtd:
+                for ns in result.new_states:
+                    if ns.path_constraints:
+                        last_constraint = ns.path_constraints.newest()
+                        if last_constraint is None:
+                            continue
+                        try:
+                            self._interaction_graph.add_branch(ns.pc, last_constraint)
+                        except Exception:
+                            import traceback
+
+                            traceback.print_exc()
+
+                should_run_chtd = self._should_run_chtd()
+                if should_run_chtd:
+                    start = time.perf_counter()
                     try:
-                        _hook(self, state, issue)
+                        td_start = time.perf_counter()
+                        td = self._interaction_graph.compute_tree_decomposition()
+                        self._phase_timers_seconds["chtd_decomposition"] += (
+                            time.perf_counter() - td_start
+                        )
+                        self._phase_counts["chtd_decomposition"] += 1
+                        if td.width > 0 and td.bags:
+                            branch_info = self._interaction_graph.branch_info
+
+                            use_gpu_for_chtd = (
+                                self.config.enable_h_acceleration
+                                and len(branch_info) >= _CHTD_GPU_MIN_BRANCH_INFOS
+                            )
+                            solver = _get_chtd_solver(use_gpu=use_gpu_for_chtd)
+                            if solver is None:
+                                self._chtd_solver_unavailable += 1
+                            else:
+                                if (
+                                    use_gpu_for_chtd
+                                    and not solver.is_gpu_available
+                                    and not getattr(self, "_reported_hacc_fallback", False)
+                                ):
+                                    logger.info(
+                                        "CHTD using CPU backend (GPU unavailable); algorithm remains identical"
+                                    )
+                                    self._reported_hacc_fallback = True
+                                propagate_start = time.perf_counter()
+                                sat = solver.propagate_all(td, branch_info)
+                                self._phase_timers_seconds["chtd_propagation"] += (
+                                    time.perf_counter() - propagate_start
+                                )
+                                self._phase_counts["chtd_propagation"] += 1
+                                self._chtd_runs += 1
+                                if not sat:
+                                    self._chtd_unsat_hits += 1
+                    except Exception:
+                        import traceback
+
+                        traceback.print_exc()
+                        logger.debug("CHTD DP block raised unexpectedly", exc_info=True)
+                    finally:
+                        self._chtd_total_time_seconds += time.perf_counter() - start
+                        self._reschedule_chtd_check()
+
+            if not sat and result.new_states:
+                if not self._validate_chtd_unsat(
+                    parent_state=state, forked_states=result.new_states
+                ):
+                    sat = True
+
+            if not sat:
+                self._paths_pruned += len(result.new_states)
+            elif result.new_states:
+                first_state = result.new_states[0]
+                if self._check_path_feasibility(first_state):
+                    first_state.depth = state.depth + 1
+                    if self._worklist:
+                        self._worklist.add_state(first_state)
+
+                for new_state in result.new_states[1:]:
+                    can_add = True
+                    if self._resource_tracker is not None:
+                        try:
+                            self._resource_tracker.record_path()
+                        except LimitExceeded:
+                            self._paths_pruned += 1
+                            can_add = False
+
+                    if can_add:
+                        if self._check_path_feasibility(new_state):
+                            new_state.depth = state.depth + 1
+                            if self._worklist:
+                                self._worklist.add_state(new_state)
+                            self._paths_explored += 1
+
+            if len(result.new_states) >= 2:
+                for _hook in self._hooks.get("on_fork", ()):
+                    try:
+                        _hook(self, state, list(result.new_states))
                     except Exception:
                         logger.exception("Plugin hook execution failed")
+        finally:
+            self._phase_timers_seconds["process_execution_result"] += (
+                time.perf_counter() - process_start
+            )
 
-        if result.terminal:
-            self._paths_completed += 1
-            self._last_branches = state.branch_trace.to_list()
-            self._last_globals = state.global_vars
-            self._last_locals = state.local_vars
-            return
+    def _should_run_chtd(self) -> bool:
+        if not self._interaction_graph.is_stabilized():
+            self._chtd_skipped_unstable += 1
+            return False
 
-        if result.new_states:
-            # The first state is always a continuation of the current path
-            first_state = result.new_states[0]
-            if self._check_path_feasibility(first_state):
-                first_state.depth = state.depth + 1
-                if self._worklist:
-                    self._worklist.add_state(first_state)
+        if self._worklist is not None and self._worklist.size() < 50:
+            return False
 
-            # Additional states are new paths, check limits before adding
-            for new_state in result.new_states[1:]:
-                can_add = True
-                if self._resource_tracker is not None:
-                    try:
-                        self._resource_tracker.record_path()
-                    except LimitExceeded:
-                        self._paths_pruned += 1
-                        can_add = False
+        if getattr(self._interaction_graph, "estimated_treewidth", 0) > 25:
+            self._chtd_skipped_treewidth += 1
+            return False
 
-                if can_add:
-                    if self._check_path_feasibility(new_state):
-                        new_state.depth = state.depth + 1
-                        if self._worklist:
-                            self._worklist.add_state(new_state)
-                        self._paths_explored += 1
+        if len(self._interaction_graph.branch_info) > self.config.chtd_max_branch_infos:
+            self._chtd_skipped_size += 1
+            return False
+        return self._iterations >= self._next_chtd_check_iteration
 
-        # Register branch conditions in the interaction graph for CHTD
-        if len(result.new_states) >= 2:
-            for ns in result.new_states:
-                if ns.path_constraints:
-                    last_constraint = list(ns.path_constraints)[-1]
-                    try:
-                        self._interaction_graph.add_branch(ns.pc, last_constraint)
-                    except Exception:
-                        pass  # best-effort — never block execution
+    def _reschedule_chtd_check(self) -> None:
+        branch_count = len(self._interaction_graph.branch_info)
+        branch_growth = branch_count - self._last_chtd_branch_count
+        self._last_chtd_branch_count = branch_count
 
-            # CHTD message-passing DP: once the interaction graph has
-            # stabilized, periodically use the tree decomposition to
-            # check structural satisfiability across bags.  If any bag
-            # is locally UNSAT, we know the path is infeasible.
-            #
-            # GPU ACCELERATION: When available, uses GPU to evaluate all
-            # 2^w assignments per bag in parallel, enabling true CHTD
-            # message passing with O(N · 2^w) complexity.
-            if self._interaction_graph.is_stabilized():
-                try:
-                    td = self._interaction_graph.compute_tree_decomposition()
-                    if td.width > 0 and td.bags:
-                        branch_info = self._interaction_graph._branch_info
+        if self.config.chtd_adaptive_interval:
+            min_interval = max(1, self.config.chtd_min_check_interval)
+            max_interval = max(min_interval, self.config.chtd_max_check_interval)
+            if branch_growth >= self.config.chtd_growth_trigger:
+                self._current_chtd_interval = max(min_interval, self._current_chtd_interval // 2)
+            elif branch_growth <= 0:
+                self._current_chtd_interval = min(max_interval, self._current_chtd_interval * 2)
 
-                        # Use GPU-accelerated CHTD solver
-                        gpu_solver = _get_gpu_bag_solver()
-                        if gpu_solver is not None:
-                            sat = gpu_solver.propagate_all(td, branch_info)
-                        else:
-                            import warnings
-                            warnings.warn(
-                                "h_acceleration component is unavailable. "
-                                "Falling back to deprecated CPU CHTD solver. "
-                                "Please install the h_acceleration dependencies (e.g. numpy).",
-                                DeprecationWarning,
-                                stacklevel=2
-                            )
-                            # Fallback: CPU-based SAT checking per bag
-                            bag_extra: dict[int, list[z3.BoolRef]] = {}
+        self._next_chtd_check_iteration = self._iterations + self._current_chtd_interval
 
-                            def _solve_bag(bag: frozenset[int]) -> bool:
-                                """Check SAT of constraints in a single bag."""
-                                constraints: list[z3.BoolRef] = []
-                                for pc in bag:
-                                    info = branch_info.get(pc)
-                                    if info is not None and info.condition is not None:
-                                        constraints.append(info.condition)
-                                # Include messages received from children
-                                extras = bag_extra.get(id(bag), [])
-                                constraints.extend(extras)
-                                if not constraints:
-                                    return True
-                                return self.solver.is_sat(constraints)
+    def _collect_chtd_stats(self) -> dict[str, object]:
+        return {
+            "runs": self._chtd_runs,
+            "unsat_hits": self._chtd_unsat_hits,
+            "unsat_validations": self._chtd_unsat_validations,
+            "unsat_mismatches": self._chtd_unsat_mismatches,
+            "solver_unavailable": self._chtd_solver_unavailable,
+            "skipped_unstable": self._chtd_skipped_unstable,
+            "skipped_size": self._chtd_skipped_size,
+            "skipped_treewidth": self._chtd_skipped_treewidth,
+            "total_time_seconds": self._chtd_total_time_seconds,
+            "current_interval": self._current_chtd_interval,
+            "next_check_iteration": self._next_chtd_check_iteration,
+            "phase_timers_seconds": dict(self._phase_timers_seconds),
+            "phase_counts": dict(self._phase_counts),
+        }
 
-                            def _pass_msg(
-                                child: int, parent: int, adhesion: frozenset[int]
-                            ) -> None:
-                                """Project child constraints onto adhesion set."""
-                                child_bag = td.bags.get(child)
-                                parent_bag = td.bags.get(parent)
-                                if child_bag is None or parent_bag is None:
-                                    return
-                                projected: list[z3.BoolRef] = []
-                                for pc in adhesion:
-                                    info = branch_info.get(pc)
-                                    if info is not None and info.condition is not None:
-                                        projected.append(info.condition)
-                                if projected:
-                                    key = id(parent_bag)
-                                    if key not in bag_extra:
-                                        bag_extra[key] = []
-                                    bag_extra[key].extend(projected)
+    def _validate_chtd_unsat(self, *, parent_state: VMState, forked_states: list[VMState]) -> bool:
+        """Confirm CHTD UNSAT decisions with incremental Z3 before pruning.
 
-                            sat = self._interaction_graph.propagate_bag_constraints(
-                                td, _solve_bag, _pass_msg
-                            )
+        This guards soundness if a backend/integration bug reports false UNSAT.
+        """
+        self._chtd_unsat_validations += 1
+        parent_prefix_len = len(parent_state.path_constraints)
+        for candidate in forked_states:
+            constraints = candidate.path_constraints
+            known_prefix_len = min(parent_prefix_len, len(candidate.path_constraints))
+            if self.solver.is_sat(
+                constraints,
+                known_sat_prefix_len=known_prefix_len if known_prefix_len > 0 else None,
+            ):
+                self._chtd_unsat_mismatches += 1
+                logger.warning(
+                    "CHTD reported UNSAT but incremental solver found SAT; skipping CHTD prune"
+                )
+                return False
+        return True
 
-                        if not sat:
-                            # The CHTD DP found a structural infeasibility.
-                            # Prune the newly forked states.
-                            for ns in result.new_states:
-                                if ns in self._worklist:
-                                    pass  # cannot remove; states already added
-                except Exception:
-                    logger.debug("CHTD DP block raised unexpectedly", exc_info=True)
-        if len(result.new_states) >= 2:
-            for _hook in self._hooks.get("on_fork", ()):
-                try:
-                    _hook(self, state, list(result.new_states))
-                except Exception:
-                    logger.exception("Plugin hook execution failed")
+    def _collect_state_merger_stats(self) -> dict[str, object]:
+        if self._state_merger is None:
+            return {
+                "enabled": False,
+                "states_before_merge": 0,
+                "states_after_merge": 0,
+                "merge_operations": 0,
+                "subsumption_hits": 0,
+                "reduction_ratio": 0.0,
+            }
+        stats = self._state_merger.stats
+        return {
+            "enabled": True,
+            "states_before_merge": stats.states_before_merge,
+            "states_after_merge": stats.states_after_merge,
+            "merge_operations": stats.merge_operations,
+            "subsumption_hits": stats.subsumption_hits,
+            "reduction_ratio": stats.reduction_ratio,
+        }
 
     def _execute_step(self, state: VMState) -> None:
         """Execute a single step (one instruction).
@@ -1080,7 +1336,6 @@ class SymbolicExecutor:
             self._last_branches = state.branch_trace.to_list()
             return
 
-
         if not self._check_resource_limits(state):
             return
 
@@ -1095,16 +1350,18 @@ class SymbolicExecutor:
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_key = self._state_key(state)
-        if state_key in self._visited_states:
-            self._paths_pruned += 1
-            for _hook in self._hooks.get("on_prune", ()):
-                try:
-                    _hook(self, state, "duplicate_state")
-                except Exception:
-                    logger.exception("Plugin hook execution failed")
-            return
-        self._visited_states.add(state_key)
+        is_jump_or_branch = instr.opname in BRANCH_OPCODES or "JUMP" in instr.opname
+        if is_jump_or_branch:
+            state_key = self._state_key(state)
+            if state_key in self._visited_states:
+                self._paths_pruned += 1
+                for _hook in self._hooks.get("on_prune", ()):
+                    try:
+                        _hook(self, state, "duplicate_state")
+                    except Exception:
+                        logger.exception("Plugin hook execution failed")
+                return
+            self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)
@@ -1121,8 +1378,8 @@ class SymbolicExecutor:
 
         try:
             result = self.dispatcher.dispatch(instr, state)
-            # Call post_step on each resulting state (or the original if terminal/unmodified)
-            states_to_hook = result.new_states if result.new_states else [state]
+
+            states_to_hook = result.new_states or [state]
             for next_state in states_to_hook:
                 for _hook in self._hooks.get("post_step", ()):
                     try:
@@ -1200,8 +1457,15 @@ class SymbolicExecutor:
         """
         opname = instr.opname
 
+        prefix_len = len(state.path_constraints)
+
+        def detector_is_sat(c: list[z3.BoolRef]) -> bool:
+            return self.solver.is_sat(
+                c, known_sat_prefix_len=prefix_len if len(c) > prefix_len else 0
+            )
+
         for detector in self._universal_detectors:
-            issue = detector.check(state, instr, self.solver.is_sat)
+            issue = detector.check(state, instr, detector_is_sat)
             if issue:
                 line_no = self._get_line_number(state.pc, active_instructions)
                 if line_no != issue.line_number:
@@ -1218,7 +1482,7 @@ class SymbolicExecutor:
         specific = self._detector_dispatch.get(opname)
         if specific:
             for detector in specific:
-                issue = detector.check(state, instr, self.solver.is_sat)
+                issue = detector.check(state, instr, detector_is_sat)
                 if issue:
                     line_no = self._get_line_number(state.pc, active_instructions)
                     if line_no != issue.line_number:
@@ -1242,13 +1506,8 @@ class SymbolicExecutor:
         """Composite state key to avoid hash-only collisions."""
         return (
             state.hash_value(),
-            state.constraint_hash(),
-            len(state.path_constraints),
-            state.local_vars.hash_value(),
-            state.global_vars.hash_value(),
-            state.memory.hash_value(),
-            state.visited_pcs.hash_value(),
             state.pc,
+            len(state.path_constraints),
             len(state.stack),
             len(state.call_stack),
             len(state.block_stack),

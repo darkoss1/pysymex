@@ -101,11 +101,33 @@ class TestConstraintChainIteration:
 
     def test_iter(self):
         x = z3.Int("x")
+        c1 = x > 0
+        c2 = x < 10
         chain = ConstraintChain.empty()
-        chain = chain.append(x > 0)
-        chain = chain.append(x < 10)
+        chain = chain.append(c1)
+        chain = chain.append(c2)
         items = list(chain)
         assert len(items) == 2
+        assert items == [c1, c2]
+
+    def test_reversed_iter_is_newest_first(self):
+        x = z3.Int("x")
+        c1 = x > 0
+        c2 = x < 10
+        c3 = x != 5
+        chain = ConstraintChain.empty().append(c1).append(c2).append(c3)
+        assert list(reversed(chain)) == [c3, c2, c1]
+
+    def test_newest_returns_last_appended(self):
+        x = z3.Int("x")
+        c1 = x > 0
+        c2 = x < 10
+        chain = ConstraintChain.empty().append(c1).append(c2)
+        assert chain.newest() == c2
+
+    def test_newest_empty(self):
+        chain = ConstraintChain.empty()
+        assert chain.newest() is None
 
     def test_iter_empty(self):
         chain = ConstraintChain.empty()

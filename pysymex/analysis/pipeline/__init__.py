@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Scanner with multi-phase analysis pipeline.
 
 This module provides the main :class:`Scanner` orchestrator that
@@ -18,6 +36,7 @@ import logging
 import sys
 from collections import defaultdict
 from pathlib import Path
+from types import CodeType
 
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 
@@ -32,25 +51,24 @@ from .phases import (
     ResourcePhase,
     SecurityPhase,
     TypeInferencePhase,
+    extract_var_name_from_message,
+    group_issues,
 )
 from .phases import (
-    _apply_common_suppression as _apply_common_suppression,
+    apply_common_suppression as apply_common_suppression,
 )
-from .phases import (
-    _apply_exception_suppression as _apply_exception_suppression,
-)
-from .phases import (
-    _extract_var_name_from_message as _extract_var_name_from_message,
-)
-from .phases import (
-    _group_issues as _group_issues,
-)
-from .phases import (
-    _is_function_or_class_def as _is_function_or_class_def,
-)
-from .phases import (
-    _is_used_in_annotations as _is_used_in_annotations,
-)
+
+
+_apply_common_suppression = apply_common_suppression
+_extract_var_name_from_message = extract_var_name_from_message
+_group_issues = group_issues
+
+
+def _attach_suggestion(issue: ScanIssue) -> None:
+    """Backward-compat wrapper for old helper API."""
+    issue.attach_suggestion()
+
+
 from .types import (
     SUGGESTION_MAP,
     AnalysisContext,
@@ -58,9 +76,6 @@ from .types import (
     IssueCategory,
     ScanIssue,
     ScannerConfig,
-)
-from .types import (
-    _attach_suggestion as _attach_suggestion,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +96,11 @@ __all__ = [
     "ScannerConfig",
     "SecurityPhase",
     "TypeInferencePhase",
+    "_apply_common_suppression",
+    "_attach_suggestion",
+    "_extract_var_name_from_message",
+    "_group_issues",
+    "apply_common_suppression",
 ]
 
 
@@ -134,7 +154,7 @@ class Scanner:
                     severity="error",
                     file=file_path,
                     line=e.lineno or 0,
-                    message=f"Syntax error: {e .msg }",
+                    message=f"Syntax error: {e.msg}",
                     confidence=1.0,
                 )
             )
@@ -147,12 +167,12 @@ class Scanner:
 
     def _scan_nested(
         self,
-        code: object,
+        code: CodeType,
         source: str,
         file_path: str,
         issues: list[ScanIssue],
         *,
-        _dedup_keys: set[tuple[str, int, int]] | None = None,
+        _dedup_keys: set[tuple[str, int, str]] | None = None,
         _semantic_keys: set[tuple[str, str, str]] | None = None,
     ) -> None:
         """Scan nested functions.
@@ -171,7 +191,7 @@ class Scanner:
         if _semantic_keys is None:
             _semantic_keys = set()
             for e in issues:
-                vn = _extract_var_name_from_message(e.message)
+                vn = extract_var_name_from_message(e.message)
                 if vn:
                     _semantic_keys.add((e.kind, e.function_name, vn))
 
@@ -187,12 +207,11 @@ class Scanner:
                 )
                 new_issues = self._run_phases(ctx)
                 for issue in new_issues:
-
                     key = (issue.kind, issue.line, issue.message or "")
                     if key in _dedup_keys:
                         continue
 
-                    var_name = _extract_var_name_from_message(issue.message)
+                    var_name = extract_var_name_from_message(issue.message)
                     if var_name:
                         semantic_key = (issue.kind, issue.function_name, var_name)
                         if semantic_key in _semantic_keys:
@@ -216,12 +235,12 @@ class Scanner:
             try:
                 issues = phase.analyze(ctx, self.config)
                 for issue in issues:
-                    _attach_suggestion(issue)
+                    issue.attach_suggestion()
                 all_issues.extend(issues)
             except (RuntimeError, TypeError, ValueError) as e:
                 if self.config.verbose:
                     logger.warning("Phase %s failed: %s", phase.name, e)
-                self.stats[f"{phase .name }_errors"] += 1
+                self.stats[f"{phase.name}_errors"] += 1
         return all_issues
 
     def scan_directory(
@@ -246,7 +265,7 @@ class Scanner:
         """Generate report from issues."""
         active_issues = [i for i in issues if not i.is_suppressed()]
         suppressed_issues = [i for i in issues if i.is_suppressed()]
-        groups = _group_issues(active_issues)
+        groups = group_issues(active_issues)
 
         if format == "json":
             return json.dumps(
@@ -278,7 +297,7 @@ class Scanner:
             if not issue.is_suppressed() or self.config.show_suppressed:
                 by_file[issue.file].append(issue)
         for file_path, file_issues in sorted(by_file.items()):
-            lines.append(f"\n\U0001f4c4 {file_path }")
+            lines.append(f"\n\U0001f4c4 {file_path}")
             lines.append("-" * 40)
 
             emitted_groups: set[tuple[str, str]] = set()
@@ -286,29 +305,28 @@ class Scanner:
                 group_key = (issue.function_name, issue.kind)
                 group = groups.get((issue.file, issue.function_name, issue.kind), [])
                 if len(group) >= 3 and group_key not in emitted_groups:
-
                     kind_label = issue.kind.replace("_", " ").lower()
-                    func_label = f" in {issue .function_name }" if issue.function_name else ""
-                    lines.append(f"  \U0001f4e6 {len (group )} {kind_label } findings{func_label }")
+                    func_label = f" in {issue.function_name}" if issue.function_name else ""
+                    lines.append(f"  \U0001f4e6 {len(group)} {kind_label} findings{func_label}")
                     for gi in sorted(group, key=lambda i: i.line):
                         status = "\U0001f534" if gi.severity == "error" else "\U0001f7e1"
                         suppressed = " (SUPPRESSED)" if gi.is_suppressed() else ""
                         lines.append(
-                            f"     {status } Line {gi .line }: {gi .message }"
-                            f" (confidence: {gi .confidence :.0%}){suppressed }"
+                            f"     {status} Line {gi.line}: {gi.message}"
+                            f" (confidence: {gi.confidence:.0%}){suppressed}"
                         )
                         if gi.suggestion:
-                            lines.append(f"        \U0001f4a1 {gi .suggestion }")
+                            lines.append(f"        \U0001f4a1 {gi.suggestion}")
                     emitted_groups.add(group_key)
                 elif len(group) < 3:
                     status = "\U0001f534" if issue.severity == "error" else "\U0001f7e1"
                     suppressed = " (SUPPRESSED)" if issue.is_suppressed() else ""
                     lines.append(
-                        f"  {status } Line {issue .line }: [{issue .kind }] {issue .message }"
-                        f" (confidence: {issue .confidence :.0%}){suppressed }"
+                        f"  {status} Line {issue.line}: [{issue.kind}] {issue.message}"
+                        f" (confidence: {issue.confidence:.0%}){suppressed}"
                     )
                     if issue.suggestion:
-                        lines.append(f"     \U0001f4a1 {issue .suggestion }")
+                        lines.append(f"     \U0001f4a1 {issue.suggestion}")
 
         total = len(active_issues)
         suppressed_count = len(suppressed_issues)
@@ -316,9 +334,9 @@ class Scanner:
         lines.append("=" * 60)
         lines.append("Summary")
         lines.append("=" * 60)
-        lines.append(f"Total issues: {total }")
-        lines.append(f"Suppressed (likely false positives): {suppressed_count }")
-        lines.append(f"Files scanned: {self .stats .get ('files_scanned',0 )}")
+        lines.append(f"Total issues: {total}")
+        lines.append(f"Suppressed (likely false positives): {suppressed_count}")
+        lines.append(f"Files scanned: {self.stats.get('files_scanned', 0)}")
         return "\n".join(lines)
 
 
@@ -377,7 +395,7 @@ def main() -> int:
     elif path.is_dir():
         issues = scanner.scan_directory(str(path))
     else:
-        print(f"Error: {args .path } not found")
+        print(f"Error: {args.path} not found")
         return 1
     report = scanner.generate_report(issues, args.format)
     print(report)

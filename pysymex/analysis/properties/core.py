@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Property-based verification logic for pysymex.
 
 Contains the core prover/verifier/checker classes:
@@ -32,7 +50,7 @@ class PropertyProver:
     - Equivalence checking
     """
 
-    def __init__(self, timeout_ms: int = 10000):
+    def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -93,7 +111,7 @@ class PropertyProver:
         spec = PropertySpec(
             kind=PropertyKind.IDENTITY,
             name="Identity",
-            description=f"f(a, {identity }) == a",
+            description=f"f(a, {identity}) == a",
             constraints=constraints or [],
         )
         self._solver.reset()
@@ -136,8 +154,8 @@ class PropertyProver:
         op = "<" if strict else "<="
         spec = PropertySpec(
             kind=kind,
-            name=f"Monotonically Increasing ({op })",
-            description=f"x {op } y => f(x) {op } f(y)",
+            name=f"Monotonically Increasing ({op})",
+            description=f"x {op} y => f(x) {op} f(y)",
             constraints=constraints or [],
         )
         self._solver.reset()
@@ -187,8 +205,8 @@ class PropertyProver:
         """Prove expr >= bound for all inputs."""
         spec = PropertySpec(
             kind=PropertyKind.LOWER_BOUND,
-            name=f"Lower Bound ({bound })",
-            description=f"expr >= {bound }",
+            name=f"Lower Bound ({bound})",
+            description=f"expr >= {bound}",
             constraints=constraints or [],
             lower_bound=bound,
         )
@@ -208,8 +226,8 @@ class PropertyProver:
         """Prove expr <= bound for all inputs."""
         spec = PropertySpec(
             kind=PropertyKind.UPPER_BOUND,
-            name=f"Upper Bound ({bound })",
-            description=f"expr <= {bound }",
+            name=f"Upper Bound ({bound})",
+            description=f"expr <= {bound}",
             constraints=constraints or [],
             upper_bound=bound,
         )
@@ -230,8 +248,8 @@ class PropertyProver:
         """Prove lower <= expr <= upper for all inputs."""
         spec = PropertySpec(
             kind=PropertyKind.BOUNDED,
-            name=f"Bounded [{lower }, {upper }]",
-            description=f"{lower } <= expr <= {upper }",
+            name=f"Bounded [{lower}, {upper}]",
+            description=f"{lower} <= expr <= {upper}",
             constraints=constraints or [],
             lower_bound=lower,
             upper_bound=upper,
@@ -419,7 +437,11 @@ class PropertyProver:
                 if z3.is_int_value(val):
                     result[name] = val.as_long()
                 elif z3.is_rational_value(val):
-                    result[name] = float(val.as_fraction())
+                    frac = val.as_fraction()
+                    try:
+                        result[name] = float(frac)
+                    except OverflowError:
+                        result[name] = str(frac)
                 elif z3.is_true(val):
                     result[name] = True
                 elif z3.is_false(val):
@@ -440,7 +462,7 @@ class ArithmeticVerifier:
     - Numeric bounds violations
     """
 
-    def __init__(self, int_bits: int = 64, timeout_ms: int = 5000):
+    def __init__(self, int_bits: int = 64, timeout_ms: int = 5000) -> None:
         self.int_bits = int_bits
         self.int_min = -(2 ** (int_bits - 1))
         self.int_max = 2 ** (int_bits - 1) - 1
@@ -458,12 +480,20 @@ class ArithmeticVerifier:
         spec = PropertySpec(
             kind=PropertyKind.BOUNDED,
             name="No Overflow",
-            description=f"Result within [{self .int_min }, {self .int_max }]",
+            description=f"Result within [{self.int_min}, {self.int_max}]",
         )
         self._solver.reset()
         for constraint in constraints or []:
             self._solver.add(constraint)
-        self._solver.add(z3.Or(expr < self.int_min, expr > self.int_max))
+
+        if isinstance(expr, z3.BitVecRef):
+            expr_int = z3.BV2Int(expr, is_signed=True)
+            self._solver.add(z3.Or(expr_int < self.int_min, expr_int > self.int_max))
+        elif isinstance(expr, z3.FPRef):
+            raise TypeError("Integer overflow check on floating-point is not supported")
+        else:
+            self._solver.add(z3.Or(expr < self.int_min, expr > self.int_max))
+
         result = self._solver.check()
         if result == z3.unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
@@ -548,7 +578,13 @@ class ArithmeticVerifier:
         self._solver.reset()
         for constraint in constraints or []:
             self._solver.add(constraint)
-        self._solver.add(z3.Or(index < 0, index >= length))
+
+        index_int = z3.BV2Int(index, is_signed=True) if isinstance(index, z3.BitVecRef) else index
+        length_int = (
+            z3.BV2Int(length, is_signed=True) if isinstance(length, z3.BitVecRef) else length
+        )
+
+        self._solver.add(z3.Or(index_int < 0, index_int >= length_int))
         result = self._solver.check()
         if result == z3.unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
@@ -580,7 +616,7 @@ class EquivalenceChecker:
     - Proving algebraic simplifications are valid
     """
 
-    def __init__(self, timeout_ms: int = 10000):
+    def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -613,7 +649,7 @@ class EquivalenceChecker:
             for i, arg in enumerate(args):
                 try:
                     val = model.eval(arg, model_completion=True)
-                    counterexample[f"arg{i }"] = val.as_long() if z3.is_int_value(val) else str(val)
+                    counterexample[f"arg{i}"] = val.as_long() if z3.is_int_value(val) else str(val)
                 except z3.Z3Exception:
                     logger.debug(
                         "Model eval failed in check_equivalence for arg%d", i, exc_info=True
@@ -657,7 +693,7 @@ class EquivalenceChecker:
             for i, arg in enumerate(args):
                 try:
                     val = model.eval(arg, model_completion=True)
-                    counterexample[f"arg{i }"] = val.as_long() if z3.is_int_value(val) else str(val)
+                    counterexample[f"arg{i}"] = val.as_long() if z3.is_int_value(val) else str(val)
                 except z3.Z3Exception:
                     logger.debug(
                         "Model eval failed in check_refinement for arg%d", i, exc_info=True

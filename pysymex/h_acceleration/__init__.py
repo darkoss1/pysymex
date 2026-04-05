@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """PySyMex GPU Acceleration Module.
 
 This module provides hardware-accelerated evaluation of Boolean constraints
@@ -29,7 +47,7 @@ Example:
 
 from __future__ import annotations
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0a3"
 
 __all__ = [
     "INSTRUCTION_DTYPE",
@@ -58,61 +76,92 @@ __all__ = [
 
 _lazy_loaded: dict[str, object] = {}
 
+
 def __getattr__(name: str) -> object:
     if name in _lazy_loaded:
         return _lazy_loaded[name]
 
-    if name in ("Opcode", "Instruction", "CompiledConstraint", "INSTRUCTION_DTYPE",
-                "compile_constraint", "BytecodeCompiler", "disassemble"):
+    if name in (
+        "Opcode",
+        "Instruction",
+        "CompiledConstraint",
+        "INSTRUCTION_DTYPE",
+        "compile_constraint",
+        "BytecodeCompiler",
+        "disassemble",
+    ):
         from pysymex.h_acceleration import bytecode
-        _lazy_loaded.update({
-            "Opcode": bytecode.Opcode,
-            "Instruction": bytecode.Instruction,
-            "CompiledConstraint": bytecode.CompiledConstraint,
-            "INSTRUCTION_DTYPE": bytecode.INSTRUCTION_DTYPE,
-            "compile_constraint": bytecode.compile_constraint,
-            "BytecodeCompiler": bytecode.BytecodeCompiler,
-            "disassemble": bytecode.disassemble,
-        })
+
+        _lazy_loaded.update(
+            {
+                "Opcode": bytecode.Opcode,
+                "Instruction": bytecode.Instruction,
+                "CompiledConstraint": bytecode.CompiledConstraint,
+                "INSTRUCTION_DTYPE": bytecode.INSTRUCTION_DTYPE,
+                "compile_constraint": bytecode.compile_constraint,
+                "BytecodeCompiler": bytecode.BytecodeCompiler,
+                "disassemble": bytecode.disassemble,
+            }
+        )
         return _lazy_loaded[name]
 
-    if name in ("evaluate_bag", "get_dispatcher", "BackendType", "DispatchResult",
-                "count_satisfying", "iter_satisfying", "get_backend_info", "warmup"):
+    if name in (
+        "evaluate_bag",
+        "get_dispatcher",
+        "BackendType",
+        "DispatchResult",
+        "count_satisfying",
+        "iter_satisfying",
+        "get_backend_info",
+        "warmup",
+    ):
         from pysymex.h_acceleration import dispatcher
-        _lazy_loaded.update({
-            "evaluate_bag": dispatcher.evaluate_bag,
-            "get_dispatcher": dispatcher.get_dispatcher,
-            "BackendType": dispatcher.BackendType,
-            "DispatchResult": dispatcher.DispatchResult,
-            "count_satisfying": dispatcher.count_satisfying,
-            "iter_satisfying": dispatcher.iter_satisfying,
-            "get_backend_info": dispatcher.get_backend_info,
-            "warmup": dispatcher.warmup,
-        })
+
+        _lazy_loaded.update(
+            {
+                "evaluate_bag": dispatcher.evaluate_bag,
+                "get_dispatcher": dispatcher.get_dispatcher,
+                "BackendType": dispatcher.BackendType,
+                "DispatchResult": dispatcher.DispatchResult,
+                "count_satisfying": dispatcher.count_satisfying,
+                "iter_satisfying": dispatcher.iter_satisfying,
+                "get_backend_info": dispatcher.get_backend_info,
+                "warmup": dispatcher.warmup,
+            }
+        )
         return _lazy_loaded[name]
 
     if name in ("MemoryBudget", "calculate_memory_budget"):
         from pysymex.h_acceleration import memory
-        _lazy_loaded.update({
-            "MemoryBudget": memory.MemoryBudget,
-            "calculate_memory_budget": memory.calculate_memory_budget,
-        })
+
+        _lazy_loaded.update(
+            {
+                "MemoryBudget": memory.MemoryBudget,
+                "calculate_memory_budget": memory.calculate_memory_budget,
+            }
+        )
         return _lazy_loaded[name]
 
     if name in ("GPUBagEvaluator", "get_bag_evaluator"):
         from pysymex.h_acceleration import chtd_integration
-        _lazy_loaded.update({
-            "GPUBagEvaluator": chtd_integration.GPUBagEvaluator,
-            "get_bag_evaluator": chtd_integration.get_bag_evaluator,
-        })
+
+        _lazy_loaded.update(
+            {
+                "GPUBagEvaluator": chtd_integration.GPUBagEvaluator,
+                "get_bag_evaluator": chtd_integration.get_bag_evaluator,
+            }
+        )
         return _lazy_loaded[name]
 
     if name in ("ThompsonSampler", "create_sampler"):
         from pysymex.h_acceleration import thompson_sampling
-        _lazy_loaded.update({
-            "ThompsonSampler": thompson_sampling.ThompsonSampler,
-            "create_sampler": thompson_sampling.create_sampler,
-        })
+
+        _lazy_loaded.update(
+            {
+                "ThompsonSampler": thompson_sampling.ThompsonSampler,
+                "create_sampler": thompson_sampling.create_sampler,
+            }
+        )
         return _lazy_loaded[name]
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

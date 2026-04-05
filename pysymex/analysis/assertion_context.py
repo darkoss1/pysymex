@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Assertion Context Analyzer for pysymex.
 
 This module provides deeper analysis of assertion-related issues to
@@ -123,6 +141,7 @@ def analyze_source_context(
     Returns:
         Tuple of (ContextType, confidence)
     """
+
     def check_content(content: str) -> tuple[ContextType, float] | None:
         """Check content."""
         for pattern in PRODUCTION_PATTERNS:
@@ -141,20 +160,17 @@ def analyze_source_context(
 
         for exc_name, context_type in RAISE_PATTERNS.items():
             if f"raise {exc_name}" in content:
-                # If we raise a specific error, increase confidence if it matches the context
                 return context_type, 0.75
         return None
 
     if line_number is not None:
         source_lines = source_code.splitlines()
         if 1 <= line_number <= len(source_lines):
-            # First check the target line itself with high confidence
             target_line = source_lines[line_number - 1]
             result = check_content(target_line)
             if result:
                 return result
 
-            # Otherwise check nearby lines
             start = max(0, line_number - 2)
             end = min(len(source_lines), line_number + 1)
             source_code = "\n".join(source_lines[start:end])

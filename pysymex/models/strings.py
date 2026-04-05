@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Enhanced Models for Python string operations.
 This module provides relationship-preserving symbolic models for string methods.
 Instead of creating completely fresh symbolic values, these models maintain
@@ -45,7 +63,7 @@ class StrLowerModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"lower_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"lower_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
@@ -68,7 +86,7 @@ class StrUpperModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"upper_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"upper_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
@@ -88,7 +106,7 @@ class StrCapitalizeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"capitalize_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"capitalize_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
@@ -108,7 +126,7 @@ class StrTitleModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"title_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"title_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
@@ -128,7 +146,7 @@ class StrSwapcaseModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"swapcase_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"swapcase_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len == original.z3_len)
@@ -150,7 +168,7 @@ class StrStripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"strip_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"strip_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -171,7 +189,7 @@ class StrLstripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"lstrip_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"lstrip_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -193,7 +211,7 @@ class StrRstripModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"rstrip_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"rstrip_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -223,7 +241,7 @@ class StrSplitModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         separator = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, base_constraint = SymbolicList.symbolic(f"split_{state .pc }")
+        result, base_constraint = SymbolicList.symbolic(f"split_{state.pc}")
         constraints = [
             base_constraint,
             result.z3_len >= 1,
@@ -257,7 +275,7 @@ class StrJoinModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"join_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"join_{state.pc}")
         constraints = [base_constraint]
         constraints.append(result.z3_len >= 0)
         return ModelResult(value=result, constraints=constraints)
@@ -283,7 +301,7 @@ class StrReplaceModel(FunctionModel):
         original = _get_symbolic_string(args[0]) if args else None
         old_str = _get_symbolic_string(args[1]) if len(args) > 1 else None
         _get_symbolic_string(args[2]) if len(args) > 2 else None
-        result, base_constraint = SymbolicString.symbolic(f"replace_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"replace_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= 0)
@@ -310,14 +328,14 @@ class StrStartswithModel(FunctionModel):
         if original is not None and prefix is not None:
             result_bool = z3.PrefixOf(prefix.z3_str, original.z3_str)
             result = SymbolicValue(
-                _name=f"startswith_{state .pc }",
+                _name=f"startswith_{state.pc}",
                 z3_int=z3.IntVal(0),
                 is_int=z3.BoolVal(False),
                 z3_bool=result_bool,
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"startswith_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"startswith_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -341,14 +359,14 @@ class StrEndswithModel(FunctionModel):
         if original is not None and suffix is not None:
             result_bool = z3.SuffixOf(suffix.z3_str, original.z3_str)
             result = SymbolicValue(
-                _name=f"endswith_{state .pc }",
+                _name=f"endswith_{state.pc}",
                 z3_int=z3.IntVal(0),
                 is_int=z3.BoolVal(False),
                 z3_bool=result_bool,
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"endswith_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"endswith_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -377,7 +395,7 @@ class StrFindModel(FunctionModel):
         if original is not None and substring is not None:
             idx = z3.IndexOf(original.z3_str, substring.z3_str, z3.IntVal(0))
             result = SymbolicValue(
-                _name=f"find_{state .pc }",
+                _name=f"find_{state.pc}",
                 z3_int=idx,
                 is_int=z3.BoolVal(True),
                 z3_bool=z3.BoolVal(False),
@@ -388,7 +406,7 @@ class StrFindModel(FunctionModel):
                 z3.Implies(idx >= 0, idx + substring.z3_len <= original.z3_len),
             ]
             return ModelResult(value=result, constraints=constraints)
-        result, constraint = SymbolicValue.symbolic(f"find_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"find_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= -1],
@@ -416,7 +434,7 @@ class StrIndexModel(FunctionModel):
         if original is not None and substring is not None:
             idx = z3.IndexOf(original.z3_str, substring.z3_str, z3.IntVal(0))
             result = SymbolicValue(
-                _name=f"index_{state .pc }",
+                _name=f"index_{state.pc}",
                 z3_int=idx,
                 is_int=z3.BoolVal(True),
                 z3_bool=z3.BoolVal(False),
@@ -437,7 +455,7 @@ class StrIndexModel(FunctionModel):
                 constraints=constraints,
                 side_effects=side_effects,
             )
-        result, constraint = SymbolicValue.symbolic(f"index_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"index_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -462,7 +480,7 @@ class StrCountModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         substring = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"count_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"count_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         if original is not None:
             constraints.append(result.z3_int <= original.z3_len)
@@ -493,7 +511,7 @@ class StrFormatModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicString.symbolic(f"format_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"format_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         return ModelResult(value=result, constraints=constraints)
 
@@ -511,7 +529,7 @@ class StrIsdigitModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isdigit_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isdigit_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -531,7 +549,7 @@ class StrIsalphaModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isalpha_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isalpha_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -551,7 +569,7 @@ class StrIsalnumModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isalnum_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isalnum_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -571,7 +589,7 @@ class StrIsspaceModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isspace_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isspace_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -593,7 +611,7 @@ class StrIslowerModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"islower_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"islower_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -615,7 +633,7 @@ class StrIsupperModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isupper_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isupper_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -638,7 +656,7 @@ class StrCenterModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         width = args[1] if len(args) > 1 else None
-        result, base_constraint = SymbolicString.symbolic(f"center_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"center_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -666,7 +684,7 @@ class StrLjustModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"ljust_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"ljust_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -687,7 +705,7 @@ class StrRjustModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"rjust_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"rjust_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -708,7 +726,7 @@ class StrZfillModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"zfill_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"zfill_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -726,7 +744,7 @@ class StrRemovePrefixModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         prefix = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicString.symbolic(f"removeprefix_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"removeprefix_{state.pc}")
         constraints = [constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -750,7 +768,7 @@ class StrRemoveSuffixModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         suffix = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicString.symbolic(f"removesuffix_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"removesuffix_{state.pc}")
         constraints = [constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -780,14 +798,14 @@ class StrContainsModel(FunctionModel):
         if haystack is not None and needle is not None:
             result_bool = z3.Contains(haystack.z3_str, needle.z3_str)
             result = SymbolicValue(
-                _name=f"contains_{state .pc }",
+                _name=f"contains_{state.pc}",
                 z3_int=z3.IntVal(0),
                 is_int=z3.BoolVal(False),
                 z3_bool=result_bool,
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"contains_{state.pc}")
         return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
@@ -804,7 +822,7 @@ class StrRsplitModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicList.symbolic(f"rsplit_{state .pc }")
+        result, base_constraint = SymbolicList.symbolic(f"rsplit_{state.pc}")
         constraints = [base_constraint, result.z3_len >= 1]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len + 1)
@@ -826,7 +844,7 @@ class StrRfindModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"rfind_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"rfind_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= -1]
         if original is not None:
             constraints.append(result.z3_int < original.z3_len)
@@ -847,7 +865,7 @@ class StrRindexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"rindex_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"rindex_{state.pc}")
         constraints = [constraint, result.is_int, result.z3_int >= 0]
         side_effects: dict[str, object] = {
             "potential_exception": {"type": "ValueError", "message": "substring not found"}
@@ -869,7 +887,7 @@ class StrPartitionModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"partition_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"partition_{state.pc}")
         constraints = [constraint, result.z3_len == 3]
         return ModelResult(value=result, constraints=constraints)
 
@@ -886,7 +904,7 @@ class StrRpartitionModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicList.symbolic(f"rpartition_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"rpartition_{state.pc}")
         constraints = [constraint, result.z3_len == 3]
         return ModelResult(value=result, constraints=constraints)
 
@@ -904,7 +922,7 @@ class StrSplitlinesModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicList.symbolic(f"splitlines_{state .pc }")
+        result, base_constraint = SymbolicList.symbolic(f"splitlines_{state.pc}")
         constraints = [base_constraint, result.z3_len >= 0]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -925,7 +943,7 @@ class StrEncodeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"encode_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"encode_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -947,7 +965,7 @@ class StrCasefoldModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"casefold_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"casefold_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -967,7 +985,7 @@ class StrExpandtabsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"expandtabs_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"expandtabs_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)
@@ -988,7 +1006,7 @@ class StrMaketransModel(FunctionModel):
     ) -> ModelResult:
         from pysymex.core.types import SymbolicDict
 
-        result, constraint = SymbolicDict.symbolic(f"maketrans_{state .pc }")
+        result, constraint = SymbolicDict.symbolic(f"maketrans_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
 
@@ -1007,7 +1025,7 @@ class StrTranslateModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, base_constraint = SymbolicString.symbolic(f"translate_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"translate_{state.pc}")
         constraints = [base_constraint]
         if original is not None:
             constraints.append(result.z3_len <= original.z3_len)
@@ -1028,7 +1046,7 @@ class StrIstitleModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"istitle_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"istitle_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -1050,7 +1068,7 @@ class StrIsprintableModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isprintable_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isprintable_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, result.z3_bool))
@@ -1070,7 +1088,7 @@ class StrIsidentifierModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isidentifier_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isidentifier_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -1090,7 +1108,7 @@ class StrIsdecimalModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isdecimal_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isdecimal_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -1110,7 +1128,7 @@ class StrIsnumericModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"isnumeric_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"isnumeric_{state.pc}")
         constraints = [constraint, result.is_bool]
         if original is not None:
             constraints.append(z3.Implies(original.z3_len == 0, z3.Not(result.z3_bool)))
@@ -1129,11 +1147,11 @@ class StrFormatMapModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, base_constraint = SymbolicString.symbolic(f"format_map_{state .pc }")
+        result, base_constraint = SymbolicString.symbolic(f"format_map_{state.pc}")
         return ModelResult(value=result, constraints=[base_constraint])
 
 
-STRING_MODELS = [
+STRING_MODELS: list[FunctionModel] = [
     StrLowerModel(),
     StrUpperModel(),
     StrCapitalizeModel(),

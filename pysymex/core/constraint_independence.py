@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Constraint Independence Optimization for pysymex.
 
 Implements the constraint-independence optimization from KLEE (Cadar et al.
@@ -181,7 +199,7 @@ class ConstraintIndependenceOptimizer:
     def __init__(self) -> None:
         self._uf = UnionFind()
 
-        self._var_cache: dict[int, list[tuple[_z3.ExprRef, frozenset[str]]]] = {}
+        self._var_cache: dict[int, frozenset[str]] = {}
 
         self._extract_full: int = 0
         self._extract_cached: int = 0
@@ -204,12 +222,10 @@ class ConstraintIndependenceOptimizer:
     def _extract_variables(self, expr: z3.ExprRef) -> frozenset[str]:
         """Extract free variables from Z3 expression, with caching."""
         key = expr.hash()
-        cached_bucket = self._var_cache.get(key)
-        if cached_bucket is not None:
-            for cached_expr, cached_vars in cached_bucket:
-                if _z3.eq(expr, cached_expr):
-                    self._extract_cached += 1
-                    return cached_vars
+        cached_vars = self._var_cache.get(key)
+        if cached_vars is not None:
+            self._extract_cached += 1
+            return cached_vars
 
         self._extract_full += 1
 
@@ -235,10 +251,7 @@ class ConstraintIndependenceOptimizer:
                     worklist.append(child)
 
         result = frozenset(names)
-        if cached_bucket is None:
-            self._var_cache[key] = [(expr, result)]
-        else:
-            cached_bucket.append((expr, result))
+        self._var_cache[key] = result
         return result
 
     def register_constraint(self, constraint: z3.BoolRef) -> frozenset[str]:

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Object Model Types for pysymex.
 Phase 19: Classes, instances, and inheritance for symbolic execution.
@@ -16,6 +34,7 @@ This module provides the data types:
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -39,7 +58,7 @@ class ObjectId:
     _counter_lock = threading.Lock()
     __slots__ = ("_id", "_name", "_z3_id", "_z3_lock")
 
-    def __init__(self, name: str | None = None):
+    def __init__(self, name: str | None = None) -> None:
         with ObjectId._counter_lock:
             ObjectId._counter += 1
             self._id = ObjectId._counter
@@ -168,7 +187,7 @@ class SymbolicClass:
         compare=False,
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.qualname:
             self.qualname = self.name
         if self._id is None:
@@ -220,7 +239,7 @@ class SymbolicClass:
         return f"<class '{self.qualname}'>"
 
     def __repr__(self) -> str:
-        return f"SymbolicClass({self.name !r})"
+        return f"SymbolicClass({self.name!r})"
 
 
 def compute_mro(cls: SymbolicClass) -> tuple[SymbolicClass, ...]:
@@ -264,7 +283,7 @@ def compute_mro(cls: SymbolicClass) -> tuple[SymbolicClass, ...]:
 
     parent_mros = [list(base.mro) for base in cls.bases]
     parent_list = list(cls.bases)
-    mro = merge([[cls]] + parent_mros + [parent_list])
+    mro = merge([[cls], *parent_mros, parent_list])
     return tuple(mro)
 
 
@@ -289,7 +308,7 @@ class SymbolicObject:
     _id: ObjectId | None = None
     slots: tuple[str, ...] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._id is None:
             self._id = ObjectId(f"inst_{self.cls.name}")
 
@@ -353,7 +372,7 @@ class SymbolicObject:
         return f"<{self.cls.qualname} object at {self._id}>"
 
     def __repr__(self) -> str:
-        return f"SymbolicObject({self.cls.name !r}, {self._id})"
+        return f"SymbolicObject({self.cls.name!r}, {self._id})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,9 +427,9 @@ class SymbolicProperty:
         name: Property name (for error messages).
     """
 
-    fget: object | None = None
-    fset: object | None = None
-    fdel: object | None = None
+    fget: Callable[[SymbolicObject], object] | None = None
+    fset: Callable[[SymbolicObject, object], None] | None = None
+    fdel: Callable[[SymbolicObject], None] | None = None
     doc: str | None = None
     name: str = ""
 
@@ -438,15 +457,15 @@ class SymbolicProperty:
             raise AttributeError(f"property '{self.name}' has no deleter")
         self.fdel(obj)
 
-    def getter(self, fget: object) -> SymbolicProperty:
+    def getter(self, fget: Callable[[SymbolicObject], object]) -> SymbolicProperty:
         """Return property with new getter."""
         return SymbolicProperty(fget, self.fset, self.fdel, self.doc, self.name)
 
-    def setter(self, fset: object) -> SymbolicProperty:
+    def setter(self, fset: Callable[[SymbolicObject, object], None]) -> SymbolicProperty:
         """Return property with new setter."""
         return SymbolicProperty(self.fget, fset, self.fdel, self.doc, self.name)
 
-    def deleter(self, fdel: object) -> SymbolicProperty:
+    def deleter(self, fdel: Callable[[SymbolicObject], None]) -> SymbolicProperty:
         """Return property with new deleter."""
         return SymbolicProperty(self.fget, self.fset, fdel, self.doc, self.name)
 
@@ -468,7 +487,7 @@ class SymbolicSuper:
     obj: SymbolicObject | None = None
     obj_type: SymbolicClass | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.obj is not None and self.obj_type is None:
             object.__setattr__(self, "obj_type", self.obj.cls)
 

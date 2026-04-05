@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Graceful shutdown helpers for async pysymex operations.
 
 Provides:
@@ -24,7 +42,7 @@ import logging
 import signal
 import sys
 from collections.abc import Coroutine
-from typing import Any, TypeVar
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +55,14 @@ def cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:
     This mirrors the cleanup logic in ``asyncio.run()`` but can be
     called from a signal handler callback.
     """
+    if loop.is_closed():
+        return
+
     to_cancel = asyncio.all_tasks(loop)
-    current = asyncio.current_task()
+    try:
+        current = asyncio.current_task(loop=loop)
+    except RuntimeError:
+        current = None
     if current is not None:
         to_cancel.discard(current)
 
@@ -63,10 +87,14 @@ def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
     def _shutdown(sig_name: str) -> None:
         """Shutdown."""
         logger.info("Received %s – initiating graceful shutdown", sig_name)
-        cancel_all_tasks(loop)
+        if loop.is_closed():
+            return
+        try:
+            loop.call_soon_threadsafe(cancel_all_tasks, loop)
+        except RuntimeError:
+            return
 
     if sys.platform == "win32":
-
         _original_sigint = signal.getsignal(signal.SIGINT)
 
         def _win_handler(signum: int, frame: object) -> None:
@@ -77,12 +105,11 @@ def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
 
         signal.signal(signal.SIGINT, _win_handler)
     else:
-
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, _shutdown, sig.name)
 
 
-def run_with_shutdown(coro: Coroutine[Any, Any, T]) -> T:
+def run_with_shutdown(coro: Coroutine[object, object, T]) -> T:
     """Run *coro* with signal-based graceful shutdown.
 
     This is a thin wrapper around ``asyncio.run()`` that:

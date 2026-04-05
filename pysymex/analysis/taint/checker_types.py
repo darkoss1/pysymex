@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Taint analysis types — enums, dataclasses, definitions."""
 
 from __future__ import annotations
@@ -82,7 +100,7 @@ class TaintLabel:
             kind=self.kind,
             source=self.source,
             source_line=self.source_line,
-            path=self.path + (operation,),
+            path=(*self.path, operation),
         )
 
     def merge_with(self, other: TaintLabel) -> TaintLabel:
@@ -446,10 +464,10 @@ class TaintViolation:
         """Format the violation for multi-line display."""
         source_desc = self.source.source or "unknown source"
         return (
-            f"[TAINT] {self .sink .severity .upper ()}: {self .sink .kind .name }\n"
-            f"  Tainted data from {source_desc } (line {self .source .source_line })\n"
-            f"  reaches {self .sink .name } at line {self .sink_line }\n"
-            f"  via: {' -> '.join (self .source .path )or 'direct'}"
+            f"[TAINT] {self.sink.severity.upper()}: {self.sink.kind.name}\n"
+            f"  Tainted data from {source_desc} (line {self.source.source_line})\n"
+            f"  reaches {self.sink.name} at line {self.sink_line}\n"
+            f"  via: {' -> '.join(self.source.path) or 'direct'}"
         )
 
     def __str__(self) -> str:
@@ -457,7 +475,7 @@ class TaintViolation:
         source_desc = self.source.source or "unknown source"
         path_desc = " -> ".join(self.source.path) if self.source.path else "direct"
         return (
-            f"Tainted data from '{source_desc }' (line {self .source .source_line }) "
-            f"flows to {self .sink .kind .name } sink '{self .sink .name }' "
-            f"at line {self .sink_line } via {path_desc }"
+            f"Tainted data from '{source_desc}' (line {self.source.source_line}) "
+            f"flows to {self.sink.kind.name} sink '{self.sink.name}' "
+            f"at line {self.sink_line} via {path_desc}"
         )

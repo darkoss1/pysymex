@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Composite abstract domain, abstract state, and warning types.
 
 Provides:
@@ -169,6 +187,20 @@ class NumericProduct(AbstractValue):
             may_raise,
         )
 
+    def mod(self, other: NumericProduct) -> tuple[NumericProduct, bool]:
+        """Modulo with division-by-zero check."""
+        interval_result, int_may_raise = self.interval.mod(other.interval)
+        sign_result, sign_may_raise = self.sign.mod(other.sign)
+        may_raise = int_may_raise or sign_may_raise or other.may_be_zero()
+        return (
+            NumericProduct(
+                interval_result,
+                sign_result,
+                Congruence.top(),
+            ).reduce(),
+            may_raise,
+        )
+
 
 @dataclass
 class AbstractState:
@@ -242,6 +274,15 @@ class AbstractState:
             v1 = self.get(var)
             v2 = other.get(var)
             result.variables[var] = v1.join(v2)
+
+        result.stack = [s1.join(s2) for s1, s2 in zip(self.stack, other.stack, strict=False)]
+
+        all_collections = set(self.collection_sizes.keys()) | set(other.collection_sizes.keys())
+        for coll in all_collections:
+            c1 = self.collection_sizes.get(coll, NumericProduct.top())
+            c2 = other.collection_sizes.get(coll, NumericProduct.top())
+            result.collection_sizes[coll] = c1.join(c2)
+
         return result
 
     def widen(self, other: AbstractState) -> AbstractState:
@@ -256,6 +297,15 @@ class AbstractState:
             v1 = self.get(var)
             v2 = other.get(var)
             result.variables[var] = v1.widen(v2)
+
+        result.stack = [s1.widen(s2) for s1, s2 in zip(self.stack, other.stack, strict=False)]
+
+        all_collections = set(self.collection_sizes.keys()) | set(other.collection_sizes.keys())
+        for coll in all_collections:
+            c1 = self.collection_sizes.get(coll, NumericProduct.top())
+            c2 = other.collection_sizes.get(coll, NumericProduct.top())
+            result.collection_sizes[coll] = c1.widen(c2)
+
         return result
 
     def leq(self, other: AbstractState) -> bool:

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Backend Protocol and Registry.
 
 Defines the interface all GPU backends must implement and provides
@@ -28,6 +46,7 @@ __all__ = [
     "BackendType",
 ]
 
+
 class BackendType(Enum):
     """Available backend types in priority order.
 
@@ -38,6 +57,7 @@ class BackendType(Enum):
     GPU = auto()
     CPU = auto()
     REFERENCE = auto()
+
 
 @dataclass(frozen=True, slots=True)
 class BackendInfo:
@@ -80,18 +100,16 @@ class BackendInfo:
         Modern GPUs can achieve 1000x+ higher throughput on large problems.
         """
         if self.backend_type == BackendType.GPU:
-            # Conservative baseline; modern GPUs can reach 1000-50000 billion states/sec
             return 100.0
         elif self.backend_type == BackendType.CPU:
-            # CPU bit-sliced evaluation
             return 1.0
         else:
-            # Pure Python reference (single-threaded)
             return 0.001
 
     def __repr__(self) -> str:
         status = "available" if self.available else f"unavailable ({self.error_message})"
         return f"BackendInfo({self.name}, {status}, max_w={self.max_treewidth})"
+
 
 class BackendError(Exception):
     """Error raised by backend operations.
@@ -105,6 +123,7 @@ class BackendError(Exception):
     """
 
     pass
+
 
 @runtime_checkable
 class BackendProtocol(Protocol):

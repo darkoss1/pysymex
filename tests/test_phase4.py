@@ -389,14 +389,14 @@ class TestConcolicExecution:
         """Test ConcolicExecutor instantiation."""
         executor = ConcolicExecutor(
             max_iterations=50,
-            strategy="dfs",
+            strategy="chtd_native",
         )
         assert executor.max_iterations == 50
-        assert executor.strategy == "dfs"
+        assert executor.strategy == "chtd_native"
 
     def test_concolic_executor_strategies(self):
         """Test different concolic strategies."""
-        strategies = ["dfs", "bfs", "random", "coverage"]
+        strategies = ["chtd_native", "random", "coverage"]
 
         for strategy in strategies:
             executor = ConcolicExecutor(strategy=strategy)

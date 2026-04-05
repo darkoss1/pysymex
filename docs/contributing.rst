@@ -12,7 +12,7 @@ Development Setup
    .. code-block:: bash
 
       git clone https://github.com/darkoss1/pysymex.git
-      cd pyspecter
+      cd pysymex
 
 2. Create a virtual environment:
 
@@ -47,25 +47,22 @@ With coverage:
 Code Style
 ----------
 
-We use Black for formatting and Ruff for linting:
+We use Ruff for formatting:
 
 .. code-block:: bash
 
    # Format code
-   black pysymex/ tests/
-
-   # Lint code
-   ruff check pysymex/ tests/
+   ruff format pysymex/ tests/
 
 
 Type Checking
 -------------
 
-Run MyPy for type checking:
+Run Pyright for strict type checking:
 
 .. code-block:: bash
 
-   mypy pysymex/
+   pyright pysymex/
 
 
 Adding New Opcodes
@@ -96,7 +93,7 @@ To add a new bug detector:
 2. Implement the ``check()`` method
 3. Register with the ``DetectorRegistry``
 
-See ``pysymex/analysis/advanced_detectors.py`` for examples.
+See ``pysymex/analysis/detectors/`` for examples.
 
 
 Pull Request Guidelines

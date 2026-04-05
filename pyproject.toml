@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pysymex"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-only"}
 requires-python = ">=3.11"
 authors = [
     {name = "PySyMex Team"}
@@ -24,7 +24,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -44,6 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0",
@@ -109,14 +110,17 @@ pysymex = ["py.typed"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --tb=short -n auto"
+addopts = "-v --tb=short -n auto --durations=25 --durations-min=2.0"
 asyncio_mode = "auto"
+timeout = 120
+timeout_method = "thread"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "fast: marks tests as fast",
     "integration: marks tests as integration tests",
     "benchmark: marks tests as performance benchmarks",
     "gpu: marks tests requiring GPU hardware",
+    "timeout: per-test timeout override (provided by pytest-timeout)",
 ]
 
 [tool.black]
@@ -132,46 +136,6 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-[tool.ruff.lint]
-select = [
-    "E",    # pycodestyle errors
-    "F",    # pyflakes
-    "W",    # pycodestyle warnings
-    "I",    # isort
-    "UP",   # pyupgrade
-    "B",    # flake8-bugbear
-    "C4",   # flake8-comprehensions
-    "S",    # flake8-bandit (security)
-    "SIM",  # flake8-simplify
-    "TCH",  # flake8-type-checking
-    "RUF",  # ruff-specific rules
-    "PTH",  # flake8-use-pathlib
-    "PLC",  # pylint convention
-    "PLE",  # pylint error
-    "PLW",  # pylint warning
-    "PERF", # perflint
-    "FURB", # refurb
-    "LOG",  # flake8-logging
-    "FLY",  # flynt (f-string conversion)
-]
-ignore = [
-    "E501",    # line too long (handled by formatter)
-    "S101",    # assert usage (used in contracts)
-    "S301",    # pickle (HMAC-signed, intentional)
-    "S603",    # subprocess without shell=True check
-    "S604",    # function call with shell=True
-    "S605",    # process with a shell
-    "UP007",   # Optional[X] -> X | None (keep for readability in some cases)
-    "TCH001",  # move import into TYPE_CHECKING (z3 needed at runtime)
-    "TCH002",  # move third-party import into TYPE_CHECKING
-    "TCH003",  # move stdlib import into TYPE_CHECKING
-    "PLW0603", # global statement updates (used in reset functions)
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "PLW", "SIM"]
-"scripts/**" = ["S"]
 
 [tool.pyright]
 stubPath = "typings"

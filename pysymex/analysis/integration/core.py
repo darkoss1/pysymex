@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Scanner Integration Core for pysymex.
 Core analysis pipeline and report generation logic.
@@ -8,6 +26,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from types import CodeType
 from typing import (
     cast,
 )
@@ -18,13 +37,12 @@ from ..abstract.interpreter import (
     AbstractAnalyzer,
     DivisionByZeroWarning,
 )
+from ..detectors.static import StaticAnalyzer
 from ..detectors.static_types import (
-    DetectionContext,
     Issue,
     IssueKind,
     Severity,
 )
-from ..detectors.static import StaticAnalyzer
 from ..flow_sensitive import (
     CFGBuilder,
     FlowSensitiveAnalyzer,
@@ -33,6 +51,7 @@ from ..function_models import (
     FunctionSummarizer,
 )
 from ..patterns import (
+    FunctionPatternInfo,
     PatternAnalyzer,
     PatternKind,
     PatternMatch,
@@ -84,7 +103,7 @@ class AnalysisPipeline:
         self.function_models = FunctionSummarizer()
         self._setup_patterns()
 
-    def _get_flow_analyzer(self, code: object) -> FlowSensitiveAnalyzer:
+    def _get_flow_analyzer(self, code: CodeType) -> FlowSensitiveAnalyzer:
         """Create a FlowSensitiveAnalyzer for the given code object."""
         return FlowSensitiveAnalyzer(code)
 
@@ -164,16 +183,17 @@ class AnalysisPipeline:
         """Extract import information from the module."""
         if not module_ctx.code:
             return
-        for const in module_ctx.code.co_consts:
-            if isinstance(const, str):
-                module_ctx.imports.add(const)
         for instr in _cached_get_instructions(module_ctx.code):
             if instr.opname == "IMPORT_NAME":
                 module_ctx.imports.add(str(instr.argval))
 
+    def extract_imports(self, module_ctx: ModuleContext) -> None:
+        """Public wrapper for import extraction."""
+        self._extract_imports(module_ctx)
+
     def _find_functions(
         self,
-        code: object,
+        code: CodeType,
         module_ctx: ModuleContext,
         builder: AnalysisResultBuilder,
         parent_ctx: FunctionContext | None = None,
@@ -210,33 +230,26 @@ class AnalysisPipeline:
                 logger.debug("CFG build failed for %s", func_ctx.name, exc_info=True)
         if self.config.type_inference:
             try:
-                func_ctx.type_env = cast(
-                    "TypeEnvironment | None", self.type_analyzer.analyze_function(code, file_path)
-                )
+                type_map = self.type_analyzer.analyze_function(code)
+                func_ctx.type_env = type_map.get(0, TypeEnvironment())
             except (ValueError, TypeError, AttributeError):
                 logger.debug("Type inference failed for %s", func_ctx.name, exc_info=True)
                 func_ctx.type_env = TypeEnvironment()
+        pattern_info: FunctionPatternInfo | None = None
         if self.config.pattern_recognition:
             try:
-                func_ctx.patterns = cast(
-                    "list[PatternMatch]",
-                    self.pattern_analyzer.analyze_function(
-                        code,
-                    ),
-                )
+                pattern_info = self.pattern_analyzer.analyze_function(code)
+                func_ctx.patterns = list(pattern_info.patterns)
             except (ValueError, TypeError, AttributeError):
                 logger.debug("Pattern recognition failed for %s", func_ctx.name, exc_info=True)
         try:
-            context = DetectionContext(
+            raw_issues = self.enhanced_analyzer.analyze_function(
                 code=code,
                 file_path=file_path,
                 type_env=func_ctx.type_env or TypeEnvironment(),
-                patterns=func_ctx.patterns,
-                cfg=func_ctx.cfg,
-                imports=module_ctx.imports,
-                global_types=module_ctx.global_types,
+                pattern_info=pattern_info,
+                flow_analyzer=self._get_flow_analyzer(code) if self.config.flow_analysis else None,
             )
-            raw_issues = cast("list[Issue]", self.enhanced_analyzer.analyze_with_context(context))
             issues = self._filter_issues(raw_issues, func_ctx.patterns)
             for issue in issues:
                 if not self._is_duplicate(issue, builder.issues):
@@ -264,8 +277,7 @@ class AnalysisPipeline:
                                     else Severity.HIGH
                                 ),
                                 message=(
-                                    f"Division by zero: {warning.variable} "
-                                    f"({warning.confidence})"
+                                    f"Division by zero: {warning.variable} ({warning.confidence})"
                                 ),
                                 file=file_path,
                                 line=warning.line,
@@ -424,8 +436,7 @@ class ReportGenerator:
                     Severity.INFO: "⚪",
                 }.get(issue.severity, "  ")
                 lines.append(
-                    f"  {severity_symbol} Line {issue.line}: "
-                    f"[{issue.kind.name}] {issue.message}"
+                    f"  {severity_symbol} Line {issue.line}: [{issue.kind.name}] {issue.message}"
                 )
             for violation in result.taint_violations:
                 lines.append(
@@ -459,6 +470,7 @@ class ReportGenerator:
             },
             "files": {},
         }
+        files_data = cast("dict[str, object]", data["files"])
         for file_path, result in self.results.items():
             file_data = {
                 "issues": [
@@ -485,7 +497,7 @@ class ReportGenerator:
                 "lines": result.lines_of_code,
                 "functions": result.functions_analyzed,
             }
-            data["files"][file_path] = file_data
+            files_data[file_path] = file_data
         return json.dumps(data, indent=2)
 
     def generate_sarif(self) -> str:

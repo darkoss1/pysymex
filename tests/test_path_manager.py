@@ -1,14 +1,13 @@
 """Tests for path manager (analysis/path_manager.py).
 
-Phase 4 -- covers DFS, BFS, Priority, CoverageGuided, Directed,
+Phase 4 -- covers CHTD-native, Priority, CoverageGuided, Directed,
 and Adaptive path managers.
 """
 from __future__ import annotations
 import pytest
 from pysymex.analysis.path_manager import (
     ExplorationStrategy,
-    DFSPathManager,
-    BFSPathManager,
+    CHTDNativePathManager,
     PriorityPathManager,
     CoverageGuidedPathManager,
     DirectedPathManager,
@@ -19,51 +18,38 @@ from pysymex.analysis.path_manager import (
 
 class TestExplorationStrategy:
     def test_enum_values(self):
-        assert ExplorationStrategy.DFS is not None
-        assert ExplorationStrategy.BFS is not None
+        assert ExplorationStrategy.CHTD_NATIVE is not None
+        assert ExplorationStrategy.ADAPTIVE is not None
 
     def test_enum_members_count(self):
         assert len(ExplorationStrategy) >= 2
 
 
-class TestDFSPathManager:
+class TestCHTDNativePathManager:
     def test_add_and_get(self):
-        pm = DFSPathManager()
-        pm.add_state("state1")
-        pm.add_state("state2")
-        assert pm.get_next_state() == "state2"  # LIFO
+        pm = CHTDNativePathManager()
+        from tests.helpers import make_state
+        st1 = make_state(pc=1)
+        st2 = make_state(pc=2)
+        pm.add_state(st1)
+        pm.add_state(st2)
+        assert pm.get_next_state() is not None
 
     def test_empty(self):
-        pm = DFSPathManager()
+        pm = CHTDNativePathManager()
         assert pm.is_empty()
 
     def test_not_empty_after_add(self):
-        pm = DFSPathManager()
-        pm.add_state("s")
+        pm = CHTDNativePathManager()
+        from tests.helpers import make_state
+        pm.add_state(make_state())
         assert not pm.is_empty()
 
     def test_length(self):
-        pm = DFSPathManager()
-        pm.add_state("a")
-        pm.add_state("b")
-        assert pm.size() == 2
-
-
-class TestBFSPathManager:
-    def test_add_and_get(self):
-        pm = BFSPathManager()
-        pm.add_state("state1")
-        pm.add_state("state2")
-        assert pm.get_next_state() == "state1"  # FIFO
-
-    def test_empty(self):
-        pm = BFSPathManager()
-        assert pm.is_empty()
-
-    def test_length(self):
-        pm = BFSPathManager()
-        pm.add_state("a")
-        pm.add_state("b")
+        pm = CHTDNativePathManager()
+        from tests.helpers import make_state
+        pm.add_state(make_state(pc=1))
+        pm.add_state(make_state(pc=2))
         assert pm.size() == 2
 
 
@@ -130,10 +116,6 @@ class TestAdaptivePathManager:
 
 
 class TestCreatePathManager:
-    def test_dfs(self):
-        pm = create_path_manager(ExplorationStrategy.DFS)
-        assert isinstance(pm, DFSPathManager)
-
-    def test_bfs(self):
-        pm = create_path_manager(ExplorationStrategy.BFS)
-        assert isinstance(pm, BFSPathManager)
+    def test_chtd_native(self):
+        pm = create_path_manager(ExplorationStrategy.CHTD_NATIVE)
+        assert isinstance(pm, AdaptivePathManager)

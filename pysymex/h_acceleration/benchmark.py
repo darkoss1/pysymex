@@ -1,3 +1,20 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 GPU Acceleration Benchmark CLI.
@@ -19,10 +36,18 @@ import platform
 import sys
 import time
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
+import z3
+
+
+def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Return unpacked bits in little-endian bit order for each byte."""
+    bits = np.unpackbits(bitmap)
+    return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
+
 
 if TYPE_CHECKING:
     from pysymex.h_acceleration.backends import BackendInfo
@@ -31,22 +56,37 @@ if TYPE_CHECKING:
 
 class BackendModule(Protocol):
     """Protocol for backend modules."""
+
     def is_available(self) -> bool: ...
     def get_info(self) -> BackendInfo: ...
     def evaluate_bag(self, constraint: CompiledConstraint) -> npt.NDArray[np.uint8]: ...
 
+
+class Z3ModuleLike(Protocol):
+    def Bool(self, name: str) -> z3.BoolRef: ...
+
+    def Not(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+
+    def Or(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+
+    def And(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+
+
 @dataclass
 class BenchmarkConfig:
     """Benchmark configuration."""
+
     treewidths: list[int]
     iterations: int
     warmup_iterations: int
     clause_ratio: float
     random_seed: int
 
+
 @dataclass
 class BenchmarkResult:
     """Result from a single benchmark."""
+
     backend: str
     treewidth: int
     num_states: int
@@ -58,9 +98,11 @@ class BenchmarkResult:
     total_time_ms: float
     throughput_mops: float
 
+
 @dataclass
 class SystemInfo:
     """System information for benchmark context."""
+
     python_version: str
     platform: str
     processor: str
@@ -68,11 +110,13 @@ class SystemInfo:
     cuda_device: str | None
     backends_available: list[str]
 
+
 def get_system_info() -> SystemInfo:
     """Gather system information."""
     numba_version = None
     try:
         import numba
+
         numba_version = numba.__version__
     except ImportError:
         pass
@@ -80,6 +124,7 @@ def get_system_info() -> SystemInfo:
     cuda_device = None
     try:
         from numba import cuda
+
         if cuda.is_available():
             device = cuda.get_current_device()
             name = device.name
@@ -90,6 +135,7 @@ def get_system_info() -> SystemInfo:
     backends = []
     try:
         from pysymex.h_acceleration.dispatcher import get_dispatcher
+
         dispatcher = get_dispatcher()
         for info in dispatcher.list_backends():
             if info.available:
@@ -106,40 +152,45 @@ def get_system_info() -> SystemInfo:
         backends_available=backends,
     )
 
-def create_random_3sat(z3_module: object, num_vars: int, clause_ratio: float, seed: int) -> tuple[object, list[str]]:
+
+def create_random_3sat(
+    z3_module: Z3ModuleLike,
+    num_vars: int,
+    clause_ratio: float,
+    seed: int,
+) -> tuple[z3.BoolRef, list[str]]:
     """Create random 3-SAT instance."""
     import random
+
     random.seed(seed)
 
     num_clauses = max(1, int(num_vars * clause_ratio))
-    vars_list = [z3_module.Bool(f'x{i}') for i in range(num_vars)]
-    var_names = [f'x{i}' for i in range(num_vars)]
+    vars_list = [z3_module.Bool(f"x{i}") for i in range(num_vars)]
+    var_names = [f"x{i}" for i in range(num_vars)]
 
     clauses = []
     for _ in range(num_clauses):
-
         k = min(3, num_vars)
         indices = random.sample(range(num_vars), k)
         literals = [
-            vars_list[i] if random.random() > 0.5 else z3_module.Not(vars_list[i])
-            for i in indices
+            vars_list[i] if random.random() > 0.5 else z3_module.Not(vars_list[i]) for i in indices
         ]
         clauses.append(z3_module.Or(*literals))
 
     return z3_module.And(*clauses), var_names
+
 
 def run_single_benchmark(
     backend_module: BackendModule,
     backend_name: str,
     treewidth: int,
     config: BenchmarkConfig,
-    z3_module: object,
+    z3_module: Z3ModuleLike,
 ) -> BenchmarkResult | None:
     """Run benchmark for a single backend/treewidth combination."""
     from pysymex.h_acceleration.bytecode import compile_constraint
 
     try:
-
         info = backend_module.get_info()
         if treewidth > info.max_treewidth:
             return None
@@ -162,10 +213,13 @@ def run_single_benchmark(
             result_bitmap = backend_module.evaluate_bag(compiled)
             times.append((time.perf_counter() - t0) * 1000)
 
+        if result_bitmap is None:
+            return None
+
         kernel_time = np.median(times)
         kernel_std = np.std(times)
         num_states = 1 << treewidth
-        num_satisfying = int(np.unpackbits(result_bitmap).sum())
+        num_satisfying = int(_unpackbits_little(result_bitmap).sum())
 
         ops = num_states * compiled.instruction_count
         throughput = ops / (kernel_time / 1000) / 1e6
@@ -187,6 +241,7 @@ def run_single_benchmark(
         print(f"  Error benchmarking {backend_name} at w={treewidth}: {e}", file=sys.stderr)
         return None
 
+
 def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
     """Run all benchmarks and return results."""
     try:
@@ -202,6 +257,7 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
 
     try:
         from pysymex.h_acceleration.backends import gpu as cuda
+
         if cuda.is_available():
             backends["CUDA"] = cuda
     except ImportError:
@@ -209,6 +265,7 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
 
     try:
         from pysymex.h_acceleration.backends import cpu
+
         if cpu.is_available():
             backends["CPU"] = cpu
     except ImportError:
@@ -216,6 +273,7 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
 
     try:
         from pysymex.h_acceleration.backends import reference
+
         backends["Reference"] = reference
     except ImportError:
         pass
@@ -239,14 +297,16 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
 
         for backend_name, backend_module in backends.items():
             result = run_single_benchmark(
-                backend_module, backend_name, w, config, z3
+                backend_module, backend_name, w, config, cast("Z3ModuleLike", z3)
             )
             if result:
                 results.append(result)
-                print(f"  {backend_name:12s}: {result.kernel_time_ms:8.3f} ms "
-                      f"± {result.kernel_time_std_ms:.3f} ms, "
-                      f"{result.throughput_mops:8.1f} Mop/s, "
-                      f"{result.num_satisfying:,} SAT")
+                print(
+                    f"  {backend_name:12s}: {result.kernel_time_ms:8.3f} ms "
+                    f"± {result.kernel_time_std_ms:.3f} ms, "
+                    f"{result.throughput_mops:8.1f} Mop/s, "
+                    f"{result.num_satisfying:,} SAT"
+                )
             else:
                 print(f"  {backend_name:12s}: (skipped or failed)")
 
@@ -272,7 +332,8 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
         "results": [asdict(r) for r in results],
     }
 
-def main():
+
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="PySyMex GPU Acceleration Benchmark",
@@ -280,7 +341,8 @@ def main():
     )
 
     parser.add_argument(
-        "--treewidth", "-w",
+        "--treewidth",
+        "-w",
         type=int,
         nargs="+",
         default=[8, 10, 12, 14, 16],
@@ -288,7 +350,8 @@ def main():
     )
 
     parser.add_argument(
-        "--iterations", "-n",
+        "--iterations",
+        "-n",
         type=int,
         default=10,
         help="Number of timed iterations (default: 10)",
@@ -316,7 +379,8 @@ def main():
     )
 
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
         help="Output JSON file for results",
     )
@@ -331,7 +395,7 @@ def main():
 
     treewidths = args.treewidth
     if args.large:
-        treewidths = list(set(treewidths + [16, 18, 20]))
+        treewidths = list({*treewidths, 16, 18, 20})
         treewidths.sort()
 
     config = BenchmarkConfig(
@@ -345,9 +409,10 @@ def main():
     results = run_benchmarks(config)
 
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(results, f, indent=2)
         print(f"\nResults saved to {args.output}")
+
 
 if __name__ == "__main__":
     main()

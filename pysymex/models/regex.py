@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic Models for Python's re module.
 Provides symbolic execution support for regular expression operations
 using Z3's native regex theory (SMT-LIB theory of strings and sequences).
@@ -16,6 +34,7 @@ Limitations:
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import z3
@@ -289,7 +308,9 @@ def _get_pattern_string(arg: object) -> str | None:
     """Extract pattern string from argument (concrete or compiled)."""
     if isinstance(arg, str):
         return arg
-    if hasattr(arg, "pattern"):
+    if isinstance(arg, re.Pattern):
+        return arg.pattern
+    if isinstance(arg, SymbolicValue) and isinstance(arg.pattern, str):
         return arg.pattern
     if isinstance(arg, SymbolicString):
         return None
@@ -316,13 +337,13 @@ class ReMatchModel(FunctionModel):
     ) -> ModelResult:
         pattern = _get_pattern_string(args[0]) if args else None
         string = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"match_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"match_{state.pc}")
         constraints = [constraint]
         side_effects: dict[str, object] = {}
         if pattern is not None and string is not None:
             try:
                 z3_pattern = compile_pattern(pattern)
-                prefix = z3.String(f"prefix_{state .pc }")
+                prefix = z3.String(f"prefix_{state.pc}")
                 match_constraint = z3.And(
                     z3.InRe(prefix, z3_pattern),
                     z3.PrefixOf(prefix, string.z3_str),
@@ -374,7 +395,7 @@ class ReSearchModel(FunctionModel):
     ) -> ModelResult:
         pattern = _get_pattern_string(args[0]) if args else None
         string = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"search_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"search_{state.pc}")
         constraints = [constraint]
         side_effects: dict[str, object] = {}
         if pattern is not None and string is not None:
@@ -417,7 +438,7 @@ class ReFullmatchModel(FunctionModel):
     ) -> ModelResult:
         pattern = _get_pattern_string(args[0]) if args else None
         string = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"fullmatch_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"fullmatch_{state.pc}")
         constraints = [constraint]
         if pattern is not None and string is not None:
             try:
@@ -452,7 +473,7 @@ class ReFindallModel(FunctionModel):
     ) -> ModelResult:
         pattern = _get_pattern_string(args[0]) if args else None
         string = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"findall_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"findall_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if pattern is not None and string is not None:
             try:
@@ -493,7 +514,7 @@ class ReSubModel(FunctionModel):
         pattern = _get_pattern_string(args[0]) if args else None
         args[1] if len(args) > 1 else None
         string = _get_symbolic_string(args[2]) if len(args) > 2 else None
-        result, constraint = SymbolicString.symbolic(f"sub_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"sub_{state.pc}")
         constraints = [constraint]
         if pattern is not None and string is not None:
             try:
@@ -534,7 +555,7 @@ class ReSplitModel(FunctionModel):
     ) -> ModelResult:
         pattern = _get_pattern_string(args[0]) if args else None
         string = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"split_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"split_{state.pc}")
         constraints = [constraint, result.z3_len >= 1]
         if pattern is not None and string is not None:
             try:
@@ -569,7 +590,7 @@ class ReCompileModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         pattern = args[0] if args else None
-        result, constraint = SymbolicValue.symbolic(f"compiled_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"compiled_{state.pc}")
         if isinstance(pattern, str):
             result.pattern = pattern
         return ModelResult(
@@ -593,7 +614,7 @@ class ReEscapeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
-        result, constraint = SymbolicString.symbolic(f"escape_{state .pc }")
+        result, constraint = SymbolicString.symbolic(f"escape_{state.pc}")
         constraints = [constraint]
         if original is not None:
             constraints.append(result.z3_len >= original.z3_len)

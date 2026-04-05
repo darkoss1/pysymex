@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Async/await coroutine scheduling model for symbolic execution.
 
 Provides a symbolic event loop that models coroutine scheduling with
@@ -7,16 +25,18 @@ async-specific bugs like await-cycle deadlocks.
 
 from __future__ import annotations
 
+import dis
 import itertools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
 from pysymex.analysis.concurrency import ConcurrencyAnalyzer
-from pysymex.analysis.detectors import Issue, IssueKind
+from pysymex.analysis.detectors import DetectorRegistry, Issue, IssueKind
 from pysymex.core.state import VMState
 from pysymex.execution.executor import (
     BRANCH_OPCODES,
@@ -87,7 +107,7 @@ class SymbolicEventLoop:
         initial_state: VMState | None = None,
     ) -> SymbolicCoroutine:
         """Create and register a new coroutine."""
-        coro_id = f"coro_{self ._next_id }"
+        coro_id = f"coro_{self._next_id}"
         self._next_id += 1
         coro = SymbolicCoroutine(
             coro_id=coro_id,
@@ -208,7 +228,7 @@ class SymbolicEventLoop:
             """Dfs."""
             if node in in_path:
                 idx = path.index(node)
-                cycles.append(path[idx:] + [node])
+                cycles.append([*path[idx:], node])
                 return
             if node in visited:
                 return
@@ -260,9 +280,14 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
     def __init__(
         self,
         config: ExecutionConfig | None = None,
-        **kwargs: object,
+        detector_registry: DetectorRegistry | None = None,
+        **config_overrides: object,
     ) -> None:
-        super().__init__(config=config, **kwargs)
+        super().__init__(
+            config=config,
+            detector_registry=detector_registry,
+            **config_overrides,
+        )
         self._event_loop = SymbolicEventLoop(max_interleavings=self.config.max_interleavings)
         self._coroutine_states: dict[str, VMState] = {}
         self._current_coro_id: str | None = None
@@ -274,15 +299,19 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     timeout_ms=self.config.solver_timeout_ms
                 )
             except (RuntimeError, TypeError, ValueError):
-                logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
+                logger.error(
+                    "Internal AsyncExecutor error during coroutine interleaving or cycle detection",
+                    exc_info=True,
+                )
 
     def execute_function(
         self,
         func: Callable[..., object],
         symbolic_args: dict[str, str] | None = None,
+        initial_values: dict[str, object] | None = None,
     ) -> ExecutionResult:
         """Execute with async analysis."""
-        result = super().execute_function(func, symbolic_args)
+        result = super().execute_function(func, symbolic_args, initial_values)
 
         deadlock_issues = self._check_await_deadlocks()
         result.issues.extend(deadlock_issues)
@@ -315,12 +344,14 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_key = self._state_key(state)
-        if state_key in self._visited_states:
-            self._paths_pruned += 1
-            return
-        else:
-            self._visited_states.add(state_key)
+        is_jump_or_branch = instr.opname in BRANCH_OPCODES or "JUMP" in instr.opname
+        if is_jump_or_branch:
+            state_key = self._state_key(state)
+            if state_key in self._visited_states:
+                self._paths_pruned += 1
+                return
+            else:
+                self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)
@@ -348,11 +379,10 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
             self._paths_pruned += 1
             return
 
-    def _intercept_async(self, instr: object, state: VMState) -> None:
+    def _intercept_async(self, instr: dis.Instruction, state: VMState) -> None:
         """Intercept async opcodes for coroutine scheduling."""
         try:
             if instr.opname == "GET_AWAITABLE":
-
                 if self._current_coro_id:
                     self._event_loop.suspend_coroutine(
                         self._current_coro_id,
@@ -362,7 +392,6 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                 self._explore_interleavings(state)
 
             elif instr.opname == "YIELD_VALUE":
-
                 if self._current_coro_id:
                     self._event_loop.suspend_coroutine(
                         self._current_coro_id,
@@ -370,20 +399,21 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     )
 
             elif instr.opname == "SEND":
-
                 if self._current_coro_id:
                     self._event_loop.resume_coroutine(self._current_coro_id)
 
             elif instr.opname == "RETURN_GENERATOR":
-
                 coro = self._event_loop.create_coroutine(
-                    name=f"gen_{state .pc }",
+                    name=f"gen_{state.pc}",
                     initial_state=state.fork(),
                 )
                 self._current_coro_id = coro.coro_id
 
         except (AttributeError, KeyError, RuntimeError):
-            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
+            logger.error(
+                "Internal AsyncExecutor error during coroutine interleaving or cycle detection",
+                exc_info=True,
+            )
 
     def _explore_interleavings(self, state: VMState) -> None:
         """At an await point, fork states for possible schedulings."""
@@ -399,7 +429,10 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     self._worklist.add_state(forked)
                 self._paths_explored += 1
         except (RuntimeError, KeyError):
-            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
+            logger.error(
+                "Internal AsyncExecutor error during coroutine interleaving or cycle detection",
+                exc_info=True,
+            )
 
     def _check_await_deadlocks(self) -> list[Issue]:
         """Detect circular await chains and convert to Issues."""
@@ -410,11 +443,14 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                 issues.append(
                     Issue(
                         kind=IssueKind.ASSERTION_ERROR,
-                        message=f"[Async] Deadlock: await cycle " f"{' -> '.join (cycle )}",
+                        message=f"[Async] Deadlock: await cycle {' -> '.join(cycle)}",
                     )
                 )
         except (RuntimeError, KeyError):
-            logger.error("Internal AsyncExecutor error during coroutine interleaving or cycle detection", exc_info=True)
+            logger.error(
+                "Internal AsyncExecutor error during coroutine interleaving or cycle detection",
+                exc_info=True,
+            )
         return issues
 
 
@@ -433,6 +469,7 @@ def analyze_async(
     Returns:
         ExecutionResult with async-specific issues.
     """
-    config = ExecutionConfig(**config_kwargs)
+    config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+    config = config_ctor(**config_kwargs)
     executor = AsyncSymbolicExecutor(config)
     return executor.execute_function(func, symbolic_args)

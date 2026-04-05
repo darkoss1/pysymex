@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Opcode dispatcher with registration system.
 This module provides a decorator-based system for registering opcode handlers,
 allowing modular organization of bytecode interpretation.
@@ -32,9 +50,14 @@ class OpcodeResult:
     @staticmethod
     def _collect_pending(state: VMState) -> list[Issue]:
         issues = []
-        if hasattr(state, "_pending_taint_issues"):
-            issues.extend(state._pending_taint_issues)
-            state._pending_taint_issues = []
+        pending = state.pending_taint_issues
+        try:
+            from pysymex.analysis.detectors import Issue as RuntimeIssue
+
+            issues.extend(issue for issue in pending if isinstance(issue, RuntimeIssue))
+        except Exception:
+            issues.extend(issue for issue in pending if issue is not None)
+        state.pending_taint_issues = []
         return issues
 
     @classmethod
@@ -164,7 +187,7 @@ class OpcodeDispatcher:
                     idx = self._offset_to_index.get(target)
                     if idx is not None:
                         return idx
-        # Fallback: check block stack approach (SETUP_FINALLY)
+
         return None
 
     def get_instruction(self, index: int) -> dis.Instruction | None:

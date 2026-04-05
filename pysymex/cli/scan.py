@@ -1,22 +1,61 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Scan-related CLI commands and formatters for pysymex."""
 
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from pysymex.analysis.detectors import Issue
+    from pysymex.scanner.types import ScanResult
 
 _Namespace = argparse.Namespace
 
-try:
-    from importlib.metadata import version as pkg_version
+from pysymex import __version__
 
-    __version__ = pkg_version("pysymex")
-except ImportError:
-    __version__ = "0.1.0a0"
+
+def _typed_scan_results(results: Sequence[object]) -> list[ScanResult]:
+    from pysymex.scanner.types import ScanResult as _ScanResult
+
+    return [result for result in results if isinstance(result, _ScanResult)]
+
+
+def _call_with_supported_kwargs(
+    func: Callable[..., object],
+    *args: object,
+    **kwargs: object,
+) -> object:
+    """Call *func* with only keyword args accepted by its runtime signature."""
+    signature = inspect.signature(func)
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values()):
+        return func(*args, **kwargs)
+    filtered = {k: v for k, v in kwargs.items() if k in signature.parameters}
+    return func(*args, **filtered)
 
 
 def cmd_scan(args: _Namespace) -> int:
@@ -322,32 +361,50 @@ def _handle_symbolic_scan(args: _Namespace, path: Path, start_time: float) -> in
 
         if path.is_file():
             results = [
-                scan_file(
-                    path,
-                    verbose=args.verbose,
-                    max_paths=args.max_paths,
-                    timeout=args.timeout,
-                    auto_tune=args.auto,
-                    reporter=reporter,
-                    trace_enabled=args.trace,
-                    trace_output_dir=args.trace_output_dir,
-                    trace_verbosity=args.trace_verbosity,
+                cast(
+                    "ScanResult",
+                    _call_with_supported_kwargs(
+                        scan_file,
+                        path,
+                        verbose=args.verbose,
+                        max_paths=args.max_paths,
+                        timeout=args.timeout,
+                        auto_tune=args.auto,
+                        reporter=reporter,
+                        use_sandbox=args.sandbox,
+                        use_chtd=True,
+                        use_h_acceleration=True,
+                        deterministic_mode=args.deterministic,
+                        random_seed=args.seed,
+                        trace_enabled=args.trace,
+                        trace_output_dir=args.trace_output_dir,
+                        trace_verbosity=args.trace_verbosity,
+                    ),
                 )
             ]
         else:
             pattern = "**/*.py" if args.recursive else "*.py"
-            results = scan_directory(
-                args.path,
-                pattern=pattern,
-                verbose=args.verbose,
-                max_paths=args.max_paths,
-                timeout=args.timeout,
-                workers=args.workers,
-                auto_tune=args.auto,
-                reporter=reporter,
-                trace_enabled=args.trace,
-                trace_output_dir=args.trace_output_dir,
-                trace_verbosity=args.trace_verbosity,
+            results = cast(
+                "list[ScanResult]",
+                _call_with_supported_kwargs(
+                    scan_directory,
+                    args.path,
+                    pattern=pattern,
+                    verbose=args.verbose,
+                    max_paths=args.max_paths,
+                    timeout=args.timeout,
+                    workers=args.workers,
+                    auto_tune=args.auto,
+                    reporter=reporter,
+                    use_sandbox=args.sandbox,
+                    use_chtd=True,
+                    use_h_acceleration=True,
+                    deterministic_mode=args.deterministic,
+                    random_seed=args.seed,
+                    trace_enabled=args.trace,
+                    trace_output_dir=args.trace_output_dir,
+                    trace_verbosity=args.trace_verbosity,
+                ),
             )
 
     total_issues = sum(len(r.issues) for r in results)
@@ -377,7 +434,12 @@ def _handle_symbolic_scan(args: _Namespace, path: Path, start_time: float) -> in
     return 1 if total_issues > 0 else 0
 
 
-def format_static_text_report(issues: list[object], total: int, suppressed: int = 0) -> str:
+def _issue_line_for_sort(issue: object) -> int:
+    line_val = getattr(issue, "line", 0)
+    return line_val if isinstance(line_val, int) else 0
+
+
+def format_static_text_report(issues: Sequence[object], total: int, suppressed: int = 0) -> str:
     """Format a human-readable text report for a static scan.
 
     Args:
@@ -410,18 +472,22 @@ def format_static_text_report(issues: list[object], total: int, suppressed: int 
 
         for fpath, file_issues in by_file.items():
             lines.append(f"  \u2500\u2500\u2500 {fpath} \u2500\u2500\u2500")
-            for issue in sorted(file_issues, key=lambda x: x.line):
+            for issue in sorted(file_issues, key=_issue_line_for_sort):
                 icon = {"error": "\U0001f534", "warning": "\U0001f7e0"}.get(
                     getattr(issue, "severity", "warning"), "\U0001f7e1"
                 )
-                lines.append(f"    {icon} [{issue.kind}] Line {issue.line}: {issue.message}")
-                if getattr(issue, "suggestion", None):
-                    lines.append(f"       \U0001f4a1 {issue.suggestion}")
+                kind = getattr(issue, "kind", "UNKNOWN")
+                line = getattr(issue, "line", "?")
+                message = getattr(issue, "message", "")
+                lines.append(f"    {icon} [{kind}] Line {line}: {message}")
+                suggestion = getattr(issue, "suggestion", None)
+                if isinstance(suggestion, str) and suggestion:
+                    lines.append(f"       \U0001f4a1 {suggestion}")
     lines.extend(["", "\u2500" * 60])
     return "\n".join(lines)
 
 
-def format_symbolic_text_report(results: list[object], total: int, reproduce: bool) -> str:
+def format_symbolic_text_report(results: Sequence[object], total: int, reproduce: bool) -> str:
     """Format a human-readable text report for a symbolic scan.
 
     Args:
@@ -446,33 +512,35 @@ def format_symbolic_text_report(results: list[object], total: int, reproduce: bo
     if total == 0:
         lines.append("  \u2705 No issues found!")
     else:
-        for result in results:
-            if not result.issues:
+        for scan_result in _typed_scan_results(results):
+            if not scan_result.issues:
                 continue
-            lines.append(f"  \u2500\u2500\u2500 {result.file_path} \u2500\u2500\u2500")
-            for issue in result.issues:
+            lines.append(f"  \u2500\u2500\u2500 {scan_result.file_path} \u2500\u2500\u2500")
+            for issue in scan_result.issues:
                 kind = issue.get("kind", "UNKNOWN")
                 icon = (
                     "\U0001f534"
                     if kind in ("DIVISION_BY_ZERO", "ASSERTION_ERROR")
-                    else "\U0001f7e0" if kind in ("INDEX_ERROR", "KEY_ERROR") else "\U0001f7e1"
+                    else "\U0001f7e0"
+                    if kind in ("INDEX_ERROR", "KEY_ERROR")
+                    else "\U0001f7e1"
                 )
                 lines.append(
                     f"    {icon} [{kind}] Line {issue.get('line', '?')}: {issue.get('message', '')}"
                 )
                 ce = issue.get("counterexample")
-                if ce:
+                if isinstance(ce, dict):
                     lines.append(
                         f"       \u21b3 Trigger: {', '.join(f'{k}={v}' for k, v in ce.items())}"
                     )
             if reproduce:
-                _add_reproduction_info(lines, result.issues, result.file_path)
+                _add_reproduction_info(lines, scan_result.issues, scan_result.file_path)
     lines.append("\u2500" * 60)
     return "\n".join(lines)
 
 
 def _add_reproduction_info(
-    lines: list[str], issues: list[dict[str, object]], file_path: object
+    lines: list[str], issues: Sequence[dict[str, object]], file_path: object
 ) -> None:
     """Append reproduction-script paths to *lines*.
 
@@ -487,26 +555,42 @@ def _add_reproduction_info(
     lines.extend(["", "    [!] Reproduction Scripts:"])
     for issue in issues:
         if issue.get("counterexample"):
+            kind_obj = issue.get("kind", "UNKNOWN")
+            kind_name = kind_obj if isinstance(kind_obj, str) else "UNKNOWN"
+            message_obj = issue.get("message", "")
+            issue_message = message_obj if isinstance(message_obj, str) else str(message_obj)
+            class_name_obj = issue.get("class_name")
+            class_name = class_name_obj if isinstance(class_name_obj, str) else None
+            counterexample_obj = issue.get("counterexample")
+            counterexample = counterexample_obj if isinstance(counterexample_obj, dict) else None
+
+            class _IssueKind:
+                def __init__(self, name: str) -> None:
+                    self.name = name
 
             class IssueObj:
                 """Data object representing a detected issue for reproduction."""
-                def __init__(self, data: dict[str, object]) -> None:
-                    self.counterexample = data.get("counterexample")
-                    self.kind = type("Kind", (), {"name": data.get("kind")})
-                    self.message = data.get("message")
-                    self.class_name = data.get("class_name")
 
+                def __init__(self, data: dict[str, object]) -> None:
+                    _ = data
+                    self.counterexample = counterexample
+                    self.kind = _IssueKind(kind_name)
+                    self.message = issue_message
+                    self.class_name = class_name
+
+            function_name_obj = issue.get("function_name", "unknown")
+            function_name = function_name_obj if isinstance(function_name_obj, str) else "unknown"
             script = gen.generate(
-                IssueObj(issue),
-                issue.get("function_name", "unknown"),
+                cast("Issue", IssueObj(issue)),
+                function_name,
                 str(file_path),
-                class_name=issue.get("class_name"),
+                class_name=class_name,
             )
             if script:
                 lines.append(f"       + {script}")
 
 
-def get_symbolic_sarif(results: list[object]) -> str:
+def get_symbolic_sarif(results: Sequence[object]) -> str:
     """Generate a SARIF 2.1.0 JSON string from symbolic scan results.
 
     Args:
@@ -520,17 +604,17 @@ def get_symbolic_sarif(results: list[object]) -> str:
     generator = SARIFGenerator()
     all_issues: list[dict[str, object]] = []
     all_files: list[str] = []
-    for r in results:
-        all_files.append(str(r.file_path))
-        for issue in r.issues:
+    for scan_result in _typed_scan_results(results):
+        all_files.append(str(scan_result.file_path))
+        for issue in scan_result.issues:
             si = issue.copy()
             si["type"] = issue.get("kind", "UNKNOWN")
-            si["file"] = str(r.file_path)
+            si["file"] = str(scan_result.file_path)
             all_issues.append(si)
     return generator.generate(issues=all_issues, analyzed_files=all_files).to_json()
 
 
-def _print_static_sarif(issues: list[object]) -> None:
+def _print_static_sarif(issues: Sequence[object]) -> None:
     """Print static-analysis results directly to stdout in SARIF format.
 
     Args:
@@ -538,6 +622,12 @@ def _print_static_sarif(issues: list[object]) -> None:
     """
     from pysymex.reporting.sarif import generate_sarif
 
-    issue_dicts = [i.to_dict() for i in issues]
+    issue_dicts: list[dict[str, object]] = []
+    for issue in issues:
+        to_dict = getattr(issue, "to_dict", None)
+        if callable(to_dict):
+            result = to_dict()
+            if isinstance(result, dict):
+                issue_dicts.append(result)
     sarif_log = generate_sarif(issues=issue_dicts)
     print(sarif_log.to_json())

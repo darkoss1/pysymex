@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Memory Model - Type definitions
 Dataclasses, enums, and type-only classes for the memory model.
@@ -20,16 +38,16 @@ class MemoryRegion(Enum):
     CONST = auto()
 
 
-@dataclass
+@dataclass(slots=True)
 class SymbolicAddress:
     """
     A symbolic memory address.
-    
+
     **Mathematical Representation:**
-    Modeled as an algebraic triple: `(Region, Base, Offset)`. 
+    Modeled as an algebraic triple: `(Region, Base, Offset)`.
     - `Base` and `Offset` are Z3 BitVectors (typically 64-bit).
     - `Region` provides coarse-grained isolation (e.g., Stack vs Heap).
-    
+
     **Arithmetic Semantics:**
     Supports precise address arithmetic (addition/subtraction) using bitvector
     theory. This allows modeling pointer arithmetic, buffer overflows, and
@@ -48,7 +66,7 @@ class SymbolicAddress:
         base: int | z3.BitVecRef,
         offset: int | z3.BitVecRef = 0,
         type_tag: str = "unknown",
-    ):
+    ) -> None:
         self.region = region
         self.type_tag = type_tag
         if isinstance(base, int):
@@ -80,11 +98,11 @@ class SymbolicAddress:
     def may_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
         """
         Check if two addresses may refer to the same location.
-        
+
         **Aliasing Constraint:**
         Returns SAT if there exists a model where `addr1.effective == addr2.effective`
-        AND they reside in the same memory region. 
-        Regions provide a sound optimization for non-aliasing; addresses in 
+        AND they reside in the same memory region.
+        Regions provide a sound optimization for non-aliasing; addresses in
         different regions (e.g. Stack and Const) are assumed never to alias.
         """
         if not self.same_region(other):
@@ -125,7 +143,7 @@ class SymbolicAddress:
         return hash((self.region, str(self.base), str(self.offset)))
 
 
-@dataclass
+@dataclass(slots=True)
 class HeapObject:
     """
     A symbolic object stored on the heap.
@@ -137,6 +155,7 @@ class HeapObject:
     fields: dict[str, object] = field(default_factory=lambda: dict[str, object]())
     is_mutable: bool = True
     size: int = 1
+    is_alive: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
 
     def get_field(self, name: str) -> object:
         """Get a field value, returning None if not present."""
@@ -153,7 +172,7 @@ class HeapObject:
         return name in self.fields
 
 
-@dataclass
+@dataclass(slots=True)
 class StackFrame:
     """
     A symbolic stack frame for function calls.

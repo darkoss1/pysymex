@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Compatibility bridge between the pysymex plugin system and ExecutionTracer.
 
 :class:`TracingHookPlugin` adapts the :class:`~pysymex.tracing.tracer.ExecutionTracer`
@@ -30,11 +48,13 @@ in bulk via :class:`~pysymex.plugins.base.PluginRegistry`.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from pysymex.plugins.base import HookPlugin, PluginMetadata, PluginPriority, PluginType
 
 if TYPE_CHECKING:
+    from pysymex.core.state import VMState
+    from pysymex.execution.executor_core import SymbolicExecutor
     from pysymex.execution.executor_core import SymbolicExecutor as SymbolicEngine
     from pysymex.tracing.tracer import ExecutionTracer
 
@@ -65,7 +85,7 @@ class TracingHookPlugin(HookPlugin):
         super().__init__()
         self._tracer = tracer
 
-    def get_hooks(self) -> dict[str, Callable[..., Any]]:
+    def get_hooks(self) -> dict[str, Callable[..., object]]:
         """Return the mapping of executor hook names to tracer callbacks.
 
         The pysymex plugin system uses its own hook names (``"pre_execute"``,
@@ -116,11 +136,17 @@ def _wrap_on_fork(tracer: ExecutionTracer) -> Callable[..., None]:
         A callable with the legacy signature.
     """
 
-    def _adapter(executor: Any, state: Any) -> None:
+    def _adapter(executor: object, state: object) -> None:
         """Adapter."""
 
         try:
-            tracer.on_fork(executor, state, [state])
+            if not hasattr(state, "path_id"):
+                return
+            tracer.on_fork(
+                cast("SymbolicExecutor", executor),
+                cast("VMState", state),
+                [cast("VMState", state)],
+            )
         except Exception:
             pass
 

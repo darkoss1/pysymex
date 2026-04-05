@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Auto-Reproduction Generator.
 
@@ -29,7 +47,7 @@ TYPE_DEFAULTS = {
 class ReproductionGenerator:
     """Generates Python scripts to reproduce detected issues."""
 
-    def __init__(self, output_dir: str = "."):
+    def __init__(self, output_dir: str = ".") -> None:
         self.output_dir = output_dir
 
     def generate(
@@ -65,7 +83,7 @@ class ReproductionGenerator:
             issue_kind=issue.kind.name,
             message=issue.message,
         )
-        filename = f"reproduce_{issue .kind .name .lower ()}_{func_name }.py"
+        filename = f"reproduce_{issue.kind.name.lower()}_{func_name}.py"
         filepath = os.path.join(self.output_dir, filename)
         try:
             with open(filepath, "w") as f:
@@ -101,6 +119,7 @@ class ReproductionGenerator:
 
         class FunctionFinder(ast.NodeVisitor):
             """Visitor for locating function and method definitions in source code."""
+
             def __init__(self, target_func: str, target_class: str | None = None) -> None:
                 self.target_func: str = target_func
                 self.target_class: str | None = target_class
@@ -167,39 +186,39 @@ class ReproductionGenerator:
                     ):
                         is_complex = True
                     if is_complex:
-                        args.append(f"{arg_name }=None")
+                        args.append(f"{arg_name}=None")
                     elif isinstance(value, bool) or isinstance(value, (int, float)):
-                        args.append(f"{arg_name }={value }")
+                        args.append(f"{arg_name}={value}")
                     elif isinstance(value, str):
-                        args.append(f"{arg_name }='{value }'")
+                        args.append(f"{arg_name}='{value}'")
                     elif value is None:
-                        args.append(f"{arg_name }=None")
+                        args.append(f"{arg_name}=None")
                     elif isinstance(value, (list, dict, tuple, set)):
-                        args.append(f"{arg_name }={cast ('object' ,value )!r}")
+                        args.append(f"{arg_name}={cast('object', value)!r}")
                     else:
-                        args.append(f"{arg_name }=None")
+                        args.append(f"{arg_name}=None")
                 else:
                     if type_hint:
                         if type_hint in TYPE_DEFAULTS:
-                            args.append(f"{arg_name }={TYPE_DEFAULTS [type_hint ]}")
+                            args.append(f"{arg_name}={TYPE_DEFAULTS[type_hint]}")
                         else:
-                            args.append(f"{arg_name }=None")
+                            args.append(f"{arg_name}=None")
                     else:
-                        args.append(f"{arg_name }=None")
+                        args.append(f"{arg_name}=None")
         else:
             for name, value in counterexample.items():
                 if name == "self":
                     continue
                 if isinstance(value, bool) or isinstance(value, (int, float)):
-                    args.append(f"{name }={value }")
+                    args.append(f"{name}={value}")
                 elif isinstance(value, str):
-                    args.append(f"{name }='{value }'")
+                    args.append(f"{name}='{value}'")
                 elif value is None:
-                    args.append(f"{name }=None")
+                    args.append(f"{name}=None")
                 elif isinstance(value, (list, dict, tuple, set)):
-                    args.append(f"{name }={cast ('object' ,value )!r}")
+                    args.append(f"{name}={cast('object', value)!r}")
                 else:
-                    args.append(f"{name }=None")
+                    args.append(f"{name}=None")
         return args
 
     def _generate_init_args_code(self, class_name: str) -> str:
@@ -279,65 +298,65 @@ def _build_init_args(cls):
         if class_name:
             parts = class_name.split(".")
             root_class = parts[0]
-            import_stmt = f"from {module_name } import {root_class }"
-            import_msg = f"Importing {root_class } from {module_name }..."
+            import_stmt = f"from {module_name} import {root_class}"
+            import_msg = f"Importing {root_class} from {module_name}..."
             init_helper = self._generate_init_args_code(class_name)
             class_ref = class_name
             setup_code = f"""
     # Build constructor arguments dynamically
-    init_args = _build_init_args({class_ref })
+    init_args = _build_init_args({class_ref})
 
     # Instantiate Class
-    print("[*] Instantiating {class_name }...")
+    print("[*] Instantiating {class_name}...")
     if init_args:
         print(f"    Using init args: {{init_args}}")
-        instance = {class_ref }(**init_args)
+        instance = {class_ref}(**init_args)
     else:
-        instance = {class_ref }()
+        instance = {class_ref}()
 
-    target_name = "{class_name }.{func_name }"
+    target_name = "{class_name}.{func_name}"
 
     # Method Call
     print(f"[*] Invoking {{target_name}} with payload...")
-    instance.{func_name }({args_code })
+    instance.{func_name}({args_code})
 """
         else:
-            import_stmt = f"from {module_name } import {func_name }"
-            import_msg = f"Importing {func_name } from {module_name }..."
+            import_stmt = f"from {module_name} import {func_name}"
+            import_msg = f"Importing {func_name} from {module_name}..."
             init_helper = ""
             setup_code = f"""
-    target_name = "{func_name }"
+    target_name = "{func_name}"
 
     # Function Call
     print(f"[*] Invoking {{target_name}} with payload...")
-    {func_name }({args_code })
+    {func_name}({args_code})
 """
         return f'''"""
 pysymex Reproduction Script
-Auto-generated proof-of-concept for issue: {issue_kind }
+Auto-generated proof-of-concept for issue: {issue_kind}
 
 Run this script to reproduce the crash:
-    python {os .path .basename (module_name )}.py
+    python {module_name.split(".")[-1]}.py
 """
 import sys
 import os
 sys.path.insert(0, os.getcwd())
-{init_helper }
+{init_helper}
 try:
-    {import_stmt }
-    print(f"[*] {import_msg }")
+    {import_stmt}
+    print(f"[*] {import_msg}")
 except ImportError as e:
     print(f"[!] Failed to import target: {{e}}")
     print("    Check your PYTHONPATH or run from the project root.")
     sys.exit(1)
 print("-" * 50)
-print(f"[*] Target: {class_name +"."+func_name if class_name else func_name }")
-print(f"[*] Injection Payload: {args_display }")
-print(f"[*] Expected Issue:  {issue_kind }")
+print(f"[*] Target: {class_name + "." + func_name if class_name else func_name}")
+print(f"[*] Injection Payload: {args_display}")
+print(f"[*] Expected Issue:  {issue_kind}")
 print("-" * 50)
 print("\\n[*] Attempting to trigger crash...")
 try:
-    {setup_code }
+    {setup_code}
 
     print("\\n[?] Execution finished without crashing.")
     print("    This might be a false positive or handled exception.")

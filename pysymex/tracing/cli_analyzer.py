@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """pysymex-trace-analyze — Streaming Omni-Filter CLI for pysymex JSONL trace logs.
 
 Usage
@@ -46,9 +64,9 @@ import collections
 import json
 import sys
 from collections.abc import Callable, Generator, Iterator
-from typing import Any
+from typing import cast
 
-FilterFn = Callable[[dict[str, Any]], bool]
+FilterFn = Callable[[dict[str, object]], bool]
 """A predicate that accepts a parsed event dict and returns True to keep it."""
 
 
@@ -77,7 +95,7 @@ class FilterPipeline:
         """Append *fn* to the filter chain."""
         self._filters.append(fn)
 
-    def matches(self, event: dict[str, Any]) -> bool:
+    def matches(self, event: dict[str, object]) -> bool:
         """Return ``True`` iff all registered filters accept *event*."""
         return all(f(event) for f in self._filters)
 
@@ -87,7 +105,7 @@ class FilterPipeline:
 
 def stream_events(
     path: str,
-) -> Generator[tuple[str, dict[str, Any]], None, None]:
+) -> Generator[tuple[str, dict[str, object]], None, None]:
     """Yield ``(raw_line, parsed_event)`` tuples from a JSONL trace file.
 
     The file is read one line at a time, ensuring O(1) heap allocation
@@ -111,7 +129,7 @@ def stream_events(
         handle = sys.stdin
     elif is_gz:
         import gzip
-        # Open in 'rt' mode translates gzip bytes to unicode strings automatically
+
         handle = gzip.open(path, "rt", encoding="utf-8")
     else:
         handle = open(path, encoding="utf-8")
@@ -122,7 +140,7 @@ def stream_events(
             if not raw:
                 continue
             try:
-                event: dict[str, Any] = json.loads(raw)
+                event: dict[str, object] = json.loads(raw)
             except json.JSONDecodeError as exc:
                 print(
                     f"[pysymex-trace-analyze] WARNING: skipping malformed line: {exc}",
@@ -132,9 +150,10 @@ def stream_events(
             yield raw, event
     finally:
         if path != "-":
-
             try:
-                handle.close()
+                close_fn = getattr(handle, "close", None)
+                if callable(close_fn):
+                    close_fn()
             except Exception:
                 pass
 
@@ -144,25 +163,50 @@ def _str_contains(text: str | None, substring: str) -> bool:
     return text is not None and substring in text
 
 
-def _any_value_contains(mapping: dict[str, Any] | None, substring: str) -> bool:
-    """Return True if any value in *mapping* (as string) contains *substring*."""
-    if not mapping:
-        return False
-    return any(substring in str(v) for v in mapping.values())
-
-
-def _list_contains(lst: list[Any] | None, substring: str) -> bool:
+def _list_contains(lst: list[object] | None, substring: str) -> bool:
     """Return True if any element in *lst* (as string) contains *substring*."""
     if not lst:
         return False
     return any(substring in str(item) for item in lst)
 
 
-def _constraints_contain(constraints: list[dict[str, Any]] | None, substring: str) -> bool:
+def _constraints_contain(constraints: list[dict[str, object]] | None, substring: str) -> bool:
     """Return True if any constraint's ``smtlib`` field contains *substring*."""
     if not constraints:
         return False
-    return any(substring in c.get("smtlib", "") for c in constraints)
+    return any(substring in (_as_str(c.get("smtlib")) or "") for c in constraints)
+
+
+def _as_dict(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    return cast("dict[str, object]", value)
+
+
+def _as_list(value: object) -> list[object] | None:
+    if not isinstance(value, list):
+        return None
+    return value
+
+
+def _as_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _as_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+def _as_float(value: object) -> float | None:
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _has_stack_pop(event: dict[str, object]) -> bool:
+    stack_diff = event.get("stack_diff")
+    if not isinstance(stack_diff, dict):
+        return False
+    popped = stack_diff.get("popped", 0)
+    return isinstance(popped, int) and popped > 0
 
 
 def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
@@ -190,7 +234,11 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.seq_range:
         lo, hi = args.seq_range
-        p.add(lambda e, lo=lo, hi=hi: e.get("seq") is not None and lo <= e["seq"] <= hi)
+        p.add(
+            lambda e, lo=lo, hi=hi: (
+                (_as_int(e.get("seq")) or -1) >= lo and (_as_int(e.get("seq")) or -1) <= hi
+            )
+        )
 
     if args.path_id is not None:
         target_pid: int = args.path_id
@@ -206,42 +254,56 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.pc_range:
         pc_lo, pc_hi = args.pc_range
-        p.add(lambda e, lo=pc_lo, hi=pc_hi: e.get("pc") is not None and lo <= e["pc"] <= hi)
+        p.add(
+            lambda e, lo=pc_lo, hi=pc_hi: (
+                (_as_int(e.get("pc")) or -1) >= lo and (_as_int(e.get("pc")) or -1) <= hi
+            )
+        )
 
     if args.opcode:
         oc: str = args.opcode.upper()
-        p.add(lambda e, o=oc: e.get("opcode", "").upper() == o)
+        p.add(lambda e, o=oc: (_as_str(e.get("opcode")) or "").upper() == o)
 
     if args.source_line is not None:
         sl: int = args.source_line
         p.add(lambda e, s=sl: e.get("source_line") == s)
 
     if args.has_stack_push:
-        p.add(lambda e: bool((e.get("stack_diff") or {}).get("pushed")))
+        p.add(lambda e: bool((_as_dict(e.get("stack_diff")) or {}).get("pushed")))
 
     if args.has_stack_pop:
-        p.add(lambda e: (e.get("stack_diff") or {}).get("popped", 0) > 0)
+        p.add(_has_stack_pop)
 
     if args.has_var_modified:
-        p.add(lambda e: bool((e.get("var_diff") or {}).get("modified")))
+        p.add(lambda e: bool((_as_dict(e.get("var_diff")) or {}).get("modified")))
 
     if args.var_modified_name:
         vmn: str = args.var_modified_name
-        p.add(lambda e, k=vmn: k in (e.get("var_diff") or {}).get("modified", {}))
+        p.add(
+            lambda e, k=vmn: (
+                k in (_as_dict((_as_dict(e.get("var_diff")) or {}).get("modified")) or {})
+            )
+        )
 
     if args.has_var_added:
-        p.add(lambda e: bool((e.get("var_diff") or {}).get("added")))
+        p.add(lambda e: bool((_as_dict(e.get("var_diff")) or {}).get("added")))
 
     if args.var_added_name:
         van: str = args.var_added_name
-        p.add(lambda e, k=van: k in (e.get("var_diff") or {}).get("added", {}))
+        p.add(
+            lambda e, k=van: k in (_as_dict((_as_dict(e.get("var_diff")) or {}).get("added")) or {})
+        )
 
     if args.has_var_removed:
-        p.add(lambda e: bool((e.get("var_diff") or {}).get("removed")))
+        p.add(lambda e: bool((_as_dict(e.get("var_diff")) or {}).get("removed")))
 
     if args.var_removed_name:
         vrn: str = args.var_removed_name
-        p.add(lambda e, k=vrn: k in (e.get("var_diff") or {}).get("removed", []))
+        p.add(
+            lambda e, k=vrn: (
+                k in (_as_list((_as_dict(e.get("var_diff")) or {}).get("removed")) or [])
+            )
+        )
 
     if args.has_mem_write:
         p.add(lambda e: bool(e.get("mem_diff")))
@@ -251,7 +313,12 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.constraint_causality_contains:
         ccc: str = args.constraint_causality_contains
-        p.add(lambda e, s=ccc: _str_contains((e.get("constraint_added") or {}).get("causality"), s))
+        p.add(
+            lambda e, s=ccc: _str_contains(
+                _as_str((_as_dict(e.get("constraint_added")) or {}).get("causality")),
+                s,
+            )
+        )
 
     if args.trigger:
         trg: str = args.trigger
@@ -263,11 +330,11 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.depth_min is not None:
         d_min: int = args.depth_min
-        p.add(lambda e, d=d_min: e.get("depth") is not None and e["depth"] >= d)
+        p.add(lambda e, d=d_min: (_as_int(e.get("depth")) or -1) >= d)
 
     if args.depth_max is not None:
         d_max: int = args.depth_max
-        p.add(lambda e, d=d_max: e.get("depth") is not None and e["depth"] <= d)
+        p.add(lambda e, d=d_max: (_as_int(e.get("depth")) or 10**18) <= d)
 
     if args.parent_path_id is not None:
         ppid: int = args.parent_path_id
@@ -278,34 +345,35 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.prune_reason:
         pr: str = args.prune_reason
-        p.add(lambda e, s=pr: _str_contains(e.get("prune_reason"), s))
+        p.add(lambda e, s=pr: _str_contains(_as_str(e.get("prune_reason")), s))
 
     if args.stack_contains:
         sc: str = args.stack_contains
-        p.add(lambda e, s=sc: _list_contains(e.get("stack"), s))
+        p.add(lambda e, s=sc: _list_contains(_as_list(e.get("stack")), s))
 
     if args.local_var_name:
         lvn: str = args.local_var_name
-        p.add(lambda e, k=lvn: k in (e.get("local_vars") or {}))
+        p.add(lambda e, k=lvn: k in (_as_dict(e.get("local_vars")) or {}))
 
     if args.global_var_name:
         gvn: str = args.global_var_name
-        p.add(lambda e, k=gvn: k in (e.get("global_vars") or {}))
+        p.add(lambda e, k=gvn: k in (_as_dict(e.get("global_vars")) or {}))
 
     if args.constraint_smtlib_contains:
         csc: str = args.constraint_smtlib_contains
-        p.add(lambda e, s=csc: _constraints_contain(e.get("path_constraints"), s))
+        p.add(
+            lambda e, s=csc: _constraints_contain(
+                cast("list[dict[str, object]] | None", _as_list(e.get("path_constraints"))), s
+            )
+        )
 
     if args.num_path_constraints_min is not None:
         npcmin: int = args.num_path_constraints_min
-        p.add(lambda e, n=npcmin: len(e.get("path_constraints") or []) >= n)
+        p.add(lambda e, n=npcmin: len(_as_list(e.get("path_constraints")) or []) >= n)
 
     if args.num_path_constraints_max is not None:
         npcmax: int = args.num_path_constraints_max
-        p.add(
-            lambda e, n=npcmax: e.get("path_constraints") is not None
-            and len(e["path_constraints"]) <= n
-        )
+        p.add(lambda e, n=npcmax: len(_as_list(e.get("path_constraints")) or []) <= n)
 
     if args.solve_result:
         sr: str = args.solve_result
@@ -319,55 +387,49 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.solver_latency_min is not None:
         slmin: float = args.solver_latency_min
-        p.add(
-            lambda e, ms=slmin: e.get("solver_latency_ms") is not None
-            and e["solver_latency_ms"] >= ms
-        )
+        p.add(lambda e, ms=slmin: (_as_float(e.get("solver_latency_ms")) or -1.0) >= ms)
 
     if args.solver_latency_max is not None:
         slmax: float = args.solver_latency_max
-        p.add(
-            lambda e, ms=slmax: e.get("solver_latency_ms") is not None
-            and e["solver_latency_ms"] <= ms
-        )
+        p.add(lambda e, ms=slmax: (_as_float(e.get("solver_latency_ms")) or float("inf")) <= ms)
 
     if args.num_constraints_min is not None:
         ncmin: int = args.num_constraints_min
-        p.add(lambda e, n=ncmin: e.get("num_constraints") is not None and e["num_constraints"] >= n)
+        p.add(lambda e, n=ncmin: (_as_int(e.get("num_constraints")) or -1) >= n)
 
     if args.num_constraints_max is not None:
         ncmax: int = args.num_constraints_max
-        p.add(lambda e, n=ncmax: e.get("num_constraints") is not None and e["num_constraints"] <= n)
+        p.add(lambda e, n=ncmax: (_as_int(e.get("num_constraints")) or 10**18) <= n)
 
     if args.has_model_excerpt:
         p.add(lambda e: e.get("model_excerpt") is not None)
 
     if args.model_var_name:
         mvn: str = args.model_var_name
-        p.add(lambda e, k=mvn: k in (e.get("model_excerpt") or {}))
+        p.add(lambda e, k=mvn: k in (_as_dict(e.get("model_excerpt")) or {}))
 
     if args.severity:
         sevs: frozenset[str] = frozenset(s.upper() for s in args.severity)
-        p.add(lambda e, ss=sevs: (e.get("severity") or "").upper() in ss)
+        p.add(lambda e, ss=sevs: (_as_str(e.get("severity")) or "").upper() in ss)
 
     if args.detector:
         det: str = args.detector
-        p.add(lambda e, s=det: _str_contains(e.get("detector_name"), s))
+        p.add(lambda e, s=det: _str_contains(_as_str(e.get("detector_name")), s))
 
     if args.issue_kind:
         ik: str = args.issue_kind
-        p.add(lambda e, s=ik: _str_contains(e.get("issue_kind"), s))
+        p.add(lambda e, s=ik: _str_contains(_as_str(e.get("issue_kind")), s))
 
     if args.message_contains:
         mc: str = args.message_contains
-        p.add(lambda e, s=mc: _str_contains(e.get("message"), s))
+        p.add(lambda e, s=mc: _str_contains(_as_str(e.get("message")), s))
 
     if args.has_z3_model:
         p.add(lambda e: e.get("z3_model") is not None)
 
     if args.z3_model_var:
         zmv: str = args.z3_model_var
-        p.add(lambda e, k=zmv: k in (e.get("z3_model") or {}))
+        p.add(lambda e, k=zmv: k in (_as_dict(e.get("z3_model")) or {}))
 
     if args.issue_source_line is not None:
         isl: int = args.issue_source_line
@@ -376,21 +438,27 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     if args.confidence:
         conf_lo, conf_hi = args.confidence
         p.add(
-            lambda e, lo=conf_lo, hi=conf_hi: e.get("confidence") is not None
-            and lo <= float(e["confidence"]) <= hi
+            lambda e, lo=conf_lo, hi=conf_hi: (
+                (_as_float(e.get("confidence")) or -1.0) >= lo
+                and (_as_float(e.get("confidence")) or -1.0) <= hi
+            )
         )
 
     if args.constraint_at_issue_contains:
         caic: str = args.constraint_at_issue_contains
-        p.add(lambda e, s=caic: _constraints_contain(e.get("constraints_at_issue"), s))
+        p.add(
+            lambda e, s=caic: _constraints_contain(
+                cast("list[dict[str, object]] | None", _as_list(e.get("constraints_at_issue"))), s
+            )
+        )
 
     if args.function_name:
         fn_sub: str = args.function_name
-        p.add(lambda e, s=fn_sub: _str_contains(e.get("function_name"), s))
+        p.add(lambda e, s=fn_sub: _str_contains(_as_str(e.get("function_name")), s))
 
     if args.source_file:
         sf_sub: str = args.source_file
-        p.add(lambda e, s=sf_sub: _str_contains(e.get("source_file"), s))
+        p.add(lambda e, s=sf_sub: _str_contains(_as_str(e.get("source_file")), s))
 
     if args.pysymex_version:
         pv: str = args.pysymex_version
@@ -403,10 +471,10 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     if args.touches_var:
         tv: str = args.touches_var
 
-        def _touches_var(e: dict[str, Any], needle: str = tv) -> bool:
+        def _touches_var(e: dict[str, object], needle: str = tv) -> bool:
             """Touches var."""
 
-            for item in e.get("stack") or []:
+            for item in _as_list(e.get("stack")) or []:
                 if needle in str(item):
                     return True
             for mapping_key in (
@@ -417,7 +485,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
                 "z3_model",
                 "initial_symbolic_args",
             ):
-                mapping = e.get(mapping_key) or {}
+                mapping = _as_dict(e.get(mapping_key)) or {}
                 for k, v in mapping.items():
                     if needle in str(k) or needle in str(v):
                         return True
@@ -428,17 +496,22 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     if args.constraint_contains:
         cc: str = args.constraint_contains
 
-        def _any_constraint(e: dict[str, Any], needle: str = cc) -> bool:
+        def _any_constraint(e: dict[str, object], needle: str = cc) -> bool:
             """Any constraint."""
 
-            ca = e.get("constraint_added")
-            if ca and needle in ca.get("smtlib", ""):
+            ca = _as_dict(e.get("constraint_added"))
+            if ca and needle in (_as_str(ca.get("smtlib")) or ""):
                 return True
 
-            if _constraints_contain(e.get("path_constraints"), needle):
+            if _constraints_contain(
+                cast("list[dict[str, object]] | None", _as_list(e.get("path_constraints"))), needle
+            ):
                 return True
 
-            if _constraints_contain(e.get("constraints_at_issue"), needle):
+            if _constraints_contain(
+                cast("list[dict[str, object]] | None", _as_list(e.get("constraints_at_issue"))),
+                needle,
+            ):
                 return True
             return False
 
@@ -450,12 +523,12 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     return p
 
 
-def _format_pretty(event: dict[str, Any]) -> str:
+def _format_pretty(event: dict[str, object]) -> str:
     """Two-space-indented JSON, suitable for human reading."""
     return json.dumps(event, indent=2, ensure_ascii=False)
 
 
-def _format_fields(event: dict[str, Any], fields: list[str]) -> str:
+def _format_fields(event: dict[str, object], fields: list[str]) -> str:
     """Emit only the requested top-level *fields* as a JSONL object."""
     subset = {f: event[f] for f in fields if f in event}
     return json.dumps(subset, ensure_ascii=False)
@@ -474,9 +547,9 @@ class SummaryAccumulator:
         self.first_seq: dict[str, int] = {}
         self.last_seq: dict[str, int] = {}
 
-    def record(self, event: dict[str, Any]) -> None:
-        et: str = event.get("event_type", "unknown")
-        seq: int = event.get("seq", -1)
+    def record(self, event: dict[str, object]) -> None:
+        et: str = _as_str(event.get("event_type")) or "unknown"
+        seq: int = _as_int(event.get("seq")) or -1
         self.total += 1
         self.by_type[et] += 1
         if et not in self.first_seq:
@@ -530,7 +603,6 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         for raw_line, event in stream_events(args.input):
-
             if any_field_needle is not None and any_field_needle not in raw_line:
                 continue
 
@@ -553,13 +625,11 @@ def run(args: argparse.Namespace) -> int:
             elif tail_buf is not None:
                 tail_buf.append(rendered)
             else:
-
                 print(rendered)
                 if head_limit is not None and matched >= head_limit:
                     break
 
     except BrokenPipeError:
-
         pass
     except FileNotFoundError as exc:
         print(f"[pysymex-trace-analyze] ERROR: {exc}", file=sys.stderr)
@@ -942,7 +1012,7 @@ pysymex-trace-analyze trace.jsonl --tail 50 --format pretty
 ```
 
 ### Strategy C: Targeted Filter Chains
-Compose 2–4 filters to isolate precisely the events relevant to your question:
+Compose 2-4 filters to isolate precisely the events relevant to your question:
 ```bash
 # "Which SAT results mentioned variable 'idx' on slow queries?"
 pysymex-trace-analyze trace.jsonl \\
@@ -1260,8 +1330,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Keep step events that introduced a new local variable "
-            "(var_diff.added is non-empty)."
+            "Keep step events that introduced a new local variable (var_diff.added is non-empty)."
         ),
     )
     step_grp.add_argument(

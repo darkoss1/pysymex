@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Scanner - core logic
 ===============================
@@ -15,6 +33,7 @@ import time
 import types
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 from pysymex.analysis.autotuner import AutoTuner
 from pysymex.analysis.detectors import Issue, IssueKind
@@ -32,6 +51,53 @@ _session_var: contextvars.ContextVar[ScanSession | None] = contextvars.ContextVa
     "_session_var",
     default=None,
 )
+
+
+def _descending_issue_count(item: tuple[str, int]) -> int:
+    return -item[1]
+
+
+def _auto_worker_count(*, use_sandbox: bool) -> int:
+    """Return a conservative default worker count for symbolic scans.
+
+    Symbolic execution is memory-heavy, and sandbox compilation may spawn
+    extra short-lived helper processes per file. Aggressive CPU-count defaults
+    can oversubscribe hosts (especially on Windows), causing high RSS and
+    scheduler thrash.
+    """
+    cpu_count = max(1, os.cpu_count() or 1)
+    half_cpu = max(1, cpu_count // 2)
+    cap = 2 if use_sandbox else 4
+    return min(cap, half_cpu)
+
+
+def _hardware_acceleration_status(*, use_h_acceleration: bool, use_chtd: bool) -> str:
+    """Return a human-readable summary of active acceleration backends."""
+    if not use_h_acceleration or not use_chtd:
+        return "none (disabled by configuration)"
+
+    try:
+        from pysymex.h_acceleration.dispatcher import get_dispatcher
+
+        dispatcher = get_dispatcher()
+        backends = dispatcher.list_backends()
+        has_gpu = any(b.available and b.backend_type.name == "GPU" for b in backends)
+        has_cpu = any(b.available and b.backend_type.name in {"CPU", "REFERENCE"} for b in backends)
+
+        if has_gpu and has_cpu:
+            availability = "both (GPU+CPU)"
+        elif has_gpu:
+            availability = "gpu"
+        elif has_cpu:
+            availability = "cpu"
+        else:
+            availability = "none"
+
+        selected = dispatcher.selected_backend.name.lower()
+        return f"{availability}; dispatcher_selected={selected}"
+    except Exception:
+        logger.debug("Unable to determine acceleration backend status", exc_info=True)
+        return "unknown (backend probe failed)"
 
 
 def get_code_objects_with_context(
@@ -216,11 +282,12 @@ def _get_default_scanner_globals() -> dict[str, object]:
     Includes symbolic objects for common standard library modules to
     prevent the engine from assuming they could be None.
     """
-    from pysymex.core.types_containers import SymbolicObject
     import z3
 
+    from pysymex.core.types_containers import SymbolicObject
+
     defaults = {}
-    # Common modules frequently used in Python code
+
     common_modules = [
         "sys",
         "os",
@@ -240,7 +307,6 @@ def _get_default_scanner_globals() -> dict[str, object]:
     ]
 
     for mod_name in common_modules:
-        # Give each module a unique symbolic address to represent identity
         addr = hash(mod_name) & 0xFFFFFFFF
         obj = SymbolicObject(mod_name, addr, z3.IntVal(addr), {addr})
         defaults[mod_name] = obj
@@ -276,8 +342,9 @@ def analyze_file(file_path: Path) -> ScanResult:
         print(f"\n⚠️  Found {len(result.issues)} potential issues:\n")
         for issue in result.issues:
             print(f"   • [{issue['kind']}] {issue['message']} (Line {issue['line']})")
-            if issue["counterexample"]:
-                for var, val in issue["counterexample"].items():
+            counterexample = issue.get("counterexample")
+            if isinstance(counterexample, dict):
+                for var, val in counterexample.items():
                     print(f"       └─ {var} = {val}")
     elif result.error:
         print(f"\n❌ {result.error}")
@@ -298,6 +365,11 @@ def scan_file(
     timeout: float = 30.0,
     auto_tune: bool = False,
     reporter: ScanReporter | None = None,
+    use_sandbox: bool = True,
+    use_chtd: bool = True,
+    use_h_acceleration: bool = True,
+    deterministic_mode: bool = False,
+    random_seed: int = 42,
     no_cache: bool = False,
     max_iterations: int = 0,
     trace_enabled: bool | None = None,
@@ -328,15 +400,30 @@ def scan_file(
     tracer = None
     try:
         content = file_path.read_text(encoding="utf-8")
-        code_obj = compile(content, str(file_path), "exec")
+        if use_sandbox:
+            from pysymex.sandbox.bridge import extract_bytecode
+
+            bytecode_blob = extract_bytecode(
+                content.encode("utf-8"),
+                str(file_path),
+                sandbox_config={"allow_compat_fallback": True},
+            )
+            code_obj = bytecode_blob.reconstruct()
+        else:
+            code_obj = compile(content, str(file_path), "exec")
         all_code_with_context = get_code_objects_with_context(code_obj)
         result.code_objects = len(all_code_with_context)
         config = ExecutionConfig(
             max_paths=max_paths,
             max_depth=1000,
-            max_iterations=max_iterations if max_iterations > 0 else max(100000, max_paths * 200),
+            max_iterations=max_iterations if max_iterations > 0 else max(5000, max_paths * 100),
             timeout_seconds=timeout,
             enable_solver_cache=not no_cache,
+            enable_cross_function=False,
+            enable_chtd=use_chtd,
+            enable_h_acceleration=use_h_acceleration,
+            deterministic_mode=deterministic_mode,
+            random_seed=random_seed,
         )
         base_config = config
         executor = SymbolicExecutor(config=config)
@@ -375,25 +462,31 @@ def scan_file(
         def _handle_issue(issue: object) -> None:
             """Handle issue."""
             import re
-            # Check if it's already a dict (from range checker)
+
+            issue_dict: dict[str, object]
+
             if isinstance(issue, dict):
-                issue_dict = issue
-                raw_msg_key = f"[{issue_dict['kind']}] {issue_dict['message']} (Line {issue_dict['line']})"
+                issue_dict = {str(k): v for k, v in issue.items()}
+                raw_msg_key = (
+                    f"[{issue_dict['kind']}] {issue_dict['message']} (Line {issue_dict['line']})"
+                )
             else:
-                raw_msg_key = f"[{issue.kind.name}] {issue.message} (Line {issue.line_number})"
+                issue_obj = cast("Issue", issue)
+                raw_msg_key = (
+                    f"[{issue_obj.kind.name}] {issue_obj.message} (Line {issue_obj.line_number})"
+                )
+                counterexample = issue_obj.get_counterexample()
                 issue_dict = {
-                    "kind": issue.kind.name,
-                    "message": issue.message,
-                    "line": issue.line_number,
-                    "pc": issue.pc,
-                    "function_name": getattr(issue, "function_name", None),
-                    "class_name": getattr(issue, "class_name", None),
-                    "full_path": getattr(issue, "full_path", None),
-                    "counterexample": getattr(issue, "get_counterexample", lambda: None)(),
+                    "kind": issue_obj.kind.name,
+                    "message": issue_obj.message,
+                    "line": issue_obj.line_number,
+                    "pc": issue_obj.pc,
+                    "function_name": issue_obj.function_name,
+                    "class_name": getattr(issue_obj, "class_name", None),
+                    "full_path": getattr(issue_obj, "full_path", None),
+                    "counterexample": counterexample,
                 }
 
-            # Normalize internal symbolic IDs (e.g. iter_12_54 -> iter or havoc_call@19 -> havoc_call)
-            # strictly for aggressive deduplication on identical bug reports
             msg_key = re.sub(r"(_\d+|@\d+)", "", raw_msg_key)
 
             if msg_key not in seen:
@@ -413,7 +506,10 @@ def scan_file(
                 name_lower = name.lower()
                 if i == 0 and name in ("self", "cls"):
                     symbolic_vars[name] = "object"
-                elif any(p in name_lower for p in ("collection", "items", "sequence", "data", "arr", "list")):
+                elif any(
+                    p in name_lower
+                    for p in ("collection", "items", "sequence", "data", "arr", "list")
+                ):
                     symbolic_vars[name] = "list"
                 elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
                     symbolic_vars[name] = "dict"
@@ -463,7 +559,10 @@ def scan_file(
                 name_lower = name.lower()
                 if i == 0 and name in ("self", "cls"):
                     symbolic_vars[name] = "object"
-                elif any(p in name_lower for p in ("collection", "items", "sequence", "data", "arr", "list")):
+                elif any(
+                    p in name_lower
+                    for p in ("collection", "items", "sequence", "data", "arr", "list")
+                ):
                     symbolic_vars[name] = "list"
                 elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
                     symbolic_vars[name] = "dict"
@@ -552,6 +651,11 @@ def scan_directory(
     mode: str = "symbolic",
     auto_tune: bool = False,
     reporter: ScanReporter | None = None,
+    use_sandbox: bool = True,
+    use_chtd: bool = True,
+    use_h_acceleration: bool = True,
+    deterministic_mode: bool = False,
+    random_seed: int = 42,
     no_cache: bool = False,
     max_iterations: int = 0,
     trace_enabled: bool | None = None,
@@ -576,10 +680,29 @@ def scan_directory(
             print(f"No Python files found in {dir_path}")
         return []
 
-    workers_count = max(1, os.cpu_count() or 1) if workers is None or workers <= 0 else workers
+    workers_count = (
+        _auto_worker_count(use_sandbox=use_sandbox) if workers is None or workers <= 0 else workers
+    )
 
     if workers_count > 1 and len(files) < workers_count * 2:
         workers_count = max(1, len(files) // 2)
+
+    logical_cores = max(1, os.cpu_count() or 1)
+    execution_mode = "parallel" if workers_count > 1 else "sequential"
+    hacc_status = _hardware_acceleration_status(
+        use_h_acceleration=use_h_acceleration,
+        use_chtd=use_chtd,
+    )
+    if reporter:
+        reporter.on_status(
+            f"Runtime: mode={execution_mode}; workers={workers_count}; logical_cores={logical_cores}"
+        )
+        reporter.on_status(f"Hardware acceleration: {hacc_status}\n")
+    elif verbose:
+        print(
+            f"Runtime: mode={execution_mode}; workers={workers_count}; logical_cores={logical_cores}"
+        )
+        print(f"Hardware acceleration: {hacc_status}")
 
     if workers_count <= 1:
         return _scan_sequential(
@@ -589,6 +712,11 @@ def scan_directory(
             timeout,
             auto_tune,
             reporter,
+            use_sandbox,
+            use_chtd,
+            use_h_acceleration,
+            deterministic_mode,
+            random_seed,
             no_cache,
             max_iterations,
             trace_enabled,
@@ -604,6 +732,11 @@ def scan_directory(
         timeout,
         auto_tune,
         reporter,
+        use_sandbox,
+        use_chtd,
+        use_h_acceleration,
+        deterministic_mode,
+        random_seed,
         no_cache,
         max_iterations,
         trace_enabled,
@@ -622,6 +755,11 @@ def _scan_sequential(
     timeout: float,
     auto_tune: bool,
     reporter: ScanReporter | None = None,
+    use_sandbox: bool = True,
+    use_chtd: bool = True,
+    use_h_acceleration: bool = True,
+    deterministic_mode: bool = False,
+    random_seed: int = 42,
     no_cache: bool = False,
     max_iterations: int = 0,
     trace_enabled: bool | None = None,
@@ -644,6 +782,11 @@ def _scan_sequential(
                 timeout=timeout,
                 auto_tune=auto_tune,
                 reporter=reporter,
+                use_sandbox=use_sandbox,
+                use_chtd=use_chtd,
+                use_h_acceleration=use_h_acceleration,
+                deterministic_mode=deterministic_mode,
+                random_seed=random_seed,
                 no_cache=no_cache,
                 max_iterations=max_iterations,
                 trace_enabled=trace_enabled,
@@ -684,6 +827,11 @@ def _scan_parallel(
     timeout: float,
     auto_tune: bool,
     reporter: ScanReporter | None = None,
+    use_sandbox: bool = True,
+    use_chtd: bool = True,
+    use_h_acceleration: bool = True,
+    deterministic_mode: bool = False,
+    random_seed: int = 42,
     no_cache: bool = False,
     max_iterations: int = 0,
     trace_enabled: bool | None = None,
@@ -716,7 +864,7 @@ def _scan_parallel(
             future_to_file: dict[concurrent.futures.Future[ScanResult], Path] = {}
             file_iter = iter(files)
 
-            for _ in range(workers_count * 2):
+            for _ in range(workers_count):
                 try:
                     f = next(file_iter)
                     fut = executor.submit(
@@ -726,6 +874,11 @@ def _scan_parallel(
                         max_paths=max_paths,
                         timeout=timeout,
                         auto_tune=auto_tune,
+                        use_sandbox=use_sandbox,
+                        use_chtd=use_chtd,
+                        use_h_acceleration=use_h_acceleration,
+                        deterministic_mode=deterministic_mode,
+                        random_seed=random_seed,
                         no_cache=no_cache,
                         max_iterations=max_iterations,
                         trace_enabled=trace_enabled,
@@ -774,6 +927,11 @@ def _scan_parallel(
                             max_paths=max_paths,
                             timeout=timeout,
                             auto_tune=auto_tune,
+                            use_sandbox=use_sandbox,
+                            use_chtd=use_chtd,
+                            use_h_acceleration=use_h_acceleration,
+                            deterministic_mode=deterministic_mode,
+                            random_seed=random_seed,
                             no_cache=no_cache,
                             max_iterations=max_iterations,
                             trace_enabled=trace_enabled,
@@ -789,20 +947,29 @@ def _scan_parallel(
             print(f"\n\u26a1 Interrupted \u2013 returning {len(results)} results collected so far.")
     except (RuntimeError, concurrent.futures.process.BrokenProcessPool) as exc:
         logger.warning("Parallel scanning failed (%s), falling back to sequential", exc)
-        if verbose and not reporter:
-            print("\u26a0\ufe0f  Parallel scanning unavailable, falling back to sequential...")
+        if reporter:
+            reporter.on_status(
+                "⚠️  Parallel scanning unavailable, falling back to sequential mode (workers=1)."
+            )
+        elif verbose:
+            print("⚠️  Parallel scanning unavailable, falling back to sequential mode (workers=1).")
         return _scan_sequential(
-            files,
-            verbose,
-            max_paths,
-            timeout,
-            auto_tune,
-            reporter,
-            no_cache,
-            max_iterations,
-            trace_enabled,
-            trace_output_dir,
-            trace_verbosity,
+            files=files,
+            verbose=verbose,
+            max_paths=max_paths,
+            timeout=timeout,
+            auto_tune=auto_tune,
+            reporter=reporter,
+            use_sandbox=use_sandbox,
+            use_chtd=use_chtd,
+            use_h_acceleration=use_h_acceleration,
+            deterministic_mode=deterministic_mode,
+            random_seed=random_seed,
+            no_cache=no_cache,
+            max_iterations=max_iterations,
+            trace_enabled=trace_enabled,
+            trace_output_dir=trace_output_dir,
+            trace_verbosity=trace_verbosity,
         )
 
     if scan_errors and not cancelled:
@@ -864,11 +1031,14 @@ def on_file_event(event: object, reporter: ScanReporter | None = None) -> None:
         event: A watch event with ``event_type`` and ``path`` attributes.
         reporter: Optional reporter for console output.
     """
-    if (
-        event.event_type in (FileEventType.CREATED, FileEventType.MODIFIED)
-        and event.path.suffix == ".py"
+    _ = reporter
+    event_type = getattr(event, "event_type", None)
+    event_path = getattr(event, "path", None)
+    if event_type in (FileEventType.CREATED, FileEventType.MODIFIED) and isinstance(
+        event_path, Path
     ):
-        analyze_file(event.path)
+        if event_path.suffix == ".py":
+            analyze_file(event_path)
 
 
 def print_final_summary(reporter: ScanReporter | None = None) -> None:
@@ -881,9 +1051,11 @@ def print_final_summary(reporter: ScanReporter | None = None) -> None:
     session = _session_var.get()
     if not session:
         return
-    if reporter and hasattr(reporter, "on_session_summary"):
-        reporter.on_session_summary(session)
-        return
+    if reporter:
+        on_session_summary = getattr(reporter, "on_session_summary", None)
+        if callable(on_session_summary):
+            on_session_summary(session)
+            return
     summary = session.get_summary()
     print(f"\n\n{'=' * 70}")
     print("\U0001f4cb SESSION SUMMARY")
@@ -894,9 +1066,10 @@ def print_final_summary(reporter: ScanReporter | None = None) -> None:
     print(f"   Files with errors: {summary['files_error']}")
     print(f"   Total issues:      {summary['total_issues']}")
     print()
-    if summary["issue_breakdown"]:
+    issue_breakdown = summary.get("issue_breakdown")
+    if isinstance(issue_breakdown, dict):
         print("   Issue breakdown:")
-        for kind, count in sorted(summary["issue_breakdown"].items(), key=lambda x: -x[1]):
+        for kind, count in sorted(issue_breakdown.items(), key=_descending_issue_count):
             bar = "\u2588" * min(count, 30)
             print(f"      {kind:<25} {count:>4} {bar}")
     print(f"\n   \U0001f4c1 Log saved to: {session.log_file}")
@@ -1016,7 +1189,11 @@ def main() -> None:
             "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n"
         )
         watcher = FileWatcher(paths=[scan_dir], patterns=["*.py"])
-        watcher.on_change(lambda evt: on_file_event(evt, reporter=reporter))
+
+        def _handle_watch_event(evt: object) -> None:
+            on_file_event(evt, reporter=reporter)
+
+        watcher.on_change(_handle_watch_event)
         watcher.start()
         try:
             reporter.on_status("\U0001f441\ufe0f  Watching for file changes...")

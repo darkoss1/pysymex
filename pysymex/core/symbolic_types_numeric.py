@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic numeric types: Bool, Int, Float.
 
 These three types are mutually referential (e.g. Int comparisons return Bool,
@@ -31,7 +49,7 @@ class SymbolicBool(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("bool")
 
@@ -110,7 +128,7 @@ class SymbolicInt(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("int")
 
@@ -239,16 +257,15 @@ class SymbolicInt(SymbolicType):
             return SymbolicBool(z3.ToReal(self.z3_int) >= other.z3_real)
         return SymbolicBool(self.z3_int >= other.z3_int)
 
-    def __eq__(self, other: object) -> SymbolicBool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, SymbolicInt):
-            return SymbolicBool(self.z3_int == other.z3_int)
-        elif isinstance(other, SymbolicFloat):
-            return SymbolicBool(z3.ToReal(self.z3_int) == other.z3_real)
-        return SymbolicBool.concrete(False)
+            return z3.eq(self.z3_int, other.z3_int)
+        if isinstance(other, SymbolicFloat):
+            return z3.eq(z3.ToReal(self.z3_int), other.z3_real)
+        return False
 
-    def __ne__(self, other: object) -> SymbolicBool:
-        eq = self.__eq__(other)
-        return SymbolicBool(z3.Not(eq.z3_bool))
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
 
     def __and__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv & other.as_bv
@@ -311,7 +328,7 @@ class SymbolicFloat(SymbolicType):
 
     __hash__ = object.__hash__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("float")
 
@@ -407,16 +424,41 @@ class SymbolicFloat(SymbolicType):
             return SymbolicBool(self.z3_real >= z3.ToReal(other.z3_int))
         return SymbolicBool(self.z3_real >= other.z3_real)
 
-    def __eq__(self, other: object) -> SymbolicBool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, SymbolicFloat):
-            return SymbolicBool(self.z3_real == other.z3_real)
-        elif isinstance(other, SymbolicInt):
-            return SymbolicBool(self.z3_real == z3.ToReal(other.z3_int))
-        return SymbolicBool.concrete(False)
+            return z3.eq(self.z3_real, other.z3_real)
+        if isinstance(other, SymbolicInt):
+            return z3.eq(self.z3_real, z3.ToReal(other.z3_int))
+        return False
 
-    def __ne__(self, other: object) -> SymbolicBool:
-        eq = self.__eq__(other)
-        return SymbolicBool(z3.Not(eq.z3_bool))
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __mod__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
+        if isinstance(other, SymbolicInt):
+            other_real = z3.ToReal(other.z3_int)
+        else:
+            other_real = other.z3_real
+        safe_divisor = z3.If(other_real == 0, z3.RealVal(1), other_real)
+        floor_div = z3.ToInt(self.z3_real / safe_divisor)
+        raw_res = self.z3_real - (z3.ToReal(floor_div) * safe_divisor)
+        return SymbolicFloat(z3.If(other_real != 0, raw_res, z3.RealVal(0)))
+
+    def __floordiv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
+        if isinstance(other, SymbolicInt):
+            other_real = z3.ToReal(other.z3_int)
+        else:
+            other_real = other.z3_real
+        safe_divisor = z3.If(other_real == 0, z3.RealVal(1), other_real)
+        floor_div = z3.ToInt(self.z3_real / safe_divisor)
+        return SymbolicFloat(z3.If(other_real != 0, z3.ToReal(floor_div), z3.RealVal(0)))
+
+    def __pow__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
+        if isinstance(other, SymbolicInt):
+            other_real = z3.ToReal(other.z3_int)
+        else:
+            other_real = other.z3_real
+        return SymbolicFloat(self.z3_real**other_real)
 
     def to_int(self) -> SymbolicInt:
         """Convert to integer (truncate toward zero — matches Python int()).
@@ -444,8 +486,6 @@ class SymbolicFloat(SymbolicType):
         """As unified."""
         from .types import Z3_FALSE, SymbolicValue
 
-        # Use truncation toward zero (matching to_int / Python int()),
-        # not z3.ToInt which floors.
         _abs_floor = z3.ToInt(z3.If(self.z3_real >= 0, self.z3_real, -self.z3_real))
         _sign = z3.If(self.z3_real < 0, z3.IntVal(-1), z3.IntVal(1))
         return SymbolicValue(

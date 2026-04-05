@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Models for the asyncio module.
 
 This module provides models for Python's asyncio standard library,
@@ -8,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -25,7 +43,7 @@ class CoroutineModel(Generic[T]):
         """Send a value into the coroutine."""
         if self._done:
             raise StopIteration(self._result)
-        return self._result
+        return cast("T", self._result)
 
     def throw(
         self, typ: type[BaseException], val: BaseException | None = None, _tb: object = None
@@ -49,7 +67,7 @@ class CoroutineModel(Generic[T]):
 class TaskModel(Generic[T]):
     """Model for asyncio.Task - a coroutine wrapped into a Future."""
 
-    _coro: Coroutine[Any, Any, T]
+    _coro: Coroutine[object, object, T]
     _result: T | None = None
     _exception: BaseException | None = None
     _done: bool = False
@@ -64,7 +82,7 @@ class TaskModel(Generic[T]):
             raise self._exception
         if not self._done:
             raise Exception("Task not done")
-        return self._result
+        return cast("T", self._result)
 
     def exception(self) -> BaseException | None:
         """Return the exception raised by the Task."""
@@ -113,7 +131,7 @@ class TaskModel(Generic[T]):
         self._name = value
         return self
 
-    def get_coro(self) -> Coroutine[Any, Any, T]:
+    def get_coro(self) -> Coroutine[object, object, T]:
         """Return the coroutine wrapped by the Task."""
         return self._coro
 
@@ -123,7 +141,7 @@ class EventModel:
     """Model for asyncio.Event - an event that can be waited on."""
 
     _set: bool = False
-    _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
+    _waiters: list[Awaitable[object]] = field(default_factory=list[Awaitable[object]])
 
     def is_set(self) -> bool:
         """Return True if the event is set."""
@@ -148,7 +166,7 @@ class LockModel:
 
     _locked: bool = False
     _owner: object = None
-    _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
+    _waiters: list[Awaitable[object]] = field(default_factory=list[Awaitable[object]])
 
     def locked(self) -> bool:
         """Return True if the lock is acquired."""
@@ -183,7 +201,7 @@ class SemaphoreModel:
 
     _value: int
     _initial: int = field(init=False)
-    _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
+    _waiters: list[Awaitable[object]] = field(default_factory=list[Awaitable[object]])
 
     def __post_init__(self) -> None:
         self._initial = self._value
@@ -216,7 +234,7 @@ class ConditionModel:
     """Model for asyncio.Condition - a condition variable."""
 
     _lock: LockModel = field(default_factory=LockModel)
-    _waiters: list[Awaitable[Any]] = field(default_factory=list[Awaitable[Any]])
+    _waiters: list[Awaitable[object]] = field(default_factory=list[Awaitable[object]])
 
     async def acquire(self) -> bool:
         """Acquire the underlying lock."""
@@ -265,7 +283,7 @@ class QueueModel(Generic[T]):
     """Model for asyncio.Queue - a FIFO queue for async tasks."""
 
     maxsize: int = 0
-    _queue: list[object] = field(default_factory=list[object])
+    _queue: list[T] = field(default_factory=list)
     _unfinished_tasks: int = 0
 
     def empty(self) -> bool:
@@ -338,7 +356,7 @@ class FutureModel(Generic[T]):
             raise self._exception
         if not self._done:
             raise Exception("Future not done")
-        return self._result
+        return cast("T", self._result)
 
     def set_result(self, result: T) -> None:
         """Mark the Future as done and set its result."""
@@ -401,9 +419,16 @@ class FutureModel(Generic[T]):
         return iter([None, self.result()])
 
 
-def _stub_sleep(_delay: object) -> object:
+class _SleepCoro:
+    """Stub class for sleep coroutine."""
+
+    def __await__(self) -> object:
+        return (yield None)
+
+
+def _stub_sleep(_delay: object) -> _SleepCoro:
     """Stub sleep."""
-    return type("sleep_coro", (), {"__await__": lambda self: (yield None)})()
+    return _SleepCoro()
 
 
 def _stub_gather(*coros: object) -> list[None]:
@@ -422,7 +447,7 @@ def _stub_wait_for(coro: object, timeout: object) -> object:
     return coro
 
 
-def _stub_create_task(coro: object) -> TaskModel:
+def _stub_create_task(coro: Coroutine[object, object, object]) -> TaskModel[object]:
     """Stub create task."""
     return TaskModel(coro)
 
@@ -432,11 +457,19 @@ def _stub_run(coro: object, loop: object = None) -> None:
     return None
 
 
-def _make_loop() -> object:
+class _LoopStub:
+    """Stub class for event loop."""
+
+    def run_until_complete(self, coro: object) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _make_loop() -> _LoopStub:
     """Make loop."""
-    return type(
-        "Loop", (), {"run_until_complete": lambda self, coro: None, "close": lambda self: None}
-    )()
+    return _LoopStub()
 
 
 def _stub_new_event_loop() -> object:
@@ -449,9 +482,9 @@ def _stub_get_event_loop() -> object:
     return _make_loop()
 
 
-def _stub_get_running_loop() -> object:
+def _stub_get_running_loop() -> _LoopStub:
     """Stub get running loop."""
-    return type("Loop", (), {})()
+    return _LoopStub()
 
 
 def _stub_shield(coro: object) -> object:
@@ -459,11 +492,19 @@ def _stub_shield(coro: object) -> object:
     return coro
 
 
-def _stub_timeout(_delay: object) -> object:
+class _TimeoutContext:
+    """Stub class for timeout context manager."""
+
+    def __aenter__(self) -> None:
+        return None
+
+    def __aexit__(self, *args: object) -> None:
+        return None
+
+
+def _stub_timeout(_delay: object) -> _TimeoutContext:
     """Stub timeout."""
-    return type(
-        "timeout_ctx", (), {"__aenter__": lambda self: None, "__aexit__": lambda self, *args: None}
-    )()
+    return _TimeoutContext()
 
 
 def _stub_to_thread(func: Callable[..., object], *args: object) -> object:

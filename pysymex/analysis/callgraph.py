@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Call Graph Analysis for pysymex.
 Phase 20: Build and analyze call graphs from bytecode.
@@ -12,6 +30,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import CodeType
 
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
 
@@ -32,13 +51,13 @@ class CallGraphNode:
     name: str
     qualname: str = ""
     module: str = ""
-    bytecode: object = None
+    bytecode: CodeType | None = None
     is_method: bool = False
     class_name: str | None = None
     _callers: set[str] = field(default_factory=set[str])
     _callees: set[str] = field(default_factory=set[str])
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.qualname:
             self.qualname = self.name
 
@@ -46,7 +65,7 @@ class CallGraphNode:
     def full_name(self) -> str:
         """Get full qualified name."""
         if self.module:
-            return f"{self .module }.{self .qualname }"
+            return f"{self.module}.{self.qualname}"
         return self.qualname
 
     @property
@@ -119,7 +138,7 @@ class CallGraph:
     - Reachability analysis
     """
 
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str = "") -> None:
         self.name = name
         self._nodes: dict[str, CallGraphNode] = {}
         self._edges: dict[tuple[str, str], CallGraphEdge] = {}
@@ -240,13 +259,13 @@ class CallGraph:
             """Dfs."""
             visited.add(node)
             rec_stack.append(node)
-            path = path + [node]
+            path = [*path, node]
             for callee in self.get_callees(node):
                 if callee not in visited:
                     dfs(callee, path)
                 elif callee in rec_stack:
                     cycle_start = path.index(callee)
-                    cycle = path[cycle_start:] + [callee]
+                    cycle = [*path[cycle_start:], callee]
                     cycles.append(cycle)
             rec_stack.pop()
 
@@ -386,7 +405,7 @@ class CallGraph:
 
     def subgraph(self, nodes: set[str]) -> CallGraph:
         """Create a subgraph containing only specified nodes."""
-        result = CallGraph(name=f"{self .name }_subgraph")
+        result = CallGraph(name=f"{self.name}_subgraph")
         for name in nodes:
             if name in self._nodes:
                 result.add_node(self._nodes[name])
@@ -401,7 +420,7 @@ class CallGraph:
 
     def __str__(self) -> str:
         """Return a human-readable string representation."""
-        return f"CallGraph({self .name }, {len (self ._nodes )} nodes, {len (self ._edges )} edges)"
+        return f"CallGraph({self.name}, {len(self._nodes)} nodes, {len(self._edges)} edges)"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -494,14 +513,14 @@ def get_analysis_order(graph: CallGraph) -> list[str]:
             scc_map[node] = i
     scc_graph = CallGraph("scc_graph")
     for i, _scc in enumerate(sccs):
-        scc_node = CallGraphNode(name=f"scc_{i }")
+        scc_node = CallGraphNode(name=f"scc_{i}")
         scc_graph.add_node(scc_node)
     for edge in graph.edges():
         caller_scc = scc_map.get(edge.caller)
         callee_scc = scc_map.get(edge.callee)
         if caller_scc is not None and callee_scc is not None:
             if caller_scc != callee_scc:
-                scc_graph.add_edge(f"scc_{caller_scc }", f"scc_{callee_scc }")
+                scc_graph.add_edge(f"scc_{caller_scc}", f"scc_{callee_scc}")
     scc_order = scc_graph.topological_order()
     result: list[str] = []
     for scc_name in scc_order:

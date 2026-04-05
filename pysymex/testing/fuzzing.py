@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Property-based testing (fuzzing) infrastructure using Hypothesis.
 Provides strategies for generating symbolic values, bytecode operations,
 and complex test scenarios. Enables thorough testing through automated
@@ -8,7 +26,6 @@ from __future__ import annotations
 
 import dis
 from dataclasses import dataclass
-from typing import Any
 
 import z3
 from hypothesis import assume, given, settings
@@ -21,14 +38,14 @@ from pysymex.core.types import SymbolicValue
 def symbolic_integers(
     min_value: int = -(2**31),
     max_value: int = 2**31 - 1,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic integers."""
     return st.integers(min_value=min_value, max_value=max_value).map(
         lambda x: SymbolicValue.from_const(x)
     )
 
 
-def symbolic_booleans() -> st.SearchStrategy:
+def symbolic_booleans() -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic booleans."""
     return st.booleans().map(lambda x: SymbolicValue.from_const(x))
 
@@ -36,7 +53,7 @@ def symbolic_booleans() -> st.SearchStrategy:
 def symbolic_strings(
     min_size: int = 0,
     max_size: int = 100,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic strings."""
     return st.text(min_size=min_size, max_size=max_size).map(lambda x: SymbolicValue.from_const(x))
 
@@ -44,7 +61,7 @@ def symbolic_strings(
 def symbolic_floats(
     allow_nan: bool = False,
     allow_infinity: bool = False,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic floats."""
     return st.floats(
         allow_nan=allow_nan,
@@ -52,12 +69,12 @@ def symbolic_floats(
     ).map(lambda x: SymbolicValue.from_const(x))
 
 
-def symbolic_none() -> st.SearchStrategy:
+def symbolic_none() -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic None."""
     return st.just(SymbolicValue.from_const(None))
 
 
-def symbolic_values() -> st.SearchStrategy:
+def symbolic_values() -> st.SearchStrategy[SymbolicValue]:
     """Strategy for any symbolic value."""
     return st.one_of(
         symbolic_integers(),
@@ -69,10 +86,10 @@ def symbolic_values() -> st.SearchStrategy:
 
 
 def symbolic_lists(
-    elements: st.SearchStrategy | None = None,
+    elements: st.SearchStrategy[object] | None = None,
     min_size: int = 0,
     max_size: int = 10,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic lists."""
     if elements is None:
         elements = st.integers()
@@ -82,11 +99,11 @@ def symbolic_lists(
 
 
 def symbolic_dicts(
-    keys: st.SearchStrategy | None = None,
-    values: st.SearchStrategy | None = None,
+    keys: st.SearchStrategy[str] | None = None,
+    values: st.SearchStrategy[object] | None = None,
     min_size: int = 0,
     max_size: int = 5,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic dictionaries."""
     if keys is None:
         keys = st.text(min_size=1, max_size=10)
@@ -98,10 +115,10 @@ def symbolic_dicts(
 
 
 def symbolic_sets(
-    elements: st.SearchStrategy | None = None,
+    elements: st.SearchStrategy[object] | None = None,
     min_size: int = 0,
     max_size: int = 10,
-) -> st.SearchStrategy:
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic sets."""
     if elements is None:
         elements = st.integers()
@@ -111,25 +128,25 @@ def symbolic_sets(
 
 
 def symbolic_tuples(
-    *element_strategies: st.SearchStrategy,
-) -> st.SearchStrategy:
+    *element_strategies: st.SearchStrategy[object],
+) -> st.SearchStrategy[SymbolicValue]:
     """Strategy for generating symbolic tuples."""
     if not element_strategies:
         element_strategies = (st.integers(), st.integers())
     return st.tuples(*element_strategies).map(lambda t: SymbolicValue.from_const(t))
 
 
-def z3_int_vars(prefix: str = "x") -> st.SearchStrategy:
+def z3_int_vars(prefix: str = "x") -> st.SearchStrategy[z3.ArithRef]:
     """Strategy for generating Z3 integer variables."""
-    return st.integers(min_value=0, max_value=99).map(lambda i: z3.Int(f"{prefix }{i }"))
+    return st.integers(min_value=0, max_value=99).map(lambda i: z3.Int(f"{prefix}{i}"))
 
 
-def z3_bool_vars(prefix: str = "b") -> st.SearchStrategy:
+def z3_bool_vars(prefix: str = "b") -> st.SearchStrategy[z3.BoolRef]:
     """Strategy for generating Z3 boolean variables."""
-    return st.integers(min_value=0, max_value=99).map(lambda i: z3.Bool(f"{prefix }{i }"))
+    return st.integers(min_value=0, max_value=99).map(lambda i: z3.Bool(f"{prefix}{i}"))
 
 
-def z3_int_constants() -> st.SearchStrategy:
+def z3_int_constants() -> st.SearchStrategy[z3.ArithRef]:
     """Strategy for Z3 integer constants."""
     return st.integers(min_value=-1000, max_value=1000).map(lambda x: z3.IntVal(x))
 
@@ -142,9 +159,9 @@ def z3_arithmetic_exprs(
 ) -> z3.ArithRef:
     """Strategy for generating Z3 arithmetic expressions."""
     if vars is None:
-        vars = [z3.Int(f"x{i }") for i in range(3)]
+        vars = [z3.Int(f"x{i}") for i in range(3)]
     if depth <= 0:
-        return draw(st.sampled_from(vars + [z3.IntVal(draw(st.integers(-10, 10)))]))
+        return draw(st.sampled_from([*vars, z3.IntVal(draw(st.integers(-10, 10)))]))
     op = draw(st.sampled_from(["var", "const", "add", "sub", "mul", "neg"]))
     if op == "var":
         return draw(st.sampled_from(vars))
@@ -176,11 +193,11 @@ def z3_bool_exprs(
 ) -> z3.BoolRef:
     """Strategy for generating Z3 boolean expressions."""
     if int_vars is None:
-        int_vars = [z3.Int(f"x{i }") for i in range(3)]
+        int_vars = [z3.Int(f"x{i}") for i in range(3)]
     if bool_vars is None:
-        bool_vars = [z3.Bool(f"b{i }") for i in range(2)]
+        bool_vars = [z3.Bool(f"b{i}") for i in range(2)]
     if depth <= 0:
-        return draw(st.sampled_from(bool_vars + [z3.BoolVal(draw(st.booleans()))]))
+        return draw(st.sampled_from([*bool_vars, z3.BoolVal(draw(st.booleans()))]))
     op = draw(
         st.sampled_from(
             [
@@ -267,18 +284,21 @@ class MockInstruction:
         return dis.opmap.get(self.opname, 0)
 
 
-def arithmetic_ops() -> st.SearchStrategy:
+def arithmetic_ops() -> st.SearchStrategy[int]:
     """Strategy for arithmetic operations."""
     return st.sampled_from([0, 10, 5, 11, 2])
 
 
-def comparison_ops() -> st.SearchStrategy:
+def comparison_ops() -> st.SearchStrategy[int]:
     """Strategy for comparison operations."""
     return st.sampled_from([0, 1, 2, 3, 4, 5])
 
 
 @st.composite
-def mock_instructions(draw: st.DrawFn, opnames: list[str] | None = None) -> MockInstruction:
+def mock_instructions(
+    draw: st.DrawFn,
+    opnames: list[str] | None = None,
+) -> MockInstruction:
     """Strategy for generating mock instructions."""
     if opnames is None:
         opnames = STACK_OPCODES + LOAD_STORE_OPCODES
@@ -307,18 +327,24 @@ def mock_instructions(draw: st.DrawFn, opnames: list[str] | None = None) -> Mock
 
 
 @st.composite
-def preconditions(draw: st.DrawFn, var_names: list[str] | None = None) -> str:
+def preconditions(
+    draw: st.DrawFn,
+    var_names: list[str] | None = None,
+) -> str:
     """Strategy for generating precondition strings."""
     if var_names is None:
         var_names = ["x", "y", "n"]
     var = draw(st.sampled_from(var_names))
     op = draw(st.sampled_from([">", ">=", "<", "<=", "==", "!="]))
     val = draw(st.integers(-100, 100))
-    return f"{var } {op } {val }"
+    return f"{var} {op} {val}"
 
 
 @st.composite
-def postconditions(draw: st.DrawFn, var_names: list[str] | None = None) -> str:
+def postconditions(
+    draw: st.DrawFn,
+    var_names: list[str] | None = None,
+) -> str:
     """Strategy for generating postcondition strings."""
     if var_names is None:
         var_names = ["result", "x", "y"]
@@ -327,29 +353,33 @@ def postconditions(draw: st.DrawFn, var_names: list[str] | None = None) -> str:
         var = draw(st.sampled_from(var_names))
         op = draw(st.sampled_from([">", ">=", "<", "<=", "==", "!="]))
         val = draw(st.integers(-100, 100))
-        return f"{var } {op } {val }"
+        return f"{var} {op} {val}"
     elif condition_type == "type_check":
         var = draw(st.sampled_from(var_names))
         typ = draw(st.sampled_from(["int", "str", "list", "bool"]))
-        return f"isinstance({var }, {typ })"
+        return f"isinstance({var}, {typ})"
     else:
         var1 = draw(st.sampled_from(var_names))
         var2 = draw(st.sampled_from([v for v in var_names if v != var1] or var_names))
         op = draw(st.sampled_from([">", ">=", "<", "<=", "=="]))
-        return f"{var1 } {op } {var2 }"
+        return f"{var1} {op} {var2}"
 
 
 @st.composite
-def invariants(draw: st.DrawFn, var_name: str = "i", bound_var: str = "n") -> str:
+def invariants(
+    draw: st.DrawFn,
+    var_name: str = "i",
+    bound_var: str = "n",
+) -> str:
     """Strategy for generating loop invariant strings."""
     inv_type = draw(st.sampled_from(["bound", "monotonic", "positive"]))
     if inv_type == "bound":
         op = draw(st.sampled_from(["<", "<=", ">", ">="]))
-        return f"{var_name } {op } {bound_var }"
+        return f"{var_name} {op} {bound_var}"
     elif inv_type == "monotonic":
-        return f"{var_name } >= 0"
+        return f"{var_name} >= 0"
     else:
-        return f"{var_name } >= 0"
+        return f"{var_name} >= 0"
 
 
 class SymbolicStateMachine(RuleBasedStateMachine):
@@ -360,7 +390,7 @@ class SymbolicStateMachine(RuleBasedStateMachine):
     3. Constraints are properly tracked
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the state machine with empty stack, locals, and constraints."""
         super().__init__()
         self.stack: list[object] = []
@@ -401,36 +431,40 @@ class SymbolicStateMachine(RuleBasedStateMachine):
         return v
 
     @rule()
-    def binary_add(self):
+    def binary_add(self) -> None:
         """Perform binary addition."""
         assume(len(self.stack) >= 2)
         assume(all(isinstance(x, (int, float)) for x in self.stack[-2:]))
         b = self.stack.pop()
         a = self.stack.pop()
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            return
         self.stack.append(a + b)
 
     @rule()
-    def binary_sub(self):
+    def binary_sub(self) -> None:
         """Perform binary subtraction."""
         assume(len(self.stack) >= 2)
         assume(all(isinstance(x, (int, float)) for x in self.stack[-2:]))
         b = self.stack.pop()
         a = self.stack.pop()
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            return
         self.stack.append(a - b)
 
     @rule()
-    def dup_top(self):
+    def dup_top(self) -> None:
         """Duplicate the top of stack."""
         assume(len(self.stack) >= 1)
         self.stack.append(self.stack[-1])
 
     @invariant()
-    def stack_is_list(self):
+    def stack_is_list(self) -> None:
         """Stack should always be a list."""
         assert isinstance(self.stack, list)
 
     @invariant()
-    def locals_is_dict(self):
+    def locals_is_dict(self) -> None:
         """Locals should always be a dict."""
         assert isinstance(self.locals, dict)
 
@@ -442,29 +476,29 @@ class PropertyTests:
     """Collection of property-based tests."""
 
     @given(st.integers(), st.integers())
-    def test_addition_commutative(self, a: int, b: int):
+    def test_addition_commutative(self, a: int, b: int) -> None:
         """Addition should be commutative."""
         assert a + b == b + a
 
     @given(st.integers(), st.integers(), st.integers())
-    def test_addition_associative(self, a: int, b: int, c: int):
+    def test_addition_associative(self, a: int, b: int, c: int) -> None:
         """Addition should be associative."""
         assert (a + b) + c == a + (b + c)
 
     @given(st.lists(st.integers(), min_size=1))
-    def test_list_len_positive(self, xs: list[int]):
+    def test_list_len_positive(self, xs: list[int]) -> None:
         """List length should be non-negative."""
         assert len(xs) >= 0
 
     @given(st.lists(st.integers()), st.integers())
-    def test_append_increases_len(self, xs: list[int], x: int):
+    def test_append_increases_len(self, xs: list[int], x: int) -> None:
         """Appending should increase length by 1."""
         original_len = len(xs)
         xs.append(x)
         assert len(xs) == original_len + 1
 
     @given(st.dictionaries(st.text(min_size=1, max_size=5), st.integers()))
-    def test_dict_get_after_set(self, d: dict[str, int]):
+    def test_dict_get_after_set(self, d: dict[str, int]) -> None:
         """Getting after setting should return the value."""
         for k, v in d.items():
             assert d[k] == v
@@ -492,7 +526,7 @@ class ConformanceTest:
 
     name: str
     code: str
-    expected_result: Any
+    expected_result: object
     expected_exception: type[Exception] | None = None
     description: str = ""
 
@@ -503,7 +537,7 @@ class ConformanceGenerator:
     results as CPython for various expressions and operations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tests: list[ConformanceTest] = []
 
     def add_expression_test(
@@ -513,7 +547,7 @@ class ConformanceGenerator:
         description: str = "",
     ) -> None:
         """Add a test for an expression."""
-        from pysymex.security import create_sandbox_namespace
+        from pysymex.sandbox.execution import create_sandbox_namespace
 
         sandbox = create_sandbox_namespace()
         try:
@@ -545,7 +579,7 @@ class ConformanceGenerator:
         description: str = "",
     ) -> None:
         """Add a test for statements."""
-        from pysymex.security import create_sandbox_namespace
+        from pysymex.sandbox.execution import create_sandbox_namespace
 
         namespace: dict[str, object] = create_sandbox_namespace()
         try:
@@ -581,11 +615,11 @@ class ConformanceGenerator:
                         continue
                     if op == "**" and (abs(a) > 10 or abs(b) > 10):
                         continue
-                    expr = f"{a } {op } {b }"
+                    expr = f"{a} {op} {b}"
                     self.add_expression_test(
-                        name=f"arith_{op }_{a }_{b }".replace("-", "neg"),
+                        name=f"arith_{op}_{a}_{b}".replace("-", "neg"),
                         expr=expr,
-                        description=f"Arithmetic: {expr }",
+                        description=f"Arithmetic: {expr}",
                     )
 
     def generate_comparison_tests(self) -> None:
@@ -595,15 +629,15 @@ class ConformanceGenerator:
         for op in ops:
             for a in values:
                 for b in values:
-                    expr = f"{a } {op } {b }"
+                    expr = f"{a} {op} {b}"
                     self.add_expression_test(
-                        name=f"cmp_{a }_{op }_{b }".replace("-", "neg")
+                        name=f"cmp_{a}_{op}_{b}".replace("-", "neg")
                         .replace("<", "lt")
                         .replace(">", "gt")
                         .replace("=", "eq")
                         .replace("!", "ne"),
                         expr=expr,
-                        description=f"Comparison: {expr }",
+                        description=f"Comparison: {expr}",
                     )
 
     def generate_boolean_tests(self) -> None:
@@ -625,9 +659,9 @@ class ConformanceGenerator:
         ]
         for i, expr in enumerate(exprs):
             self.add_expression_test(
-                name=f"bool_{i }",
+                name=f"bool_{i}",
                 expr=expr,
-                description=f"Boolean: {expr }",
+                description=f"Boolean: {expr}",
             )
 
     def generate_list_tests(self) -> None:
@@ -686,14 +720,14 @@ class ConformanceGenerator:
         ]
         for test in self.tests:
             safe_name = test.name.replace("-", "_").replace(" ", "_")
-            lines.append(f"    def test_{safe_name }(self):")
-            lines.append(f'        """Test: {test .description or test .code }"""')
+            lines.append(f"    def test_{safe_name}(self):")
+            lines.append(f'        """Test: {test.description or test.code}"""')
             if test.expected_exception:
-                lines.append(f"        with pytest.raises({test .expected_exception .__name__ }):")
-                lines.append(f"            eval({test .code!r})")
+                lines.append(f"        with pytest.raises({test.expected_exception.__name__}):")
+                lines.append(f"            eval({test.code!r})")
             else:
-                lines.append(f"        result = eval({test .code!r})")
-                lines.append(f"        assert result == {test .expected_result!r}")
+                lines.append(f"        result = eval({test.code!r})")
+                lines.append(f"        assert result == {test.expected_result!r}")
             lines.append("")
         return "\n".join(lines)
 

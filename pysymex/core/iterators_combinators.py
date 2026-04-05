@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Combinator iterators: Enumerate, Zip, Map, Filter, Reversed,
 Dict iterators, and LoopBounds analysis.
 """
@@ -17,8 +35,13 @@ from pysymex.core.iterators_base import (
     SymbolicIterator,
     SymbolicRange,
 )
-from pysymex.core.memory_model import SymbolicArray
-from pysymex.core.symbolic_types import SymbolicBool, SymbolicInt, SymbolicList, SymbolicTuple
+from pysymex.core.symbolic_types import (
+    SymbolicInt,
+    SymbolicList,
+    SymbolicTuple,
+    SymbolicType,
+    symbolic_from_python,
+)
 
 
 @dataclass
@@ -40,11 +63,14 @@ class SymbolicEnumerate(SymbolicIterator):
                 value=None, exhausted=True, constraint=inner_result.constraint, iterator=self
             )
         idx = self.counter
-        if isinstance(idx, int):
-            idx_val = SymbolicInt(z3.IntVal(idx))
-        else:
-            idx_val = SymbolicInt(idx)
-        pair = SymbolicTuple((idx_val, inner_result.value))
+        inner_value = inner_result.value
+        idx_val = SymbolicInt.concrete(idx) if isinstance(idx, int) else SymbolicInt(idx)
+        value_sym = (
+            inner_value
+            if isinstance(inner_value, SymbolicType)
+            else symbolic_from_python(inner_value)
+        )
+        pair: object = SymbolicTuple((idx_val, value_sym))
         new_enum = SymbolicEnumerate(
             inner=inner_result.iterator,
             counter=self.counter + 1,
@@ -81,7 +107,7 @@ class SymbolicZip(SymbolicIterator):
 
     def __next__(self) -> IterationResult:
         """Return the next item from the iterator."""
-        values: list[object] = []
+        values: list[SymbolicType] = []
         constraints: list[z3.BoolRef] = []
         new_iterators: list[SymbolicIterator] = []
         for it in self.iterators:
@@ -93,12 +119,19 @@ class SymbolicZip(SymbolicIterator):
                     constraint=z3.And(*constraints) if constraints else z3.BoolVal(True),
                     iterator=self,
                 )
-            values.append(result.value)
+            result_value = result.value
+            value_sym = (
+                result_value
+                if isinstance(result_value, SymbolicType)
+                else symbolic_from_python(result_value)
+            )
+            values.append(value_sym)
             constraints.append(result.constraint)
             new_iterators.append(result.iterator)
         new_zip = SymbolicZip(iterators=new_iterators, _name=self._name)
+        tuple_value: object = SymbolicTuple(tuple(values))
         return IterationResult(
-            value=SymbolicTuple(tuple(values)),
+            value=tuple_value,
             exhausted=False,
             constraint=z3.And(*constraints) if constraints else z3.BoolVal(True),
             iterator=new_zip,
@@ -125,7 +158,8 @@ class SymbolicZip(SymbolicIterator):
             else:
                 r = result if isinstance(result, z3.ArithRef) else z3.IntVal(result)
                 bb = b if isinstance(b, z3.ArithRef) else z3.IntVal(b)
-                result = z3.If(r < bb, r, bb)
+                candidate = z3.If(r < bb, r, bb)
+                result = candidate
         return result
 
     def clone(self) -> SymbolicZip:
@@ -191,7 +225,7 @@ class SymbolicFilter(SymbolicIterator):
     Note: Filter can change the number of iterations.
     """
 
-    predicate: Callable[[object], bool]
+    predicate: Callable[[object], object]
     inner: SymbolicIterator
     _name: str = field(default="filter")
 
@@ -211,14 +245,50 @@ class SymbolicFilter(SymbolicIterator):
                     iterator=self,
                 )
             constraints.append(inner_result.constraint)
+            pred_constraint: z3.BoolRef | None = None
             try:
-                passes = self.predicate(inner_result.value)
-                if isinstance(passes, (SymbolicBool, z3.BoolRef)):
-                    passes = True
-            except (TypeError, ValueError, AttributeError):
+                passes_obj = self.predicate(inner_result.value)
+                if isinstance(passes_obj, z3.BoolRef):
+                    pred_constraint = passes_obj
+                    simplified = z3.simplify(passes_obj)
+                    if z3.is_true(simplified):
+                        passes = True
+                    elif z3.is_false(simplified):
+                        passes = False
+                    else:
+                        passes = None
+                else:
+                    z3_bool_candidate = getattr(passes_obj, "z3_bool", None)
+                    if isinstance(z3_bool_candidate, z3.BoolRef):
+                        pred_constraint = z3_bool_candidate
+                        simplified = z3.simplify(pred_constraint)
+                        if z3.is_true(simplified):
+                            passes = True
+                        elif z3.is_false(simplified):
+                            passes = False
+                        else:
+                            passes = None
+                    else:
+                        passes = bool(passes_obj)
+            except (TypeError, ValueError, AttributeError, z3.Z3Exception):
                 logger.debug("Filter predicate evaluation failed", exc_info=True)
                 passes = True
             if passes:
+                if pred_constraint is not None:
+                    constraints.append(pred_constraint)
+                new_filter = SymbolicFilter(
+                    predicate=self.predicate, inner=inner_result.iterator, _name=self._name
+                )
+                return IterationResult(
+                    value=inner_result.value,
+                    exhausted=False,
+                    constraint=z3.And(*constraints) if constraints else z3.BoolVal(True),
+                    iterator=new_filter,
+                )
+            if passes is False and pred_constraint is not None:
+                constraints.append(z3.Not(pred_constraint))
+            elif passes is None and pred_constraint is not None:
+                constraints.append(pred_constraint)
                 new_filter = SymbolicFilter(
                     predicate=self.predicate, inner=inner_result.iterator, _name=self._name
                 )
@@ -269,15 +339,11 @@ class SymbolicReversed(SymbolicIterator):
     index: int | z3.ArithRef = field(init=False)
     _name: str = field(default="reversed")
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if isinstance(self.sequence, (list, tuple, str)):
             self.index = len(self.sequence) - 1
-        elif isinstance(self.sequence, SymbolicList):
-            self.index = self.sequence.z3_len - 1
-        elif isinstance(self.sequence, SymbolicArray):
-            self.index = self.sequence.length - 1
         else:
-            self.index = -1
+            self.index = self.sequence.length().z3_int - 1
 
     def __next__(self) -> IterationResult:
         """Return the next item from the iterator."""
@@ -365,7 +431,7 @@ class SymbolicDictKeysIterator(SymbolicIterator):
 class SymbolicDictItemsIterator(SymbolicIterator):
     """Iterator over dictionary items (key, value pairs)."""
 
-    items: list[object]
+    items: list[tuple[object, object]]
     index: int = field(default=0)
     _name: str = field(default="dict_items")
 
@@ -376,7 +442,9 @@ class SymbolicDictItemsIterator(SymbolicIterator):
                 value=None, exhausted=True, constraint=z3.BoolVal(True), iterator=self
             )
         key, value = self.items[self.index]
-        pair = SymbolicTuple((key, value))
+        key_sym = key if isinstance(key, SymbolicType) else symbolic_from_python(key)
+        value_sym = value if isinstance(value, SymbolicType) else symbolic_from_python(value)
+        pair: object = SymbolicTuple((key_sym, value_sym))
         new_iter = SymbolicDictItemsIterator(
             items=self.items, index=self.index + 1, _name=self._name
         )
@@ -427,7 +495,12 @@ class LoopBounds:
             )
 
     @classmethod
-    def from_range(cls, start: object, stop: object, step: object = 1) -> LoopBounds:
+    def from_range(
+        cls,
+        start: int | z3.ArithRef,
+        stop: int | z3.ArithRef,
+        step: int | z3.ArithRef = 1,
+    ) -> LoopBounds:
         """Analyze bounds from range parameters."""
         sym_range = SymbolicRange(start=start, stop=stop, step=step)
         return cls.from_iterator(sym_range)

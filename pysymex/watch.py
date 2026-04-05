@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Watch mode and incremental analysis for pysymex.
 Provides file watching, incremental analysis, and caching for
 efficient re-analysis during development.
@@ -16,7 +34,6 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
-    Any,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +99,7 @@ class FileWatcher:
         paths: list[Path],
         patterns: list[str] | None = None,
         poll_interval: float = 0.5,
-    ):
+    ) -> None:
         self.paths = paths
         self.patterns = patterns or ["*.py"]
         self.poll_interval = poll_interval
@@ -196,16 +213,16 @@ class AsyncFileWatcher:
         paths: list[Path],
         patterns: list[str] | None = None,
         poll_interval: float = 0.5,
-    ):
+    ) -> None:
         self.paths = paths
         self.patterns = patterns or ["*.py"]
         self.poll_interval = poll_interval
         self._states: dict[Path, FileState] = {}
-        self._callbacks: list[Callable[[FileEvent], Any]] = []
+        self._callbacks: list[Callable[[FileEvent], object]] = []
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
-    def on_change(self, callback: Callable[[FileEvent], Any]) -> None:
+    def on_change(self, callback: Callable[[FileEvent], object]) -> None:
         """Register a callback for file changes (sync or async)."""
         self._callbacks.append(callback)
 
@@ -310,7 +327,7 @@ class AnalysisCache:
 
     file_hash: str
     timestamp: float
-    result: Any
+    result: object
     dependencies: set[str] = field(default_factory=lambda: set[str]())
 
     def is_valid(self, current_hash: str) -> bool:
@@ -324,7 +341,7 @@ class IncrementalAnalyzer:
     taking into account dependencies between files.
     """
 
-    def __init__(self, engine: SymbolicEngine | None = None):
+    def __init__(self, engine: SymbolicEngine | None = None) -> None:
         self.engine = engine
         self._cache: dict[str, AnalysisCache] = {}
         self._dependencies: dict[str, set[str]] = {}
@@ -415,9 +432,9 @@ class WatchModeRunner:
         self,
         paths: list[Path],
         engine: SymbolicEngine | None = None,
-        on_result: Callable[[str, Any], None] | None = None,
+        on_result: Callable[[str, object], None] | None = None,
         on_error: Callable[[str, Exception], None] | None = None,
-    ):
+    ) -> None:
         self.paths = paths
         self.engine = engine
         self.on_result = on_result
@@ -430,7 +447,7 @@ class WatchModeRunner:
         """Start watch mode."""
         self._running = True
         print("👀 PySyMex Watch Mode")
-        print(f"   Watching: {', '.join (str (p )for p in self .paths )}")
+        print(f"   Watching: {', '.join(str(p) for p in self.paths)}")
         print("   Press Ctrl+C to stop\n")
         self._analyze_all()
         self.watcher.on_change(self._handle_change)
@@ -461,12 +478,12 @@ class WatchModeRunner:
         file_str = str(path)
         cached = self.analyzer.get_cached(file_str)
         if cached:
-            print(f"📦 Using cached: {path .name }")
+            print(f"📦 Using cached: {path.name}")
             if self.on_result:
                 self.on_result(file_str, cached.result)
             return
         try:
-            print(f"🔍 Analyzing: {path .name }")
+            print(f"🔍 Analyzing: {path.name}")
             if self.engine:
                 result = self._run_analysis(path)
             else:
@@ -475,7 +492,7 @@ class WatchModeRunner:
             if self.on_result:
                 self.on_result(file_str, result)
         except Exception as e:
-            print(f"❌ Error analyzing {path .name }: {e }")
+            print(f"❌ Error analyzing {path.name}: {e}")
             if self.on_error:
                 self.on_error(file_str, e)
 
@@ -486,13 +503,13 @@ class WatchModeRunner:
     def _handle_change(self, event: FileEvent) -> None:
         """Handle a file change event."""
         if event.event_type == FileEventType.DELETED:
-            print(f"🗑️  Deleted: {event .path .name }")
+            print(f"🗑️  Deleted: {event.path.name}")
             self.analyzer.invalidate(str(event.path))
             return
         print(
-            f"\n{'✨'if event .event_type ==FileEventType .CREATED else '📝'} "
-            f"{'Created'if event .event_type ==FileEventType .CREATED else 'Modified'}: "
-            f"{event .path .name }"
+            f"\n{'✨' if event.event_type == FileEventType.CREATED else '📝'} "
+            f"{'Created' if event.event_type == FileEventType.CREATED else 'Modified'}: "
+            f"{event.path.name}"
         )
         affected = self.analyzer.invalidate(str(event.path))
         for file_str in affected:
@@ -504,7 +521,7 @@ class WatchModeRunner:
 class DependencyTracker:
     """Tracks import dependencies between Python files."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._imports: dict[str, set[str]] = {}
 
     def extract_imports(self, path: Path) -> set[str]:
@@ -528,7 +545,7 @@ class DependencyTracker:
 
     def resolve_import(self, import_name: str, base_path: Path) -> Path | None:
         """Try to resolve an import to a file path."""
-        relative = base_path.parent / f"{import_name }.py"
+        relative = base_path.parent / f"{import_name}.py"
         if relative.exists():
             return relative
         package_init = base_path.parent / import_name / "__init__.py"

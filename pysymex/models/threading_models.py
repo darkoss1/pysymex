@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Symbolic models for Python's threading module.
 
 Provides symbolic representations of threading primitives that track
@@ -30,7 +48,7 @@ class ThreadModel:
         daemon: bool = False,
     ) -> None:
         """Initialize a new ThreadModel instance."""
-        self._thread_id = f"thread_{next (_thread_id_counter )}"
+        self._thread_id = f"thread_{next(_thread_id_counter)}"
         self._started = False
         self._alive = False
         self._target = target
@@ -61,7 +79,7 @@ class ThreadModel:
     def __repr__(self) -> str:
         status = "started" if self._started else "not started"
         alive = "alive" if self._alive else "dead"
-        return f"ThreadModel({self .name }, {status }, {alive })"
+        return f"ThreadModel({self.name}, {status}, {alive})"
 
 
 class LockModel:
@@ -72,7 +90,7 @@ class LockModel:
 
     def __init__(self) -> None:
         """Initialize a new LockModel instance."""
-        self._name = f"lock_{next (_lock_id_counter )}"
+        self._name = f"lock_{next(_lock_id_counter)}"
         self._locked = False
         self._owner: str | None = None
 
@@ -97,6 +115,7 @@ class LockModel:
     def locked(self) -> bool:
         """Check if the lock is held."""
         return self._locked
+
     def __enter__(self) -> Self:
         self.acquire()
         return self
@@ -111,7 +130,7 @@ class LockModel:
 
     def __repr__(self) -> str:
         status = "locked" if self._locked else "unlocked"
-        return f"LockModel({self ._name }, {status })"
+        return f"LockModel({self._name}, {status})"
 
 
 class RLockModel(LockModel):
@@ -130,18 +149,16 @@ class RLockModel(LockModel):
 
         Same owner can acquire multiple times; count is incremented.
         """
-        # For a truly symbolic threading model, the owner should be the current thread ID.
-        # But even if we don't have true symbolic thread IDs, an RLock owned by *somebody*
-        # (us) can just increment the counter.
+
         if self._locked:
             self._count += 1
             return True
 
         if self._locked and not blocking:
             return False
-            
+
         self._locked = True
-        self._owner = "current_thread" # Mock owner so we know it's owned
+        self._owner = "current_thread"
         self._count = 1
         return True
 
@@ -155,8 +172,8 @@ class RLockModel(LockModel):
             self._owner = None
 
     def __repr__(self) -> str:
-        status = f"locked(count={self ._count })" if self._locked else "unlocked"
-        return f"RLockModel({self ._name }, {status })"
+        status = f"locked(count={self._count})" if self._locked else "unlocked"
+        return f"RLockModel({self._name}, {status})"
 
 
 class SemaphoreModel:
@@ -199,7 +216,7 @@ class SemaphoreModel:
         self.release()
 
     def __repr__(self) -> str:
-        return f"SemaphoreModel(value={self ._value })"
+        return f"SemaphoreModel(value={self._value})"
 
 
 class BoundedSemaphoreModel(SemaphoreModel):
@@ -244,7 +261,7 @@ class EventModel:
         return self._flag
 
     def __repr__(self) -> str:
-        return f"EventModel(set={self ._flag })"
+        return f"EventModel(set={self._flag})"
 
 
 class ConditionModel:
@@ -308,7 +325,7 @@ class ConditionModel:
         self.release()
 
     def __repr__(self) -> str:
-        return f"ConditionModel(locked={self ._lock .locked ()})"
+        return f"ConditionModel(locked={self._lock.locked()})"
 
 
 class BarrierModel:
@@ -339,8 +356,7 @@ class BarrierModel:
         arrival_index = self._count
         self._count += 1
         if self._count >= self._parties:
-
-            if self._action is not None:
+            if callable(self._action):
                 try:
                     self._action()
                 except Exception:
@@ -375,8 +391,7 @@ class BarrierModel:
 
     def __repr__(self) -> str:
         return (
-            f"BarrierModel(parties={self ._parties }, "
-            f"waiting={self ._count }, broken={self ._broken })"
+            f"BarrierModel(parties={self._parties}, waiting={self._count}, broken={self._broken})"
         )
 
 

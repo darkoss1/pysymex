@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Sign, Parity, and Null abstract domains.
 
 Each domain provides lattice operations (join, meet, widen)
@@ -6,10 +24,10 @@ and conversion to Z3 constraints.
 
 from __future__ import annotations
 
-import icontract
 from dataclasses import dataclass
 from enum import Enum, auto
 
+import icontract
 import z3
 
 from pysymex.analysis.abstract.domains_base import AbstractValue
@@ -71,7 +89,6 @@ class Sign(AbstractValue["Sign"]):
 
         if v1 in (SignValue.NON_NEG, SignValue.NON_POS, SignValue.NON_ZERO):
             if v2 in (SignValue.POS, SignValue.ZERO, SignValue.NEG):
-
                 contained = {
                     SignValue.NON_NEG: {SignValue.POS, SignValue.ZERO},
                     SignValue.NON_POS: {SignValue.NEG, SignValue.ZERO},
@@ -145,8 +162,10 @@ class Sign(AbstractValue["Sign"]):
         return z3.BoolVal(True)
 
     @classmethod
-    def from_concrete(cls, value: int) -> Sign:
+    def from_concrete(cls, value: object) -> Sign:
         """Create from concrete value."""
+        if not isinstance(value, int):
+            return cls.top()
         if value < 0:
             return cls(SignValue.NEG)
         elif value == 0:
@@ -187,7 +206,7 @@ class Sign(AbstractValue["Sign"]):
         return cls(SignValue.NON_ZERO)
 
     def __repr__(self) -> str:
-        return f"Sign({self .value .name })"
+        return f"Sign({self.value.name})"
 
 
 class ParityValue(Enum):
@@ -256,8 +275,10 @@ class Parity(AbstractValue["Parity"]):
         return z3.BoolVal(True)
 
     @classmethod
-    def from_concrete(cls, value: int) -> Parity:
+    def from_concrete(cls, value: object) -> Parity:
         """From concrete."""
+        if not isinstance(value, int):
+            return cls.top()
         if value % 2 == 0:
             return cls(ParityValue.EVEN)
         return cls(ParityValue.ODD)
@@ -298,7 +319,7 @@ class Parity(AbstractValue["Parity"]):
         return Parity.odd()
 
     def __repr__(self) -> str:
-        return f"Parity({self .value .name })"
+        return f"Parity({self.value.name})"
 
 
 class NullValue(Enum):
@@ -399,4 +420,4 @@ class Null(AbstractValue["Null"]):
         return cls(NullValue.NON_NULL)
 
     def __repr__(self) -> str:
-        return f"Null({self .value .name })"
+        return f"Null({self.value.name})"

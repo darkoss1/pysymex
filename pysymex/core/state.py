@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """VM State management for pysymex.
 
 This module defines the execution state of the symbolic virtual machine,
@@ -23,10 +41,11 @@ from __future__ import annotations
 import copy
 import itertools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, TypeGuard, TypeVar
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
+    from pysymex._typing import StackValue, SummaryBuilderProtocol, TaintTrackerProtocol
+    from pysymex.core.object_model import ObjectState
     from pysymex.core.oop_support import EnhancedClassRegistry
 
 import z3
@@ -36,17 +55,56 @@ from pysymex.core.copy_on_write import BranchChain, BranchRecord, ConstraintChai
 _path_id_counter = itertools.count()
 
 _EMPTY_TAINT: frozenset[str] = frozenset()
-UNBOUND = object()
 
 
-from typing import TypeVar, Protocol
+class _UnboundType:
+    """Sentinel type to indicate an unbound local variable.
+
+    Using a class rather than `object()` allows Pyright to properly
+    narrow types in `if value is UNBOUND:` checks.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNBOUND"
+
+
+UNBOUND: _UnboundType = _UnboundType()
+
+if TYPE_CHECKING:
+
+    def is_bound(value: StackValue | _UnboundType) -> TypeGuard[StackValue]:
+        """TypeGuard that checks if a value is NOT the UNBOUND sentinel."""
+        ...
+else:
+
+    def is_bound(value: object) -> bool:
+        """Check if a value is NOT the UNBOUND sentinel."""
+        return value is not UNBOUND
+
 
 class HashableValue(Protocol):
     def hash_value(self) -> int: ...
 
+
+def _is_hashable_value(value: object) -> TypeGuard[HashableValue]:
+    return hasattr(value, "hash_value") and callable(getattr(value, "hash_value", None))
+
+
+class _ForkableTaintTracker(Protocol):
+    def fork(self) -> object: ...
+
+
+def _supports_taint_fork(value: object) -> TypeGuard[_ForkableTaintTracker]:
+    return hasattr(value, "fork") and callable(getattr(value, "fork", None))
+
+
+K = TypeVar("K")
 T = TypeVar("T")
 
-def wrap_cow_dict(val: dict[str, T] | CowDict[str, T] | None) -> CowDict[str, T]:
+
+def wrap_cow_dict(val: dict[K, T] | CowDict[K, T] | None) -> CowDict[K, T]:
     """Wrap a dict in CowDict if it isn't already."""
     if isinstance(val, CowDict):
         return val
@@ -73,7 +131,7 @@ def _copy_summary_builder(builder: object) -> object:
         new = copy.copy(builder)
 
         if hasattr(builder, "summary"):
-            new.summary = copy.copy(builder.summary)
+            setattr(new, "summary", copy.copy(getattr(builder, "summary")))
             for attr in (
                 "parameters",
                 "preconditions",
@@ -83,8 +141,9 @@ def _copy_summary_builder(builder: object) -> object:
                 "calls",
                 "may_raise",
             ):
-                if hasattr(new.summary, attr):
-                    setattr(new.summary, attr, list(getattr(new.summary, attr)))
+                summary = getattr(new, "summary")
+                if hasattr(summary, attr):
+                    setattr(summary, attr, list(getattr(summary, attr)))
         return new
     except (TypeError, AttributeError, RecursionError):
         return builder
@@ -153,31 +212,33 @@ class VMState:
 
     **Architectural Components:**
     - **Operand Stack**: Last-in-first-out storage for symbolic values.
-    - **Variable Stores**: `local_vars` and `global_vars` using `CowDict` for 
+    - **Variable Stores**: `local_vars` and `global_vars` using `CowDict` for
       state isolation with O(1) forking.
     - **Control Flow Control**: `block_stack` (loops/exceptions) and `call_stack`
       (inter-procedural analysis).
-    - **Path Constraints**: A `ConstraintChain` of Z3 boolean expressions 
+    - **Path Constraints**: A `ConstraintChain` of Z3 boolean expressions
       defining the reachability conditions for this specific state.
     - **Memory Model**: A `CowDict` mapping symbolic addresses to values.
 
     **Evolution Patterns:**
-    1. **Single-Path Mutation**: Fluent helpers like `push()`, `pop()`, and 
+    1. **Single-Path Mutation**: Fluent helpers like `push()`, `pop()`, and
        `set_local()` modify the current state and return `self` for chaining.
-    2. **Branching (State Splitting)**: The `fork()` method creates a new, 
-       independent `VMState` that shares underlying immutable data structures 
+    2. **Branching (State Splitting)**: The `fork()` method creates a new,
+       independent `VMState` that shares underlying immutable data structures
        until a mutation occurs (CoW).
 
     **State Hashing & Deduplication:**
-    The `hash_value()` method provides a stable, content-based hash used for 
+    The `hash_value()` method provides a stable, content-based hash used for
     detecting path convergence and mitigating infinite loop depth.
     """
 
     __slots__ = (
         "_building_class",
         "_class_registry",
+        "_object_state",
         "_pending_taint_issues",
         "block_stack",
+        "branch_trace",
         "call_stack",
         "control_taint",
         "current_instructions",
@@ -195,7 +256,6 @@ class VMState:
         "stack",
         "taint_tracker",
         "visited_pcs",
-        "branch_trace",
     )
 
     def __init__(
@@ -209,6 +269,7 @@ class VMState:
         call_stack: list[CallFrame] | None = None,
         visited_pcs: set[int] | CowSet | None = None,
         memory: dict[int, StackValue] | CowDict[int, StackValue] | None = None,
+        object_state: ObjectState | None = None,
         path_id: int = 0,
         depth: int = 0,
         taint_tracker: object | None = None,
@@ -257,6 +318,8 @@ class VMState:
         self.visited_pcs = wrap_cow_set(visited_pcs)
         self.memory = wrap_cow_dict(memory)
 
+        self._object_state = object_state
+
         self.path_id = path_id
         self.depth = depth
         self.taint_tracker = taint_tracker
@@ -270,6 +333,43 @@ class VMState:
         self._pending_taint_issues: list[object] = []
         self._building_class: bool = False
         self._class_registry: dict[str, object] | EnhancedClassRegistry = {}
+
+    @property
+    def pending_taint_issues(self) -> list[object]:
+        return self._pending_taint_issues
+
+    @pending_taint_issues.setter
+    def pending_taint_issues(self, issues: list[object]) -> None:
+        self._pending_taint_issues = issues
+
+    @property
+    def building_class(self) -> bool:
+        return self._building_class
+
+    @building_class.setter
+    def building_class(self, value: bool) -> None:
+        self._building_class = value
+
+    @property
+    def class_registry(self) -> dict[str, object] | EnhancedClassRegistry:
+        return self._class_registry
+
+    @class_registry.setter
+    def class_registry(self, value: dict[str, object] | EnhancedClassRegistry) -> None:
+        self._class_registry = value
+
+    @property
+    def object_state(self) -> ObjectState:
+        """Lazily materialize object-model state only when needed."""
+        if self._object_state is None:
+            from pysymex.core.object_model import ObjectState
+
+            self._object_state = ObjectState()
+        return self._object_state
+
+    @object_state.setter
+    def object_state(self, value: ObjectState) -> None:
+        self._object_state = value
 
     def _replace(self, **changes: object) -> VMState:
         """Create a CoW **fork** with specific fields altered.
@@ -309,9 +409,12 @@ class VMState:
         self.pc = target
         return self
 
-    def set_local(self, name: str, value: StackValue) -> VMState:
-        """Set local variable *name* to *value*.  Returns ``self``."""
-        self.local_vars[name] = value
+    def set_local(self, name: str, value: StackValue | _UnboundType) -> VMState:
+        """Set local variable *name* to *value*.  Returns ``self``.
+
+        Setting to UNBOUND marks the variable as unbound/cleared.
+        """
+        self.local_vars[name] = value  # type: ignore[assignment]
         return self
 
     def set_global(self, name: str, value: StackValue) -> VMState:
@@ -334,7 +437,7 @@ class VMState:
     def mark_visited(self) -> bool:
         """Record the current ``pc`` in the path's visitation log.
 
-        Uses the internal `CowSet` to efficiently track whether this program 
+        Uses the internal `CowSet` to efficiently track whether this program
         counter has been reached before on the current path. Essential for
         detecting infinite loops during symbolic exploration.
 
@@ -374,18 +477,20 @@ class VMState:
             return self.call_stack.pop()
         return None
 
-    def get_local(self, name: str) -> StackValue | object:
+    def get_local(self, name: str) -> StackValue | _UnboundType:
         """Get a local variable, or UNBOUND if not found or cleared."""
-        return self.local_vars.get(name, UNBOUND)
+        if name in self.local_vars:
+            return self.local_vars[name]
+        return UNBOUND
 
     def get_global(self, name: str) -> StackValue | None:
         """Get a global variable, or None if not found."""
         return self.global_vars.get(name)
 
     @property
-    def locals(self) -> CowDict[str, object]:
+    def locals(self) -> CowDict[str, StackValue]:
         """Alias for local_vars (used by some callers)."""
-        return self.local_vars  # type: ignore[return-value]
+        return self.local_vars
 
     def current_block(self) -> BlockInfo | None:
         """Get the current control flow block."""
@@ -411,11 +516,10 @@ class VMState:
         """
         h = self.pc * 2654435761
         h ^= self.constraint_hash() * 999999937
-        
-        # Hash stacks
+
         for frame in self.call_stack:
             h = (h * 1000003) ^ frame.hash_value()
-        
+
         for block in self.block_stack:
             h = (h * 1000003) ^ block.hash_value()
 
@@ -425,8 +529,8 @@ class VMState:
         h ^= self.visited_pcs.hash_value() * 12345
 
         for v in self.stack:
-            if hasattr(v, "hash_value") and callable(getattr(v, "hash_value")):
-                h = (h * 31) ^ getattr(v, "hash_value")()
+            if _is_hashable_value(v):
+                h = (h * 31) ^ v.hash_value()
             else:
                 try:
                     h = (h * 31) ^ hash(v)
@@ -446,11 +550,8 @@ class VMState:
         """
         new_path_id = next(_path_id_counter)
 
-        # OPTIMIZATION: Only rebuild call_stack if there are summary_builders
-        # that need to be deep-copied. For most cases, we can share the frames.
-        # Since CallFrame is frozen and local_vars is CowDict, sharing is safe.
         needs_deep_copy = any(f.summary_builder is not None for f in self.call_stack)
-        
+
         if not needs_deep_copy:
             new_call_stack = list(self.call_stack)
         else:
@@ -480,25 +581,36 @@ class VMState:
             call_stack=new_call_stack,
             visited_pcs=self.visited_pcs.cow_fork(),
             memory=self.memory.cow_fork(),
+            object_state=(
+                self._object_state.clone()
+                if self._object_state is not None
+                and hasattr(self._object_state, "clone")
+                and callable(getattr(self._object_state, "clone", None))
+                else copy.copy(self.object_state)
+                if self._object_state is not None
+                else None
+            ),
             path_id=new_path_id,
             depth=self.depth,
             taint_tracker=(
-                self.taint_tracker.fork() if self.taint_tracker is not None else None  # type: ignore[union-attr]
+                self.taint_tracker.fork()
+                if self.taint_tracker is not None and _supports_taint_fork(self.taint_tracker)
+                else self.taint_tracker
             ),
             current_instructions=self.current_instructions,
             control_taint=self.control_taint,
-            pending_constraint_count=self.pending_constraint_count,  # BUG-012 fix: inherit, not reset to 0
+            pending_constraint_count=self.pending_constraint_count,
             loop_iterations=dict(self.loop_iterations),
             prev_loop_states=dict(self.prev_loop_states),
             branch_trace=self.branch_trace,
         )
 
-        child._pending_taint_issues = list(getattr(self, "_pending_taint_issues", []))
-        child._building_class = getattr(self, "_building_class", False)
-        child._class_registry = (
-            dict(self._class_registry)
-            if hasattr(self, "_class_registry") and isinstance(self._class_registry, dict)
-            else getattr(self, "_class_registry", {})
+        child.pending_taint_issues = list(self.pending_taint_issues)
+        child.building_class = self.building_class
+        child.class_registry = (
+            dict(self.class_registry)
+            if isinstance(self.class_registry, dict)
+            else self.class_registry
         )
         child.pending_kw_names = getattr(self, "pending_kw_names", None)
         return child
@@ -528,8 +640,8 @@ class VMState:
 
 
 def create_initial_state(
-    local_vars: dict[str, object] | None = None,
-    global_vars: dict[str, object] | None = None,
+    local_vars: dict[str, StackValue] | None = None,
+    global_vars: dict[str, StackValue] | None = None,
     constraints: list[z3.BoolRef] | None = None,
 ) -> VMState:
     """Create an initial VM state for symbolic execution.
@@ -544,7 +656,6 @@ def create_initial_state(
     """
     gvars = global_vars or {}
     if "__name__" not in gvars:
-        # Default to __main__ for script entry points
         gvars["__name__"] = "__main__"
 
     return VMState(

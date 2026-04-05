@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Advanced Resource Lifecycle Analysis with Z3.
 
 This module provides comprehensive resource lifecycle checking using Z3 SMT solver.
@@ -33,7 +51,7 @@ class ResourceLifecycleChecker:
     safety properties via SMT solving.
     """
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -46,7 +64,7 @@ class ResourceLifecycleChecker:
     def _setup_state_encoding(self) -> None:
         """Set up Z3 encoding for states."""
         for state in ResourceState:
-            self._state_consts[state] = z3.Const(f"state_{state .name }", self.StateSort)
+            self._state_consts[state] = z3.Const(f"state_{state.name}", self.StateSort)
 
     def reset(self) -> None:
         """Reset checker state."""
@@ -79,7 +97,7 @@ class ResourceLifecycleChecker:
             state=state_machine.initial_state,
             state_machine=state_machine,
             created_at=line_number,
-            z3_state=z3.Const(f"{name }_state", self.StateSort),
+            z3_state=z3.Const(f"{name}_state", self.StateSort),
         )
         self._resources[name] = resource
         return resource
@@ -114,7 +132,7 @@ class ResourceLifecycleChecker:
         if resource is None:
             return ResourceIssue(
                 kind=ResourceIssueKind.MISSING_INITIALIZATION,
-                message=f"Resource '{resource_name }' not initialized",
+                message=f"Resource '{resource_name}' not initialized",
                 resource_name=resource_name,
                 line_number=line_number,
             )
@@ -122,7 +140,7 @@ class ResourceLifecycleChecker:
         if transition is None:
             return ResourceIssue(
                 kind=ResourceIssueKind.INVALID_STATE_TRANSITION,
-                message=f"Cannot perform '{action }' on resource in state {resource .state .name }",
+                message=f"Cannot perform '{action}' on resource in state {resource.state.name}",
                 resource_kind=resource.kind,
                 resource_name=resource_name,
                 current_state=resource.state,
@@ -165,11 +183,11 @@ class ResourceLifecycleChecker:
                 issues.append(
                     ResourceIssue(
                         kind=ResourceIssueKind.RESOURCE_LEAK,
-                        message=f"Resource '{name }' not properly closed/released",
+                        message=f"Resource '{name}' not properly closed/released",
                         resource_kind=resource.kind,
                         resource_name=name,
                         current_state=resource.state,
-                        expected_states=list(resource.state_machine._final_states),
+                        expected_states=list(getattr(resource.state_machine, "_final_states", ())),
                         constraints=list(active_constraints),
                     )
                 )
@@ -196,7 +214,7 @@ class ResourceLifecycleChecker:
         if not resource.state_machine.is_final_state(resource.state) and exception_possible:
             return ResourceIssue(
                 kind=ResourceIssueKind.POTENTIAL_LEAK,
-                message=f"Resource '{resource_name }' may leak if exception occurs",
+                message=f"Resource '{resource_name}' may leak if exception occurs",
                 resource_kind=resource.kind,
                 resource_name=resource_name,
                 current_state=resource.state,
@@ -233,7 +251,7 @@ class ResourceLifecycleChecker:
                 kind = ResourceIssueKind.USE_AFTER_RELEASE
             return ResourceIssue(
                 kind=kind,
-                message=f"Using '{resource_name }' after {resource .state .name }",
+                message=f"Using '{resource_name}' after {resource.state.name}",
                 resource_kind=resource.kind,
                 resource_name=resource_name,
                 current_state=resource.state,
@@ -273,7 +291,7 @@ class ResourceLifecycleChecker:
                     kind = ResourceIssueKind.DOUBLE_CLOSE
                 return ResourceIssue(
                     kind=kind,
-                    message=f"Double {action } on '{resource_name }'",
+                    message=f"Double {action} on '{resource_name}'",
                     resource_kind=resource.kind,
                     resource_name=resource_name,
                     current_state=resource.state,
@@ -283,7 +301,7 @@ class ResourceLifecycleChecker:
             if resource.state == ResourceState.LOCK_LOCKED:
                 return ResourceIssue(
                     kind=ResourceIssueKind.DOUBLE_ACQUIRE,
-                    message=f"Acquiring already held lock '{resource_name }'",
+                    message=f"Acquiring already held lock '{resource_name}'",
                     resource_kind=resource.kind,
                     resource_name=resource_name,
                     current_state=resource.state,
@@ -320,7 +338,7 @@ class ResourceLifecycleChecker:
                     if prev_expected_idx > expected_idx:
                         return ResourceIssue(
                             kind=ResourceIssueKind.LOCK_ORDER_VIOLATION,
-                            message=f"Lock order violation: {prev_lock } acquired before {lock }",
+                            message=f"Lock order violation: {prev_lock} acquired before {lock}",
                             resource_name=lock,
                             line_number=line_number,
                         )
@@ -361,7 +379,7 @@ class ResourceLifecycleChecker:
                 if has_cycle(lock):
                     return ResourceIssue(
                         kind=ResourceIssueKind.DEADLOCK_POTENTIAL,
-                        message=f"Potential deadlock detected involving lock '{lock }'",
+                        message=f"Potential deadlock detected involving lock '{lock}'",
                         resource_name=lock,
                         constraints=list(path_constraints or []),
                     )
@@ -383,7 +401,7 @@ class ResourceLifecycleChecker:
         if resource.state == ResourceState.TRANSACTION_ACTIVE:
             return ResourceIssue(
                 kind=ResourceIssueKind.UNCOMMITTED_TRANSACTION,
-                message=f"Transaction '{resource_name }' not committed or rolled back",
+                message=f"Transaction '{resource_name}' not committed or rolled back",
                 resource_kind=resource.kind,
                 resource_name=resource_name,
                 current_state=resource.state,
@@ -413,7 +431,7 @@ class ResourceLifecycleChecker:
             if has_other_operations:
                 return ResourceIssue(
                     kind=ResourceIssueKind.MISSING_CONTEXT_MANAGER,
-                    message=f"Consider using 'with' statement for '{resource_name }'",
+                    message=f"Consider using 'with' statement for '{resource_name}'",
                     resource_kind=resource.kind,
                     resource_name=resource_name,
                     severity="info",
@@ -435,7 +453,9 @@ class ResourceLifecycleChecker:
             return (False, "Resource not tracked")
         constraints = list(path_constraints or [])
         z3_state = resource.z3_state
-        final_states = [self._state_consts[s] for s in resource.state_machine._final_states]
+        final_states = [
+            self._state_consts[s] for s in getattr(resource.state_machine, "_final_states", ())
+        ]
         safety_property = z3.Or(*[z3_state == fs for fs in final_states])
         self._solver.push()
         for c in constraints:
@@ -532,7 +552,7 @@ class FileResourceChecker(ResourceLifecycleChecker):
 class LockResourceChecker(ResourceLifecycleChecker):
     """Specialized checker for lock resources."""
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         super().__init__(timeout_ms)
         self._lock_order: list[str] = []
         self._held_locks: set[str] = set()
@@ -554,7 +574,7 @@ class LockResourceChecker(ResourceLifecycleChecker):
         if name in self._held_locks:
             return ResourceIssue(
                 kind=ResourceIssueKind.DOUBLE_ACQUIRE,
-                message=f"Lock '{name }' already held by this thread",
+                message=f"Lock '{name}' already held by this thread",
                 resource_name=name,
                 line_number=line_number,
             )
@@ -572,7 +592,7 @@ class LockResourceChecker(ResourceLifecycleChecker):
         if name not in self._held_locks:
             return ResourceIssue(
                 kind=ResourceIssueKind.DOUBLE_RELEASE,
-                message=f"Lock '{name }' not held",
+                message=f"Lock '{name}' not held",
                 resource_name=name,
                 line_number=line_number,
             )

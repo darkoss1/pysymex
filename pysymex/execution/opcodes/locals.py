@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Local and global variable opcodes."""
 
 from __future__ import annotations
@@ -5,7 +23,10 @@ from __future__ import annotations
 import dis
 from typing import TYPE_CHECKING, cast
 
-from pysymex.core.state import UNBOUND
+import z3
+
+from pysymex._typing import StackValue, is_taintable
+from pysymex.core.state import UNBOUND, is_bound
 from pysymex.core.types import SymbolicNone, SymbolicString, SymbolicValue
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
@@ -26,12 +47,7 @@ def handle_load_const(
         sym_val = SymbolicString.from_const(value)
     else:
         sym_val = SymbolicValue.from_const(value)
-        # Ensure collection constants (like keys tuples) carry their data.
-        # SymbolicValue is a dataclass with frozen=False by default, so we can set attributes.
-        if isinstance(value, (tuple, list, dict)):
-            sym_val._enhanced_object = value
-            sym_val._constant_value = value
-    
+
     state = state.push(sym_val)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -41,13 +57,15 @@ def handle_load_const(
 def handle_load_fast(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Load a local variable onto the stack."""
     name = str(instr.argval)
-    value = state.get_local(name)
-    if value is UNBOUND:
+    raw_value = state.get_local(name)
+    if is_bound(raw_value):
+        value = raw_value
+    else:
         sym_val, type_constraint = SymbolicValue.symbolic(name)
         state = state.set_local(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val
-    
+
     state = state.push(value)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -64,8 +82,10 @@ def handle_load_fast_load_fast(
     )
     for name in names:
         name = str(name)
-        value = state.get_local(name)
-        if value is UNBOUND:
+        raw_value = state.get_local(name)
+        if is_bound(raw_value):
+            value = raw_value
+        else:
             sym_val, type_constraint = SymbolicValue.symbolic(name)
             state = state.set_local(name, sym_val)
             state = state.add_constraint(type_constraint)
@@ -81,10 +101,10 @@ def handle_store_fast(
 ) -> OpcodeResult:
     """Store top of stack into local variable with implicit flow taint tracking."""
     name = str(instr.argval)
-    value = state.pop()
+    value: StackValue = state.pop()
     if state.control_taint:
-        if hasattr(value, "with_taint"):
-            value = value.with_taint(state.control_taint)
+        if is_taintable(value):
+            value = cast("StackValue", value.with_taint(state.control_taint))
     state = state.set_local(name, value)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -101,10 +121,10 @@ def handle_store_fast_store_fast(
     )
     for name in names:
         name = str(name)
-        value = state.pop()
+        value: StackValue = state.pop()
         if state.control_taint:
-            if hasattr(value, "with_taint"):
-                value = value.with_taint(state.control_taint)
+            if is_taintable(value):
+                value = cast("StackValue", value.with_taint(state.control_taint))
         state = state.set_local(name, value)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -127,10 +147,17 @@ def handle_load_global(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load a global variable onto the stack."""
-    if isinstance(instr.argval, tuple):
-        name = str(instr.argval[1]) if len(instr.argval) > 1 else str(instr.argval[0])
+    argval = instr.argval
+    if isinstance(argval, tuple):
+        argval_tuple: tuple[object, ...] = argval  # type: ignore[assignment]
+        if len(argval_tuple) > 1:
+            name = str(argval_tuple[1])
+        elif argval_tuple:
+            name = str(argval_tuple[0])
+        else:
+            name = ""
     else:
-        name = str(instr.argval)
+        name = str(argval)
     push_null = False
     if hasattr(instr, "arg") and instr.arg is not None:
         if instr.arg & 1:
@@ -140,9 +167,7 @@ def handle_load_global(
         sym_val, type_constraint = SymbolicValue.symbolic(f"global_{name}")
         sym_val.model_name = name
 
-        # Add non-None constraint for all dynamically inferred globals
-        import z3 as _z3
-        state = state.add_constraint(_z3.Not(sym_val.is_none))
+        state = state.add_constraint(z3.Not(sym_val.is_none))
 
         state = state.set_global(name, sym_val)
         state = state.add_constraint(type_constraint)
@@ -182,13 +207,16 @@ def handle_delete_global(
 def handle_load_name(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Load name from locals or globals."""
     name = str(instr.argval)
-    value = state.get_local(name)
-    if value is None:
+    raw_value = state.get_local(name)
+    if is_bound(raw_value) and raw_value is not None:
+        value = raw_value
+    else:
         value = state.get_global(name)
     if value is None:
         sym_val, type_constraint = SymbolicValue.symbolic(name)
-        
+
         import z3 as _z3
+
         state = state.add_constraint(_z3.Not(sym_val.is_none))
 
         state = state.set_local(name, sym_val)
@@ -229,15 +257,18 @@ def handle_load_deref(
 ) -> OpcodeResult:
     """Load from closure/free variable."""
     name = str(instr.argval)
-    value = state.get_local(name)
-    if value is UNBOUND or value is None:
+    raw_value = state.get_local(name)
+    if is_bound(raw_value) and raw_value is not None:
+        value = raw_value
+    else:
         value = state.get_global(name)
-    if value is None or value is UNBOUND:
+    if value is None:
         sym_val, type_constraint = SymbolicValue.symbolic(f"closure_{name}")
-        
+
         import z3 as _z3
+
         state = state.add_constraint(_z3.Not(sym_val.is_none))
-        
+
         state = state.set_local(name, sym_val)
         state = state.add_constraint(type_constraint)
         value = sym_val
@@ -263,6 +294,8 @@ def handle_cell_ops(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
     """Cell creation - mostly no-op for symbolic execution."""
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
+
+
 def handle_delete_deref(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
@@ -280,8 +313,10 @@ def handle_load_fast_and_clear(
 ) -> OpcodeResult:
     """Load local variable and set slot to NULL (list comprehension save/restore)."""
     name = str(instr.argval)
-    value = state.get_local(name)
-    if value is UNBOUND:
+    raw_value = state.get_local(name)
+    if is_bound(raw_value):
+        value = raw_value
+    else:
         value = SymbolicNone()
     state = state.push(value)
     state = state.set_local(name, UNBOUND)
@@ -304,8 +339,10 @@ def handle_store_fast_load_fast(
     load_name = str(names[1]) if len(names) > 1 else store_name
     value = state.pop()
     state = state.set_local(store_name, value)
-    loaded = state.get_local(load_name)
-    if loaded is UNBOUND:
+    raw_loaded = state.get_local(load_name)
+    if is_bound(raw_loaded):
+        loaded = raw_loaded
+    else:
         loaded, constraint = SymbolicValue.symbolic(load_name)
         state = state.add_constraint(constraint)
     state = state.push(loaded)
@@ -333,8 +370,10 @@ def handle_load_from_dict_or_deref(
     name = str(instr.argval)
     if state.stack:
         state.pop()
-    value = state.get_local(name)
-    if value is UNBOUND:
+    raw_value = state.get_local(name)
+    if is_bound(raw_value):
+        value = raw_value
+    else:
         value, constraint = SymbolicValue.symbolic(f"deref_{name}")
         state = state.add_constraint(constraint)
     state = state.push(value)

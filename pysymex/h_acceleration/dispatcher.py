@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU Backend Dispatcher.
 
 Automatic backend selection and constraint evaluation dispatching.
@@ -17,6 +35,7 @@ import numpy as np
 import numpy.typing as npt
 
 from pysymex.h_acceleration.backends import BackendError, BackendInfo, BackendType
+from pysymex.h_acceleration.memory import estimate_max_treewidth
 
 if TYPE_CHECKING:
     from pysymex.h_acceleration.bytecode import CompiledConstraint
@@ -35,12 +54,20 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+
+def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Return unpacked bits in little-endian bit order for each byte."""
+    bits = np.unpackbits(bitmap)
+    return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
+
+
 class Backend(Protocol):
     """Protocol for backend modules."""
 
     def evaluate_bag(self, constraint: CompiledConstraint) -> npt.NDArray[np.uint8]: ...
     def get_info(self) -> BackendInfo: ...
     def warmup(self) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class DispatchResult:
@@ -57,18 +84,19 @@ class DispatchResult:
     backend_used: BackendType
     kernel_time_ms: float
     total_time_ms: float
+    transfer_time_ms: float = 0.0
+    routing_cost_ms: float = 0.0
     _num_satisfying: int = field(default=-1, repr=False)
 
     def count_satisfying(self) -> int:
         """Count satisfying assignments (cached)."""
         if self._num_satisfying < 0:
-            object.__setattr__(self, '_num_satisfying',
-                             int(np.unpackbits(self.bitmap).sum()))
+            object.__setattr__(self, "_num_satisfying", int(_unpackbits_little(self.bitmap).sum()))
         return self._num_satisfying
 
     def __repr__(self) -> str:
-        return (f"DispatchResult(backend={self.backend_used.name}, "
-                f"time={self.total_time_ms:.3f}ms)")
+        return f"DispatchResult(backend={self.backend_used.name}, time={self.total_time_ms:.3f}ms)"
+
 
 class GPUDispatcher:
     """GPU backend dispatcher with automatic selection.
@@ -99,26 +127,36 @@ class GPUDispatcher:
         self._backends: dict[BackendType, Backend] = {}
         self._backend_info: dict[BackendType, BackendInfo] = {}
         self._selected_backend: BackendType | None = None
+        self._forced_backend = force_backend
+        self._backend_latency_ewma_ms: dict[BackendType, float] = {}
+        self._routing_decisions: dict[BackendType, int] = {
+            BackendType.GPU: 0,
+            BackendType.CPU: 0,
+            BackendType.REFERENCE: 0,
+        }
+        self._guardrail_fallbacks: int = 0
+        self._ewma_alpha: float = 0.35
+        self._default_memory_bandwidth_mb_per_s: float = 12000.0
 
         self._probe_backends()
 
         if force_backend is not None:
             if force_backend not in self._backends:
                 avail = [bt.name for bt in self._backends]
-                raise ValueError(
-                    f"Backend {force_backend.name} not available. "
-                    f"Available: {avail}"
-                )
+                raise ValueError(f"Backend {force_backend.name} not available. Available: {avail}")
             self._selected_backend = force_backend
         else:
             self._select_best_backend()
 
-        logger.info(f"GPU dispatcher initialized: {self._selected_backend.name if self._selected_backend else 'None'}")
+        logger.info(
+            f"GPU dispatcher initialized: {self._selected_backend.name if self._selected_backend else 'None'}"
+        )
 
     def _probe_backends(self) -> None:
         """Probe all backends to determine availability."""
         try:
             from pysymex.h_acceleration.backends import gpu
+
             info = gpu.get_info()
             self._backend_info[BackendType.GPU] = info
             if info.available:
@@ -135,6 +173,7 @@ class GPUDispatcher:
 
         try:
             from pysymex.h_acceleration.backends import cpu
+
             info = cpu.get_info()
             self._backend_info[BackendType.CPU] = info
             if info.available:
@@ -151,6 +190,7 @@ class GPUDispatcher:
 
         try:
             from pysymex.h_acceleration.backends import reference
+
             info = reference.get_info()
             self._backend_info[BackendType.REFERENCE] = info
             if info.available:
@@ -166,9 +206,7 @@ class GPUDispatcher:
                 self._selected_backend = backend_type
                 return
 
-        raise BackendError(
-            "No GPU backends available. Install numba."
-        )
+        raise BackendError("No GPU backends available. Install numba.")
 
     @property
     def selected_backend(self) -> BackendType:
@@ -187,6 +225,10 @@ class GPUDispatcher:
         """List all probed backends (available and unavailable)."""
         return list(self._backend_info.values())
 
+    def backend_items(self) -> list[tuple[BackendType, Backend]]:
+        """Expose probed backend instances for orchestration helpers."""
+        return list(self._backends.items())
+
     def evaluate_bag(self, constraint: CompiledConstraint) -> DispatchResult:
         """Evaluate constraint using selected backend.
 
@@ -203,20 +245,110 @@ class GPUDispatcher:
         if self._selected_backend is None:
             raise RuntimeError("No backend selected")
 
-        backend = self._backends[self._selected_backend]
+        backend_type = self._select_backend_for_constraint(constraint)
+        backend = self._backends[backend_type]
+
+        routing_start = time.perf_counter()
+        routing_cost_ms = self._estimate_backend_cost_ms(backend_type, constraint)
+        transfer_time_ms = self._estimate_transfer_time_ms(backend_type, constraint)
+        routing_elapsed_ms = (time.perf_counter() - routing_start) * 1000.0
 
         t_start = time.perf_counter()
         bitmap = backend.evaluate_bag(constraint)
         t_end = time.perf_counter()
 
         elapsed_ms = (t_end - t_start) * 1000
+        self._record_backend_latency(backend_type, elapsed_ms)
+        self._routing_decisions[backend_type] += 1
 
         return DispatchResult(
             bitmap=bitmap,
-            backend_used=self._selected_backend,
+            backend_used=backend_type,
             kernel_time_ms=elapsed_ms,
             total_time_ms=elapsed_ms,
+            transfer_time_ms=transfer_time_ms,
+            routing_cost_ms=routing_cost_ms + routing_elapsed_ms,
         )
+
+    def _select_backend_for_constraint(self, constraint: CompiledConstraint) -> BackendType:
+        if self._forced_backend is not None:
+            return self._forced_backend
+
+        candidates: list[BackendType] = []
+        for backend_type in self.BACKEND_PRIORITY:
+            backend = self._backends.get(backend_type)
+            info = self._backend_info.get(backend_type)
+            if backend is None or info is None:
+                continue
+            if constraint.num_variables > info.max_treewidth:
+                continue
+            if backend_type == BackendType.GPU and self._should_guardrail_gpu(constraint):
+                self._guardrail_fallbacks += 1
+                continue
+            candidates.append(backend_type)
+
+        if not candidates:
+            return self.selected_backend
+
+        best = candidates[0]
+        best_cost = self._estimate_backend_cost_ms(best, constraint)
+        for backend_type in candidates[1:]:
+            cost = self._estimate_backend_cost_ms(backend_type, constraint)
+            if cost < best_cost:
+                best = backend_type
+                best_cost = cost
+        return best
+
+    def _should_guardrail_gpu(self, constraint: CompiledConstraint) -> bool:
+        info = self._backend_info.get(BackendType.GPU)
+        if info is None or info.device_memory_mb <= 0:
+            return False
+        memory_limited_max_w = estimate_max_treewidth(info.device_memory_mb)
+        return constraint.num_variables > memory_limited_max_w
+
+    def _estimate_transfer_time_ms(
+        self, backend_type: BackendType, constraint: CompiledConstraint
+    ) -> float:
+        if backend_type != BackendType.GPU:
+            return 0.0
+        bytes_to_transfer = constraint.memory_bytes()
+        mb_to_transfer = float(bytes_to_transfer) / (1024.0 * 1024.0)
+        return (mb_to_transfer / self._default_memory_bandwidth_mb_per_s) * 1000.0
+
+    def _estimate_backend_cost_ms(
+        self, backend_type: BackendType, constraint: CompiledConstraint
+    ) -> float:
+        info = self._backend_info.get(backend_type)
+        if info is None:
+            return float("inf")
+
+        ops = float(constraint.num_states * max(1, constraint.instruction_count))
+        throughput = max(0.001, info.throughput_estimate)
+        baseline_ms = (ops / (throughput * 1_000_000_000.0)) * 1000.0
+        transfer_ms = self._estimate_transfer_time_ms(backend_type, constraint)
+        historical = self._backend_latency_ewma_ms.get(backend_type)
+        if historical is None:
+            return baseline_ms + transfer_ms
+        return (0.4 * (baseline_ms + transfer_ms)) + (0.6 * historical)
+
+    def _record_backend_latency(self, backend_type: BackendType, elapsed_ms: float) -> None:
+        previous = self._backend_latency_ewma_ms.get(backend_type)
+        if previous is None:
+            self._backend_latency_ewma_ms[backend_type] = elapsed_ms
+            return
+        alpha = self._ewma_alpha
+        self._backend_latency_ewma_ms[backend_type] = (alpha * elapsed_ms) + (
+            (1.0 - alpha) * previous
+        )
+
+    def get_routing_stats(self) -> dict[str, object]:
+        return {
+            "selected_backend": self.selected_backend.name,
+            "forced_backend": self._forced_backend.name if self._forced_backend else None,
+            "routing_decisions": {k.name: v for k, v in self._routing_decisions.items()},
+            "latency_ewma_ms": {k.name: v for k, v in self._backend_latency_ewma_ms.items()},
+            "guardrail_fallbacks": self._guardrail_fallbacks,
+        }
 
     def evaluate_bag_with_fallback(
         self,
@@ -268,7 +400,9 @@ class GPUDispatcher:
         error_msg = "; ".join(f"{bt.name}: {e}" for bt, e in errors)
         raise BackendError(f"All backends failed: {error_msg}")
 
+
 _dispatcher: GPUDispatcher | None = None
+
 
 def get_dispatcher(force_backend: BackendType | None = None) -> GPUDispatcher:
     """Get or create global dispatcher instance.
@@ -284,6 +418,7 @@ def get_dispatcher(force_backend: BackendType | None = None) -> GPUDispatcher:
         _dispatcher = GPUDispatcher(force_backend)
     return _dispatcher
 
+
 def evaluate_bag(constraint: CompiledConstraint) -> DispatchResult:
     """Evaluate constraint using global dispatcher.
 
@@ -297,6 +432,7 @@ def evaluate_bag(constraint: CompiledConstraint) -> DispatchResult:
     """
     return get_dispatcher().evaluate_bag(constraint)
 
+
 def get_backend_info() -> BackendInfo:
     """Get information about currently selected backend.
 
@@ -304,6 +440,7 @@ def get_backend_info() -> BackendInfo:
         BackendInfo for selected backend
     """
     return get_dispatcher().get_backend_info()
+
 
 def count_satisfying(bitmap: npt.NDArray[np.uint8]) -> int:
     """Count satisfying assignments in bitmap.
@@ -314,7 +451,8 @@ def count_satisfying(bitmap: npt.NDArray[np.uint8]) -> int:
     Returns:
         Number of set bits
     """
-    return int(np.unpackbits(bitmap).sum())
+    return int(_unpackbits_little(bitmap).sum())
+
 
 def iter_satisfying(
     bitmap: npt.NDArray[np.uint8],
@@ -331,21 +469,16 @@ def iter_satisfying(
     Yields:
         Assignment dicts mapping variable -> bool
     """
-    bits = np.unpackbits(bitmap)
+    bits = _unpackbits_little(bitmap)
     max_idx = 1 << num_vars
 
     for i, sat in enumerate(bits[:max_idx]):
         if sat:
             if variable_names:
-                yield {
-                    variable_names[v]: bool((i >> v) & 1)
-                    for v in range(num_vars)
-                }
+                yield {variable_names[v]: bool((i >> v) & 1) for v in range(num_vars)}
             else:
-                yield {
-                    v: bool((i >> v) & 1)
-                    for v in range(num_vars)
-                }
+                yield {v: bool((i >> v) & 1) for v in range(num_vars)}
+
 
 def warmup() -> None:
     """Warm up all available backends.
@@ -355,14 +488,14 @@ def warmup() -> None:
     """
     dispatcher = get_dispatcher()
 
-    for backend_type in dispatcher._backends:  # pyright: ignore[reportPrivateUsage]
-        backend = dispatcher._backends[backend_type]  # pyright: ignore[reportPrivateUsage]
-        if hasattr(backend, 'warmup'):
+    for backend_type, backend in dispatcher.backend_items():
+        if hasattr(backend, "warmup"):
             try:
                 backend.warmup()
                 logger.debug(f"Warmed up {backend_type.name}")
             except Exception as e:
                 logger.warning(f"Warmup failed for {backend_type.name}: {e}")
+
 
 def reset() -> None:
     """Reset global dispatcher (for testing)."""

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Models for the functools module.
 
 This module provides symbolic models for functools functions:
@@ -13,9 +31,23 @@ This module provides symbolic models for functools functions:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Protocol, cast
 
 from pysymex.core.types import SymbolicList
+
+
+class _LRUCacheWrapper(Protocol):
+    def __call__(self, *args: object, **kwargs: object) -> object: ...
+    def cache_info(self) -> tuple[int, int, int | None, int]: ...
+    def cache_clear(self) -> None: ...
+
+
+class WrappedWrapper(Protocol):
+    __name__: str
+    __doc__: str | None
+    __wrapped__: Callable[..., object]
+
+    def __call__(self, *args: object, **kwargs: object) -> object: ...
 
 
 class PartialModel:
@@ -86,7 +118,7 @@ class LRUCacheModel:
     Decorator that caches function calls based on arguments.
     """
 
-    def __init__(self, maxsize: int | None = 128, typed: bool = False):
+    def __init__(self, maxsize: int | None = 128, typed: bool = False) -> None:
         """Create an LRU cache.
 
         Args:
@@ -98,7 +130,7 @@ class LRUCacheModel:
         self.cache_info_hits = 0
         self.cache_info_misses = 0
 
-    def __call__(self, func: Callable[..., object]) -> Callable[..., object]:
+    def __call__(self, func: Callable[..., object]) -> _LRUCacheWrapper:
         """Decorate a function with caching."""
 
         def wrapper(*args: object, **kwargs: object) -> object:
@@ -107,9 +139,9 @@ class LRUCacheModel:
             result, _ = SymbolicValue.symbolic(f"lru_cached_{func.__name__}")
             return result
 
-        wrapper.cache_info = lambda: (self.cache_info_hits, self.cache_info_misses, self.maxsize, 0)
-        wrapper.cache_clear = lambda: None
-        return wrapper
+        wrapper.cache_info = lambda: (self.cache_info_hits, self.cache_info_misses, self.maxsize, 0)  # type: ignore[attr-defined]
+        wrapper.cache_clear = lambda: None  # type: ignore[attr-defined]
+        return cast("_LRUCacheWrapper", wrapper)
 
 
 def model_lru_cache(
@@ -138,7 +170,7 @@ class CachedPropertyModel:
         self.func: Callable[..., object] = func
         self.__doc__ = func.__doc__
 
-    def __get__(self, obj: object, cls: type[Any] | None = None) -> object:
+    def __get__(self, obj: object, cls: type[object] | None = None) -> object:
         """Get the cached value or compute it."""
         if obj is None:
             return self
@@ -164,10 +196,11 @@ def model_wraps(wrapped: Callable[..., object], **kwargs: object) -> Callable[..
     """
 
     def decorator(wrapper: Callable[..., object]) -> Callable[..., object]:
-        wrapper.__name__ = getattr(wrapped, "__name__", wrapper.__name__)
-        wrapper.__doc__ = getattr(wrapped, "__doc__", wrapper.__doc__)
-        wrapper.__wrapped__ = wrapped
-        return wrapper
+        wrapped_wrapper = cast("WrappedWrapper", wrapper)
+        wrapped_wrapper.__name__ = getattr(wrapped, "__name__", wrapped_wrapper.__name__)
+        wrapped_wrapper.__doc__ = getattr(wrapped, "__doc__", wrapped_wrapper.__doc__)
+        wrapped_wrapper.__wrapped__ = wrapped
+        return wrapped_wrapper
 
     return decorator
 
@@ -188,14 +221,31 @@ def model_total_ordering(cls: type) -> type:
     return cls
 
 
-def model_cmp_to_key(mycmp: Callable[..., object]) -> type:
+def model_cmp_to_key(mycmp: Callable[[object, object], object]) -> type:
     """Model functools.cmp_to_key(mycmp).
 
     Converts an old-style comparison function to a key function.
     """
 
+    def _cmp_as_int(res: object) -> int:
+        if isinstance(res, bool):
+            return int(res)
+        if isinstance(res, int):
+            return res
+        int_method = getattr(res, "__int__", None)
+        if callable(int_method):
+            try:
+                int_value = int_method()
+                if isinstance(int_value, int):
+                    return int_value
+                return 0
+            except (TypeError, ValueError):
+                return 0
+        return 0
+
     class K:
         """Key selector wrapper for comparison functions."""
+
         __slots__ = ["obj"]
 
         def __init__(self, obj: object) -> None:
@@ -203,21 +253,26 @@ def model_cmp_to_key(mycmp: Callable[..., object]) -> type:
             self.obj = obj
 
         def __lt__(self, other: K) -> bool:
-            return bool(mycmp(self.obj, other.obj) < 0)
+            res = mycmp(self.obj, other.obj)
+            return _cmp_as_int(res) < 0
 
         def __gt__(self, other: K) -> bool:
-            return bool(mycmp(self.obj, other.obj) > 0)
+            res = mycmp(self.obj, other.obj)
+            return _cmp_as_int(res) > 0
 
         def __eq__(self, other: object) -> bool:
             if not isinstance(other, K):
                 return NotImplemented
-            return bool(mycmp(self.obj, other.obj) == 0)
+            res = mycmp(self.obj, other.obj)
+            return _cmp_as_int(res) == 0
 
         def __le__(self, other: K) -> bool:
-            return bool(mycmp(self.obj, other.obj) <= 0)
+            res = mycmp(self.obj, other.obj)
+            return _cmp_as_int(res) <= 0
 
         def __ge__(self, other: K) -> bool:
-            return bool(mycmp(self.obj, other.obj) >= 0)
+            res = mycmp(self.obj, other.obj)
+            return _cmp_as_int(res) >= 0
 
     return K
 

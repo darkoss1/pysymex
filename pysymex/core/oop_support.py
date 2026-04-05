@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Enhanced OOP Support for PySyMex v1.2.
 Provides improved class and object handling:
@@ -12,10 +30,11 @@ Provides improved class and object handling:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
-    Any,
+    cast,
 )
 
 import z3
@@ -50,7 +69,7 @@ class EnhancedMethod:
     Enhanced method representation with type tracking.
     """
 
-    func: Any
+    func: object
     method_type: MethodType = MethodType.INSTANCE
     name: str = ""
     qualname: str = ""
@@ -109,10 +128,10 @@ class EnhancedMethod:
             return args, kwargs
         if self.method_type == MethodType.CLASS:
             if self.bound_to and isinstance(self.bound_to, SymbolicClass):
-                return (self.bound_to,) + args, kwargs
+                return (self.bound_to, *args), kwargs
             return args, kwargs
         if self.bound_to and isinstance(self.bound_to, SymbolicObject):
-            return (self.bound_to,) + args, kwargs
+            return (self.bound_to, *args), kwargs
         return args, kwargs
 
 
@@ -161,7 +180,7 @@ class EnhancedClass:
     class_vars: dict[str, object] = field(default_factory=dict[str, object])
     slots: tuple[str, ...] | None = None
     is_dataclass: bool = False
-    dataclass_fields: dict[str, Any] = field(default_factory=dict)
+    dataclass_fields: dict[str, tuple[str, object]] = field(default_factory=dict)
     abstract_methods: set[str] = field(default_factory=set[str])
 
     @property
@@ -197,7 +216,8 @@ class EnhancedClass:
         elif method_type == MethodType.STATIC:
             self.static_methods[name] = method
         elif method_type == MethodType.PROPERTY:
-            self.properties[name] = SymbolicProperty(fget=func, name=name)
+            fget = func if callable(func) else None
+            self.properties[name] = SymbolicProperty(fget=fget, name=name)
         else:
             self.methods[name] = method
         if method_type == MethodType.ABSTRACT:
@@ -212,7 +232,16 @@ class EnhancedClass:
         fdel: object = None,
     ) -> None:
         """Add a property to the class."""
-        prop = SymbolicProperty(fget=fget, fset=fset, fdel=fdel, name=name)
+        typed_fget = (
+            cast("Callable[[SymbolicObject], object] | None", fget) if callable(fget) else None
+        )
+        typed_fset = (
+            cast("Callable[[SymbolicObject, object], None]", fset) if callable(fset) else None
+        )
+        typed_fdel = (
+            cast("Callable[[SymbolicObject], None] | None", fdel) if callable(fdel) else None
+        )
+        prop = SymbolicProperty(fget=typed_fget, fset=typed_fset, fdel=typed_fdel, name=name)
         self.properties[name] = prop
         self.base.attributes[name] = SymbolicAttribute(
             name=name,
@@ -243,7 +272,7 @@ class EnhancedClass:
         for parent in self.base.bases:
             attr = parent.get_attribute(name)
             if attr and attr.is_method:
-                return attr.value
+                return cast("EnhancedMethod", attr.value)
         return None
 
 
@@ -345,7 +374,7 @@ class EnhancedClassRegistry:
     Tracks all class definitions encountered during analysis.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._classes: dict[str, EnhancedClass] = {}
         self._by_code: dict[int, EnhancedClass] = {}
 
@@ -438,13 +467,14 @@ def extract_init_params(code_obj: object) -> list[InitParameter]:
     """
     if not hasattr(code_obj, "co_varnames"):
         return []
-    from typing import Any as _Any
-
-    code_any: _Any = code_obj
+    code_any = code_obj
     params: list[InitParameter] = []
-    arg_count = getattr(code_any, "co_argcount", 0)
-    varnames: tuple[str, ...] = code_any.co_varnames[:arg_count]
-    defaults = getattr(code_any, "co_defaults", ()) or ()
+    arg_count_obj = getattr(code_any, "co_argcount", 0)
+    arg_count = arg_count_obj if isinstance(arg_count_obj, int) else 0
+    varnames_obj = getattr(code_any, "co_varnames", ())
+    varnames: tuple[object, ...] = varnames_obj if isinstance(varnames_obj, tuple) else ()
+    defaults_obj = getattr(code_any, "co_defaults", ())
+    defaults: tuple[object, ...] = defaults_obj if isinstance(defaults_obj, tuple) else ()
     default_offset = arg_count - len(defaults)
     for i, name in enumerate(varnames):
         is_self = i == 0 and name in ("self", "cls")
@@ -468,7 +498,7 @@ def is_dataclass(cls: EnhancedClass) -> bool:
 
 def make_dataclass(
     cls: EnhancedClass,
-    fields: dict[str, tuple[str, Any]],
+    fields: dict[str, tuple[str, object]],
 ) -> EnhancedClass:
     """
     Convert a class to a dataclass.

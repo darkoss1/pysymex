@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Resource management and limits for pysymex.
 
 Provides resource tracking, limits enforcement, and graceful degradation
@@ -55,12 +73,12 @@ class LimitExceeded(Exception):
         limit: The threshold that was exceeded.
     """
 
-    def __init__(self, resource_type: ResourceType, current: object, limit: object):
+    def __init__(self, resource_type: ResourceType, current: object, limit: object) -> None:
         """Initialize the limit violation record and format the error message."""
         self.resource_type = resource_type
         self.current = current
         self.limit = limit
-        super().__init__(f"{resource_type .name } limit exceeded: {current } >= {limit }")
+        super().__init__(f"{resource_type.name} limit exceeded: {current} >= {limit}")
 
 
 class AnalysisTimeoutError(LimitExceeded):
@@ -70,7 +88,7 @@ class AnalysisTimeoutError(LimitExceeded):
     ``resource_type == ResourceType.TIME``.
     """
 
-    def __init__(self, elapsed: float, limit: float):
+    def __init__(self, elapsed: float, limit: float) -> None:
         super().__init__(ResourceType.TIME, elapsed, limit)
 
 
@@ -179,7 +197,7 @@ class ResourceTracker:
     - Tiered limit checking to minimize monitoring overhead.
     """
 
-    def __init__(self, limits: ResourceLimits | None = None):
+    def __init__(self, limits: ResourceLimits | None = None) -> None:
         self.limits = limits or ResourceLimits()
         self._paths_explored: int = 0
         self._current_depth: int = 0
@@ -283,6 +301,8 @@ class ResourceTracker:
     ) -> None:
         """Check and warn for soft limits."""
         if resource_type in self._warnings_issued:
+            return
+        if not isinstance(limit, (int, float)) or not isinstance(current, (int, float)):
             return
         threshold = limit * ratio
         if current >= threshold:
@@ -481,7 +501,7 @@ class GracefulDegradation:
     exhaustive search to approximation or early termination.
     """
 
-    def __init__(self, tracker: ResourceTracker):
+    def __init__(self, tracker: ResourceTracker) -> None:
         self.tracker = tracker
         self._strategies: list[str] = []
 
@@ -573,7 +593,7 @@ def create_partial_result(
     )
     if error:
         if isinstance(error, LimitExceeded):
-            result.reason = f"Limit exceeded: {error .resource_type .name }"
+            result.reason = f"Limit exceeded: {error.resource_type.name}"
         else:
             result.reason = str(error)
     return result

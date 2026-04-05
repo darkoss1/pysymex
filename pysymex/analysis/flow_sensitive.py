@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Flow-Sensitive Analysis for pysymex.
 
@@ -22,8 +40,10 @@ Implementation split across:
 
 from __future__ import annotations
 
-import icontract
 from dataclasses import dataclass
+from types import CodeType
+
+import icontract
 
 from .cfg import (
     BasicBlock,
@@ -83,7 +103,7 @@ class FlowSensitiveAnalyzer:
     - Null analysis
     """
 
-    def __init__(self, code: object) -> None:
+    def __init__(self, code: CodeType) -> None:
         builder = CFGBuilder()
         self.cfg = builder.build(code)
         self.reaching_defs = ReachingDefinitions(self.cfg)
@@ -119,7 +139,7 @@ class FlowSensitiveAnalyzer:
         block = self.cfg.get_block_at_pc(pc)
         if not block:
             return False
-        for _header_id, body_blocks in self.cfg.natural_loops.items():
+        for body_blocks in self.cfg.natural_loops.values():
             if block.id in body_blocks:
                 return True
         return False
@@ -134,7 +154,7 @@ class FlowSensitiveAnalyzer:
                 return header_id
         return None
 
-    @icontract.require(lambda self, pc: self.cfg.get_block_at_pc(pc) is not None)
+    @icontract.require(lambda self, pc: self.cfg.get_block_at_pc(pc) is not None)  # type: ignore[attr-defined]
     def get_dominator(self, pc: int) -> int | None:
         """Get the immediate dominator block for a PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -166,7 +186,7 @@ class FlowContext:
     null_info: NullInfo
 
     @classmethod
-    @icontract.require(lambda analyzer, pc: analyzer.cfg.get_block_at_pc(pc) is not None)
+    @icontract.require(lambda analyzer, pc: analyzer.cfg.get_block_at_pc(pc) is not None)  # type: ignore[attr-defined]
     @icontract.ensure(lambda result: isinstance(result, FlowContext))
     def create(
         cls,

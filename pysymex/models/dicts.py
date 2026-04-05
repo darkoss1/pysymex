@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Enhanced Models for Python dict operations.
 This module provides relationship-preserving symbolic models for dict methods.
 Tracks key existence, length changes, and potential KeyError conditions.
@@ -10,7 +28,7 @@ Key improvements:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import z3
 
@@ -21,7 +39,7 @@ from pysymex.core.types import (
     SymbolicString,
     SymbolicValue,
 )
-from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.builtins_base import FunctionModel, ModelResult
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -34,6 +52,7 @@ def _get_symbolic_dict(arg: object, state: VMState | None = None) -> SymbolicDic
         return arg
     if state is not None:
         from pysymex.core.types_containers import SymbolicObject
+
         if isinstance(arg, SymbolicObject):
             addr = arg.address
             if addr in state.memory:
@@ -139,19 +158,14 @@ class DictSetitemModel(FunctionModel):
         if d is not None and key is not None:
             new_len = z3.Int(f"dict_len_{state.pc}_{state.path_id}")
             exists = d.contains_key(key)
-            constraints.append(
-                cast(
-                    "z3.BoolRef",
-                    z3.If(exists.z3_bool, new_len == d.z3_len, new_len == d.z3_len + 1),
-                )
-            )
-            
+            constraints.append(z3.If(exists.z3_bool, new_len == d.z3_len, new_len == d.z3_len + 1))
+
             new_dict = d.copy()
             new_dict.z3_len = new_len
             if value_arg is not None:
                 new_dict.z3_array = z3.Store(d.z3_array, key.z3_str, value.z3_int)
             new_dict.known_keys = z3.Concat(d.known_keys, z3.Unit(key.z3_str))
-            
+
             side_effects["dict_mutation"] = {
                 "operation": "setitem",
                 "original_dict": d,
@@ -192,10 +206,10 @@ class DictDelitemModel(FunctionModel):
                     "message": "Key not found for deletion",
                     "condition": z3.Not(d.contains_key(key).z3_bool),
                 }
-            
+
             new_dict = d.copy()
             new_dict.z3_len = d.z3_len - 1
-            
+
             side_effects["dict_mutation"] = {
                 "operation": "delitem",
                 "original_dict": d,
@@ -223,7 +237,7 @@ class DictKeysModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"dict_keys_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"dict_keys_{state.pc}")
         constraints = [constraint]
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
@@ -245,7 +259,7 @@ class DictValuesModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"dict_values_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"dict_values_{state.pc}")
         constraints = [constraint]
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
@@ -267,7 +281,7 @@ class DictItemsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"dict_items_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"dict_items_{state.pc}")
         constraints = [constraint]
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
@@ -294,7 +308,7 @@ class DictPopModel(FunctionModel):
         d = _get_symbolic_dict(args[0]) if args else None
         key = _get_symbolic_string(args[1]) if len(args) > 1 else None
         has_default = len(args) > 2
-        result, constraint = SymbolicValue.symbolic(f"dict_pop_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dict_pop_{state.pc}")
         constraints: list[z3.BoolRef] = [constraint]
         side_effects: dict[str, object] = {}
         if d is not None:
@@ -306,12 +320,16 @@ class DictPopModel(FunctionModel):
                 }
 
             key_present = d.contains_key(key).z3_bool if key is not None else z3.BoolVal(True)
-            new_len = z3.If(key_present, d.z3_len - 1, d.z3_len)
-            d.z3_len = new_len
+            old_len = d.z3_len
+            new_len = z3.If(key_present, old_len - 1, old_len)
+            new_dict = d.copy()
+            new_dict.z3_len = new_len
             side_effects["dict_mutation"] = {
                 "operation": "pop",
+                "original_dict": d,
+                "updated_dict": new_dict,
                 "dict_name": d.name,
-                "old_length": d.z3_len + 1,
+                "old_length": old_len,
                 "new_length": new_len,
             }
         return ModelResult(
@@ -337,7 +355,7 @@ class DictPopitemModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicList.symbolic(f"dict_popitem_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"dict_popitem_{state.pc}")
         constraints: list[z3.BoolRef] = [constraint, result.z3_len == 2]
         side_effects: dict[str, object] = {}
         if d is not None:
@@ -447,7 +465,7 @@ class DictCopyModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicDict.symbolic(f"dict_copy_{state .pc }")
+        result, constraint = SymbolicDict.symbolic(f"dict_copy_{state.pc}")
         constraints = [constraint]
         if d is not None:
             constraints.append(result.z3_len == d.z3_len)
@@ -472,7 +490,7 @@ class DictSetdefaultModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"dict_setdefault_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dict_setdefault_{state.pc}")
         constraints: list[z3.BoolRef] = [constraint]
         side_effects: dict[str, object] = {}
         if d is not None:
@@ -511,7 +529,7 @@ class DictContainsModel(FunctionModel):
             result = d.contains_key(key)
             constraints = [z3.Implies(d.z3_len == 0, z3.Not(result.z3_bool))]
             return ModelResult(value=result, constraints=constraints)
-        result, constraint = SymbolicValue.symbolic(f"dict_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dict_contains_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_bool],
@@ -533,14 +551,14 @@ class DictLenModel(FunctionModel):
         d = _get_symbolic_dict(args[0]) if args else None
         if d is not None:
             result = SymbolicValue(
-                _name=f"len({d .name })",
+                _name=f"len({d.name})",
                 z3_int=d.z3_len,
                 is_int=z3.BoolVal(True),
                 z3_bool=z3.BoolVal(False),
                 is_bool=z3.BoolVal(False),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"dict_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dict_len_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -559,7 +577,7 @@ class DictFromkeysModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicDict.symbolic(f"fromkeys_{state .pc }")
+        result, constraint = SymbolicDict.symbolic(f"fromkeys_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if args:
             keys_arg = args[0]
@@ -583,7 +601,7 @@ class DictEqModel(FunctionModel):
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
         other = _get_symbolic_dict(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"dict_eq_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"dict_eq_{state.pc}")
         constraints = [constraint, result.is_bool]
         if d is not None and other is not None:
             constraints.append(z3.Implies(result.z3_bool, d.z3_len == other.z3_len))
@@ -605,7 +623,7 @@ class DictOrModel(FunctionModel):
     ) -> ModelResult:
         d = _get_symbolic_dict(args[0]) if args else None
         other = _get_symbolic_dict(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicDict.symbolic(f"dict_or_{state .pc }")
+        result, constraint = SymbolicDict.symbolic(f"dict_or_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if d is not None and other is not None:
             constraints.append(
@@ -634,7 +652,7 @@ class DictIorModel(FunctionModel):
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         side_effects: dict[str, object] = {}
         if d is not None:
-            new_len = z3.Int(f"dict_len_{state .pc }")
+            new_len = z3.Int(f"dict_len_{state.pc}")
             constraints.append(new_len >= d.z3_len)
             if other is not None:
                 constraints.append(new_len <= d.z3_len + other.z3_len)

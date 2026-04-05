@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Collection Theories — Dict, Set, and Tuple operations.
 
@@ -51,7 +69,7 @@ class SymbolicDictOps:
                 return OpResult(value=None, error="KeyError")
         elif isinstance(d, SymbolicDict):
             sym_key = (
-                key if isinstance(key, SymbolicInt) else SymbolicInt(z3.IntVal(cast(int, key)))
+                key if isinstance(key, SymbolicInt) else SymbolicInt(z3.IntVal(cast("int", key)))
             )
             result = d[sym_key]
             has_key = d.contains(sym_key)
@@ -59,7 +77,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -79,7 +97,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -87,7 +105,7 @@ class SymbolicDictOps:
                 else key,
             )
             z3_val = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 value.value
                 if isinstance(value, SymbolicInt)
                 else z3.IntVal(value)
@@ -109,7 +127,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -128,7 +146,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -137,7 +155,7 @@ class SymbolicDictOps:
             )
             z3_default = (
                 cast(
-                    z3.ExprRef,
+                    "z3.ExprRef",
                     default.value
                     if isinstance(default, SymbolicInt)
                     else z3.IntVal(default)
@@ -158,7 +176,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -182,7 +200,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -191,7 +209,7 @@ class SymbolicDictOps:
             )
             z3_default = (
                 cast(
-                    z3.ExprRef,
+                    "z3.ExprRef",
                     default.value
                     if isinstance(default, SymbolicInt)
                     else (z3.IntVal(default) if isinstance(default, int) else default),
@@ -216,7 +234,7 @@ class SymbolicDictOps:
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 key.value
                 if isinstance(key, SymbolicInt)
                 else z3.IntVal(key)
@@ -224,7 +242,7 @@ class SymbolicDictOps:
                 else key,
             )
             z3_default = cast(
-                z3.ExprRef,
+                "z3.ExprRef",
                 default.value
                 if isinstance(default, SymbolicInt)
                 else (z3.IntVal(default) if isinstance(default, int) else default),
@@ -232,7 +250,7 @@ class SymbolicDictOps:
             has_key = d.contains(z3_key)
             existing_value = d.get(z3_key)
             result = z3.If(has_key, existing_value, z3_default)
-            final_map = d.set(z3_key, cast(z3.ExprRef, result))
+            final_map = d.set(z3_key, result)
             return OpResult(value=result, modified_collection=final_map)
 
     @staticmethod
@@ -247,11 +265,11 @@ class SymbolicDictOps:
             result_map: SymbolicMap = d
             for k, v in other.items():
                 z3_key = cast(
-                    z3.ExprRef,
+                    "z3.ExprRef",
                     k if isinstance(k, z3.ExprRef) else z3.IntVal(k) if isinstance(k, int) else k,
                 )
                 z3_val = cast(
-                    z3.ExprRef,
+                    "z3.ExprRef",
                     v if isinstance(v, z3.ExprRef) else z3.IntVal(v) if isinstance(v, int) else v,
                 )
                 result_map = result_map.set(z3_key, z3_val)
@@ -304,7 +322,7 @@ class SymbolicSetOps:
             sym_val = (
                 value
                 if isinstance(value, SymbolicInt)
-                else SymbolicInt(z3.IntVal(cast(int, value)))
+                else SymbolicInt(z3.IntVal(cast("int", value)))
             )
             result = s.contains(sym_val)
             return OpResult(value=result)
@@ -320,7 +338,7 @@ class SymbolicSetOps:
             sym_val = (
                 value
                 if isinstance(value, SymbolicInt)
-                else SymbolicInt(z3.IntVal(cast(int, value)))
+                else SymbolicInt(z3.IntVal(cast("int", value)))
             )
             new_set = s.add(sym_val)
             return OpResult(value=None, modified_collection=new_set)
@@ -339,7 +357,7 @@ class SymbolicSetOps:
             sym_val = (
                 value
                 if isinstance(value, SymbolicInt)
-                else SymbolicInt(z3.IntVal(cast(int, value)))
+                else SymbolicInt(z3.IntVal(cast("int", value)))
             )
             has_value = s.contains(sym_val)
             new_set = s.remove(sym_val)
@@ -358,7 +376,7 @@ class SymbolicSetOps:
             sym_val = (
                 value
                 if isinstance(value, SymbolicInt)
-                else SymbolicInt(z3.IntVal(cast(int, value)))
+                else SymbolicInt(z3.IntVal(cast("int", value)))
             )
             new_set = s.remove(sym_val)
             return OpResult(value=None, modified_collection=new_set)

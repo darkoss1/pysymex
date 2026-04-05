@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Bug detectors for symbolic execution.
 pysymex - Core detectors, advanced detectors, and registry.
 """
@@ -146,7 +164,7 @@ class Issue:
             return {}
         if isinstance(self.model, dict):
             return self.model
-            
+
         counterexample: dict[str, object] = {}
         for decl in self.model.decls():
             name = decl.name()
@@ -310,7 +328,7 @@ def _pure_check_division_by_zero(
 
     if not isinstance(divisor, SymbolicValue):
         try:
-            if float(divisor) == 0:
+            if isinstance(divisor, (int, float, str)) and float(divisor) == 0:
                 return Issue(
                     kind=IssueKind.DIVISION_BY_ZERO,
                     message="Division by concrete zero",
@@ -368,11 +386,11 @@ class DivisionByZeroDetector(Detector):
             return None
         if len(state.stack) < 2:
             return None
-            
+
         dividend = state.stack[-2]
         if isinstance(dividend, str) or type(dividend).__name__ == "SymbolicString":
             return None
-            
+
         return _pure_check_division_by_zero(
             state.stack[-1],
             state.stack[-2],
@@ -447,9 +465,8 @@ def _pure_check_index_bounds(
         confidence = 1.0
         if is_havoc(index) or is_havoc(container):
             confidence = 0.5
-        elif hasattr(index, 'affinity_type') and index.affinity_type == "int":
-             # We are sure it's an int, so the mismatch is likely real
-             confidence = 0.9
+        elif hasattr(index, "affinity_type") and index.affinity_type == "int":
+            confidence = 0.9
 
         return Issue(
             kind=IssueKind.INDEX_ERROR,
@@ -515,9 +532,19 @@ class KeyErrorDetector(Detector):
             return None
         if not isinstance(container, SymbolicDict):
             return None
+
+        normalized_key: SymbolicString | None = None
+        if isinstance(key, SymbolicString):
+            normalized_key = key
+        elif isinstance(key, str):
+            normalized_key = SymbolicString.from_const(key)
+
+        if normalized_key is None:
+            return None
+
         missing_key: list[z3.BoolRef] = [
             *state.path_constraints,
-            z3.Not(container.contains_key(key).z3_bool),
+            z3.Not(container.contains_key(normalized_key).z3_bool),
         ]
         if is_satisfiable(missing_key):
             return Issue(
@@ -561,7 +588,7 @@ class TypeErrorDetector(Detector):
                         confidence = 1.0
                         if is_havoc(right):
                             confidence = 0.5
-                        elif hasattr(right, 'affinity_type') and right.affinity_type == 'int':
+                        elif hasattr(right, "affinity_type") and right.affinity_type == "int":
                             confidence = 0.9
 
                         return Issue(
@@ -676,7 +703,7 @@ class OverflowDetector(Detector):
         "size_t": (0, 2**64 - 1),
     }
 
-    def __init__(self, bound_type: str = "64bit"):
+    def __init__(self, bound_type: str = "64bit") -> None:
         self.min_val, self.max_val = self.BOUNDS.get(bound_type, self.BOUNDS["64bit"])
 
     def check(
@@ -977,6 +1004,7 @@ def _pure_check_none_deref(
     path_constraints: list[z3.BoolRef],
     pc: int,
     skip_names: frozenset[str] | set[str] = frozenset(),
+    skip_prefixes: tuple[str, ...] = (),
     is_satisfiable_fn: _IsSatFn = is_satisfiable,
     get_model_fn: _GetModelFn = get_model,
 ) -> Issue | None:
@@ -994,18 +1022,18 @@ def _pure_check_none_deref(
     if isinstance(obj, SymbolicValue):
         if obj.name in skip_names:
             return None
+        if any(obj.name.startswith(prefix) for prefix in skip_prefixes):
+            return None
         if hasattr(obj, "is_none"):
             none_constraint = [*path_constraints, obj.is_none]
             if is_satisfiable_fn(none_constraint):
                 confidence = 1.0
                 if is_havoc(obj):
-                     confidence = 0.5
-                elif hasattr(obj, 'affinity_type') and obj.affinity_type == 'NoneType':
-                     confidence = 1.0
-                elif hasattr(obj, 'affinity_type') and obj.affinity_type is not None:
-                     # If it has another affinity (like 'int' or 'str'), it shouldn't be None
-                     # but Z3 found it could be. This is interesting but potentially an over-approximation.
-                     confidence = 0.7
+                    confidence = 0.5
+                elif hasattr(obj, "affinity_type") and obj.affinity_type == "NoneType":
+                    confidence = 1.0
+                elif hasattr(obj, "affinity_type"):
+                    confidence = 0.7
 
                 return Issue(
                     kind=IssueKind.NULL_DEREFERENCE,
@@ -1049,7 +1077,8 @@ class NoneDereferenceDetector(Detector):
             instruction.argval,
             list(state.path_constraints),
             state.pc,
-            self.SKIP_NAMES | set(self.INTERNAL_PREFIXES),
+            self.SKIP_NAMES,
+            self.INTERNAL_PREFIXES,
         )
 
 
@@ -1188,7 +1217,7 @@ class FormatStringDetector(Detector):
         if argc > 0 and len(state.stack) >= argc:
             for i in range(argc):
                 arg = state.stack[-(i + 1)]
-                if taint_tracker.is_tainted(arg):
+                if taint_tracker.is_tainted(arg):  # type: ignore[attr-defined]
                     return Issue(
                         kind=IssueKind.FORMAT_STRING_INJECTION,
                         message="Potentially tainted string passed to function call",
@@ -1205,7 +1234,7 @@ class FormatStringDetector(Detector):
         if len(state.stack) < 1:
             return None
         val = state.stack[-1]
-        if taint_tracker.is_tainted(val):
+        if taint_tracker.is_tainted(val):  # type: ignore[attr-defined]
             return Issue(
                 kind=IssueKind.FORMAT_STRING_INJECTION,
                 message="Tainted value used in format string",
@@ -1331,9 +1360,9 @@ class TaintFlowDetector(Detector):
         _solver_check: _IsSatFn,
     ) -> Issue | None:
         """Check."""
-        if not hasattr(state, "_taint_tracker"):
+        if not hasattr(state, "taint_tracker"):
             return None
-        taint_tracker: object = state._taint_tracker
+        taint_tracker: object = state.taint_tracker
         if taint_tracker is None:
             return None
         from pysymex.analysis.taint import TaintSink
@@ -1373,7 +1402,7 @@ class DetectorRegistry:
         _fn_detectors: Function-based detectors (name → (fn, info)).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._detectors: dict[str, type[Detector]] = {}
         self._instances: dict[str, Detector] = {}
         self._fn_detectors: dict[str, tuple[DetectorFn, DetectorInfo]] = {}

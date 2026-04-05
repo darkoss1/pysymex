@@ -316,7 +316,7 @@ class TestConstraintChainOperations:
         assert lst[2].eq(c3)
 
     def test_chain_iteration_reverse_order(self):
-        """Iteration should be in reverse chronological order."""
+        """Iteration should be in chronological order (oldest first)."""
         x = z3.Int("x")
 
         c1 = x > 0
@@ -325,10 +325,10 @@ class TestConstraintChainOperations:
         chain = ConstraintChain.from_list([c1, c2])
         items = list(chain)
 
-        # Newest first
+        # Oldest first
         assert len(items) == 2
-        assert items[0].eq(c2)
-        assert items[1].eq(c1)
+        assert items[0].eq(c1)
+        assert items[1].eq(c2)
 
 
 class TestPendingConstraintCount:

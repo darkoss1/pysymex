@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Type encoder for Z3 constraint solving.
 
 Encodes SymbolicType instances as Z3 expressions with axioms for subtyping.
@@ -16,7 +34,7 @@ class TypeEncoder:
     Uses an uninterpreted sort for types with axioms for subtyping.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.TypeSort = z3.DeclareSort("Type")
         self.int_t = z3.Const("int_t", self.TypeSort)
         self.float_t = z3.Const("float_t", self.TypeSort)
@@ -87,7 +105,7 @@ class TypeEncoder:
             result = self.object_t
         else:
             self._type_counter += 1
-            result = z3.Const(f"type_{self ._type_counter }", self.TypeSort)
+            result = z3.Const(f"type_{self._type_counter}", self.TypeSort)
         self._type_cache[typ] = result
         return result
 

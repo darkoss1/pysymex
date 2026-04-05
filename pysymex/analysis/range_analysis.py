@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Value Range Analysis for pysymex.
 This module provides value range analysis to track the possible
@@ -11,8 +29,9 @@ detect bugs like:
 
 from __future__ import annotations
 
-import icontract
 import logging
+
+import icontract
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +43,14 @@ from dataclasses import dataclass, field
 from pysymex._compat import get_starts_line
 
 from .flow_sensitive import BasicBlock, CFGBuilder, ControlFlowGraph
+
+
+def _union_postcondition(self: Range, other: Range, result: Range) -> bool:
+    return self.subset_of(result) and other.subset_of(result)
+
+
+def _intersect_postcondition(self: Range, other: Range, result: Range) -> bool:
+    return result.subset_of(self) or result.is_empty
 
 
 @dataclass(frozen=True)
@@ -126,7 +153,7 @@ class Range:
             return True
         return not self.contains(0)
 
-    @icontract.ensure(lambda self, other, result: self.subset_of(result) and other.subset_of(result))
+    @icontract.ensure(_union_postcondition)
     def union(self, other: Range) -> Range:
         """Compute union (join) of two ranges."""
         if self.is_empty:
@@ -145,7 +172,7 @@ class Range:
             new_high = max(self.high, other.high)
         return Range(new_low, new_high)
 
-    @icontract.ensure(lambda self, other, result: result.subset_of(self) or result.is_empty)
+    @icontract.ensure(_intersect_postcondition)
     def intersect(self, other: Range) -> Range:
         """Compute intersection (meet) of two ranges."""
         if self.is_empty or other.is_empty:
@@ -306,6 +333,10 @@ class Range:
         return f"[{low_str}, {high_str}]"
 
 
+def _pop_precondition(self: RangeState) -> bool:
+    return not self.is_bottom
+
+
 @dataclass
 class RangeState:
     """State for range analysis."""
@@ -340,7 +371,7 @@ class RangeState:
     def push(self, range_val: Range) -> None:
         self.stack.append(range_val)
 
-    @icontract.require(lambda self: not self.is_bottom)
+    @icontract.require(_pop_precondition)
     def pop(self) -> Range:
         """Pop."""
         if self.stack:
@@ -452,8 +483,9 @@ class RangeAnalyzer:
                     if instr.offset not in pc_to_line:
                         pc_to_line[instr.offset] = last_line
         except (AttributeError, Exception):
-
-            logger.warning("CFG construction failed during range analysis, falling back", exc_info=True)
+            logger.warning(
+                "CFG construction failed during range analysis, falling back", exc_info=True
+            )
 
         if cfg.entry:
             initial = RangeState()
@@ -643,7 +675,7 @@ class RangeAnalyzer:
                     base = container_name.split("_", 1)[1] if "_" in container_name else ""
                     is_type_sub = base in BUILTIN_TYPE_NAMES
                 if not is_type_sub and index.must_be_negative():
-                    pass  # Negative indexing is legal in Python (e.g. arr[-1]), so we don't warn.
+                    pass
                 state.push(Range.full())
             else:
                 pass

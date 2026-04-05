@@ -212,6 +212,53 @@ class TestMergeStatistics:
         # Stats should have expected attributes
         # Implementation-dependent fields
 
+    def test_subsumes_stronger_state(self):
+        """A weaker (prefix-constraint) state subsumes a stronger one."""
+        merger = StateMerger()
+
+        x = z3.Int("x")
+        c0 = x > 0
+        c1 = x < 10
+
+        weaker = VMState(pc=5)
+        weaker.local_vars["v"] = SymbolicValue.from_const(1)
+        weaker.add_constraint(c0)
+
+        stronger = VMState(pc=5)
+        stronger.local_vars["v"] = SymbolicValue.from_const(1)
+        stronger.add_constraint(c0)
+        stronger.add_constraint(c1)
+
+        assert merger.add_state_for_merge(weaker) is not None
+        assert merger.add_state_for_merge(stronger) is None
+        assert len(merger.get_pending_states(5)) == 1
+        assert merger.stats.subsumption_hits >= 1
+
+    def test_new_weaker_state_replaces_existing_stronger(self):
+        """If stronger state is pending first, later weaker state replaces it."""
+        merger = StateMerger()
+
+        y = z3.Int("y")
+        c0 = y > 0
+        c1 = y < 100
+
+        stronger = VMState(pc=11)
+        stronger.local_vars["v"] = SymbolicValue.from_const(2)
+        stronger.add_constraint(c0)
+        stronger.add_constraint(c1)
+
+        weaker = VMState(pc=11)
+        weaker.local_vars["v"] = SymbolicValue.from_const(2)
+        weaker.add_constraint(c0)
+
+        assert merger.add_state_for_merge(stronger) is not None
+        returned = merger.add_state_for_merge(weaker)
+        assert returned is weaker
+        pending = merger.get_pending_states(11)
+        assert len(pending) == 1
+        assert pending[0] is weaker
+        assert merger.stats.subsumption_hits >= 1
+
 
 class TestVMStateMergeSemantics:
     """Tests for VMState merge semantics (conceptual)."""

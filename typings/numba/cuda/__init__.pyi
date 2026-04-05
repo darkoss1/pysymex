@@ -40,6 +40,8 @@ from numba import DeviceNDArray as DeviceNDArray
 @overload
 def to_device(ary: npt.NDArray[_ScalarType], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[_ScalarType]: ...
 @overload
+def to_device(ary: np.ndarray[tuple[int, ...], _ScalarType], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[_ScalarType]: ...
+@overload
 def to_device(ary: Sequence[int], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[np.int64]: ...
 @overload
 def to_device(ary: Sequence[float], stream: int | CUDAStream = 0, copy: bool = True) -> DeviceNDArray[np.float64]: ...
@@ -69,6 +71,20 @@ def managed_array(shape: _ShapeLike, dtype: _DTypeLike[_ScalarType] = ..., strid
 
 @overload
 def jit(func: _F) -> CUDADispatcher: ...
+@overload
+def jit(
+    signature: _Signature = ...,
+    *,
+    device: Literal[True],
+    inline: bool | Literal["always", "never"] = False,
+    link: list[str] = ...,
+    debug: bool = False,
+    opt: bool = True,
+    lineinfo: bool = False,
+    cache: bool = False,
+    fastmath: bool = False,
+    max_registers: int | None = None,
+) -> Callable[[_F], _F]: ...
 @overload
 def jit(
     signature: _Signature = ...,

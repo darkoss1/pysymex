@@ -1,10 +1,10 @@
-"""Tests for utility modules (security.py, _compat.py, _deps.py, _typing.py)."""
+"""Tests for utility modules (sandbox, _compat.py, _deps.py, _typing.py)."""
 from __future__ import annotations
 import pytest
 import dis
 
-# -- Security --
-from pysymex.security import (
+# -- Sandbox --
+from pysymex.sandbox import (
     SecurityError, PathTraversalError, ResourceLimitError,
     SecurityConfig, validate_path, validate_bounds, validate_config,
     get_safe_builtins, create_sandbox_namespace,

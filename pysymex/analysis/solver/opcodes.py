@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Z3 Engine — Bytecode opcode handlers.
 
@@ -180,7 +198,7 @@ class OpcodeHandlersMixin:
 
         val = SymValue(
             z3.Int(state.fresh_name(f"attr_{arg}")),
-            f"{obj_name if obj_name else '?'}.{arg}",
+            f"{obj_name or '?'}.{arg}",
             SymType.UNKNOWN,
             taint=(
                 obj_taint.propagate(f"attr:{arg}")
@@ -263,8 +281,8 @@ class OpcodeHandlersMixin:
     ) -> SymValue | None:
         """Op store attr."""
         if len(state.stack) >= 2:
+            _value = state.pop()
             obj = state.pop()
-            state.pop()
 
             if obj is not None and getattr(obj, "is_none", False):
                 self._add_crash(
@@ -368,7 +386,7 @@ class OpcodeHandlersMixin:
 
         result = SymValue(
             z3.Int(state.fresh_name("item")),
-            f"{container_name if container_name else '?'}[{index_name if index_name else '?'}]",
+            f"{container_name or '?'}[{index_name or '?'}]",
             SymType.UNKNOWN,
             taint=(
                 container_taint.propagate("subscr")
@@ -439,7 +457,6 @@ class OpcodeHandlersMixin:
             elif right_expr is not None and left_expr is not None and left_expr.eq(right_expr):
                 result = SymValue(z3.BoolVal(True), sym_type=SymType.BOOL)
             else:
-
                 result = SymValue(z3.Bool(state.fresh_name("is")), sym_type=SymType.BOOL)
         except z3.Z3Exception:
             logger.debug("Z3 IS_OP failed", exc_info=True)
@@ -633,10 +650,11 @@ class OpcodeHandlersMixin:
                 if popped is not None:
                     args.insert(0, popped)
 
-        if state.stack:
-            state.pop()
-
         func = state.pop() if state.stack else None
+        if func is not None and getattr(func, "is_none", False) and state.stack:
+            maybe_func = state.pop()
+            if maybe_func is not None:
+                func = maybe_func
 
         if func and func.name:
             call_sites.append(
@@ -683,16 +701,52 @@ class OpcodeHandlersMixin:
         flags = arg if isinstance(arg, int) else 0
         has_kwargs = (flags & 0x01) == 0x01
 
-        if has_kwargs and state.stack:
-            state.pop()
+        kwargs_val = state.pop() if has_kwargs and state.stack else None
+        starargs_val = state.pop() if state.stack else None
 
-        if state.stack:
-            state.pop()
+        func = state.pop() if state.stack else None
+        if func is not None and getattr(func, "is_none", False) and state.stack:
+            maybe_func = state.pop()
+            if maybe_func is not None:
+                func = maybe_func
 
-        if state.stack:
-            state.pop()
+        arg_values: list[SymValue] = []
+        if starargs_val is not None:
+            arg_values.append(starargs_val)
+        if kwargs_val is not None:
+            arg_values.append(kwargs_val)
 
-        state.push(SymValue(z3.Int(state.fresh_name("call")), sym_type=SymType.UNKNOWN))
+        if func and func.name:
+            call_sites.append(
+                CallSite(
+                    caller=self.current_function,
+                    callee=func.name,
+                    line=self.current_line,
+                    arguments=[a.name for a in arg_values],
+                    file_path=self.current_file,
+                )
+            )
+            if func.name in self.DANGEROUS_SINKS:
+                for a in arg_values:
+                    if getattr(a, "is_tainted", False):
+                        self._add_crash(
+                            BugType.TAINTED_SINK,
+                            z3.BoolVal(True),
+                            state,
+                            crashes,
+                            f"Tainted data passed to dangerous function: {func.name}",
+                            {},
+                            Severity.CRITICAL,
+                            getattr(a, "taint", None),
+                        )
+
+        state.push(
+            SymValue(
+                z3.Int(state.fresh_name("call")),
+                f"{func.name if func else '?'}(*args, **kwargs)" if func else "call(*args)",
+                SymType.UNKNOWN,
+            )
+        )
         return None
 
     def _op_PUSH_NULL(
@@ -946,7 +1000,7 @@ class OpcodeHandlersMixin:
             SymValue(
                 z3.Int(state.fresh_name("iter")),
                 sym_type=SymType.UNKNOWN,
-                taint=container_taint if container_taint else TaintInfo(),
+                taint=container_taint or TaintInfo(),
             )
         )
         return None
@@ -1112,7 +1166,7 @@ class OpcodeHandlersMixin:
                 SymValue(
                     z3.Int(state.fresh_name("unpack")),
                     sym_type=SymType.UNKNOWN,
-                    taint=seq_taint if seq_taint else TaintInfo(),
+                    taint=seq_taint or TaintInfo(),
                 )
             )
         return None

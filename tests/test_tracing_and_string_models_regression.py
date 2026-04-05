@@ -33,7 +33,7 @@ def test_start_session_normalizes_non_scalar_config_snapshot(tmp_path: Path):
         signature_str="(x: int)",
         initial_args={"x": "int"},
         config_snapshot={
-            "strategy": ExplorationStrategy.DFS,
+            "strategy": ExplorationStrategy.CHTD_NATIVE,
             "symbolic_args": {},
             "thresholds": [1, 2, 3],
             "none": None,

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Enhanced Models for Python list operations.
 This module provides relationship-preserving symbolic models for list methods.
 Instead of ignoring the effect of mutations, these models track:
@@ -12,7 +30,7 @@ Key improvements:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import z3
 
@@ -29,6 +47,7 @@ def _get_symbolic_list(arg: object, state: VMState) -> SymbolicList | None:
     if isinstance(arg, SymbolicList):
         return arg
     from pysymex.core.types_containers import SymbolicObject
+
     if isinstance(arg, SymbolicObject):
         addr = arg.address
         if addr in state.memory:
@@ -74,7 +93,10 @@ class ListAppendModel(FunctionModel):
             }
         else:
             import logging
-            logging.getLogger("pysymex").debug("ListAppendModel failed to find list in %s", args[0] if args else "None")
+
+            logging.getLogger("pysymex").debug(
+                "ListAppendModel failed to find list in %s", args[0] if args else "None"
+            )
         return ModelResult(
             value=SymbolicNone(),
             side_effects=side_effects,
@@ -103,13 +125,13 @@ class ListExtendModel(FunctionModel):
             if extension is not None:
                 new_len = z3.Int(f"extend_len_{state.pc}_{state.path_id}")
                 constraints.append(new_len == lst.z3_len + extension.z3_len)
-                # Ideally we should also model the array update, but for now length is most critical
+
                 new_list = lst.copy()
                 new_list.z3_len = new_len
             else:
                 new_list = lst.copy()
                 new_len = lst.z3_len
-            
+
             side_effects["list_mutation"] = {
                 "operation": "extend",
                 "original_list": lst,
@@ -142,7 +164,7 @@ class ListInsertModel(FunctionModel):
         if lst is not None:
             new_list = lst.copy()
             new_list.z3_len = lst.z3_len + 1
-            # Array update skipped for now as we don't have full symbolic array semantics yet
+
             side_effects["list_mutation"] = {
                 "operation": "insert",
                 "original_list": lst,
@@ -228,10 +250,10 @@ class ListPopModel(FunctionModel):
                 constraints.append(lst.in_bounds(index))
                 popped = lst[index]
                 result = popped
-            
+
             new_list = lst.copy()
             new_list.z3_len = lst.z3_len - 1
-            
+
             side_effects["list_mutation"] = {
                 "operation": "pop",
                 "original_list": lst,
@@ -293,7 +315,7 @@ class ListIndexModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, result_constraint = SymbolicValue.symbolic(f"list_index_{state .pc }")
+        result, result_constraint = SymbolicValue.symbolic(f"list_index_{state.pc}")
         constraints = [result_constraint, result.is_int, result.z3_int >= 0]
         side_effects: dict[str, object] = {}
         if lst is not None:
@@ -327,7 +349,7 @@ class ListCountModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, result_constraint = SymbolicValue.symbolic(f"list_count_{state .pc }")
+        result, result_constraint = SymbolicValue.symbolic(f"list_count_{state.pc}")
         constraints = [result_constraint, result.is_int, result.z3_int >= 0]
         if lst is not None:
             constraints.append(result.z3_int <= lst.z3_len)
@@ -415,7 +437,7 @@ class ListCopyModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, base_constraint = SymbolicList.symbolic(f"list_copy_{state .pc }")
+        result, base_constraint = SymbolicList.symbolic(f"list_copy_{state.pc}")
         constraints = [base_constraint]
         if lst is not None:
             constraints.append(result.z3_len == lst.z3_len)
@@ -441,7 +463,7 @@ class ListSliceModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, base_constraint = SymbolicList.symbolic(f"list_slice_{state .pc }")
+        result, base_constraint = SymbolicList.symbolic(f"list_slice_{state.pc}")
         constraints = [base_constraint]
         if lst is not None:
             constraints.append(result.z3_len <= lst.z3_len)
@@ -466,7 +488,7 @@ class ListContainsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, constraint = SymbolicValue.symbolic(f"list_contains_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"list_contains_{state.pc}")
         constraints = [constraint, result.is_bool]
         if lst is not None:
             constraints.append(z3.Implies(lst.z3_len == 0, z3.Not(result.z3_bool)))
@@ -491,7 +513,7 @@ class ListLenModel(FunctionModel):
         if lst is not None:
             result = lst.length()
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"list_len_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"list_len_{state.pc}")
         return ModelResult(
             value=result,
             constraints=[constraint, result.is_int, result.z3_int >= 0],
@@ -523,10 +545,9 @@ class ListSetitemModel(FunctionModel):
                     "condition": z3.Or(idx_val >= lst.z3_len, idx_val < -lst.z3_len),
                     "message": "list assignment index out of range",
                 }
-            
+
             new_list = lst.copy()
-            # Array update skipped for now
-            
+
             side_effects["list_mutation"] = {
                 "operation": "setitem",
                 "original_list": lst,
@@ -565,13 +586,13 @@ class ListDelitemModel(FunctionModel):
                         "condition": z3.Or(idx_val >= lst.z3_len, idx_val < -lst.z3_len),
                         "message": "list assignment index out of range",
                     }
-            
+
             new_list = lst.copy()
             new_len = z3.Int(f"list_len_{state.pc}_{state.path_id}")
             constraints.append(new_len == lst.z3_len - 1)
             constraints.append(new_len >= 0)
             new_list.z3_len = new_len
-            
+
             side_effects["list_mutation"] = {
                 "operation": "delitem",
                 "original_list": lst,
@@ -599,7 +620,7 @@ class ListAddModel(FunctionModel):
         """Apply list.__add__ method."""
         lst = _get_symbolic_list(args[0], state) if args else None
         other = _get_symbolic_list(args[1], state) if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"list_add_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"list_add_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if lst is not None and other is not None:
             constraints.append(result.z3_len == lst.z3_len + other.z3_len)
@@ -623,16 +644,19 @@ class ListMulModel(FunctionModel):
         """Apply list.__mul__ method."""
         lst = _get_symbolic_list(args[0], state) if args else None
         n = args[1] if len(args) > 1 else None
-        result, constraint = SymbolicList.symbolic(f"list_mul_{state .pc }")
+        result, constraint = SymbolicList.symbolic(f"list_mul_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
         if lst is not None and n is not None:
             n_val = getattr(n, "z3_int", None)
             if n_val is not None:
                 constraints.append(
-                    z3.If(
-                        n_val > 0,
-                        result.z3_len == lst.z3_len * n_val,
-                        result.z3_len == 0,
+                    cast(
+                        "z3.BoolRef",
+                        z3.If(
+                            n_val > 0,
+                            result.z3_len == lst.z3_len * n_val,
+                            result.z3_len == 0,
+                        ),
                     )
                 )
         return ModelResult(value=result, constraints=constraints)
@@ -653,7 +677,7 @@ class ListEqModel(FunctionModel):
         """Apply list.__eq__ method."""
         lst = _get_symbolic_list(args[0], state) if args else None
         other = _get_symbolic_list(args[1], state) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"list_eq_{state .pc }")
+        result, constraint = SymbolicValue.symbolic(f"list_eq_{state.pc}")
         constraints = [constraint, result.is_bool]
         if lst is not None and other is not None:
             constraints.append(z3.Implies(result.z3_bool, lst.z3_len == other.z3_len))

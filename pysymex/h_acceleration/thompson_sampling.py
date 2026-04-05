@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU-Accelerated Thompson Sampling for Path Scheduling.
 
 Provides Bayesian multi-armed bandit sampling using Beta distributions.
@@ -10,13 +28,15 @@ by balancing exploration of new paths with exploitation of known-good paths.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 
 from pysymex.h_acceleration.backends import BackendError
 
 if TYPE_CHECKING:
+    from numba import CUDADispatcher
     from numba.cuda.cudadrv.devicearray import DeviceNDArray
 
 __all__ = [
@@ -25,6 +45,7 @@ __all__ = [
     "create_sampler",
     "sample_thompson_cpu",
 ]
+
 
 @dataclass
 class BanditState:
@@ -37,8 +58,9 @@ class BanditState:
         betas: Beta parameters (failures + prior)
         num_arms: Number of bandit arms
     """
-    alphas: np.ndarray[tuple[int], np.dtype[np.float32]]
-    betas: np.ndarray[tuple[int], np.dtype[np.float32]]
+
+    alphas: npt.NDArray[np.float32]
+    betas: npt.NDArray[np.float32]
     num_arms: int
 
     @classmethod
@@ -72,16 +94,19 @@ class BanditState:
             reward: Reward value (0.0 to 1.0)
         """
         self.alphas[arm] += reward
-        self.betas[arm] += (1.0 - reward)
+        self.betas[arm] += 1.0 - reward
 
-    def get_means(self) -> np.ndarray[tuple[int], np.dtype[np.float32]]:
+    def get_means(self) -> npt.NDArray[np.float32]:
         """Compute mean success probability for each arm.
 
         Returns:
             Array of posterior means
         """
-        result: np.ndarray[tuple[int], np.dtype[np.float32]] = (self.alphas / (self.alphas + self.betas)).astype(np.float32)
+        result: npt.NDArray[np.float32] = (self.alphas / (self.alphas + self.betas)).astype(
+            np.float32
+        )
         return result
+
 
 def sample_thompson_cpu(
     state: BanditState,
@@ -105,11 +130,12 @@ def sample_thompson_cpu(
     samples = rng.beta(state.alphas, state.betas)
     return int(np.argmax(samples))
 
+
 def sample_thompson_batch_cpu(
     state: BanditState,
     num_samples: int,
     rng: np.random.Generator | None = None,
-) -> np.ndarray[tuple[int], np.dtype[np.int32]]:
+) -> npt.NDArray[np.int32]:
     """Batch Thompson sampling using CPU.
 
     Draws multiple independent samples for parallel evaluation.
@@ -133,19 +159,22 @@ def sample_thompson_batch_cpu(
 
     return np.argmax(samples, axis=1).astype(np.int32)
 
+
 _cuda_available: bool = False
-_cuda_kernel: dict[str, Any] | None = None
+_cuda_kernel: dict[str, CUDADispatcher] | None = None
 try:
     import math
 
     from numba import cuda
     from numba.cuda.random import xoroshiro128p_uniform_float32
+
     _cuda_available = cuda.is_available()
 
     if _cuda_available:
+
         @cuda.jit(device=True)
         def _beta_sample_device(
-            rng_states: DeviceNDArray,
+            rng_states: DeviceNDArray[np.uint64],
             thread_id: int,
             alpha: float,
             beta: float,
@@ -206,11 +235,11 @@ try:
 
         @cuda.jit(device=True)
         def _gamma_sample_small(
-            rng_states: DeviceNDArray,
+            rng_states: DeviceNDArray[np.uint64],
             thread_id: int,
             shape: float,
         ) -> float:
-            d = shape - 1.0/3.0
+            d = shape - 1.0 / 3.0
             c = 1.0 / math.sqrt(9.0 * d)
 
             while True:
@@ -231,7 +260,7 @@ try:
 
         @cuda.jit(device=True)
         def _standard_normal(
-            rng_states: DeviceNDArray,
+            rng_states: DeviceNDArray[np.uint64],
             thread_id: int,
         ) -> float:
             u1 = xoroshiro128p_uniform_float32(rng_states, thread_id)
@@ -244,23 +273,21 @@ try:
 
         @cuda.jit
         def _thompson_sample_kernel(
-            alphas: DeviceNDArray,
-            betas: DeviceNDArray,
-            samples: DeviceNDArray,
-            rng_states: DeviceNDArray,
+            alphas: DeviceNDArray[np.float32],
+            betas: DeviceNDArray[np.float32],
+            samples: DeviceNDArray[np.float32],
+            rng_states: DeviceNDArray[np.uint64],
         ) -> None:
             tid = cuda.grid(1)
             if tid < alphas.shape[0]:
-                samples[tid] = _beta_sample_device(
-                    rng_states, tid, alphas[tid], betas[tid]
-                )
+                samples[tid] = _beta_sample_device(rng_states, tid, alphas[tid], betas[tid])
 
         @cuda.jit
         def _thompson_batch_kernel(
-            alphas: DeviceNDArray,
-            betas: DeviceNDArray,
-            selections: DeviceNDArray,
-            rng_states: DeviceNDArray,
+            alphas: DeviceNDArray[np.float32],
+            betas: DeviceNDArray[np.float32],
+            selections: DeviceNDArray[np.int32],
+            rng_states: DeviceNDArray[np.uint64],
             num_samples: int,
         ) -> None:
             tid = cuda.grid(1)
@@ -273,8 +300,7 @@ try:
 
             for arm in range(num_arms):
                 sample = _beta_sample_device(
-                    rng_states, tid * num_arms + arm,
-                    alphas[arm], betas[arm]
+                    rng_states, tid * num_arms + arm, alphas[arm], betas[arm]
                 )
                 if sample > best_sample:
                     best_sample = sample
@@ -283,12 +309,13 @@ try:
             selections[tid] = best_arm
 
         _cuda_kernel = {
-            'sample': _thompson_sample_kernel,
-            'batch': _thompson_batch_kernel,
+            "sample": _thompson_sample_kernel,
+            "batch": _thompson_batch_kernel,
         }
 
 except ImportError:
     pass
+
 
 class ThompsonSampler:
     """GPU-accelerated Thompson sampler with Beta priors.
@@ -322,14 +349,41 @@ class ThompsonSampler:
         self.state = BanditState.create(num_arms, prior_alpha, prior_beta)
         self._use_gpu = use_gpu and _cuda_available
         self._rng = np.random.default_rng(seed)
-        self._rng_states: DeviceNDArray | None = None
+        self._rng_states: DeviceNDArray[np.uint64] | None = None
+        self._device_alphas: DeviceNDArray[np.float32] | None = None
+        self._device_betas: DeviceNDArray[np.float32] | None = None
+        self._device_samples: DeviceNDArray[np.float32] | None = None
+        self._device_batch_selections: DeviceNDArray[np.int32] | None = None
+        self._rng_states_capacity = 0
+        self._batch_rng_states_capacity = 0
+        self._state_dirty = True
 
         if self._use_gpu:
             from numba.cuda.random import create_xoroshiro128p_states
+
+            self._rng_states_capacity = max(num_arms, 1024)
             self._rng_states = create_xoroshiro128p_states(
-                max(num_arms, 1024),
+                self._rng_states_capacity,
                 seed=seed or 42,
             )
+
+    def _sync_state_to_device(self) -> None:
+        """Upload posterior parameters to GPU only when they have changed."""
+        if not self._use_gpu:
+            return
+        from numba import cuda
+
+        if self._device_alphas is None:
+            self._device_alphas = cuda.to_device(self.state.alphas)
+        else:
+            self._device_alphas.copy_to_device(self.state.alphas)
+
+        if self._device_betas is None:
+            self._device_betas = cuda.to_device(self.state.betas)
+        else:
+            self._device_betas.copy_to_device(self.state.betas)
+
+        self._state_dirty = False
 
     @property
     def num_arms(self) -> int:
@@ -357,29 +411,32 @@ class ThompsonSampler:
         """
         from numba import cuda
 
-        d_alphas = cuda.to_device(self.state.alphas)
-        d_betas = cuda.to_device(self.state.betas)
-        d_samples: DeviceNDArray = cuda.device_array(self.num_arms, dtype=np.float32)
+        if self._state_dirty or self._device_alphas is None or self._device_betas is None:
+            self._sync_state_to_device()
+
+        if self._device_alphas is None or self._device_betas is None:
+            raise BackendError("CUDA state buffers unavailable")
+
+        if self._device_samples is None or self._device_samples.shape[0] < self.num_arms:
+            self._device_samples = cuda.device_array(self.num_arms, dtype=np.float32)
 
         threads = max(1, min(256, self.num_arms))
         blocks = (self.num_arms + threads - 1) // threads
         if blocks == 1 and self.num_arms > 1:
-            # Avoid single-block launches on tiny workloads; this reduces
-            # Numba's low-occupancy warnings in test/dev environments.
             threads = max(1, self.num_arms // 2)
             blocks = (self.num_arms + threads - 1) // threads
 
         if _cuda_kernel is None:
             raise BackendError("CUDA kernel not available")
 
-        _cuda_kernel['sample'][blocks, threads](
-            d_alphas, d_betas, d_samples, self._rng_states
+        _cuda_kernel["sample"][blocks, threads](
+            self._device_alphas, self._device_betas, self._device_samples, self._rng_states
         )
 
-        samples = d_samples.copy_to_host()
+        samples = self._device_samples.copy_to_host()
         return int(np.argmax(samples))
 
-    def sample_batch(self, num_samples: int) -> np.ndarray[tuple[int], np.dtype[np.int32]]:
+    def sample_batch(self, num_samples: int) -> npt.NDArray[np.int32]:
         """Draw batch of Thompson samples.
 
         Args:
@@ -392,7 +449,7 @@ class ThompsonSampler:
             return self._sample_batch_gpu(num_samples)
         return sample_thompson_batch_cpu(self.state, num_samples, self._rng).astype(np.int32)
 
-    def _sample_batch_gpu(self, num_samples: int) -> np.ndarray[tuple[int], np.dtype[np.int32]]:
+    def _sample_batch_gpu(self, num_samples: int) -> npt.NDArray[np.int32]:
         """Internal GPU batch sampling using CUDA kernel.
 
         Args:
@@ -404,31 +461,44 @@ class ThompsonSampler:
         from numba import cuda
         from numba.cuda.random import create_xoroshiro128p_states
 
-        rng_states = create_xoroshiro128p_states(
-            num_samples * self.num_arms,
-            seed=int(self._rng.integers(2**31)),
-        )
+        if self._state_dirty or self._device_alphas is None or self._device_betas is None:
+            self._sync_state_to_device()
 
-        d_alphas = cuda.to_device(self.state.alphas)
-        d_betas = cuda.to_device(self.state.betas)
-        d_selections: DeviceNDArray = cuda.device_array(num_samples, dtype=np.int32)
+        if self._device_alphas is None or self._device_betas is None:
+            raise BackendError("CUDA state buffers unavailable")
+
+        required_rng_states = max(1, num_samples * self.num_arms)
+        if self._rng_states is None or required_rng_states > self._batch_rng_states_capacity:
+            self._rng_states = create_xoroshiro128p_states(
+                required_rng_states,
+                seed=int(self._rng.integers(2**31)),
+            )
+            self._batch_rng_states_capacity = required_rng_states
+
+        if (
+            self._device_batch_selections is None
+            or self._device_batch_selections.shape[0] < num_samples
+        ):
+            self._device_batch_selections = cuda.device_array(num_samples, dtype=np.int32)
 
         threads = max(1, min(256, num_samples))
         blocks = (num_samples + threads - 1) // threads
         if blocks == 1 and num_samples > 1:
-            # Same policy as single-sample path: prefer >=2 blocks for
-            # small batches to avoid occupancy warnings.
             threads = max(1, num_samples // 2)
             blocks = (num_samples + threads - 1) // threads
 
         if _cuda_kernel is None:
             raise BackendError("CUDA kernel not available")
 
-        _cuda_kernel['batch'][blocks, threads](
-            d_alphas, d_betas, d_selections, rng_states, num_samples
+        _cuda_kernel["batch"][blocks, threads](
+            self._device_alphas,
+            self._device_betas,
+            self._device_batch_selections,
+            self._rng_states,
+            num_samples,
         )
 
-        return d_selections.copy_to_host()
+        return self._device_batch_selections[:num_samples].copy_to_host()
 
     def update(self, arm: int, reward: float) -> None:
         """Update arm statistics with reward observation.
@@ -438,8 +508,9 @@ class ThompsonSampler:
             reward: Observed reward (0.0 to 1.0)
         """
         self.state.update(arm, reward)
+        self._state_dirty = True
 
-    def get_means(self) -> np.ndarray[tuple[int], np.dtype[np.float32]]:
+    def get_means(self) -> npt.NDArray[np.float32]:
         """Get posterior mean for each arm.
 
         Returns:
@@ -450,7 +521,7 @@ class ThompsonSampler:
     def get_upper_confidence_bounds(
         self,
         quantile: float = 0.95,
-    ) -> np.ndarray[tuple[int], np.dtype[np.float64]]:
+    ) -> npt.NDArray[np.float64]:
         """Compute upper confidence bounds using Beta quantiles.
 
         Args:
@@ -462,11 +533,12 @@ class ThompsonSampler:
         try:
             from scipy import stats
         except ImportError:
-            raise BackendError("SciPy required for UCBs")
-        ucbs: np.ndarray[tuple[int], np.dtype[np.float64]] = np.zeros(self.num_arms)
+            raise BackendError("SciPy required for UCBs (pip install scipy)") from None
+        ucbs: npt.NDArray[np.float64] = np.zeros(self.num_arms)
         for i in range(self.num_arms):
             ucbs[i] = stats.beta.ppf(quantile, self.state.alphas[i], self.state.betas[i])
         return ucbs
+
 
 def create_sampler(
     num_arms: int,

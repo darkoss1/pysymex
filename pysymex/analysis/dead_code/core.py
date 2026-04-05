@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Dead code detector implementations.
 
 Provides all concrete detector classes used by DeadCodeAnalyzer:
@@ -13,9 +31,11 @@ Provides all concrete detector classes used by DeadCodeAnalyzer:
 from __future__ import annotations
 
 import ast
+import dis
 import inspect
 from collections import defaultdict
 from collections.abc import Sequence
+from types import CodeType
 from typing import cast
 
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
@@ -38,7 +58,7 @@ class UnreachableCodeDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Detect unreachable code in function."""
@@ -73,10 +93,8 @@ class UnreachableCodeDetector:
                 elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
                     current_line = instr.positions.lineno
             if instr.offset in jump_targets or instr.opname == "PUSH_EXC_INFO":
-
                 if unreachable and unreachable_start:
                     if instr.opname != "PUSH_EXC_INFO":
-
                         has_user_code = self._region_has_user_code(
                             instructions,
                             unreachable_start_idx,
@@ -107,7 +125,7 @@ class UnreachableCodeDetector:
                         terminator_line = current_line
                         is_next_start = next_instr.starts_line
                         if is_next_start:
-                            if not isinstance(is_next_start, bool):
+                            if type(is_next_start) is int:
                                 unreachable_start = is_next_start
                             elif (
                                 hasattr(next_instr, "positions")
@@ -120,7 +138,6 @@ class UnreachableCodeDetector:
                         else:
                             unreachable_start = current_line
         if unreachable and unreachable_start:
-
             if (
                 is_genexpr
                 or is_generator
@@ -132,7 +149,6 @@ class UnreachableCodeDetector:
             ):
                 pass
             else:
-
                 has_user_code = self._region_has_user_code(
                     instructions,
                     unreachable_start_idx,
@@ -152,7 +168,7 @@ class UnreachableCodeDetector:
 
     @staticmethod
     def _region_has_user_code(
-        instructions: Sequence[object],
+        instructions: Sequence[dis.Instruction],
         start_idx: int | None,
         end_idx: int,
         terminator_line: int | None,
@@ -184,7 +200,7 @@ class UnreachableCodeDetector:
 
     @staticmethod
     def _is_only_implicit_return(
-        instructions: Sequence[object],
+        instructions: Sequence[dis.Instruction],
         start_idx: int | None,
         end_idx: int,
     ) -> bool:
@@ -228,7 +244,7 @@ class UnusedVariableDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Detect unused variables."""
@@ -260,7 +276,6 @@ class UnusedVariableDetector:
                 uses.add(str(arg))
 
             elif opname == "STORE_FAST_LOAD_FAST":
-
                 if isinstance(arg, tuple):
                     _arg = cast("tuple[object, ...]", arg)
                     sname, lname = _arg
@@ -293,13 +308,13 @@ class UnusedVariableDetector:
                             line=line,
                             name=name,
                             pc=pc,
-                            message=f"Variable '{name }' is assigned but never used",
+                            message=f"Variable '{name}' is assigned but never used",
                         )
                     )
         return dead_code
 
     @staticmethod
-    def _collect_nested_uses(code: object) -> set[str]:
+    def _collect_nested_uses(code: CodeType) -> set[str]:
         """Collect all variable names referenced in nested code objects."""
         uses: set[str] = set()
         for const in code.co_consts:
@@ -329,6 +344,11 @@ class UnusedVariableDetector:
                 uses.update(const.co_freevars)
         return uses
 
+    @staticmethod
+    def collect_nested_uses(code: CodeType) -> set[str]:
+        """Public wrapper for nested-use collection."""
+        return UnusedVariableDetector._collect_nested_uses(code)
+
 
 class DeadStoreDetector:
     """
@@ -337,7 +357,7 @@ class DeadStoreDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Detect dead stores.
@@ -363,7 +383,6 @@ class DeadStoreDetector:
         loop_vars: set[str] = set()
         for i, instr in enumerate(instructions):
             if instr.opname in {"FOR_ITER", "GET_ITER"}:
-
                 for j in range(i + 1, min(i + 4, len(instructions))):
                     if instructions[j].opname in {"STORE_FAST", "STORE_NAME"}:
                         loop_vars.add(str(instructions[j].argval))
@@ -379,7 +398,6 @@ class DeadStoreDetector:
                                 loop_vars.add(str(n))
                         break
                     if instructions[j].opname == "UNPACK_SEQUENCE":
-
                         unpack_count = instructions[j].argval
                         if not isinstance(unpack_count, int):
                             break
@@ -422,7 +440,7 @@ class DeadStoreDetector:
                             line=prev_line,
                             name=name,
                             pc=prev_pc,
-                            message=f"Value of '{name }' is overwritten without being read",
+                            message=f"Value of '{name}' is overwritten without being read",
                             confidence=0.8,
                         )
                     )
@@ -541,7 +559,7 @@ class UnusedFunctionDetector:
                         file=file_path,
                         line=0,
                         name=name,
-                        message=f"Function '{name }' is defined but never called",
+                        message=f"Function '{name}' is defined but never called",
                         confidence=0.7,
                     )
                 )
@@ -556,7 +574,7 @@ class UnusedParameterDetector:
     IGNORED_NAMES: set[str] = {"self", "cls", "_", "*args", "**kwargs"}
 
     @staticmethod
-    def _is_stub_body(code: object) -> bool:
+    def _is_stub_body(code: CodeType) -> bool:
         """Check if a function body is a stub (only ``...``, ``pass``, or ``raise NotImplementedError``).
 
         Protocol methods and abstract stubs inherently don't use their
@@ -592,7 +610,7 @@ class UnusedParameterDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Detect unused parameters."""
@@ -617,7 +635,7 @@ class UnusedParameterDetector:
                     for n in cast("tuple[object, ...]", instr.argval):
                         used.add(str(n))
 
-        nested_uses = UnusedVariableDetector._collect_nested_uses(code)
+        nested_uses = UnusedVariableDetector.collect_nested_uses(code)
         for param in params:
             if param in self.IGNORED_NAMES:
                 continue
@@ -630,7 +648,7 @@ class UnusedParameterDetector:
                         file=file_path,
                         line=code.co_firstlineno,
                         name=param,
-                        message=f"Parameter '{param }' is never used",
+                        message=f"Parameter '{param}' is never used",
                         confidence=0.9,
                     )
                 )
@@ -670,6 +688,7 @@ class UnusedImportDetector:
 
         class NameCollector(ast.NodeVisitor):
             """Visitor for collecting variable names from an AST node."""
+
             def visit_Name(self, node: ast.Name) -> None:
                 """Visit name."""
                 used.add(node.id)
@@ -692,7 +711,7 @@ class UnusedImportDetector:
                         file=file_path,
                         line=line,
                         name=name,
-                        message=f"Import '{name }' is never used",
+                        message=f"Import '{name}' is never used",
                         confidence=0.95,
                     )
                 )
@@ -706,7 +725,7 @@ class RedundantConditionDetector:
 
     def detect(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[DeadCode]:
         """Detect redundant conditions."""
@@ -717,7 +736,7 @@ class RedundantConditionDetector:
         for instr in instructions:
             is_start = instr.starts_line
             if is_start:
-                if not isinstance(is_start, bool):
+                if type(is_start) is int:
                     current_line = is_start
                 elif hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
                     current_line = instr.positions.lineno
@@ -735,7 +754,6 @@ class RedundantConditionDetector:
                 else:
                     stack.append(None)
             elif opname == "TO_BOOL":
-
                 if stack:
                     stack[-1] = None
             elif opname in {
@@ -747,7 +765,6 @@ class RedundantConditionDetector:
                 "FOR_ITER",
                 "END_SEND",
             }:
-
                 stack.clear()
             elif opname in {
                 "POP_JUMP_IF_TRUE",
@@ -763,7 +780,7 @@ class RedundantConditionDetector:
                                 kind=DeadCodeKind.REDUNDANT_CONDITION,
                                 file=file_path,
                                 line=current_line,
-                                message=f"Condition is always {cond }",
+                                message=f"Condition is always {cond}",
                                 confidence=0.95,
                             )
                         )

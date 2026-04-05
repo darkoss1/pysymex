@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Output formatters for PySyMex results."""
 
 from __future__ import annotations
@@ -52,7 +70,7 @@ class TextFormatter(Formatter):
         "INVALID_ARGUMENT": "🔵 INFO",
     }
 
-    def __init__(self, color: bool = True, verbose: bool = False):
+    def __init__(self, color: bool = True, verbose: bool = False) -> None:
         """Initialise the text formatter.
 
         Args:
@@ -144,7 +162,7 @@ class JSONFormatter(Formatter):
     name = "json"
     extension = ".json"
 
-    def __init__(self, indent: int = 2, include_constraints: bool = False):
+    def __init__(self, indent: int = 2, include_constraints: bool = False) -> None:
         """Initialise the JSON formatter.
 
         Args:
@@ -328,5 +346,22 @@ def format_result(
             return json.dumps(result.to_sarif(), indent=2)
         return "{}"
     formatter_class = formatters.get(format_type.lower(), TextFormatter)
-    formatter = formatter_class(**kwargs)
+    if formatter_class is TextFormatter:
+        color = kwargs.get("color", True)
+        verbose = kwargs.get("verbose", False)
+        formatter = TextFormatter(
+            color=color if isinstance(color, bool) else True,
+            verbose=verbose if isinstance(verbose, bool) else False,
+        )
+    elif formatter_class is JSONFormatter:
+        indent = kwargs.get("indent", 2)
+        include_constraints = kwargs.get("include_constraints", False)
+        formatter = JSONFormatter(
+            indent=indent if isinstance(indent, int) else 2,
+            include_constraints=(
+                include_constraints if isinstance(include_constraints, bool) else False
+            ),
+        )
+    else:
+        formatter = formatter_class()
     return formatter.format(result)

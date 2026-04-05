@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Z3 Engine — Graph and state infrastructure.
 
@@ -9,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from types import CodeType
 
 from pysymex.analysis.solver.types import BasicBlock, CallSite, SymValue
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
@@ -46,7 +65,7 @@ class CallGraph:
         """Find all recursive functions (direct or indirect)."""
         recursive: set[str] = set()
 
-        def dfs(start: str, current: str, visited: set[str]):
+        def dfs(start: str, current: str, visited: set[str]) -> None:
             """Dfs."""
             if current in visited:
                 if current == start:
@@ -64,7 +83,7 @@ class CallGraph:
     def topological_order(self) -> list[str]:
         """Get functions in dependency order (leaves first)."""
         in_degree: defaultdict[str, int] = defaultdict(int)
-        for _caller, callees in self.calls.items():
+        for callees in self.calls.values():
             for callee in callees:
                 in_degree[callee] += 1
         queue: list[str] = [f for f in self.calls if in_degree[f] == 0]
@@ -115,7 +134,7 @@ class CFGBuilder:
     )
     TERMINAL_OPS = frozenset({"RETURN_VALUE", "RETURN_CONST", "RAISE_VARARGS", "RERAISE"})
 
-    def build(self, code: object) -> dict[int, BasicBlock]:
+    def build(self, code: CodeType) -> dict[int, BasicBlock]:
         """Build CFG with dominance info."""
         instrs = _cached_get_instructions(code)
         if not instrs:
@@ -138,7 +157,7 @@ class CFGBuilder:
         self._detect_loops(blocks)
         return blocks
 
-    def _build_edges(self, blocks: dict[int, BasicBlock], off_to_idx: dict[int, int]):
+    def _build_edges(self, blocks: dict[int, BasicBlock], off_to_idx: dict[int, int]) -> None:
         """Build edges between basic blocks."""
         sorted_ids = sorted(blocks.keys())
         for bid, block in blocks.items():
@@ -152,6 +171,10 @@ class CFGBuilder:
                 "POP_JUMP_IF_TRUE",
                 "POP_JUMP_IF_NONE",
                 "POP_JUMP_IF_NOT_NONE",
+                "JUMP_IF_TRUE_OR_POP",
+                "JUMP_IF_FALSE_OR_POP",
+                "FOR_ITER",
+                "SEND",
             ):
                 if idx + 1 < len(sorted_ids):
                     succ_id = sorted_ids[idx + 1]
@@ -174,7 +197,7 @@ class CFGBuilder:
                     block.successors.append((succ_id, "uncond"))
                     blocks[succ_id].predecessors.append(bid)
 
-    def _compute_dominators(self, blocks: dict[int, BasicBlock]):
+    def _compute_dominators(self, blocks: dict[int, BasicBlock]) -> None:
         """Compute dominator sets for each block."""
         if not blocks:
             return
@@ -206,9 +229,9 @@ class CFGBuilder:
                     block.dominators = new_dom
                     changed = True
 
-    def _detect_loops(self, blocks: dict[int, BasicBlock]):
+    def _detect_loops(self, blocks: dict[int, BasicBlock]) -> None:
         """Detect loop headers using back edges."""
-        for _bid, block in blocks.items():
+        for block in blocks.values():
             for succ_id, _ in block.successors:
                 if succ_id in block.dominators:
                     blocks[succ_id].loop_header = True
@@ -219,7 +242,7 @@ class SymbolicState:
     Manages symbolic execution state with rich tracking.
     """
 
-    def __init__(self, parent: SymbolicState | None = None):
+    def __init__(self, parent: SymbolicState | None = None) -> None:
         self.parent = parent
         self.variables: dict[str, SymValue] = {}
         self.stack: list[SymValue] = []
@@ -241,11 +264,11 @@ class SymbolicState:
     def fresh_name(self, prefix: str = "v") -> str:
         """Generate a fresh unique name."""
         self._counter += 1
-        return f"{prefix }_{self ._counter }"
+        return f"{prefix}_{self._counter}"
 
     _MAX_CONSTRAINTS = 500
 
-    def add_constraint(self, constraint: object):
+    def add_constraint(self, constraint: object) -> None:
         """Add a path constraint."""
         if constraint is not None and len(self.path_constraints) < self._MAX_CONSTRAINTS:
             self.path_constraints.append(constraint)
@@ -254,11 +277,11 @@ class SymbolicState:
         """Get variable by name."""
         return self.variables.get(name)
 
-    def set_var(self, name: str, value: SymValue):
+    def set_var(self, name: str, value: SymValue) -> None:
         """Set variable value."""
         self.variables[name] = value
 
-    def push(self, value: SymValue):
+    def push(self, value: SymValue) -> None:
         """Push value onto stack."""
         self.stack.append(value)
 

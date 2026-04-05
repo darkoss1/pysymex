@@ -227,16 +227,16 @@ class TestConcolicExecutorInit:
     def test_default_params(self):
         executor = ConcolicExecutor()
         assert executor.max_iterations == 100
-        assert executor.strategy == "dfs"
+        assert executor.strategy == "adaptive"
 
     def test_custom_params(self):
-        executor = ConcolicExecutor(max_iterations=10, strategy="bfs", max_time_seconds=5.0)
+        executor = ConcolicExecutor(max_iterations=10, strategy="random", max_time_seconds=5.0)
         assert executor.max_iterations == 10
-        assert executor.strategy == "bfs"
+        assert executor.strategy == "random"
         assert executor.max_time_seconds == 5.0
 
     def test_strategies(self):
-        for strat in ("dfs", "bfs", "random"):
+        for strat in ("chtd_native", "random"):
             executor = ConcolicExecutor(strategy=strat)
             assert executor.strategy == strat
 

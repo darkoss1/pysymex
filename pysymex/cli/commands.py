@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Non-scan CLI commands for PySyMex (analyze, benchmark, verify, etc.)."""
 
 from __future__ import annotations
@@ -5,11 +23,92 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Protocol, cast
 
 _Namespace = argparse.Namespace
 logger = logging.getLogger(__name__)
+
+
+def _load_namespace_for_cli(filepath: Path, *, use_sandbox: bool) -> dict[str, object]:
+    """Load a Python module namespace for CLI commands.
+
+    When ``use_sandbox`` is enabled, source is compiled through the strict
+    sandbox bridge and executed with hardened builtins.
+    """
+    if use_sandbox:
+        from pysymex.sandbox.bridge import extract_bytecode
+        from pysymex.sandbox.execution import get_hardened_builtins
+
+        bytecode_blob = extract_bytecode(
+            filepath.read_bytes(),
+            str(filepath),
+            sandbox_config={"allow_compat_fallback": True},
+        )
+        compiled = bytecode_blob.reconstruct()
+        namespace: dict[str, object] = {
+            "__builtins__": get_hardened_builtins(),
+            "__name__": "__main__",
+            "__file__": str(filepath),
+        }
+        exec(compiled, namespace)
+        return namespace
+
+    from pysymex.sandbox.execution import hardened_exec
+
+    source = filepath.read_text(encoding="utf-8")
+    return hardened_exec(source, str(filepath))
+
+
+def _run_cli_command_sandboxed(command: str, args: _Namespace) -> int:
+    """Dispatch CLI commands through the sandbox-aware execution path."""
+    sandbox_args = argparse.Namespace(**vars(args))
+    sandbox_args._sandbox_dispatch = True
+    sandbox_args.sandbox = True
+
+    if command == "verify":
+        return cmd_verify(sandbox_args)
+    if command == "concolic":
+        return cmd_concolic(sandbox_args)
+
+    raise ValueError(f"Unsupported sandboxed command: {command}")
+
+
+class _RunCiCheckProtocol(Protocol):
+    def __call__(
+        self,
+        *,
+        files: list[str] | tuple[str, ...] | object,
+        fail_on: object,
+        sarif_output: str | None,
+    ) -> int: ...
+
+
+class _VerifiedConfigFactory(Protocol):
+    def __call__(self, **kwargs: object) -> object: ...
+
+
+class _TerminationProofProtocol(Protocol):
+    status: object
+    message: str
+
+
+class _VerifiedExecutionResultProtocol(Protocol):
+    function_name: str
+    paths_explored: int
+    paths_completed: int
+    arithmetic_issues: list[object]
+    contract_issues: list[object]
+    termination_proof: _TerminationProofProtocol | None
+
+
+class _VerifiedExecutorProtocol(Protocol):
+    def execute_function(self, func: Callable[..., object]) -> _VerifiedExecutionResultProtocol: ...
+
+
+class _VerifiedExecutorFactory(Protocol):
+    def __call__(self, config: object) -> _VerifiedExecutorProtocol: ...
 
 
 def cmd_analyze(args: _Namespace) -> int:
@@ -28,7 +127,7 @@ def cmd_analyze(args: _Namespace) -> int:
 
     filepath = Path(args.file)
     if not filepath.exists():
-        print(f"\u274c Error: File not found: {filepath }", file=sys.stderr)
+        print(f"\u274c Error: File not found: {filepath}", file=sys.stderr)
         return 1
     symbolic_args: dict[str, str] = {}
     if args.args:
@@ -37,7 +136,7 @@ def cmd_analyze(args: _Namespace) -> int:
                 name, type_hint = arg.split(":", 1)
                 symbolic_args[name.strip()] = type_hint.strip()
     if args.verbose:
-        print(f"\U0001f50d Analyzing {args .function }() in {filepath }")
+        print(f"\U0001f50d Analyzing {args.function}() in {filepath}")
     try:
         result = analyze_file(
             filepath=filepath,
@@ -51,12 +150,12 @@ def cmd_analyze(args: _Namespace) -> int:
         if args.output:
             Path(args.output).write_text(output, encoding="utf-8")
             if args.verbose:
-                print(f"\U0001f4c4 Report saved to: {args .output }")
+                print(f"\U0001f4c4 Report saved to: {args.output}")
         else:
             print(output)
         return 1 if result.has_issues() else 0
     except (ValueError, TypeError, SyntaxError, OSError) as e:
-        print(f"\u274c Error analyzing {filepath }: {e }", file=sys.stderr)
+        print(f"\u274c Error analyzing {filepath}: {e}", file=sys.stderr)
         return 1
 
 
@@ -77,15 +176,16 @@ def cmd_benchmark(args: _Namespace) -> int:
 
     output_path = Path(args.output) if args.output else None
     baseline_path = Path(args.baseline) if args.baseline else None
+    run_benchmarks_fn = cast("Callable[..., int]", run_benchmarks)
     try:
-        return run_benchmarks(
+        return run_benchmarks_fn(
             output_path=output_path,
             baseline_path=baseline_path,
             format=args.format,
             iterations=args.iterations,
         )
     except Exception as e:
-        print(f"\u274c Error running benchmarks: {e }", file=sys.stderr)
+        print(f"\u274c Error running benchmarks: {e}", file=sys.stderr)
         return 1
 
 
@@ -195,7 +295,7 @@ complete -c PySyMex -n "__fish_seen_subcommand_from scan analyze" -a "(__fish_co
         print(completions[shell])
         return 0
     else:
-        print(f"Unknown shell: {shell }", file=sys.stderr)
+        print(f"Unknown shell: {shell}", file=sys.stderr)
         return 1
 
 
@@ -222,7 +322,8 @@ def cmd_check(args: _Namespace) -> int:
         "critical": Severity.CRITICAL,
     }
     fail_on = severity_map.get(args.fail_on, Severity.HIGH)
-    return run_ci_check(
+    run_ci_check_fn = cast("_RunCiCheckProtocol", run_ci_check)
+    return run_ci_check_fn(
         files=args.paths,
         fail_on=fail_on,
         sarif_output=getattr(args, "sarif", None),
@@ -239,8 +340,11 @@ def cmd_verify(args: _Namespace) -> int:
 
     filepath = Path(args.file)
     if not filepath.exists():
-        print(f"\u274c Error: File not found: {filepath }", file=sys.stderr)
+        print(f"\u274c Error: File not found: {filepath}", file=sys.stderr)
         return 1
+
+    if getattr(args, "sandbox", True) and not getattr(args, "_sandbox_dispatch", False):
+        return _run_cli_command_sandboxed("verify", args)
 
     print(
         "\u26a0\ufe0f  EXPERIMENTAL FEATURE: Contract verification is in preview.", file=sys.stderr
@@ -248,73 +352,79 @@ def cmd_verify(args: _Namespace) -> int:
     print("    Results may be incomplete or inaccurate.\n", file=sys.stderr)
 
     try:
-
-        from pysymex.security import (
-            create_sandbox_namespace,
-            get_safe_builtins,
-            make_restricted_import,
+        namespace = _load_namespace_for_cli(
+            filepath,
+            use_sandbox=bool(getattr(args, "sandbox", True)),
         )
-
-        source = filepath.read_text(encoding="utf-8")
-        compiled = compile(source, str(filepath), "exec")
-        safe_builtins = get_safe_builtins()
-        safe_builtins["__import__"] = make_restricted_import()
-        namespace = create_sandbox_namespace(allow_builtins=False)
-        namespace["__builtins__"] = safe_builtins
-        namespace["__name__"] = "__main__"
-        exec(compiled, namespace)
 
         analyzer = ContractAnalyzer()
 
-        verified_executor_cls = None
-        VerifiedExecutionConfig: object = None
+        verified_executor_cls: _VerifiedExecutorFactory | None = None
+        verified_execution_config_cls: _VerifiedConfigFactory | None = None
         try:
             from pysymex.execution.verified_executor import (
                 VerifiedExecutionConfig,
                 VerifiedExecutor,
             )
 
-            verified_executor_cls = VerifiedExecutor
+            verified_executor_cls = cast("_VerifiedExecutorFactory", VerifiedExecutor)
+            verified_execution_config_cls = cast("_VerifiedConfigFactory", VerifiedExecutionConfig)
         except ImportError:
             logger.debug("Failed to import VerifiedExecutor", exc_info=True)
 
         if args.function:
             if args.function not in namespace:
-                print(f"\u274c Error: Function '{args .function }' not found", file=sys.stderr)
+                print(f"\u274c Error: Function '{args.function}' not found", file=sys.stderr)
                 return 1
-            func = namespace[args.function]
+            func_obj = namespace[args.function]
+            if not callable(func_obj):
+                print(f"\u274c Error: '{args.function}' is not callable", file=sys.stderr)
+                return 1
+            func = func_obj
             report = analyzer.analyze_function(func)
             print(report.format())
 
             if verified_executor_cls is not None:
-                _run_verified_execution(func, args, verified_executor_cls, VerifiedExecutionConfig)
+                _run_verified_execution(
+                    func,
+                    args,
+                    verified_executor_cls,
+                    verified_execution_config_cls,
+                )
 
             return 1 if report.has_violations else 0
         else:
             has_violations = False
             for obj in namespace.values():
                 if callable(obj) and hasattr(obj, "__contract__"):
+                    fn = obj
                     if args.verbose:
-                        print(f"\U0001f50d Verifying {obj .__name__ }...")
-                    report = analyzer.analyze_function(obj)
+                        print(f"\U0001f50d Verifying {fn.__name__}...")
+                    report = analyzer.analyze_function(fn)
                     print(report.format())
                     if report.has_violations:
                         has_violations = True
 
                     if verified_executor_cls is not None:
                         _run_verified_execution(
-                            obj, args, verified_executor_cls, VerifiedExecutionConfig
+                            fn,
+                            args,
+                            verified_executor_cls,
+                            verified_execution_config_cls,
                         )
 
             return 1 if has_violations else 0
 
     except Exception as e:
-        print(f"\u274c Error verifying {filepath }: {e }", file=sys.stderr)
+        print(f"\u274c Error verifying {filepath}: {e}", file=sys.stderr)
         return 1
 
 
 def _run_verified_execution(
-    func: object, args: _Namespace, executor_cls: type[Any], config_cls: type[Any]
+    func: Callable[..., object],
+    args: _Namespace,
+    executor_cls: _VerifiedExecutorFactory,
+    config_cls: _VerifiedConfigFactory | None,
 ) -> None:
     """Run :class:`VerifiedExecutor` on *func* and print findings.
 
@@ -328,6 +438,8 @@ def _run_verified_execution(
         config_cls: The ``VerifiedExecutionConfig`` class.
     """
     try:
+        if config_cls is None:
+            return
         config = config_cls(
             check_preconditions=True,
             check_postconditions=True,
@@ -345,25 +457,32 @@ def _run_verified_execution(
             result.contract_issues or result.arithmetic_issues or result.termination_proof
         )
         if has_findings:
-            print(f"\n  --- Verified Execution: {result .function_name } ---")
+            print(f"\n  --- Verified Execution: {result.function_name} ---")
             if result.termination_proof:
-                status = result.termination_proof.status.name
+                status_obj = result.termination_proof.status
+                status_name = getattr(status_obj, "name", None)
+                status = status_name if isinstance(status_name, str) else str(status_obj)
                 msg = result.termination_proof.message
-                print(f"  Termination: {status } - {msg }")
+                print(f"  Termination: {status} - {msg}")
             if result.arithmetic_issues:
-                print(f"  Arithmetic issues: {len (result .arithmetic_issues )}")
+                print(f"  Arithmetic issues: {len(result.arithmetic_issues)}")
                 for ai in result.arithmetic_issues:
-                    print(f"    - {ai .format ().strip ()}")
+                    format_fn = getattr(ai, "format", None)
+                    if callable(format_fn):
+                        print(f"    - {str(format_fn()).strip()}")
+                    else:
+                        print(f"    - {ai}")
             if result.contract_issues:
                 for ci in result.contract_issues:
-                    print(f"    - {ci .format ().strip ()}")
-            print(
-                f"  Paths: {result .paths_explored } explored, "
-                f"{result .paths_completed } completed"
-            )
+                    format_fn = getattr(ci, "format", None)
+                    if callable(format_fn):
+                        print(f"    - {str(format_fn()).strip()}")
+                    else:
+                        print(f"    - {ci}")
+            print(f"  Paths: {result.paths_explored} explored, {result.paths_completed} completed")
     except Exception as e:
         if getattr(args, "verbose", False):
-            print(f"  (VerifiedExecutor: {e })", file=sys.stderr)
+            print(f"  (VerifiedExecutor: {e})", file=sys.stderr)
 
 
 def cmd_concolic(args: _Namespace) -> int:
@@ -383,47 +502,43 @@ def cmd_concolic(args: _Namespace) -> int:
 
     filepath = Path(args.file)
     if not filepath.exists():
-        print(f"\u274c Error: File not found: {filepath }", file=sys.stderr)
+        print(f"\u274c Error: File not found: {filepath}", file=sys.stderr)
         return 1
+
+    if getattr(args, "sandbox", True) and not getattr(args, "_sandbox_dispatch", False):
+        return _run_cli_command_sandboxed("concolic", args)
 
     print("\u26a0\ufe0f  EXPERIMENTAL FEATURE: Concolic execution is in preview.", file=sys.stderr)
     print("    Path exploration heuristics are under development.\n", file=sys.stderr)
 
     try:
-
-        from pysymex.security import (
-            create_sandbox_namespace,
-            get_safe_builtins,
-            make_restricted_import,
+        namespace = _load_namespace_for_cli(
+            filepath,
+            use_sandbox=bool(getattr(args, "sandbox", True)),
         )
 
-        source = filepath.read_text(encoding="utf-8")
-        compiled = compile(source, str(filepath), "exec")
-        safe_builtins = get_safe_builtins()
-        safe_builtins["__import__"] = make_restricted_import()
-        namespace = create_sandbox_namespace(allow_builtins=False)
-        namespace["__builtins__"] = safe_builtins
-        namespace["__name__"] = "__main__"
-        exec(compiled, namespace)
-
         if args.function not in namespace:
-            print(f"\u274c Error: Function '{args .function }' not found", file=sys.stderr)
+            print(f"\u274c Error: Function '{args.function}' not found", file=sys.stderr)
             return 1
-        func = namespace[args.function]
+        func_obj = namespace[args.function]
+        if not callable(func_obj):
+            print(f"\u274c Error: '{args.function}' is not callable", file=sys.stderr)
+            return 1
+        func = func_obj
 
         executor = ConcolicExecutor(max_iterations=args.iterations)
         if args.verbose:
-            print(f"\U0001f50d Running concolic execution on {args .function }...")
+            print(f"\U0001f50d Running concolic execution on {args.function}...")
 
         result = executor.execute(func)
         print(result.format_summary())
 
         failing = result.get_failing_inputs()
         if failing:
-            print(f"\n\u274c Found {len (failing )} failing inputs!")
+            print(f"\n\u274c Found {len(failing)} failing inputs!")
             return 1
         return 0
 
     except Exception as e:
-        print(f"\u274c Error in concolic execution for {filepath }: {e }", file=sys.stderr)
+        print(f"\u274c Error in concolic execution for {filepath}: {e}", file=sys.stderr)
         return 1

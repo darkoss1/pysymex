@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Z3 Advanced Formal Verification Engine
 ======================================
@@ -40,6 +58,11 @@ import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from types import CodeType
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from z3 import BoolRef, ExprRef
 
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
 from pysymex.analysis.solver.graph import (
@@ -112,7 +135,7 @@ class Z3Engine:
         interprocedural: bool = True,
         track_taint: bool = True,
         max_workers: int | None = None,
-    ):
+    ) -> None:
         if not Z3_AVAILABLE:
             if Z3_IMPORT_ERROR is not None:
                 raise RuntimeError(str(Z3_IMPORT_ERROR)) from Z3_IMPORT_ERROR
@@ -133,7 +156,7 @@ class Z3Engine:
         """Verify a single function."""
         return self.verify_code(func.__code__)
 
-    def verify_code(self, code: object) -> list[VerificationResult]:
+    def verify_code(self, code: CodeType) -> list[VerificationResult]:
         """Verify a code object."""
         crashes, summary = self.analyzer.analyze(code)
         for callee in summary.calls_functions:
@@ -152,13 +175,13 @@ class Z3Engine:
         code = compile(source, path, "exec")
         self.analyzer.current_file = path
         results: dict[str, list[VerificationResult]] = {}
-        all_codes: list[object] = []
+        all_codes: list[CodeType] = []
 
-        def collect_codes(code_obj: object) -> None:
+        def collect_codes(code_obj: CodeType) -> None:
             """Collect codes."""
             all_codes.append(code_obj)
             for const in code_obj.co_consts:
-                if hasattr(const, "co_code"):
+                if isinstance(const, CodeType):
                     collect_codes(const)
 
         collect_codes(code)
@@ -223,7 +246,6 @@ class Z3Engine:
                     except (RuntimeError, z3.Z3Exception, TimeoutError, OSError):
                         logger.debug("Parallel verification failed for %s", filepath, exc_info=True)
         else:
-
             for filepath in py_files:
                 try:
                     file_results = self.verify_file(filepath)
@@ -241,9 +263,15 @@ class Z3Engine:
     def _verify_crashes(self, crashes: list[CrashCondition]) -> list[VerificationResult]:
         """Verify crash conditions with Z3."""
         results: list[VerificationResult] = []
-        seen: set[tuple[int, str, str]] = set()
+        seen: set[tuple[int, str, str, str, tuple[str, ...]]] = set()
         for crash in crashes:
-            key = (crash.line, crash.bug_type.value, crash.function)
+            key = (
+                crash.line,
+                crash.bug_type.value,
+                crash.function,
+                crash.description,
+                tuple(sorted(crash.variables.keys())),
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -266,11 +294,13 @@ class Z3Engine:
         try:
             for constraint in crash.path_constraints:
                 try:
-                    solver.add(constraint)
+                    if isinstance(constraint, z3.BoolRef):
+                        solver.add(cast("BoolRef", constraint))
                 except z3.Z3Exception:
                     logger.debug("Failed to add path constraint", exc_info=True)
             try:
-                solver.add(crash.condition)
+                if isinstance(crash.condition, z3.BoolRef):
+                    solver.add(cast("BoolRef", crash.condition))
             except z3.Z3Exception:
                 logger.debug("Failed to add crash condition", exc_info=True)
                 elapsed = (time.time() - start) * 1000
@@ -284,7 +314,10 @@ class Z3Engine:
                 counterexample: dict[str, str] = {}
                 for name, expr in crash.variables.items():
                     try:
-                        val = model.eval(expr, model_completion=True)
+                        if not isinstance(expr, z3.ExprRef):
+                            counterexample[name] = "?"
+                            continue
+                        val = model.eval(cast("ExprRef", expr), model_completion=True)
                         counterexample[name] = str(val)
                     except z3.Z3Exception:
                         logger.debug("Model eval failed for variable %s", name, exc_info=True)
@@ -338,7 +371,7 @@ def verify_function(func: Callable[..., object]) -> list[VerificationResult]:
     return engine.verify_function(func)
 
 
-def verify_code(code: object) -> list[VerificationResult]:
+def verify_code(code: CodeType) -> list[VerificationResult]:
     """Verify a code object."""
     if not Z3_AVAILABLE:
         return []
@@ -369,7 +402,7 @@ def is_z3_available() -> bool:
     return Z3_AVAILABLE
 
 
-def estimate_complexity(code: object) -> dict[str, object]:
+def estimate_complexity(code: CodeType) -> dict[str, object]:
     """Estimate function complexity from bytecode features for adaptive timeout.
 
     Analyzes the bytecode to count branches, loops, and call sites,
@@ -441,39 +474,74 @@ def _deserialize_worker_results(
     for func_name, entries in serialized.items():
         results: list[VerificationResult] = []
         for entry in entries:
-            bug_type_raw = entry.get("bug_type", BugType.TYPE_ERROR.value)
+            bug_type_raw_obj = entry.get("bug_type", BugType.TYPE_ERROR.value)
+            bug_type_raw = (
+                bug_type_raw_obj if isinstance(bug_type_raw_obj, str) else BugType.TYPE_ERROR.value
+            )
             try:
                 bug_type = BugType(bug_type_raw)
             except (ValueError, KeyError):
                 logger.debug("Failed to deserialize BugType %r", bug_type_raw, exc_info=True)
                 bug_type = BugType.TYPE_ERROR
 
-            severity_raw = entry.get("severity", Severity.HIGH.value)
+            severity_raw_obj = entry.get("severity", Severity.HIGH.value)
+            severity_raw = (
+                severity_raw_obj if isinstance(severity_raw_obj, int) else Severity.HIGH.value
+            )
             try:
                 severity = Severity(int(severity_raw))
             except (ValueError, TypeError):
                 logger.debug("Failed to deserialize Severity %r", severity_raw, exc_info=True)
                 severity = Severity.HIGH
 
+            line_raw = entry.get("line", 0)
+            line_value = line_raw if isinstance(line_raw, int) else 0
+
+            function_raw = entry.get("function")
+            function_value = (
+                function_raw if isinstance(function_raw, str) and function_raw else func_name
+            )
+
+            description_raw = entry.get("description")
+            description_value = description_raw if isinstance(description_raw, str) else ""
+
+            file_path_raw = entry.get("file_path")
+            file_path_value = file_path_raw if isinstance(file_path_raw, str) else ""
+
+            counterexample_raw = entry.get("counterexample")
+            counterexample_value = (
+                counterexample_raw if isinstance(counterexample_raw, dict) else None
+            )
+
+            z3_status_raw = entry.get("z3_status")
+            z3_status_value = z3_status_raw if isinstance(z3_status_raw, str) else ""
+
+            verification_time_raw = entry.get("verification_time_ms", 0.0)
+            verification_time_value = (
+                float(verification_time_raw)
+                if isinstance(verification_time_raw, (int, float))
+                else 0.0
+            )
+
             crash = CrashCondition(
                 bug_type=bug_type,
-                condition=(z3.BoolVal(True) if z3 is not None and hasattr(z3, "BoolVal") else True),
+                condition=(z3.BoolVal(True) if hasattr(z3, "BoolVal") else True),
                 path_constraints=[],
-                line=int(entry.get("line", 0)),
-                function=str(entry.get("function") or func_name),
-                description=str(entry.get("description") or ""),
+                line=line_value,
+                function=function_value,
+                description=description_value,
                 variables={},
                 severity=severity,
-                file_path=str(entry.get("file_path") or ""),
+                file_path=file_path_value,
             )
             results.append(
                 VerificationResult(
                     crash=crash,
                     can_crash=bool(entry.get("can_crash", False)),
                     proven_safe=bool(entry.get("proven_safe", False)),
-                    counterexample=entry.get("counterexample"),
-                    z3_status=str(entry.get("z3_status") or ""),
-                    verification_time_ms=float(entry.get("verification_time_ms", 0.0)),
+                    counterexample=counterexample_value,
+                    z3_status=z3_status_value,
+                    verification_time_ms=verification_time_value,
                 )
             )
 
@@ -508,7 +576,7 @@ def _verify_file_worker(
 
         code = compile(source, filepath, "exec")
         complexity = estimate_complexity(code)
-        adaptive_timeout = complexity["recommended_timeout_ms"]
+        adaptive_timeout = cast("int", complexity["recommended_timeout_ms"])
         engine.timeout = min(adaptive_timeout, timeout_ms * 2)
 
         file_results = engine.verify_file(filepath)

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Specialized bug detectors for pysymex.
 
 This module provides sophisticated detectors for complex vulnerability patterns
@@ -8,7 +26,8 @@ and unreachable code.
 from __future__ import annotations
 
 import dis
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import z3
 
@@ -42,9 +61,10 @@ def _pure_check_null_deref(
     if isinstance(top, SymbolicValue):
         none_check = [*path_constraints, top.is_none]
         if is_satisfiable_fn(none_check):
-            # Suppress unconstrained vars that just happen to satisfy None
             must_be_none = not is_satisfiable_fn([*path_constraints, z3.Not(top.is_none)])
-            is_unconstrained = z3.is_const(top.is_none) and top.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            is_unconstrained = (
+                z3.is_const(top.is_none) and top.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
+            )
             if must_be_none or not is_unconstrained:
                 from pysymex.core.solver import get_model
 
@@ -163,7 +183,7 @@ class InfiniteLoopDetector(Detector):
         {"JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT", "POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"}
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._loop_counters: dict[int, int] = {}
         self._max_iterations = 1000
 
@@ -235,7 +255,7 @@ class ResourceLeakDetector(Detector):
     issue_kind = IssueKind.RESOURCE_LEAK
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "RETURN_VALUE", "RETURN_CONST"})
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._open_resources: int = 0
 
     def check(
@@ -246,7 +266,9 @@ class ResourceLeakDetector(Detector):
     ) -> Issue | None:
         """Check for resource leaks."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
-            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            argc: int = (
+                instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            )
             target = _resolve_target_name(state, argc)
             if target == "open":
                 self._open_resources += 1
@@ -277,7 +299,7 @@ class UseAfterFreeDetector(Detector):
     issue_kind = IssueKind.ATTRIBUTE_ERROR
     relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "LOAD_METHOD", "LOAD_ATTR"})
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._freed_vars: set[str] = set()
 
     def check(
@@ -288,10 +310,11 @@ class UseAfterFreeDetector(Detector):
     ) -> Issue | None:
         """Check for use of freed/closed resources."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
-            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            argc: int = (
+                instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            )
             target = _resolve_target_name(state, argc)
             if target and target.endswith(".close"):
-                # Mark receiver as closed if possible
                 if len(state.stack) >= argc + 2:
                     receiver = state.stack[-(argc + 2)]
                     if hasattr(receiver, "name"):
@@ -325,7 +348,7 @@ class IntegerOverflowDetector(Detector):
     INT64_MIN = -(2**63)
     INT64_MAX = 2**63 - 1
 
-    def __init__(self, bits: int = 64):
+    def __init__(self, bits: int = 64) -> None:
         self.bits = bits
         self.min_val = -(2 ** (bits - 1))
         self.max_val = 2 ** (bits - 1) - 1
@@ -394,7 +417,9 @@ class FormatStringDetector(Detector):
                         pc=state.pc,
                     )
         elif instruction.opname == "BUILD_STRING":
-            argc: int = instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            argc: int = (
+                instruction.argval if instruction.argval is not None else (instruction.arg or 0)
+            )
             tainted = _check_taint_in_args(state, argc)
             if tainted:
                 return Issue(
@@ -547,7 +572,6 @@ class SQLInjectionDetector(Detector):
         if not self._is_sql_function(target_name):
             return None
 
-        # Check if the query argument (usually args[0]) is tainted
         if len(state.stack) >= argc:
             query_arg = state.stack[-argc]
             labels = getattr(query_arg, "taint_labels", set())  # type: ignore

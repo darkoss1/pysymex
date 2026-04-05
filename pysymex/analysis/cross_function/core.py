@@ -1,10 +1,28 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Cross-function analysis — core logic classes and helpers."""
 
 from __future__ import annotations
 
 from collections import defaultdict
+from types import CodeType
 from typing import (
-    Any,
     cast,
 )
 
@@ -44,7 +62,7 @@ class FunctionSummaryCache:
     """
 
     def __init__(self) -> None:
-        self._cache: dict[tuple[str, tuple[str, ...], int], Any] = {}
+        self._cache: dict[tuple[str, tuple[str, ...], int], object] = {}
         self._hits = 0
         self._misses = 0
 
@@ -81,29 +99,23 @@ class FunctionSummaryCache:
         sym_args: list[str] = []
 
         for i, arg in enumerate(args):
-
             arg_type = type(arg).__name__
             if isinstance(arg, SymbolicValue):
-                if arg.z3_int is not None:
-                    target_vars.add(arg.z3_int)
-
-                    canonical_map.append((arg.z3_int, z3.Int(f"arg_{i }_int")))
-                if arg.z3_bool is not None:
-                    target_vars.add(arg.z3_bool)
-                    canonical_map.append((arg.z3_bool, z3.Bool(f"arg_{i }_bool")))
+                target_vars.add(arg.z3_int)
+                canonical_map.append((arg.z3_int, z3.Int(f"arg_{i}_int")))
+                target_vars.add(arg.z3_bool)
+                canonical_map.append((arg.z3_bool, z3.Bool(f"arg_{i}_bool")))
                 sym_args.append(str(arg_type))
             else:
-                sym_args.append(f"{arg_type }:{arg!s}")
+                sym_args.append(f"{arg_type}:{arg!s}")
 
         if not path_constraints:
             constraint_hash = 0
         else:
-
             optimizer = ConstraintIndependenceOptimizer()
             for c in path_constraints:
                 optimizer.register_constraint(c)
 
-            # Combine target vars into a dummy query to find all relevant constraints.
             if target_vars:
                 dummy_query = z3.And(*[(v == v) for v in target_vars])
                 relevant_slice = optimizer.slice_for_query(path_constraints, dummy_query)
@@ -154,12 +166,22 @@ class CallGraph:
         """Add a call edge to the graph."""
         caller_node = self.add_function(caller)
         callee_node = self.add_function(callee)
+
+        raw_arg_count = kwargs.get("arg_count", 0)
+        arg_count = int(raw_arg_count) if isinstance(raw_arg_count, (int, float, str)) else 0
         call_site = CallSiteInfo(
             caller=caller,
             callee=callee,
             line=line,
             pc=pc,
-            **kwargs,
+            arg_count=arg_count,
+            has_kwargs=bool(kwargs.get("has_kwargs", False)),
+            has_varargs=bool(kwargs.get("has_varargs", False)),
+            is_method_call=bool(kwargs.get("is_method_call", False)),
+            is_static=bool(kwargs.get("is_static", False)),
+            is_super_call=bool(kwargs.get("is_super_call", False)),
+            is_dynamic=bool(kwargs.get("is_dynamic", False)),
+            possible_callees=cast("set[str]", kwargs.get("possible_callees", set())),
         )
         caller_node.callees.append(call_site)
         callee_node.callers.add(caller)
@@ -238,7 +260,7 @@ class CallGraphBuilder:
     def __init__(self) -> None:
         self.call_graph = CallGraph()
 
-    def build_from_module(self, module_code: object) -> CallGraph:
+    def build_from_module(self, module_code: CodeType) -> CallGraph:
         """Build call graph from a module's code object."""
         self.call_graph = CallGraph()
         self._process_code(module_code, "<module>")
@@ -249,17 +271,17 @@ class CallGraphBuilder:
         self.call_graph.find_recursive()
         return self.call_graph
 
-    def _find_functions(self, code: object, prefix: str = "") -> None:
+    def _find_functions(self, code: CodeType, prefix: str = "") -> None:
         """Find all functions in a code object."""
         for const in code.co_consts:
-            if hasattr(const, "co_code"):
+            if isinstance(const, CodeType):
                 func_name = const.co_name
-                qualified_name = f"{prefix }.{func_name }" if prefix else func_name
+                qualified_name = f"{prefix}.{func_name}" if prefix else func_name
                 self.call_graph.add_function(func_name, qualified_name)
                 self._process_code(const, func_name)
                 self._find_functions(const, qualified_name)
 
-    def _process_code(self, code: object, func_name: str) -> None:
+    def _process_code(self, code: CodeType, func_name: str) -> None:
         """Process a code object for call sites."""
         instructions = _cached_get_instructions(code)
         current_line = code.co_firstlineno
@@ -273,13 +295,13 @@ class CallGraphBuilder:
             if opname in {"LOAD_NAME", "LOAD_FAST", "LOAD_GLOBAL", "LOAD_DEREF"}:
                 stack_items.append(str(arg))
             elif opname == "LOAD_CONST":
-                stack_items.append(f"const:{arg }")
+                stack_items.append(f"const:{arg}")
             elif opname == "LOAD_ATTR" or opname == "LOAD_METHOD":
                 if stack_items:
                     base = stack_items.pop()
-                    stack_items.append(f"{base }.{arg }")
+                    stack_items.append(f"{base}.{arg}")
                 else:
-                    stack_items.append(f"?.{arg }")
+                    stack_items.append(f"?.{arg}")
             elif opname in {"CALL", "CALL_FUNCTION", "CALL_METHOD"}:
                 arg_count = arg if arg is not None else 0
                 for _ in range(arg_count):
@@ -296,7 +318,7 @@ class CallGraphBuilder:
                     is_method_call=is_method,
                     is_dynamic=callee.startswith("?"),
                 )
-                stack_items.append(f"result:{callee }")
+                stack_items.append(f"result:{callee}")
             elif opname in {"CALL_FUNCTION_KW", "CALL_FUNCTION_EX"}:
                 if stack_items:
                     callee = stack_items.pop()
@@ -405,7 +427,7 @@ class EffectAnalyzer:
     def __init__(self) -> None:
         self.cache: dict[str, EffectSummary] = {}
 
-    def analyze_function(self, code: object, name: str = "") -> EffectSummary:
+    def analyze_function(self, code: CodeType, name: str = "") -> EffectSummary:
         """Analyze a function for effects."""
         if name in self.cache:
             return self.cache[name]
@@ -458,7 +480,7 @@ class EffectAnalyzer:
     def analyze_with_call_graph(
         self,
         call_graph: CallGraph,
-        code_objects: dict[str, object],
+        code_objects: dict[str, CodeType],
     ) -> dict[str, EffectSummary]:
         """Analyze all functions with call graph for interprocedural effects."""
         summaries: dict[str, EffectSummary] = {}
@@ -480,7 +502,7 @@ class EffectAnalyzer:
 
     def _get_builtin_effects(self, func_name: str) -> EffectSummary:
         """Get effects for built-in/external functions."""
-        base_name = func_name.split(".")[-1]
+        base_name = func_name.rsplit(".", maxsplit=1)[-1]
         if base_name in self.PURE_FUNCTIONS:
             return EffectSummary(effects=Effect.NONE)
         if base_name in self.IO_FUNCTIONS:
@@ -500,7 +522,7 @@ _PYTHON_TYPE_TO_PYTYPE: dict[type, PyType] = {
 PYTHON_TYPE_TO_PYTYPE = _PYTHON_TYPE_TO_PYTYPE
 
 
-def _infer_return_type(code: object) -> PyType | None:
+def _infer_return_type(code: CodeType) -> PyType | None:
     """Infer the return type of a function from its bytecode.
 
     Walks RETURN_VALUE and RETURN_CONST opcodes, resolves the returned
@@ -514,14 +536,12 @@ def _infer_return_type(code: object) -> PyType | None:
     for i, instr in enumerate(instructions):
         opname = instr.opname
         if opname == "RETURN_CONST":
-
             _obj: object = instr.argval
             val_type = type(_obj)
             py_type = _PYTHON_TYPE_TO_PYTYPE.get(val_type)
             if py_type is not None:
                 return_types.append(py_type)
         elif opname == "RETURN_VALUE":
-
             if i > 0:
                 prev = instructions[i - 1]
                 if prev.opname == "LOAD_CONST":
@@ -536,11 +556,9 @@ def _infer_return_type(code: object) -> PyType | None:
                     "LOAD_DEREF",
                     "LOAD_NAME",
                 } or prev.opname in {"CALL", "CALL_FUNCTION", "CALL_METHOD"}:
-
                     pass
 
     if not return_types:
-
         return PyType.none()
 
     unique = list(dict.fromkeys(return_types))
@@ -552,7 +570,7 @@ def _infer_return_type(code: object) -> PyType | None:
     if len(non_none) == 1 and has_none:
         result = PyType(
             kind=non_none[0].kind,
-            name=f"Optional[{non_none [0 ].name }]",
+            name=f"Optional[{non_none[0].name}]",
             nullable=True,
         )
         return result
@@ -576,7 +594,7 @@ class ContextSensitiveAnalyzer:
     def analyze(
         self,
         call_graph: CallGraph,
-        code_objects: dict[str, object],
+        code_objects: dict[str, CodeType],
     ) -> dict[tuple[str, CallContext], ContextSensitiveSummary]:
         """Run context-sensitive analysis."""
         self.call_graph = call_graph
@@ -594,9 +612,9 @@ class ContextSensitiveAnalyzer:
     def _analyze_function(
         self,
         func_name: str,
-        code: object,
+        code: CodeType,
         context: CallContext,
-        code_objects: dict[str, object],
+        code_objects: dict[str, CodeType],
     ) -> ContextSensitiveSummary:
         """Analyze a function under a specific context."""
         key = (func_name, context)
@@ -642,12 +660,12 @@ class CrossFunctionAnalyzer:
         self.context_analyzer = ContextSensitiveAnalyzer()
         self.function_summary_cache = FunctionSummaryCache()
 
-    def analyze_module(self, module_code: object) -> dict[str, object]:
+    def analyze_module(self, module_code: CodeType) -> dict[str, object]:
         """Analyze a module and return cross-function results."""
         results: dict[str, object] = {}
         call_graph = self.call_graph_builder.build_from_module(module_code)
         results["call_graph"] = call_graph
-        code_objects: dict[str, object] = {"<module>": module_code}
+        code_objects: dict[str, CodeType] = {"<module>": module_code}
         self._collect_code_objects(module_code, code_objects)
         effect_summaries = self.effect_analyzer.analyze_with_call_graph(call_graph, code_objects)
         results["effects"] = effect_summaries
@@ -661,15 +679,15 @@ class CrossFunctionAnalyzer:
 
     def _collect_code_objects(
         self,
-        code: object,
-        code_objects: dict[str, object],
+        code: CodeType,
+        code_objects: dict[str, CodeType],
         prefix: str = "",
     ) -> None:
         """Collect all code objects from a module."""
         for const in code.co_consts:
-            if hasattr(const, "co_code"):
+            if isinstance(const, CodeType):
                 name = const.co_name
-                qualified = f"{prefix }.{name }" if prefix else name
+                qualified = f"{prefix}.{name}" if prefix else name
                 code_objects[qualified] = const
                 if name not in code_objects:
                     code_objects[name] = const

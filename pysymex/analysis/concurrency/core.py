@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """ConcurrencyAnalyzer — the main concurrency analysis engine.
 
 Detects data races, deadlocks, atomicity violations, and await cycles.
@@ -35,7 +53,7 @@ class ConcurrencyAnalyzer:
         timeout_ms: Solver timeout in milliseconds.
     """
 
-    def __init__(self, timeout_ms: int = 10000):
+    def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -47,6 +65,7 @@ class ConcurrencyAnalyzer:
         self._hb_graph = HappensBeforeGraph()
         self._thread_op_ids: dict[str, list[int]] = {}
         self._issues: list[ConcurrencyIssue] = []
+        self._has_lock_activity = False
 
     def reset(self) -> None:
         """Reset analyzer state."""
@@ -58,6 +77,7 @@ class ConcurrencyAnalyzer:
         self._hb_graph = HappensBeforeGraph()
         self._thread_op_ids.clear()
         self._issues.clear()
+        self._has_lock_activity = False
 
     def create_thread(
         self,
@@ -89,7 +109,7 @@ class ConcurrencyAnalyzer:
             start_op = MemoryOperation(
                 thread_id=thread_id,
                 operation=OperationKind.THREAD_CREATE,
-                address=f"__thread_start_{thread_id }",
+                address=f"__thread_start_{thread_id}",
                 line_number=line_number,
             )
             start_op_id = self._hb_graph.add_operation(start_op)
@@ -107,7 +127,7 @@ class ConcurrencyAnalyzer:
         if joining_thread not in self._threads:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.JOIN_WITHOUT_START,
-                message=f"Thread '{joining_thread }' attempted to join '{thread_id }' without registration",
+                message=f"Thread '{joining_thread}' attempted to join '{thread_id}' without registration",
                 threads_involved=[joining_thread, thread_id],
                 line_number=line_number,
             )
@@ -115,14 +135,14 @@ class ConcurrencyAnalyzer:
         if thread is None:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.JOIN_WITHOUT_START,
-                message=f"Joining thread '{thread_id }' that doesn't exist",
+                message=f"Joining thread '{thread_id}' that doesn't exist",
                 threads_involved=[joining_thread, thread_id],
                 line_number=line_number,
             )
         if thread.state == ThreadState.NOT_STARTED:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.JOIN_WITHOUT_START,
-                message=f"Joining thread '{thread_id }' that hasn't started",
+                message=f"Joining thread '{thread_id}' that hasn't started",
                 threads_involved=[joining_thread, thread_id],
                 line_number=line_number,
             )
@@ -132,7 +152,7 @@ class ConcurrencyAnalyzer:
             join_op = MemoryOperation(
                 thread_id=joining_thread,
                 operation=OperationKind.THREAD_JOIN,
-                address=f"__thread_join_{thread_id }",
+                address=f"__thread_join_{thread_id}",
                 line_number=line_number,
             )
             join_op_id = self._hb_graph.add_operation(join_op)
@@ -227,7 +247,7 @@ class ConcurrencyAnalyzer:
         if current_holder == thread_id:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.DEADLOCK,
-                message=f"Thread '{thread_id }' attempting to acquire lock it already holds",
+                message=f"Thread '{thread_id}' attempting to acquire lock it already holds",
                 threads_involved=[thread_id],
                 shared_resource=lock_name,
                 line_number=line_number,
@@ -242,6 +262,7 @@ class ConcurrencyAnalyzer:
         )
         op_id = self._hb_graph.add_operation(op)
         self._thread_op_ids.setdefault(thread_id, []).append(op_id)
+        self._has_lock_activity = True
         self._locks[lock_name] = thread_id
         self._lock_acquisitions.setdefault(lock_name, []).append(thread_id)
         thread = self._threads.get(thread_id)
@@ -261,7 +282,7 @@ class ConcurrencyAnalyzer:
         if current_holder != thread_id:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.LOCK_NOT_HELD,
-                message=f"Thread '{thread_id }' releasing lock it doesn't hold",
+                message=f"Thread '{thread_id}' releasing lock it doesn't hold",
                 threads_involved=[thread_id],
                 shared_resource=lock_name,
                 line_number=line_number,
@@ -276,6 +297,7 @@ class ConcurrencyAnalyzer:
         )
         op_id = self._hb_graph.add_operation(op)
         self._thread_op_ids.setdefault(thread_id, []).append(op_id)
+        self._has_lock_activity = True
         self._locks[lock_name] = None
         thread = self._threads.get(thread_id)
         if thread:
@@ -303,7 +325,7 @@ class ConcurrencyAnalyzer:
             self._hb_graph.add_program_order(thread_id, op_ids)
 
         op_locksets: dict[int, frozenset[str]] = {}
-        for thread_id, _thread in self._threads.items():
+        for thread_id in self._threads.keys():
             current_locks: set[str] = set()
             ops_for_thread = self._thread_op_ids.get(thread_id, [])
             for op_id in ops_for_thread:
@@ -317,27 +339,71 @@ class ConcurrencyAnalyzer:
                 op_locksets[op_id] = frozenset(current_locks)
 
         all_ops = list(self._hb_graph.operations.items())
-        for i, (op_id1, op1) in enumerate(all_ops):
-            for op_id2, op2 in all_ops[i + 1 :]:
-                if not op1.conflicts_with(op2):
-                    continue
-                if not self._hb_graph.are_concurrent(op_id1, op_id2):
-                    continue
+        if len(all_ops) <= 24:
+            for i, (op_id1, op1) in enumerate(all_ops):
+                for op_id2, op2 in all_ops[i + 1 :]:
+                    if not op1.conflicts_with(op2):
+                        continue
+                    if not self._hb_graph.are_concurrent(op_id1, op_id2):
+                        continue
 
-                locks1 = op_locksets.get(op_id1, frozenset())
-                locks2 = op_locksets.get(op_id2, frozenset())
-                if locks1 & locks2:
-                    continue
-                issues.append(
-                    ConcurrencyIssue(
-                        kind=ConcurrencyIssueKind.DATA_RACE,
-                        message=f"Data race on '{op1 .address }' between threads "
-                        f"(no common lock held)",
-                        threads_involved=[op1.thread_id, op2.thread_id],
-                        shared_resource=op1.address,
-                        line_number=op1.line_number,
+                    locks1 = op_locksets.get(op_id1, frozenset())
+                    locks2 = op_locksets.get(op_id2, frozenset())
+                    if locks1 & locks2:
+                        continue
+                    issues.append(
+                        ConcurrencyIssue(
+                            kind=ConcurrencyIssueKind.DATA_RACE,
+                            message=f"Data race on '{op1.address}' between threads "
+                            f"(no common lock held)",
+                            threads_involved=[op1.thread_id, op2.thread_id],
+                            shared_resource=op1.address,
+                            line_number=op1.line_number,
+                        )
                     )
-                )
+            return issues
+
+        ops_by_addr: dict[str, list[tuple[int, MemoryOperation]]] = {}
+        for op_id, op in all_ops:
+            if op.operation in {
+                OperationKind.READ,
+                OperationKind.WRITE,
+                OperationKind.READ_MODIFY_WRITE,
+            }:
+                ops_by_addr.setdefault(op.address, []).append((op_id, op))
+
+        for address, addr_ops in ops_by_addr.items():
+            if len(addr_ops) < 2 or not any(op.is_write() for _, op in addr_ops):
+                continue
+
+            by_thread: dict[str, list[tuple[int, MemoryOperation]]] = {}
+            for op_id, op in addr_ops:
+                by_thread.setdefault(op.thread_id, []).append((op_id, op))
+
+            thread_groups = list(by_thread.items())
+            for i, (_thread1, ops1) in enumerate(thread_groups):
+                for _thread2, ops2 in thread_groups[i + 1 :]:
+                    for op_id1, op1 in ops1:
+                        for op_id2, op2 in ops2:
+                            if not (op1.is_write() or op2.is_write()):
+                                continue
+                            if not self._hb_graph.are_concurrent(op_id1, op_id2):
+                                continue
+
+                            locks1 = op_locksets.get(op_id1, frozenset())
+                            locks2 = op_locksets.get(op_id2, frozenset())
+                            if locks1 & locks2:
+                                continue
+                            issues.append(
+                                ConcurrencyIssue(
+                                    kind=ConcurrencyIssueKind.DATA_RACE,
+                                    message=f"Data race on '{address}' between threads "
+                                    f"(no common lock held)",
+                                    threads_involved=[op1.thread_id, op2.thread_id],
+                                    shared_resource=address,
+                                    line_number=op1.line_number,
+                                )
+                            )
         return issues
 
     def detect_deadlocks(self) -> list[ConcurrencyIssue]:
@@ -349,6 +415,9 @@ class ConcurrencyAnalyzer:
                  (can the threads actually reach that lock ordering?).
         Phase 3: Detect async await-cycles (coroutine A awaits B, B awaits A).
         """
+        if not self._has_lock_activity:
+            return []
+
         issues: list[ConcurrencyIssue] = []
         lock_order_graph: dict[str, set[str]] = {}
 
@@ -376,7 +445,7 @@ class ConcurrencyAnalyzer:
                 """Dfs."""
                 if node in path:
                     cycle_start = path.index(node)
-                    return path[cycle_start:] + [node]
+                    return [*path[cycle_start:], node]
                 if node in visited:
                     return None
                 visited.add(node)
@@ -407,8 +476,8 @@ class ConcurrencyAnalyzer:
                     issues.append(
                         ConcurrencyIssue(
                             kind=kind,
-                            message=f"{'Verified'if verified else 'Potential'} deadlock: "
-                            f"lock cycle {' -> '.join (cycle )}",
+                            message=f"{'Verified' if verified else 'Potential'} deadlock: "
+                            f"lock cycle {' -> '.join(cycle)}",
                             shared_resource=", ".join(cycle),
                         )
                     )
@@ -432,22 +501,20 @@ class ConcurrencyAnalyzer:
             for lock_a, lock_b in pairwise(cycle):
                 pair = (lock_a, lock_b)
                 reverse_pair = (lock_b, lock_a)
-                var_fwd = z3.Int(f"acq_{lock_a }_before_{lock_b }")
-                var_rev = z3.Int(f"acq_{lock_b }_before_{lock_a }")
-                order_vars[f"{lock_a }->{lock_b }"] = var_fwd
-                order_vars[f"{lock_b }->{lock_a }"] = var_rev
+                var_fwd = z3.Int(f"acq_{lock_a}_before_{lock_b}")
+                var_rev = z3.Int(f"acq_{lock_b}_before_{lock_a}")
+                order_vars[f"{lock_a}->{lock_b}"] = var_fwd
+                order_vars[f"{lock_b}->{lock_a}"] = var_rev
 
                 threads_fwd = lock_pair_threads.get(pair, [])
                 threads_rev = lock_pair_threads.get(reverse_pair, [])
 
                 if threads_fwd and threads_rev:
-
                     self._solver.add(var_fwd >= 0)
                     self._solver.add(var_rev >= 0)
 
                     self._solver.add(var_fwd < var_rev)
                 else:
-
                     self._solver.pop()
                     return False
 
@@ -482,7 +549,7 @@ class ConcurrencyAnalyzer:
             """Dfs."""
             if node in in_path:
                 cycle_start = path.index(node)
-                return path[cycle_start:] + [node]
+                return [*path[cycle_start:], node]
             if node in visited:
                 return None
             visited.add(node)
@@ -504,7 +571,7 @@ class ConcurrencyAnalyzer:
                     issues.append(
                         ConcurrencyIssue(
                             kind=ConcurrencyIssueKind.DEADLOCK,
-                            message=f"Async deadlock: await cycle " f"{' -> '.join (cycle )}",
+                            message=f"Async deadlock: await cycle {' -> '.join(cycle)}",
                             threads_involved=cycle[:-1],
                             severity="error",
                         )
@@ -535,7 +602,7 @@ class ConcurrencyAnalyzer:
                         issues.append(
                             ConcurrencyIssue(
                                 kind=ConcurrencyIssueKind.ATOMICITY_VIOLATION,
-                                message=f"Atomicity violation: thread '{other_thread_id }' can access '{other_op .address }' during atomic region",
+                                message=f"Atomicity violation: thread '{other_thread_id}' can access '{other_op.address}' during atomic region",
                                 threads_involved=[thread_id, other_thread_id],
                                 shared_resource=other_op.address,
                             )
@@ -562,7 +629,7 @@ class ConcurrencyAnalyzer:
             return (True, None)
         order_vars: dict[int, z3.ArithRef] = {}
         for op_id, _op in ops:
-            order_vars[op_id] = z3.Int(f"order_{op_id }")
+            order_vars[op_id] = z3.Int(f"order_{op_id}")
         for from_op, to_op in self._hb_graph.edges_set:
             if from_op in order_vars and to_op in order_vars:
                 constraints.append(order_vars[from_op] < order_vars[to_op])
@@ -583,7 +650,7 @@ class ConcurrencyAnalyzer:
                     False,
                     ConcurrencyIssue(
                         kind=ConcurrencyIssueKind.RACE_CONDITION,
-                        message=f"Race condition: writes to '{variable }' can occur in different orders",
+                        message=f"Race condition: writes to '{variable}' can occur in different orders",
                         threads_involved=[w1.thread_id, w2.thread_id],
                         shared_resource=variable,
                     ),
@@ -601,7 +668,7 @@ class ConcurrencyAnalyzer:
         """
         constraints = list(path_constraints or [])
         all_ops = list(self._hb_graph.operations.items())
-        order_vars = {op_id: z3.Int(f"order_{op_id }") for op_id, _ in all_ops}
+        order_vars = {op_id: z3.Int(f"order_{op_id}") for op_id, _ in all_ops}
         for from_op, to_op in self._hb_graph.edges_set:
             if from_op in order_vars and to_op in order_vars:
                 constraints.append(order_vars[from_op] < order_vars[to_op])
@@ -627,6 +694,15 @@ class ConcurrencyAnalyzer:
     def get_thread(self, thread_id: str) -> Thread | None:
         """Get a thread by ID."""
         return self._threads.get(thread_id)
+
+    @property
+    def hb_graph(self) -> HappensBeforeGraph:
+        """Expose happens-before graph for interleaving exploration."""
+        return self._hb_graph
+
+    def get_thread_operations(self) -> dict[str, list[int]]:
+        """Return recorded operation IDs per thread."""
+        return {thread_id: list(op_ids) for thread_id, op_ids in self._thread_op_ids.items()}
 
     def get_all_issues(self) -> list[ConcurrencyIssue]:
         """Get all detected concurrency issues."""
@@ -669,7 +745,7 @@ class ThreadSafetyChecker:
         if required_lock not in thread.held_locks:
             return ConcurrencyIssue(
                 kind=ConcurrencyIssueKind.LOCK_NOT_HELD,
-                message=f"Accessing '{variable }' without holding lock '{required_lock }'",
+                message=f"Accessing '{variable}' without holding lock '{required_lock}'",
                 threads_involved=[thread_id],
                 shared_resource=variable,
                 line_number=line_number,
@@ -690,7 +766,7 @@ class ThreadSafetyChecker:
         """
         return ConcurrencyIssue(
             kind=ConcurrencyIssueKind.MEMORY_ORDER_VIOLATION,
-            message=f"Potential double-checked locking issue on '{check_variable }'",
+            message=f"Potential double-checked locking issue on '{check_variable}'",
             threads_involved=[thread_id],
             shared_resource=check_variable,
             line_number=line_number,
@@ -727,9 +803,9 @@ class LockOrderChecker:
                     if held_idx > lock_idx:
                         return ConcurrencyIssue(
                             kind=ConcurrencyIssueKind.POTENTIAL_DEADLOCK,
-                            message=f"Lock order violation: acquiring '{lock_name }' while holding '{held_lock }'",
+                            message=f"Lock order violation: acquiring '{lock_name}' while holding '{held_lock}'",
                             threads_involved=[thread_id],
-                            shared_resource=f"{held_lock }, {lock_name }",
+                            shared_resource=f"{held_lock}, {lock_name}",
                             line_number=line_number,
                         )
         held.append(lock_name)

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Enhanced scanner types, configuration, and base interfaces.
 
 Contains the shared data structures used across the scanner pipeline:
@@ -14,6 +32,10 @@ from __future__ import annotations
 import types
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from ..exceptions.handler import ExceptionHandlerInfo
 
 from ..taint.checker import TaintKind
 
@@ -25,6 +47,10 @@ __all__ = [
     "ScanIssue",
     "ScannerConfig",
 ]
+
+
+class NoneCheckAnalyzerLike(Protocol):
+    def is_none_safe(self, var_name: str) -> bool: ...
 
 
 SUGGESTION_MAP: dict[str, str] = {
@@ -186,13 +212,10 @@ class ScanIssue:
             "suppression_reasons": self.suppression_reasons,
         }
 
-
-def _attach_suggestion(
-    issue: ScanIssue,
-) -> None:
-    """Attach an actionable suggestion to an issue based on its kind."""
-    if not issue.suggestion:
-        issue.suggestion = SUGGESTION_MAP.get(issue.kind, "")
+    def attach_suggestion(self) -> None:
+        """Attach an actionable suggestion based on the issue kind."""
+        if not self.suggestion:
+            self.suggestion = SUGGESTION_MAP.get(self.kind, "")
 
 
 @dataclass
@@ -222,8 +245,8 @@ class AnalysisContext:
     taint: dict[str, set[TaintKind]] = field(default_factory=dict[str, set[TaintKind]])
     flow_analyzer: object | None = None
     function_summaries: dict[str, object] = field(default_factory=dict[str, object])
-    exception_handlers: list[object] = field(default_factory=list[object])
-    none_check_analyzer: object | None = None
+    exception_handlers: list[ExceptionHandlerInfo] = field(default_factory=list)
+    none_check_analyzer: NoneCheckAnalyzerLike | None = None
 
 
 class AnalysisPhase:

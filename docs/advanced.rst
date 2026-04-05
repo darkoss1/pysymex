@@ -13,6 +13,14 @@ To learn more about the C++ CUDA integration, the branchless bytecode ISA, and h
 * `docs/arch/H_ACCELERATION.md`
 
 
+Sandbox Architecture and Hardening
+----------------------------------
+
+PySyMex includes a hardened sandbox subsystem for containment-sensitive execution scenarios.
+For architecture and threat-model details, see:
+* `docs/arch/SANDBOX_SECURITY.md`
+
+
 Inter-Procedural Analysis
 -------------------------
 
@@ -119,11 +127,11 @@ Choose how paths are explored:
    from pysymex.execution.executor import ExecutionConfig
    from pysymex.analysis.path_manager import ExplorationStrategy
 
-   # Depth-first (default)
-   config = ExecutionConfig(strategy=ExplorationStrategy.DFS)
+    # CHTD-native (default)
+    config = ExecutionConfig(strategy=ExplorationStrategy.CHTD_NATIVE)
 
-   # Breadth-first
-   config = ExecutionConfig(strategy=ExplorationStrategy.BFS)
+    # Adaptive Thompson-sampling scheduler
+    config = ExecutionConfig(strategy=ExplorationStrategy.ADAPTIVE)
 
    # Coverage-guided
    config = ExecutionConfig(strategy=ExplorationStrategy.COVERAGE_GUIDED)

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Pre-defined models for methods of common Python types."""
 
 from __future__ import annotations
@@ -8,12 +26,12 @@ from .type_inference import PyType, TypeKind
 
 class MethodModels:
     """Pre-defined models for methods of common types.
-    
+
     **Architectural Role:**
-    Providing logical summaries for all built-in methods (e.g., `list.append`, 
+    Providing logical summaries for all built-in methods (e.g., `list.append`,
     `str.upper`) allows the engine to skip expensive bytecode exploration of
-    the C-implemented standard library. 
-    
+    the C-implemented standard library.
+
     **Semantic Mapping:**
     Each model specifies:
     - **Purity**: Whether the method has side-effects.
@@ -27,7 +45,7 @@ class MethodModels:
     @classmethod
     def get(cls, type_kind: TypeKind, method_name: str) -> FunctionSummary | None:
         """Get the logical summary model for a specific method.
-        
+
         Forces initialization of the registry on the first call. If no model
         exists, the engine typically falls back to a sound 'Top' approximation.
         """
@@ -71,7 +89,7 @@ class MethodModels:
         ]
         for name, params in str_pure_str:
             cls._models[(TypeKind.STR, name)] = FunctionSummary(
-                name=f"str.{name }",
+                name=f"str.{name}",
                 parameters=params,
                 return_type=PyType.str_type(),
                 is_pure=True,
@@ -120,7 +138,7 @@ class MethodModels:
         ]
         for name in str_pure_bool:
             cls._models[(TypeKind.STR, name)] = FunctionSummary(
-                name=f"str.{name }",
+                name=f"str.{name}",
                 parameters=[],
                 return_type=PyType.bool_type(),
                 is_pure=True,
@@ -171,7 +189,7 @@ class MethodModels:
         for name, params in str_search_int:
             may_raise: set[str] = {"ValueError"} if "index" in name else set()
             cls._models[(TypeKind.STR, name)] = FunctionSummary(
-                name=f"str.{name }",
+                name=f"str.{name}",
                 parameters=params,
                 return_type=PyType.int_type(),
                 is_pure=True,
@@ -472,7 +490,7 @@ class MethodModels:
         ]
         for name, params in set_ops:
             cls._models[(TypeKind.SET, name)] = FunctionSummary(
-                name=f"set.{name }",
+                name=f"set.{name}",
                 parameters=params,
                 var_positional="others" if not params else None,
                 return_type=PyType.set_type(),
@@ -482,7 +500,7 @@ class MethodModels:
         set_comparisons = ["issubset", "issuperset", "isdisjoint"]
         for name in set_comparisons:
             cls._models[(TypeKind.SET, name)] = FunctionSummary(
-                name=f"set.{name }",
+                name=f"set.{name}",
                 parameters=[ParameterInfo("other", 0)],
                 return_type=PyType.bool_type(),
                 is_pure=True,
@@ -496,7 +514,7 @@ class MethodModels:
         ]
         for name in set_updates:
             cls._models[(TypeKind.SET, name)] = FunctionSummary(
-                name=f"set.{name }",
+                name=f"set.{name}",
                 var_positional="others",
                 return_type=PyType.none_type(),
                 is_pure=False,

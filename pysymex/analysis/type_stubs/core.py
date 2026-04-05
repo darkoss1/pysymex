@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Type stub core — StubParser, StubRepository, StubBasedTypeResolver, BuiltinStubs."""
 
 from __future__ import annotations
@@ -181,7 +199,6 @@ class StubParser:
                 if len(type_args) >= 2:
                     first_arg = type_args[0]
                     if first_arg.name == "_ParamList":
-
                         param_types = first_arg.type_args
                     else:
                         param_types = type_args[:-1]
@@ -224,7 +241,6 @@ class StubParser:
                 union_members=tuple(members),
             )
         elif isinstance(node, ast.List):
-
             return StubType(
                 name="_ParamList",
                 module="typing",
@@ -247,7 +263,7 @@ class StubParser:
         if isinstance(node, ast.Name):
             return node.id
         elif isinstance(node, ast.Attribute):
-            return f"{self ._get_full_name (node .value )}.{node .attr }"
+            return f"{self._get_full_name(node.value)}.{node.attr}"
         return ""
 
     def _process_import(
@@ -264,7 +280,7 @@ class StubParser:
             module = node.module or ""
             for alias in node.names:
                 name = alias.asname or alias.name
-                full_name = f"{module }.{alias .name }" if module else alias.name
+                full_name = f"{module}.{alias.name}" if module else alias.name
                 stub.imports[name] = full_name
 
 

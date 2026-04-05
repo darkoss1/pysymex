@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Enhanced Inter-Procedural Analysis for pysymex.
 This module extends the existing interprocedural.py with more advanced
@@ -12,6 +30,7 @@ Features:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import CodeType
 from typing import TYPE_CHECKING
 
 from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
@@ -110,7 +129,7 @@ class FunctionSummarizer:
 
         return MethodModels.get(type_kind, method_name)
 
-    def summarize_code(self, code: object, name: str) -> FunctionSummary:
+    def summarize_code(self, code: CodeType, name: str) -> FunctionSummary:
         """Create summary from code object."""
         summary = FunctionSummary(name=name)
         varnames = code.co_varnames
@@ -149,7 +168,7 @@ class FunctionSummarizer:
         self.summaries[name] = summary
         return summary
 
-    def _analyze_effects(self, code: object, summary: FunctionSummary) -> None:
+    def _analyze_effects(self, code: CodeType, summary: FunctionSummary) -> None:
         """Analyze bytecode for effects."""
         instructions = _cached_get_instructions(code)
         has_side_effects = False

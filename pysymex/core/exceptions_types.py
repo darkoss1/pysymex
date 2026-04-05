@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Exception type definitions, data classes, and the @raises decorator.
 
 Contains: ExceptionCategory, SymbolicException, ExceptionHandler, FinallyHandler,
@@ -9,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import Protocol, cast
 
 import z3
 
@@ -469,6 +487,10 @@ class RaisesContract:
         return True
 
 
+class _RaisesAnnotated(Protocol):
+    __raises__: list[RaisesContract]
+
+
 def raises(
     exc_type: type[BaseException] | str,
     when: str | None = None,
@@ -496,10 +518,12 @@ def raises(
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
         """Decorator."""
-        func_any: Any = func
-        if not hasattr(func_any, "__raises__"):
-            func_any.__raises__ = []
-        func_any.__raises__.append(contract)
+        annotated_func = cast("_RaisesAnnotated", func)
+        existing = getattr(annotated_func, "__raises__", None)
+        if not isinstance(existing, list):
+            annotated_func.__raises__ = []
+            existing = annotated_func.__raises__
+        existing.append(contract)
         return func
 
     return decorator

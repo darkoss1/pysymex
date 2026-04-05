@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Command-line interface for pysymex.
 Provides two modes:
 1. Single function analysis: PySyMex file.py -f function_name
@@ -13,10 +31,11 @@ import json
 import logging
 import sys
 import time
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 from pysymex._deps import ensure_z3_ready
 
@@ -25,7 +44,7 @@ logger = logging.getLogger(__name__)
 try:
     __version__ = pkg_version("pysymex")
 except PackageNotFoundError:
-    __version__ = "0.1.0a0"
+    __version__ = "0.1.0a3"
 
 
 _EXPORTS: dict[str, tuple[str, str]] = {
@@ -73,6 +92,19 @@ __all__: list[str] = [
 ]
 
 _Namespace = argparse.Namespace
+
+
+@runtime_checkable
+class _IssueLike(Protocol):
+    def to_dict(self) -> dict[str, object]: ...
+
+
+@runtime_checkable
+class _SymbolicResultLike(Protocol):
+    issues: list[_IssueLike]
+
+    def to_dict(self) -> dict[str, object]: ...
+
 
 _SUBCOMMANDS = frozenset(
     {
@@ -141,7 +173,7 @@ def cmd_scan_watch(args: _Namespace) -> int:
 
     analyzer = IncrementalAnalyzer()
     file_hashes: dict[Path, str] = {}
-    symbolic_results: dict[str, object] = {}
+    symbolic_results: dict[str, _SymbolicResultLike] = {}
     static_results: dict[str, list[object]] = {}
 
     def key_of(file_path: Path) -> str:
@@ -166,10 +198,18 @@ def cmd_scan_watch(args: _Namespace) -> int:
         cached = analyzer.get_cached(file_key)
         if cached is not None:
             if args.mode == "static":
-                static_results[file_key] = cached.result
-                return len(cached.result)
-            symbolic_results[file_key] = cached.result
-            return len(cached.result.issues)
+                cached_result = cached.result
+                if isinstance(cached_result, list) and all(
+                    isinstance(item, _IssueLike) for item in cached_result
+                ):
+                    static_results[file_key] = cached_result
+                    return len(cached_result)
+                return 0
+            cached_result = cached.result
+            if isinstance(cached_result, _SymbolicResultLike):
+                symbolic_results[file_key] = cached_result
+                return len(cached_result.issues)
+            return 0
 
         if args.mode == "static":
             issues = scan_static(
@@ -179,11 +219,13 @@ def cmd_scan_watch(args: _Namespace) -> int:
                 min_confidence=0.7,
                 show_suppressed=False,
             )
-            static_results[file_key] = issues
+            static_results[file_key] = cast("list[object]", issues)
             analyzer.cache_result(file_key, issues)
             return len(issues)
 
-        from pysymex.scanner import scan_file
+        from pysymex.scanner import scan_file as _scan_file
+
+        scan_file = cast("Callable[..., _SymbolicResultLike]", _scan_file)
 
         result = scan_file(
             file_path,
@@ -206,7 +248,12 @@ def cmd_scan_watch(args: _Namespace) -> int:
     def emit_report() -> None:
         """Render full report from cached latest results."""
         if args.mode == "static":
-            all_issues = [issue for issues in static_results.values() for issue in issues]
+            all_issues = [
+                issue
+                for issues in static_results.values()
+                for issue in issues
+                if isinstance(issue, _IssueLike)
+            ]
             total_issues = len(all_issues)
             if args.format == "json":
                 output_data = {

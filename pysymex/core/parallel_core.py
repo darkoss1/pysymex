@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Parallel path exploration core logic for pysymex.
 
 Work queues, state merging, parallel explorer, constraint partitioning,
@@ -48,7 +66,7 @@ class WorkQueue(Generic[T]):
         maxsize: Maximum queue capacity (0 = unbounded).
     """
 
-    def __init__(self, maxsize: int = 0):
+    def __init__(self, maxsize: int = 0) -> None:
         """Initialize the work queue.
 
         Args:
@@ -123,7 +141,7 @@ class StateMerger(Generic[T]):
         merge_threshold: Number of similar states that triggers a merge.
     """
 
-    def __init__(self, merge_threshold: int = 10):
+    def __init__(self, merge_threshold: int = 10) -> None:
         """Initialize the state merger.
 
         Args:
@@ -157,7 +175,7 @@ class StateMerger(Generic[T]):
         try:
             head = constraints[:5]
             constraint_hash_val = structural_hash(head)
-            constraint_disc = (len(constraints),) + tuple(sorted(c.hash() for c in head))
+            constraint_disc = (len(constraints), *tuple(sorted(c.hash() for c in head)))
         except (TypeError, RecursionError):
             constraint_hash_val = hash(len(constraints))
             constraint_disc = (len(constraints),)
@@ -219,7 +237,7 @@ class ParallelExplorer(Generic[T]):
         config: ExplorationConfig | None = None,
         step_function: Callable[[T], list[T]] | None = None,
         check_function: Callable[[T], list[dict[str, object]]] | None = None,
-    ):
+    ) -> None:
         """Initialize the parallel explorer."""
         self.config = config or ExplorationConfig()
         self._step_fn = step_function
@@ -359,10 +377,16 @@ class ParallelExplorer(Generic[T]):
     def _compute_priority(self, state: T, parent: WorkItem[T]) -> float:
         """Compute priority for a successor state."""
         strategy = self.config.strategy
-        if strategy == ExplorationStrategy.DFS:
-            return float(parent.depth + 1)
-        elif strategy == ExplorationStrategy.BFS:
-            return -float(parent.depth + 1)
+        if strategy == ExplorationStrategy.ADAPTIVE:
+            depth = float(parent.depth + 1)
+            pc = float(getattr(state, "pc", 0))
+            with self._coverage_lock:
+                is_new_pc = 1.0 if int(pc) not in self._coverage else 0.0
+            return -((depth * 8.0) + (is_new_pc * 120.0) + pc)
+        elif strategy == ExplorationStrategy.CHTD_NATIVE:
+            depth = float(parent.depth + 1)
+            pc = float(getattr(state, "pc", 0))
+            return -(depth * 10.0 + pc)
         elif strategy == ExplorationStrategy.COVERAGE:
             pc = getattr(state, "pc", 0)
             with self._coverage_lock:
@@ -395,21 +419,21 @@ class ConstraintPartitioner:
     solved independently - and therefore in parallel.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._variable_graph: dict[str, set[str]] = {}
 
     def partition(self, constraints: list[z3.BoolRef]) -> list[list[z3.BoolRef]]:
         """Partition constraints into independent sets."""
         if not constraints:
             return []
-        # Delegate clustering to ConstraintIndependenceOptimizer for cached UF grouping.
+
         optimizer = ConstraintIndependenceOptimizer()
         constraint_vars: list[frozenset[str]] = []
         for c in constraints:
             constraint_vars.append(optimizer.register_constraint(c))
 
         partitions: dict[str, list[z3.BoolRef]] = {}
-        for c, var_names in zip(constraints, constraint_vars):
+        for c, var_names in zip(constraints, constraint_vars, strict=False):
             if not var_names:
                 root = "CONST"
             else:
@@ -432,7 +456,7 @@ class ParallelSolver:
         timeout_ms: Per-partition solver timeout in milliseconds.
     """
 
-    def __init__(self, max_workers: int = 4, timeout_ms: int = 5000):
+    def __init__(self, max_workers: int = 4, timeout_ms: int = 5000) -> None:
         self.max_workers = max_workers
         self.timeout_ms = timeout_ms
         self._partitioner = ConstraintPartitioner()
@@ -491,7 +515,8 @@ class ParallelSolver:
         combined = z3.Solver()
         for model in models:
             for decl in model.decls():
-                combined.add(decl() == model[decl])
+                eq = decl() == model[decl]
+                combined.add(eq if isinstance(eq, z3.BoolRef) else z3.BoolVal(bool(eq)))
         if combined.check() == z3.sat:
             return combined.model()
         return models[0]

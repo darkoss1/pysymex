@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Abstract Interpretation Framework for pysymex.
 This module provides a more sophisticated abstract interpretation engine
@@ -14,6 +32,7 @@ Features:
 from __future__ import annotations
 
 import logging
+from types import CodeType
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +76,11 @@ __all__ = [
 class AbstractInterpreter:
     """
     Abstract interpreter for Python bytecode.
-    
+
     **Theoretical Foundation:**
-    Implements classic abstract interpretation over multiple domains (Interval, 
+    Implements classic abstract interpretation over multiple domains (Interval,
     Sign, Congruence). It soundly approximates program behavior by evaluating
-    bytecode effects on an abstract lattice where each point represents a 
+    bytecode effects on an abstract lattice where each point represents a
     set of possible concrete states.
 
     **Convergence Mechanics:**
@@ -96,7 +115,7 @@ class AbstractInterpreter:
         self._used_fast_path: bool = False
 
     @staticmethod
-    def _is_trivial(code: object) -> bool:
+    def _is_trivial(code: CodeType) -> bool:
         """Check if a function is trivial (small + no branches)."""
         instructions = _cached_get_instructions(code)
         if len(instructions) > AbstractInterpreter._TRIVIAL_MAX_INSTRUCTIONS:
@@ -108,7 +127,7 @@ class AbstractInterpreter:
 
     def _analyze_trivial(
         self,
-        code: object,
+        code: CodeType,
         file_path: str,
     ) -> list[object]:
         """Fast-path analysis for trivial functions.
@@ -138,8 +157,12 @@ class AbstractInterpreter:
                 "BINARY_MODULO",
                 "BINARY_OP",
             ):
+                is_div = True
+                if opname == "BINARY_OP":
+                    if instr.argrepr and not any(op in instr.argrepr for op in ("/", "//", "%")):
+                        is_div = False
 
-                if prev_const == 0:
+                if is_div and prev_const == 0:
                     warnings.append(
                         AbstractWarning(
                             kind="DIVISION_BY_ZERO",
@@ -157,7 +180,7 @@ class AbstractInterpreter:
 
     def analyze(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[object]:
         """Analyze bytecode and return warnings."""
@@ -180,17 +203,17 @@ class AbstractInterpreter:
         self,
         cfg: ControlFlowGraph,
         entry_state: AbstractState,
-        code: object,
+        code: CodeType,
         file_path: str,
     ) -> dict[int, AbstractState]:
         """Interpret the CFG abstractly to reach a fixed-point.
 
         **Algorithm:**
-        Iteratively propagates abstract states through the CFG until the 
-        least fixed-point is reached or the iteration limit is hit. 
-        
+        Iteratively propagates abstract states through the CFG until the
+        least fixed-point is reached or the iteration limit is hit.
+
         Uses a widening operator after a small number of iterations per block
-        to force convergence in domains with infinite ascending chains (like 
+        to force convergence in domains with infinite ascending chains (like
         literal integer intervals).
         """
         states: dict[int, AbstractState] = {}
@@ -211,14 +234,19 @@ class AbstractInterpreter:
             out_state = self._transfer_block(block, in_state, code, file_path)
             for succ_id in block.successors:
                 old_state = states.get(succ_id, AbstractState.bottom())
-                iteration_count[succ_id] += 1
+                succ_block = cfg.blocks.get(succ_id)
+
+                is_backedge = succ_block is not None and block.start_pc >= succ_block.start_pc
+                if is_backedge:
+                    iteration_count[succ_id] += 1
+
                 if iteration_count[succ_id] > 3:
                     new_state = old_state.widen(out_state)
                 else:
                     new_state = old_state.join(out_state)
+
                 if not new_state.leq(old_state):
                     states[succ_id] = new_state
-                    succ_block = cfg.blocks.get(succ_id)
                     if succ_block is not None and succ_block not in worklist:
                         worklist.append(succ_block)
         if worklist and global_iterations >= max_global_iterations:
@@ -232,7 +260,7 @@ class AbstractInterpreter:
         self,
         block: BasicBlock,
         in_state: AbstractState,
-        code: object,
+        code: CodeType,
         file_path: str,
     ) -> AbstractState:
         """Transfer function for a basic block."""
@@ -250,14 +278,14 @@ class AbstractInterpreter:
         instr: dis.Instruction,
         state: AbstractState,
         line: int,
-        code: object,
+        code: CodeType,
         file_path: str,
     ) -> None:
         """Transfer function for a single instruction.
 
         **Semantics Modeling:**
         Maps a concrete bytecode instruction to its abstract effect on the
-        `AbstractState` (stack and environment). 
+        `AbstractState` (stack and environment).
         - **Numerical Ops**: Evaluated via interval/sign arithmetic.
         - **Flow Tracking**: Tracks type-tags and simple constant propagation.
         - **Approximation**: Opcodes with complex heap effects (e.g. `CALL`)
@@ -308,7 +336,7 @@ class AbstractInterpreter:
                             )
                     state.push(result)
                 elif "%" in op_name:
-                    result, may_raise = left.div(right)
+                    result, may_raise = left.mod(right)
                     if may_raise and not right.must_be_non_zero():
                         self.warnings.append(
                             DivisionByZeroWarning(
@@ -381,7 +409,6 @@ class AbstractInterpreter:
                 state.pop()
                 state.pop()
         else:
-
             try:
                 effect = dis.stack_effect(instr.opcode, instr.arg or 0)
                 if effect < 0:
@@ -405,7 +432,7 @@ class AbstractAnalyzer:
 
     def analyze_function(
         self,
-        code: object,
+        code: CodeType,
         file_path: str = "<unknown>",
     ) -> list[object]:
         """Analyze a function for potential issues."""
@@ -413,14 +440,14 @@ class AbstractAnalyzer:
 
     def analyze_module(
         self,
-        module_code: object,
+        module_code: CodeType,
         file_path: str = "<unknown>",
     ) -> dict[str, list[object]]:
         """Analyze all functions in a module."""
         results: dict[str, list[object]] = {}
         results["<module>"] = self.analyze_function(module_code, file_path)
         for const in module_code.co_consts:
-            if hasattr(const, "co_code"):
+            if isinstance(const, CodeType):
                 func_name = const.co_name
                 results[func_name] = self.analyze_function(const, file_path)
         return results

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Class Invariants for pysymex.
 Phase 19: Support for @invariant decorator and class invariant checking.
@@ -10,13 +28,14 @@ This module provides:
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
+    Protocol,
     cast,
 )
 
@@ -47,6 +66,10 @@ class ClassInvariant:
         if self.message:
             return f"{self.condition} ({self.message})"
         return self.condition
+
+
+class _InvariantOwner(Protocol):
+    __invariants__: list[ClassInvariant]
 
 
 @dataclass
@@ -130,10 +153,10 @@ class InvariantChecker:
     3. Report violations with counterexamples
     """
 
-    def __init__(self, solver: z3.Solver | None = None):
+    def __init__(self, solver: z3.Solver | None = None) -> None:
         self.solver = solver or create_solver()
         self._violations: list[InvariantViolation] = []
-        self._checked_invariants: set[tuple[str, str, str]] = set()
+        self._checked_invariants: set[tuple[str, str, str, str]] = set()
 
     @property
     def violations(self) -> list[InvariantViolation]:
@@ -318,95 +341,14 @@ def parse_invariant_condition(
     self_attrs: dict[str, z3.ExprRef],
 ) -> z3.BoolRef:
     """
-    Parse an invariant condition string into Z3.
-    Simple parser for conditions like:
-    - 'self.x >= 0'
-    - 'self.balance > self.min_balance'
-    - 'self.items is not None'
-    Args:
-        condition: The invariant condition string
-        self_attrs: Map of 'self.attr' to Z3 variables
-    Returns:
-        Z3 boolean expression
+    Parse an invariant condition string into Z3 using the ContractCompiler.
     """
-    import re
+    from pysymex.analysis.contracts.compiler import ContractCompiler
 
-    comparisons: list[tuple[str, Callable[[re.Match[str]], z3.BoolRef]]] = [
-        (r"(\S+)\s*>=\s*(\S+)", lambda m: _parse_cmp(m, ">=", self_attrs)),
-        (r"(\S+)\s*<=\s*(\S+)", lambda m: _parse_cmp(m, "<=", self_attrs)),
-        (r"(\S+)\s*>\s*(\S+)", lambda m: _parse_cmp(m, ">", self_attrs)),
-        (r"(\S+)\s*<\s*(\S+)", lambda m: _parse_cmp(m, "<", self_attrs)),
-        (r"(\S+)\s*==\s*(\S+)", lambda m: _parse_cmp(m, "==", self_attrs)),
-        (r"(\S+)\s*!=\s*(\S+)", lambda m: _parse_cmp(m, "!=", self_attrs)),
-        (r"(\S+)\s+is\s+not\s+None", lambda m: _parse_not_none(m, self_attrs)),
-        (r"(\S+)\s+is\s+None", lambda m: _parse_is_none(m, self_attrs)),
-    ]
-    for pattern, handler in comparisons:
-        match = re.match(pattern, condition)
-        if match:
-            return handler(match)
-    return z3.Bool(f"inv_{condition[:20]}")
+    for attr_ref in re.findall(r"self\.[A-Za-z_][A-Za-z0-9_]*", condition):
+        self_attrs.setdefault(attr_ref, z3.Int(attr_ref))
 
-
-def _parse_value(s: str, self_attrs: dict[str, z3.ExprRef]) -> z3.ExprRef:
-    """Parse a value (self.attr or literal) to Z3."""
-    s = s.strip()
-    if s.startswith("self."):
-        if s in self_attrs:
-            return self_attrs[s]
-        var = z3.Int(s)
-        self_attrs[s] = var
-        return var
-    try:
-        return z3.IntVal(int(s))
-    except ValueError:
-        pass
-    try:
-        return z3.RealVal(float(s))
-    except ValueError:
-        pass
-    return z3.Int(s)
-
-
-def _parse_cmp(
-    match: object,
-    op: str,
-    self_attrs: dict[str, z3.ExprRef],
-) -> z3.BoolRef:
-    """Parse a comparison expression."""
-    left = _parse_value(match.group(1), self_attrs)
-    right = _parse_value(match.group(2), self_attrs)
-    if op == ">=":
-        return left >= right
-    elif op == "<=":
-        return left <= right
-    elif op == ">":
-        return left > right
-    elif op == "<":
-        return left < right
-    elif op == "==":
-        return left == right
-    elif op == "!=":
-        return left != right
-    return z3.BoolVal(True)
-
-
-def _parse_not_none(
-    match: object,
-    self_attrs: dict[str, z3.ExprRef],
-) -> z3.BoolRef:
-    """Parse 'x is not None' — modeled as x != 0 (null sentinel)."""
-    var = _parse_value(match.group(1), self_attrs)
-    return var != 0
-
-
-def _parse_is_none(
-    match: object,
-    self_attrs: dict[str, z3.ExprRef],
-) -> z3.BoolRef:
-    """Parse 'x is None' — modeled as x == 0 (null sentinel)."""
-    var = _parse_value(match.group(1), self_attrs)
-    return var == 0
+    return ContractCompiler.compile_expression(condition, self_attrs)
 
 
 def check_object_invariants(
@@ -432,7 +374,7 @@ def check_object_invariants(
     invariants = invariant_state.get_invariants(class_name)
     if not invariants:
         if hasattr(cls, "__invariants__"):
-            invariants = cls.__invariants__
+            invariants = cast("_InvariantOwner", cls).__invariants__
             invariant_state.register_class(class_name, invariants)
     if not invariants:
         return []

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Plugin system for pysymex.
 This module provides an extensible plugin architecture that allows users
 to add custom detectors, opcode handlers, reporters, and analysis passes.
@@ -16,11 +34,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
-    Any,
 )
 
 if TYPE_CHECKING:
     from pysymex.analysis.detectors import Detector
+    from pysymex.execution.dispatcher import OpcodeResult
     from pysymex.execution.executor import SymbolicExecutor as SymbolicEngine
 
 
@@ -62,7 +80,7 @@ class PluginMetadata:
     @property
     def qualified_name(self) -> str:
         """Get fully qualified plugin name."""
-        return f"{self .name }@{self .version }"
+        return f"{self.name}@{self.version}"
 
 
 class Plugin(ABC):
@@ -73,9 +91,9 @@ class Plugin(ABC):
 
     metadata: PluginMetadata
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._enabled = True
-        self.context: dict[str, Any] = {}
+        self.context: dict[str, object] = {}
 
     @property
     def enabled(self) -> bool:
@@ -130,16 +148,16 @@ class HandlerPlugin(Plugin):
     """Plugin that provides custom opcode handlers."""
 
     @abstractmethod
-    def get_handlers(self) -> dict[str, Callable[..., object]]:
+    def get_handlers(self) -> dict[str, Callable[..., OpcodeResult]]:
         """Get opcode handlers.
         Returns:
             Dict mapping opcode names to handler functions.
-            Handler signature: (engine, state, instruction) -> None
+            Handler signature: (instruction, state, dispatcher) -> OpcodeResult
         """
 
     def activate(self, engine: SymbolicEngine) -> None:
         """Register handlers with engine."""
-        handlers: dict[str, Callable[..., object]] = self.get_handlers()
+        handlers: dict[str, Callable[..., OpcodeResult]] = self.get_handlers()
         for opcode, handler in handlers.items():
             if hasattr(engine, "register_handler"):
                 engine.register_handler(opcode, handler)
@@ -178,7 +196,7 @@ class HookPlugin(Plugin):
     """Plugin that hooks into execution points."""
 
     @abstractmethod
-    def get_hooks(self) -> dict[str, Callable[..., object]]:
+    def get_hooks(self) -> dict[str, Callable[..., object | None]]:
         """Get hook handlers.
         Returns:
             Dict mapping hook names to handler functions.
@@ -186,7 +204,7 @@ class HookPlugin(Plugin):
 
     def activate(self, engine: SymbolicEngine) -> None:
         """Register hooks with engine."""
-        hooks: dict[str, Callable[..., object]] = self.get_hooks()
+        hooks: dict[str, Callable[..., object | None]] = self.get_hooks()
         for hook_name, handler in hooks.items():
             if hasattr(engine, "register_hook"):
                 engine.register_hook(hook_name, handler)
@@ -197,7 +215,7 @@ class PluginRegistry:
     Manages plugin discovery, loading, and lifecycle.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._plugins: dict[str, Plugin] = {}
         self._plugin_types: dict[PluginType, list[Plugin]] = {pt: [] for pt in PluginType}
         self._hooks: dict[str, list[Callable[..., object]]] = {name: [] for name in HOOKS}
@@ -212,13 +230,13 @@ class PluginRegistry:
         """
         name = plugin.metadata.qualified_name
         if name in self._plugins:
-            raise ValueError(f"Plugin already registered: {name }")
+            raise ValueError(f"Plugin already registered: {name}")
         for dep in plugin.metadata.dependencies:
             if dep not in self._plugins:
-                raise ValueError(f"Missing dependency: {dep }")
+                raise ValueError(f"Missing dependency: {dep}")
         for conflict in plugin.metadata.conflicts:
             if conflict in self._plugins:
-                raise ValueError(f"Conflicting plugin: {conflict }")
+                raise ValueError(f"Conflicting plugin: {conflict}")
         self._plugins[name] = plugin
         self._plugin_types[plugin.metadata.plugin_type].append(plugin)
         self._load_order.append(name)
@@ -281,7 +299,7 @@ class PluginRegistry:
 class PluginLoader:
     """Loads plugins from various sources."""
 
-    def __init__(self, registry: PluginRegistry):
+    def __init__(self, registry: PluginRegistry) -> None:
         self.registry = registry
         self._search_paths: list[Path] = []
 
@@ -307,7 +325,7 @@ class PluginLoader:
                     return plugin
             return None
         except Exception as e:
-            print(f"Failed to load plugin from {module_name }: {e }")
+            print(f"Failed to load plugin from {module_name}: {e}")
             return None
 
     def load_from_file(self, path: Path) -> Plugin | None:
@@ -335,7 +353,7 @@ class PluginLoader:
                     return plugin
             return None
         except Exception as e:
-            print(f"Failed to load plugin from {path }: {e }")
+            print(f"Failed to load plugin from {path}: {e}")
             return None
 
     def discover_plugins(self) -> list[Plugin]:
@@ -376,14 +394,14 @@ class PluginManager:
     Provides a unified API for working with plugins.
     """
 
-    def __init__(self, config: PluginManagerConfig | None = None):
+    def __init__(self, config: PluginManagerConfig | None = None) -> None:
         self.config = config or PluginManagerConfig()
         self.registry = PluginRegistry()
         self.loader = PluginLoader(self.registry)
         for path_str in self.config.search_paths:
             self.loader.add_search_path(Path(path_str))
 
-    def initialize(self, api: Any = None) -> None:
+    def initialize(self, api: object = None) -> None:
         """Initialize the plugin system."""
         if self.config.auto_discover:
             self.loader.discover_plugins()

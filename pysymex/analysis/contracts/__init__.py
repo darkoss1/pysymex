@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Contract-based verification for pysymex.
 
 This module provides formal verification through contracts.
@@ -46,7 +64,7 @@ class ContractVerifier:
     3. Loop invariants are preserved
     """
 
-    def __init__(self, timeout_ms: int = 5000):
+    def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
@@ -240,12 +258,12 @@ class VerificationReport:
     def format(self) -> str:
         """Format report for display."""
         lines = [
-            f"Verification Report: {self .function_name }",
+            f"Verification Report: {self.function_name}",
             "=" * 50,
-            f"Total contracts: {self .total_contracts }",
-            f"  Verified: {self .verified }",
-            f"  Violated: {self .violated }",
-            f"  Unknown:  {self .unknown }",
+            f"Total contracts: {self.total_contracts}",
+            f"  Verified: {self.verified}",
+            f"  Violated: {self.violated}",
+            f"  Unknown:  {self.unknown}",
         ]
         if self.is_verified:
             lines.append("\n✓ All contracts verified!")
@@ -263,7 +281,7 @@ class ContractAnalyzer:
     that contracts hold for all possible inputs.
     """
 
-    def __init__(self, verifier: ContractVerifier | None = None):
+    def __init__(self, verifier: ContractVerifier | None = None) -> None:
         self.verifier = verifier or ContractVerifier()
         self._reports: dict[str, VerificationReport] = {}
 
@@ -290,7 +308,6 @@ class ContractAnalyzer:
         contract = get_function_contract(func)
         report = VerificationReport(function_name=func.__name__)
         if contract is None:
-
             self._check_class_invariants(func, report, symbolic_args or {})
             return report
         symbols = self._build_symbols(func, symbolic_args or {})
@@ -300,7 +317,7 @@ class ContractAnalyzer:
         for post in contract.postconditions:
             symbols_with_old = dict(symbols)
             for name, expr in symbols.items():
-                old_name = f"old_{name }"
+                old_name = f"old_{name}"
                 if name.startswith("old_"):
                     continue
                 if z3.is_int(expr):
@@ -336,7 +353,6 @@ class ContractAnalyzer:
             owner_class = getattr(func, "__qualname__", "")
 
             if "." in owner_class:
-
                 return
             return
         if not hasattr(owner_class, "__invariants__"):
@@ -353,7 +369,7 @@ class ContractAnalyzer:
         symbols = self._build_symbols(func, symbolic_args)
         self_attrs: dict[str, z3.ExprRef] = {}
         for name, expr in symbols.items():
-            self_attrs[f"self.{name }"] = expr
+            self_attrs[f"self.{name}"] = expr
         z3_conditions = [parse_invariant_condition(inv.condition, self_attrs) for inv in invariants]
         checker = self.invariant_state.checker
         method_name = func.__name__

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Public API for pysymex.
 
 This module exposes the user-facing functions for symbolic execution,
@@ -9,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Unpack, cast
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.integration import (
@@ -21,6 +40,7 @@ from pysymex.analysis.pipeline import (
     Scanner,
     ScannerConfig,
 )
+from pysymex.async_api import AnalyzeConfigKwargs
 from pysymex.execution.concurrency_executor import analyze_concurrent
 from pysymex.execution.executor import (
     ExecutionConfig,
@@ -29,6 +49,51 @@ from pysymex.execution.executor import (
 )
 from pysymex.execution.verified_executor import verify
 from pysymex.reporting.formatters import format_result
+
+
+def _to_int(value: object, default: int) -> int:
+    """Convert a generic config value to int with fallback."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _to_float(value: object, default: float) -> float:
+    """Convert a generic config value to float with fallback."""
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _to_bool(value: object, default: bool) -> bool:
+    """Convert a generic config value to bool with fallback."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return default
 
 
 def analyze(
@@ -92,8 +157,6 @@ def analyze(
             detect_overflow=detect_overflow,
         )
     else:
-        # Backward-compatible behavior for callers passing an explicit
-        # ExecutionConfig instance.
         resolved_config = config
     executor = SymbolicExecutor(resolved_config)
     return executor.execute_function(func, dict(symbolic_args) if symbolic_args else {})
@@ -117,7 +180,8 @@ def analyze_code(
         :class:`ExecutionResult` with issues found.
     """
     compiled = compile(code, "<string>", "exec")
-    config = ExecutionConfig(**kwargs)
+    config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+    config = config_ctor(**kwargs)
     executor = SymbolicExecutor(config)
     return executor.execute_code(compiled, dict(symbolic_vars) if symbolic_vars else {})
 
@@ -146,13 +210,16 @@ def analyze_file(
         ValueError: If path validation fails or function is not found.
         FileNotFoundError: If *filepath* does not exist.
     """
-    from pysymex.security import (
+    from pysymex.sandbox import (
         PathTraversalError,
-        create_sandbox_namespace,
         sanitize_function_name,
         validate_config,
         validate_path,
     )
+
+    kwargs_mut = dict(kwargs)
+    sandbox_mode = _to_bool(kwargs_mut.pop("sandbox", False), False)
+    sandbox_config = kwargs_mut.pop("sandbox_config", None)
 
     try:
         validated_path = validate_path(
@@ -162,55 +229,68 @@ def analyze_file(
             allowed_extensions=[".py", ".pyw"],
         )
     except PathTraversalError as e:
-        raise ValueError(f"Security error: {e }") from e
+        raise ValueError(f"Security error: {e}") from e
 
     try:
         safe_name = sanitize_function_name(function_name)
     except ValueError as e:
-        raise ValueError(f"Invalid function name: {e }") from e
+        raise ValueError(f"Invalid function name: {e}") from e
 
     config_params = validate_config(
-        max_paths=int(kwargs.get("max_paths", 1000)),
-        max_depth=int(kwargs.get("max_depth", 100)),
-        max_iterations=int(kwargs.get("max_iterations", 10000)),
-        timeout=float(kwargs.get("timeout", 60.0)),
+        max_paths=_to_int(kwargs_mut.get("max_paths", 1000), 1000),
+        max_depth=_to_int(kwargs_mut.get("max_depth", 100), 100),
+        max_iterations=_to_int(kwargs_mut.get("max_iterations", 10000), 10000),
+        timeout=_to_float(kwargs_mut.get("timeout", 60.0), 60.0),
     )
 
-    source = validated_path.read_text(encoding="utf-8")
-    compiled = compile(source, str(validated_path), "exec")
+    if sandbox_mode:
+        from pysymex.sandbox.bridge import extract_bytecode
 
-    namespace = create_sandbox_namespace(allow_builtins=True)
-    from pysymex.security import make_restricted_import
+        bytecode_blob = extract_bytecode(
+            validated_path.read_bytes(),
+            str(validated_path),
+            sandbox_config=(sandbox_config if isinstance(sandbox_config, Mapping) else None),
+        )
+        compiled = bytecode_blob.reconstruct()
 
-    builtins_dict = namespace.get("__builtins__", {})
-    if isinstance(builtins_dict, dict):
-        builtins_dict["__import__"] = make_restricted_import()
-    exec(compiled, namespace)
+        from pysymex.sandbox.execution import get_hardened_builtins
+
+        namespace: dict[str, object] = {
+            "__builtins__": get_hardened_builtins(),
+            "__name__": "__main__",
+            "__file__": str(validated_path),
+        }
+        exec(compiled, namespace)
+    else:
+        from pysymex.sandbox.execution import hardened_exec
+
+        source = validated_path.read_text(encoding="utf-8")
+        namespace = hardened_exec(source, str(validated_path))
 
     if safe_name not in namespace:
-        raise ValueError(f"Function '{safe_name }' not found in {validated_path }")
-    func = namespace[safe_name]
-    if not callable(func):
-        raise ValueError(f"'{safe_name }' is not a callable")
+        raise ValueError(f"Function '{safe_name}' not found in {validated_path}")
+    func_obj = namespace[safe_name]
+    if not callable(func_obj):
+        raise ValueError(f"'{safe_name}' is not a callable")
+    max_paths_cfg = cast("int", config_params["max_paths"])
+    max_depth_cfg = cast("int", config_params["max_depth"])
+    max_iterations_cfg = cast("int", config_params["max_iterations"])
+    timeout_cfg = cast("float", config_params["timeout"])
 
-    analyze_kwargs: dict[str, object] = {
-        "max_paths": config_params["max_paths"],
-        "max_depth": config_params["max_depth"],
-        "max_iterations": config_params["max_iterations"],
-        "timeout": config_params["timeout"],
-    }
-    for key in [
-        "verbose",
-        "detect_division_by_zero",
-        "detect_assertion_errors",
-        "detect_index_errors",
-        "detect_type_errors",
-        "detect_overflow",
-    ]:
-        if key in kwargs:
-            analyze_kwargs[key] = kwargs[key]
-
-    return analyze(func, symbolic_args, **analyze_kwargs)
+    return analyze(
+        func_obj,
+        symbolic_args,
+        max_paths=max_paths_cfg,
+        max_depth=max_depth_cfg,
+        max_iterations=max_iterations_cfg,
+        timeout=timeout_cfg,
+        verbose=_to_bool(kwargs_mut.get("verbose", False), False),
+        detect_division_by_zero=_to_bool(kwargs_mut.get("detect_division_by_zero", True), True),
+        detect_assertion_errors=_to_bool(kwargs_mut.get("detect_assertion_errors", True), True),
+        detect_index_errors=_to_bool(kwargs_mut.get("detect_index_errors", True), True),
+        detect_type_errors=_to_bool(kwargs_mut.get("detect_type_errors", True), True),
+        detect_overflow=_to_bool(kwargs_mut.get("detect_overflow", False), False),
+    )
 
 
 def quick_check(func: Callable[..., object]) -> list[Issue]:
@@ -350,32 +430,61 @@ __all__ = [
 ]
 
 
-def analyze_async(*args: object, **kwargs: object) -> object:
+async def analyze_async(
+    func: Callable[..., object],
+    symbolic_args: Mapping[str, str] | None = None,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
+) -> ExecutionResult:
     """Async version of analyze(). See :func:`pysymex.async_api.analyze_async`."""
     from pysymex.async_api import analyze_async as _impl
 
-    return _impl(*args, **kwargs)
+    return await _impl(func, symbolic_args, **kwargs)
 
 
-def analyze_code_async(*args: object, **kwargs: object) -> object:
+async def analyze_code_async(
+    code: str,
+    symbolic_vars: Mapping[str, str] | None = None,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
+) -> ExecutionResult:
     """Async version of analyze_code(). See :func:`pysymex.async_api.analyze_code_async`."""
     from pysymex.async_api import analyze_code_async as _impl
 
-    return _impl(*args, **kwargs)
+    return await _impl(code, symbolic_vars, **kwargs)
 
 
-def analyze_file_async(*args: object, **kwargs: object) -> object:
+async def analyze_file_async(
+    filepath: str | Path,
+    function_name: str,
+    symbolic_args: Mapping[str, str] | None = None,
+    **kwargs: Unpack[AnalyzeConfigKwargs],
+) -> ExecutionResult:
     """Async version of analyze_file(). See :func:`pysymex.async_api.analyze_file_async`."""
     from pysymex.async_api import analyze_file_async as _impl
 
-    return _impl(*args, **kwargs)
+    return await _impl(filepath, function_name, symbolic_args, **kwargs)
 
 
-def scan_directory_async(*args: object, **kwargs: object) -> object:
+async def scan_directory_async(
+    dir_path: str | Path,
+    pattern: str = "**/*.py",
+    verbose: bool = True,
+    max_paths: int = 100,
+    timeout: float = 30.0,
+    max_concurrency: int | None = None,
+    auto_tune: bool = False,
+) -> list[object]:
     """Async directory scan. See :func:`pysymex.async_api.scan_directory_async`."""
     from pysymex.async_api import scan_directory_async as _impl
 
-    return _impl(*args, **kwargs)
+    return await _impl(
+        dir_path,
+        pattern=pattern,
+        verbose=verbose,
+        max_paths=max_paths,
+        timeout=timeout,
+        max_concurrency=max_concurrency,
+        auto_tune=auto_tune,
+    )
 
 
 def scan_static(
@@ -388,7 +497,7 @@ def scan_static(
     """Perform static vulnerability scanning on a specified file or directory path.
 
     Utilizes the Enhanced Static Analysis Scanner to identify common bug patterns
-    (e.g., division by zero, null dereference) through fast pattern matching 
+    (e.g., division by zero, null dereference) through fast pattern matching
     instead of full symbolic execution.
 
     Args:
@@ -415,7 +524,7 @@ def scan_static(
         pattern = "**/*.py" if recursive else "*.py"
         return scanner.scan_directory(str(path_obj), pattern)
     else:
-        raise ValueError(f"Path not found: {path }")
+        raise ValueError(f"Path not found: {path}")
 
 
 def scan_pipeline(
@@ -460,4 +569,4 @@ def scan_pipeline(
     elif path_obj.is_dir():
         return pipeline.analyze_directory(str(path_obj), recursive=recursive)
     else:
-        raise ValueError(f"Path not found: {path }")
+        raise ValueError(f"Path not found: {path}")

@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """GPU CHTD Integration Layer.
 
 Provides the high-level interface between CHTD's bag evaluation needs
@@ -29,8 +47,16 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+
+def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Return unpacked bits in little-endian bit order for each byte."""
+    bits = np.unpackbits(bitmap)
+    return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
+
+
 _gpu_available: bool | None = None
 _gpu_module: tuple[types.ModuleType, types.ModuleType] | None = None
+
 
 def _init_gpu() -> bool:
     """Initialize GPU subsystem and check availability.
@@ -65,6 +91,7 @@ def _init_gpu() -> bool:
         logger.info(f"GPU acceleration not available: {e}")
         return False
 
+
 def is_gpu_available() -> bool:
     """Check if GPU acceleration is available.
 
@@ -72,6 +99,7 @@ def is_gpu_available() -> bool:
         True if GPU backends are available
     """
     return _init_gpu()
+
 
 class GPUBagEvaluator:
     """High-level GPU evaluator for CHTD bag constraints.
@@ -105,8 +133,8 @@ class GPUBagEvaluator:
         self.max_gpu_treewidth: int = 0
 
         if self._gpu_ready and _gpu_module is not None:
-
             from pysymex.h_acceleration import dispatcher as disp_module
+
             self._dispatcher = disp_module.get_dispatcher()
             self._backend_info = self._dispatcher.get_backend_info()
             self.max_gpu_treewidth = self._backend_info.max_treewidth
@@ -118,6 +146,7 @@ class GPUBagEvaluator:
         """Warmup GPU JIT compilation."""
         try:
             from pysymex.h_acceleration import dispatcher
+
             dispatcher.warmup()
         except Exception as e:
             logger.debug(f"GPU warmup failed: {e}")
@@ -257,7 +286,7 @@ class GPUBagEvaluator:
             Estimated milliseconds
         """
         if not self._gpu_ready or self._backend_info is None:
-            return float('inf')
+            return float("inf")
 
         num_states = 1 << num_vars
 
@@ -277,7 +306,7 @@ class GPUBagEvaluator:
         Returns:
             Number of set bits
         """
-        return int(np.unpackbits(bitmap).sum())
+        return int(_unpackbits_little(bitmap).sum())
 
     def iter_satisfying(
         self,
@@ -294,7 +323,7 @@ class GPUBagEvaluator:
             Assignment dicts mapping variable name -> bool
         """
         w = len(variables)
-        bits = np.unpackbits(bitmap)
+        bits = _unpackbits_little(bitmap)
         max_idx = 1 << w
 
         for i, sat in enumerate(bits[:max_idx]):
@@ -317,7 +346,9 @@ class GPUBagEvaluator:
         """
         return list(self.iter_satisfying(bitmap, variables))
 
+
 _evaluator: GPUBagEvaluator | None = None
+
 
 def get_bag_evaluator(
     gpu_threshold: int = GPUBagEvaluator.DEFAULT_GPU_THRESHOLD,
@@ -334,6 +365,7 @@ def get_bag_evaluator(
     if _evaluator is None:
         _evaluator = GPUBagEvaluator(gpu_threshold=gpu_threshold)
     return _evaluator
+
 
 def reset() -> None:
     """Reset global evaluator (for testing)."""

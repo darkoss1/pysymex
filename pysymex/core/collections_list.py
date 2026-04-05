@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 pysymex Collection Theories — List and String operations.
 
@@ -8,7 +26,7 @@ with full operation semantics using Z3 theories.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
 import z3
 
@@ -31,9 +49,9 @@ class OpResult:
     and side effects (for mutable operations).
     """
 
-    value: Any
-    constraints: list[z3.BoolRef] = field(default_factory=list[z3.BoolRef])
-    modified_collection: object = None
+    value: object | None
+    constraints: list[z3.BoolRef] = field(default_factory=list)
+    modified_collection: object | None = None
     error: str | None = None
 
     @property
@@ -144,7 +162,7 @@ class SymbolicListOps:
                 )
         else:
             assert isinstance(lst, SymbolicArray)
-            new_array = lst.set(idx, cast(z3.ExprRef, z3_val))
+            new_array = lst.set(idx, cast("z3.ExprRef", z3_val))
             bounds = lst.in_bounds(idx)
             return OpResult(value=None, modified_collection=new_array, constraints=[bounds])
 
@@ -163,7 +181,7 @@ class SymbolicListOps:
             return OpResult(value=None, modified_collection=lst)
         else:
             assert isinstance(lst, SymbolicArray)
-            new_array = lst.append(cast(z3.ExprRef, z3_val))
+            new_array = lst.append(cast("z3.ExprRef", z3_val))
             return OpResult(value=None, modified_collection=new_array)
 
     @staticmethod
@@ -182,7 +200,7 @@ class SymbolicListOps:
                         z3_val = z3.IntVal(item)
                     else:
                         z3_val = item
-                    result_arr = result_arr.append(cast(z3.ExprRef, z3_val))
+                    result_arr = result_arr.append(cast("z3.ExprRef", z3_val))
                 return OpResult(value=None, modified_collection=result_arr)
         return OpResult(value=None, error=f"Cannot extend {type(lst)} with {type(items)}")
 
@@ -288,7 +306,7 @@ class SymbolicListOps:
                 )
         else:
             assert isinstance(lst, SymbolicArray)
-            # Normalise index to a Z3 expression for use in ForAll bodies.
+
             z3_idx = z3.IntVal(idx) if isinstance(idx, int) else idx
 
             new_array = SymbolicArray(f"{lst.name}_inserted", lst.element_sort)
@@ -296,7 +314,6 @@ class SymbolicListOps:
 
             for_i = z3.Int(f"{lst.name}_insert_i_{next_address()}")
 
-            # Elements strictly before the insertion point are unchanged.
             before = z3.ForAll(
                 [for_i],
                 z3.Implies(
@@ -305,10 +322,8 @@ class SymbolicListOps:
                 ),
             )
 
-            # The slot at the insertion index holds the new value.
             at_idx = z3.Select(new_array.array, z3_idx) == z3_val
 
-            # Elements after the insertion point are shifted right by one.
             after = z3.ForAll(
                 [for_i],
                 z3.Implies(
@@ -322,7 +337,12 @@ class SymbolicListOps:
             return OpResult(
                 value=None,
                 modified_collection=new_array,
-                constraints=[bounds, before, at_idx, after],
+                constraints=[
+                    bounds,
+                    cast("z3.BoolRef", before),
+                    cast("z3.BoolRef", at_idx),
+                    cast("z3.BoolRef", after),
+                ],
             )
 
     @staticmethod
@@ -343,13 +363,45 @@ class SymbolicListOps:
                 if isinstance(value, int)
                 else value
             )
-            i = z3.Int(f"remove_idx_{next_address()}")
-            exists_constraint = z3.Exists([i], z3.And(i >= 0, i < lst.length, lst.get(i) == z3_val))
+            remove_idx = z3.Int(f"remove_idx_{next_address()}")
             new_array = SymbolicArray(f"{lst.name}_removed", lst.element_sort)
-            new_array.array = lst.array
             new_array.length = lst.length - 1
+            i = z3.Int(f"remove_i_{next_address()}")
+            exists_constraint = z3.And(
+                remove_idx >= 0,
+                remove_idx < lst.length,
+                cast("z3.BoolRef", lst.get(remove_idx) == z3_val),
+            )
+            first_occurrence = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= 0, i < remove_idx),
+                    z3.Select(lst.array, i) != z3_val,
+                ),
+            )
+            preserve_before = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= 0, i < remove_idx),
+                    z3.Select(new_array.array, i) == z3.Select(lst.array, i),
+                ),
+            )
+            shift_after = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= remove_idx, i < new_array.length),
+                    z3.Select(new_array.array, i) == z3.Select(lst.array, i + 1),
+                ),
+            )
             return OpResult(
-                value=None, modified_collection=new_array, constraints=[exists_constraint]
+                value=None,
+                modified_collection=new_array,
+                constraints=[
+                    exists_constraint,
+                    cast("z3.BoolRef", first_occurrence),
+                    cast("z3.BoolRef", preserve_before),
+                    cast("z3.BoolRef", shift_after),
+                ],
             )
 
     @staticmethod
@@ -379,10 +431,20 @@ class SymbolicListOps:
             constraints: list[z3.BoolRef] = [
                 result_idx >= start,
                 result_idx < lst.length,
-                lst.get(result_idx) == z3_val,
+                cast("z3.BoolRef", lst.get(result_idx) == z3_val),
             ]
             if stop is not None:
                 constraints.append(result_idx < stop)
+            j = z3.Int(f"index_j_{next_address()}")
+            upper = result_idx if stop is None else z3.If(result_idx < stop, result_idx, stop)
+            first_occurrence = z3.ForAll(
+                [j],
+                z3.Implies(
+                    z3.And(j >= start, j < upper),
+                    z3.Select(lst.array, j) != z3_val,
+                ),
+            )
+            constraints.append(cast("z3.BoolRef", first_occurrence))
             return OpResult(value=SymbolicInt(result_idx), constraints=constraints)
 
     @staticmethod
@@ -413,7 +475,19 @@ class SymbolicListOps:
             assert isinstance(lst, SymbolicArray)
             new_array = SymbolicArray(f"{lst.name}_reversed", lst.element_sort)
             new_array.length = lst.length
-            return OpResult(value=None, modified_collection=new_array)
+            i = z3.Int(f"reverse_i_{next_address()}")
+            relation = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= 0, i < lst.length),
+                    z3.Select(new_array.array, i) == z3.Select(lst.array, lst.length - 1 - i),
+                ),
+            )
+            return OpResult(
+                value=None,
+                modified_collection=new_array,
+                constraints=[cast("z3.BoolRef", relation)],
+            )
 
     @staticmethod
     def contains(lst: list[object] | SymbolicArray, value: object) -> OpResult:
@@ -472,7 +546,28 @@ class SymbolicListOps:
         elif isinstance(lst1, SymbolicArray) and isinstance(lst2, SymbolicArray):
             new_array = SymbolicArray(f"{lst1.name}_concat_{lst2.name}", lst1.element_sort)
             new_array.length = lst1.length + lst2.length
-            return OpResult(value=new_array)
+            i = z3.Int(f"concat_i_{next_address()}")
+            from_first = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= 0, i < lst1.length),
+                    z3.Select(new_array.array, i) == z3.Select(lst1.array, i),
+                ),
+            )
+            from_second = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= lst1.length, i < new_array.length),
+                    z3.Select(new_array.array, i) == z3.Select(lst2.array, i - lst1.length),
+                ),
+            )
+            return OpResult(
+                value=new_array,
+                constraints=[
+                    cast("z3.BoolRef", from_first),
+                    cast("z3.BoolRef", from_second),
+                ],
+            )
         return OpResult(value=None, error=f"Cannot concatenate {type(lst1)} and {type(lst2)}")
 
 

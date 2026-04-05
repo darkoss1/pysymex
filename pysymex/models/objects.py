@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Object-oriented modeling for pysymex.
 This module provides symbolic modeling of Python classes, instances,
 methods, and inheritance for object-oriented code analysis.
@@ -8,9 +26,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import (
-    Any,
-)
 
 import z3
 
@@ -31,7 +46,7 @@ class SymbolicAttribute:
     """A symbolic class/instance attribute."""
 
     name: str
-    value: Any
+    value: object
     is_class_attr: bool = False
     is_readonly: bool = False
     type_hint: str | None = None
@@ -82,7 +97,7 @@ class SymbolicClass:
     module: str = "__main__"
     _mro: list[SymbolicClass] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._compute_mro()
 
     def _compute_mro(self) -> None:
@@ -111,7 +126,7 @@ class SymbolicClass:
             return result
 
         base_mros = [list(base.mro) for base in self.bases]
-        self._mro = [self] + merge(base_mros + [list(self.bases)])
+        self._mro = [self, *merge([*base_mros, list(self.bases)])]
 
     @property
     def mro(self) -> list[SymbolicClass]:
@@ -147,28 +162,38 @@ class SymbolicClass:
         name: str,
         func: Callable[..., object] | None = None,
         method_type: MethodType = MethodType.INSTANCE,
-        **kwargs: object,
+        parameters: list[str] | None = None,
+        return_type: str | None = None,
+        is_abstract: bool = False,
+        preconditions: list[z3.BoolRef] | None = None,
+        postconditions: list[z3.BoolRef] | None = None,
     ) -> None:
         """Add a method to the class."""
         self.methods[name] = SymbolicMethod(
             name=name,
             func=func,
             method_type=method_type,
-            **kwargs,
+            parameters=parameters or [],
+            return_type=return_type,
+            is_abstract=is_abstract,
+            preconditions=preconditions or [],
+            postconditions=postconditions or [],
         )
 
     def add_class_attr(
         self,
         name: str,
         value: object,
-        **kwargs: object,
+        is_readonly: bool = False,
+        type_hint: str | None = None,
     ) -> None:
         """Add a class attribute."""
         self.class_attrs[name] = SymbolicAttribute(
             name=name,
             value=value,
             is_class_attr=True,
-            **kwargs,
+            is_readonly=is_readonly,
+            type_hint=type_hint,
         )
 
 
@@ -187,7 +212,7 @@ class SymbolicInstance:
     def z3_id(self) -> z3.ArithRef:
         """Get Z3 integer representing object identity."""
         if self._z3_id is None:
-            self._z3_id = z3.Int(f"obj_{self .instance_id }")
+            self._z3_id = z3.Int(f"obj_{self.instance_id}")
         return self._z3_id
 
     def get_attr(self, name: str) -> object:
@@ -248,7 +273,7 @@ class ClassRegistry:
     and instanceof checks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a new ClassRegistry instance."""
         self._classes: dict[str, SymbolicClass] = {}
         self._builtin_classes: dict[str, SymbolicClass] = {}
@@ -274,12 +299,12 @@ class ClassRegistry:
 
     def register_class(self, cls: SymbolicClass) -> None:
         """Register a class definition."""
-        full_name = f"{cls .module }.{cls .name }"
+        full_name = f"{cls.module}.{cls.name}"
         self._classes[full_name] = cls
 
     def get_class(self, name: str, module: str = "__main__") -> SymbolicClass | None:
         """Get a class by name."""
-        full_name = f"{module }.{name }"
+        full_name = f"{module}.{name}"
         if full_name in self._classes:
             return self._classes[full_name]
         if name in self._builtin_classes:
@@ -309,7 +334,7 @@ class ClassRegistry:
 class TypeChecker:
     """Runtime type checking for symbolic execution."""
 
-    def __init__(self, registry: ClassRegistry):
+    def __init__(self, registry: ClassRegistry) -> None:
         """Initialize a new TypeChecker instance."""
         self.registry = registry
 
@@ -367,7 +392,7 @@ class SymbolicProperty(SymbolicDescriptor):
         fset: Callable[..., object] | None = None,
         fdel: Callable[..., object] | None = None,
         doc: str | None = None,
-    ):
+    ) -> None:
         """Initialize a new SymbolicProperty instance."""
         self.fget: Callable[..., object] | None = fget
         self.fset: Callable[..., object] | None = fset

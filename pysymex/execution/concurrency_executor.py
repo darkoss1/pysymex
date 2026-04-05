@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Concurrency-aware symbolic executor for pysymex.
 
 Extends SymbolicExecutor to detect threading/asyncio patterns during
@@ -7,8 +25,10 @@ race detection, deadlock analysis, and interleaving exploration.
 
 from __future__ import annotations
 
+import dis
 import logging
 from collections.abc import Callable
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +38,7 @@ from pysymex.analysis.concurrency import (
     ConcurrencyIssueKind,
     MemoryOrder,
 )
-from pysymex.analysis.detectors import Issue, IssueKind
+from pysymex.analysis.detectors import DetectorRegistry, Issue, IssueKind
 from pysymex.core.state import VMState
 from pysymex.execution.executor import (
     ExecutionConfig,
@@ -111,9 +131,14 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
     def __init__(
         self,
         config: ExecutionConfig | None = None,
-        **kwargs: object,
+        detector_registry: DetectorRegistry | None = None,
+        **config_overrides: object,
     ) -> None:
-        super().__init__(config=config, **kwargs)
+        super().__init__(
+            config=config,
+            detector_registry=detector_registry,
+            **config_overrides,
+        )
         self._concurrency_analyzer = ConcurrencyAnalyzer(timeout_ms=self.config.solver_timeout_ms)
         self._shared_tracker = SharedVariableTracker()
         self._current_thread_id = "main"
@@ -127,9 +152,10 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         self,
         func: Callable[..., object],
         symbolic_args: dict[str, str] | None = None,
+        initial_values: dict[str, object] | None = None,
     ) -> ExecutionResult:
         """Execute with concurrency analysis."""
-        result = super().execute_function(func, symbolic_args)
+        result = super().execute_function(func, symbolic_args, initial_values)
 
         if self.config.enable_concurrency_analysis:
             concurrency_issues = self._finalize_concurrency_analysis()
@@ -162,12 +188,14 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         if not self._handle_loop_logic(state, active_instructions):
             return
 
-        state_key = self._state_key(state)
-        if state_key in self._visited_states:
-            self._paths_pruned += 1
-            return
-        else:
-            self._visited_states.add(state_key)
+        is_jump_or_branch = instr.opname in BRANCH_OPCODES or "JUMP" in instr.opname
+        if is_jump_or_branch:
+            state_key = self._state_key(state)
+            if state_key in self._visited_states:
+                self._paths_pruned += 1
+                return
+            else:
+                self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
         state.visited_pcs.add(state.pc)
@@ -195,11 +223,11 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
             self._paths_pruned += 1
             return
 
-    def _intercept_concurrency(self, instr: object, state: VMState) -> None:
+    def _intercept_concurrency(self, instr: dis.Instruction, state: VMState) -> None:
         """Intercept opcodes for concurrency analysis."""
         try:
             opname = instr.opname
-            arg_name = instr.argval if hasattr(instr, "argval") else None
+            arg_name = instr.argval
             line = self._pc_to_line.get(state.pc)
 
             if opname in _STORE_OPCODES and arg_name:
@@ -235,7 +263,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
 
     def _intercept_call(
         self,
-        state: VMState,
+        _state: VMState,
         arg_name: object,
         line: int | None,
     ) -> None:
@@ -246,12 +274,11 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
 
         if "thread" in name and ("create" in name or "thread(" in name):
             self._thread_counter += 1
-            thread_id = f"thread_{self ._thread_counter }"
+            thread_id = f"thread_{self._thread_counter}"
             self._concurrency_analyzer.create_thread(thread_id)
 
         elif "start" in name:
-
-            for _var, tid in self._known_threads.items():
+            for tid in self._known_threads.values():
                 try:
                     self._concurrency_analyzer.start_thread(
                         tid, self._current_thread_id, line_number=line
@@ -261,7 +288,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                         logger.warning("Concurrency thread tracking error (start): %s", e)
 
         elif "join" in name:
-            for _var, tid in self._known_threads.items():
+            for tid in self._known_threads.values():
                 try:
                     issue = self._concurrency_analyzer.join_thread(
                         tid, self._current_thread_id, line_number=line
@@ -306,16 +333,15 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         try:
             from pysymex.analysis.interleaving import DPORExplorer
 
-            analyzer_any: object = self._concurrency_analyzer
-            hb_graph: object = analyzer_any.hb_graph
-            thread_ops: object = analyzer_any.get_thread_operations()
+            hb_graph = self._concurrency_analyzer.hb_graph
+            thread_ops = self._concurrency_analyzer.get_thread_operations()
             if hb_graph and thread_ops and len(thread_ops) > 1:
                 explorer = DPORExplorer(hb_graph, thread_ops, max_interleavings=100)
                 schedules = explorer.explore()
                 race_candidates = explorer.get_race_candidates()
                 for op1_id, op2_id in race_candidates:
-                    op1: object = hb_graph.get_operation(op1_id)
-                    op2: object = hb_graph.get_operation(op2_id)
+                    op1 = hb_graph.get_operation(op1_id)
+                    op2 = hb_graph.get_operation(op2_id)
                     if op1 and op2:
                         line = getattr(op1, "line_number", None) or getattr(
                             op2, "line_number", None
@@ -324,9 +350,9 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                             Issue(
                                 kind=IssueKind.TYPE_ERROR,
                                 message=(
-                                    f"[Concurrency] Data race: {op1 .thread_id } and "
-                                    f"{op2 .thread_id } access '{op1 .address }' concurrently "
-                                    f"(DPOR found {len (schedules )} interleavings)"
+                                    f"[Concurrency] Data race: {op1.thread_id} and "
+                                    f"{op2.thread_id} access '{op1.address}' concurrently "
+                                    f"(DPOR found {len(schedules)} interleavings)"
                                 ),
                                 line_number=line,
                             )
@@ -357,7 +383,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         issue_kind = kind_map.get(ci.kind, IssueKind.TYPE_ERROR)
         return Issue(
             kind=issue_kind,
-            message=f"[Concurrency] {ci .format ()}",
+            message=f"[Concurrency] {ci.format()}",
             line_number=ci.line_number,
         )
 
@@ -380,6 +406,7 @@ def analyze_concurrent(
         ExecutionResult with both standard and concurrency issues.
     """
     config_kwargs.setdefault("enable_concurrency_analysis", True)
-    config = ExecutionConfig(**config_kwargs)
+    config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
+    config = config_ctor(**config_kwargs)
     executor = ConcurrentSymbolicExecutor(config)
     return executor.execute_function(func, symbolic_args)

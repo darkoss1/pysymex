@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 State Merging for Symbolic Execution.
 
@@ -13,12 +31,15 @@ Features:
 
 from __future__ import annotations
 
+import types
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import z3
 
+from pysymex._typing import StackValue
 from pysymex.core.copy_on_write import ConstraintChain, CowDict
 
 if TYPE_CHECKING:
@@ -92,29 +113,30 @@ class StateMerger:
         policy: MergePolicy = MergePolicy.MODERATE,
         max_constraints_for_merge: int = 50,
         similarity_threshold: float = 0.7,
-    ):
+    ) -> None:
         self.policy = policy
         self.max_constraints_for_merge = max_constraints_for_merge
         self.similarity_threshold = similarity_threshold
         self.stats = MergeStatistics()
         self._join_points: set[int] = set()
-        self._pending_states: dict[int, list[VMState]] = {}
+        self._pending_states: dict[int, dict[int, list[VMState]]] = {}
 
     def set_join_points(self, join_points: set[int]) -> None:
         """Set the CFG join points for merge consideration."""
         self._join_points = join_points
 
-    def detect_join_points(self, instructions: list[dis.Instruction], code: object = None) -> set[int]:
+    def detect_join_points(
+        self, instructions: list[dis.Instruction], code: types.CodeType | None = None
+    ) -> set[int]:
         """Detect join points using CFG analysis for better accuracy."""
         from pysymex.analysis.cfg import CFGBuilder
-        
+
         builder = CFGBuilder()
-        # Use CFG to find blocks with multiple predecessors
+
         cfg = builder.build(code) if code else builder.build_from_instructions(instructions)
-        
+
         self._join_points = {
-            block.start_pc for block in cfg.blocks.values() 
-            if len(block.predecessors) > 1
+            block.start_pc for block in cfg.blocks.values() if len(block.predecessors) > 1
         }
         return self._join_points
 
@@ -130,13 +152,45 @@ class StateMerger:
             return False
         return True
 
+    def _structural_hash(self, state: VMState) -> int:
+        """Compute a structural hash to fast-fail basic structure differences."""
+        return hash(
+            (
+                len(state.stack),
+                len(state.call_stack),
+                frozenset(state.local_vars.keys()),
+                tuple((b.block_type, b.handler_pc) for b in state.block_stack),
+            )
+        )
+
     def add_state_for_merge(self, state: VMState) -> VMState | None:
         """Add a state for potential merging. Returns merged state or None."""
         pc = state.pc
         if pc not in self._pending_states:
-            self._pending_states[pc] = []
-        pending = self._pending_states[pc]
+            self._pending_states[pc] = {}
+
+        target_hash = self._structural_hash(state)
+        if target_hash not in self._pending_states[pc]:
+            self._pending_states[pc][target_hash] = []
+
+        pending = self._pending_states[pc][target_hash]
         self.stats.states_before_merge += 1
+
+        i = 0
+        while i < len(pending):
+            existing = pending[i]
+
+            if self._state_payload_equal(existing, state):
+                if self._constraints_subsume(existing, state):
+                    self.stats.subsumption_hits += 1
+                    return None
+                if self._constraints_subsume(state, existing):
+                    pending.pop(i)
+                    self.stats.states_after_merge = max(0, self.stats.states_after_merge - 1)
+                    self.stats.subsumption_hits += 1
+                    continue
+            i += 1
+
         for i, existing in enumerate(pending):
             if self._can_merge_symbolically(state, existing):
                 merged = self._merge_states_symbolically(state, existing)
@@ -149,6 +203,113 @@ class StateMerger:
         self.stats.states_after_merge += 1
         return state
 
+    def _constraints_subsume(self, subsumer: VMState, subsumed: VMState) -> bool:
+        """Return True when ``subsumer`` safely covers ``subsumed`` exactly.
+        Assumes payload equality has already been verified.
+        """
+        subsumer_constraints = subsumer.path_constraints.to_list()
+        subsumed_constraints = subsumed.path_constraints.to_list()
+        if len(subsumer_constraints) > len(subsumed_constraints):
+            return False
+
+        for left, right in zip(subsumer_constraints, subsumed_constraints, strict=False):
+            if not self._constraints_equal(left, right):
+                return False
+        return True
+
+    def _state_payload_equal(self, state1: VMState, state2: VMState) -> bool:
+        """Check exact equality of non-constraint state payload."""
+
+        if state1.visited_pcs.hash_value() != state2.visited_pcs.hash_value():
+            return False
+        if state1.local_vars.hash_value() != state2.local_vars.hash_value():
+            return False
+        if state1.global_vars.hash_value() != state2.global_vars.hash_value():
+            return False
+        if len(state1.memory) != len(state2.memory):
+            return False
+        if state1.memory.hash_value() != state2.memory.hash_value():
+            return False
+
+        if len(state1.stack) != len(state2.stack):
+            return False
+        for left, right in zip(state1.stack, state2.stack, strict=False):
+            if not self._values_structurally_equal(left, right):
+                return False
+
+        if len(state1.call_stack) != len(state2.call_stack):
+            return False
+        for frame1, frame2 in zip(state1.call_stack, state2.call_stack, strict=False):
+            if frame1.function_name != frame2.function_name or frame1.return_pc != frame2.return_pc:
+                return False
+            if self._mapping_hash_mismatch(
+                cast("Mapping[str, object]", frame1.local_vars),
+                cast("Mapping[str, object]", frame2.local_vars),
+            ):
+                return False
+            if not self._mapping_equal(
+                cast("Mapping[str, object]", frame1.local_vars),
+                cast("Mapping[str, object]", frame2.local_vars),
+            ):
+                return False
+
+        if len(state1.block_stack) != len(state2.block_stack):
+            return False
+        for block1, block2 in zip(state1.block_stack, state2.block_stack, strict=False):
+            if block1.block_type != block2.block_type or block1.handler_pc != block2.handler_pc:
+                return False
+
+        if not self._mapping_equal(
+            cast("Mapping[str, object]", state1.local_vars),
+            cast("Mapping[str, object]", state2.local_vars),
+        ):
+            return False
+        if not self._mapping_equal(
+            cast("Mapping[str, object]", state1.global_vars),
+            cast("Mapping[str, object]", state2.global_vars),
+        ):
+            return False
+
+        for addr in state1.memory.keys():
+            if addr not in state2.memory:
+                return False
+            cell1 = state1.memory.get(addr)
+            cell2 = state2.memory.get(addr)
+            dict1 = _as_string_object_mapping(cell1)
+            dict2 = _as_string_object_mapping(cell2)
+            if dict1 is None or dict2 is None:
+                if not self._values_structurally_equal(cell1, cell2):
+                    return False
+                continue
+            if not self._mapping_equal(dict1, dict2):
+                return False
+        return True
+
+    def _mapping_hash_mismatch(
+        self, left: Mapping[str, object], right: Mapping[str, object]
+    ) -> bool:
+        """Fast-fail if both mappings expose content hashes and they differ."""
+        left_hash_getter = getattr(left, "hash_value", None)
+        right_hash_getter = getattr(right, "hash_value", None)
+        if callable(left_hash_getter) and callable(right_hash_getter):
+            return cast("int", left_hash_getter()) != cast("int", right_hash_getter())
+        return False
+
+    def _mapping_equal(self, left: Mapping[str, object], right: Mapping[str, object]) -> bool:
+        """Compare string-keyed mappings using structural value equality."""
+        if left is right:
+            return True
+        if len(left) != len(right):
+            return False
+        if self._mapping_hash_mismatch(left, right):
+            return False
+        for key, value in left.items():
+            if key not in right:
+                return False
+            if not self._values_structurally_equal(value, right[key]):
+                return False
+        return True
+
     def _can_merge_symbolically(self, state1: VMState, state2: VMState) -> bool:
         """Check if states are compatible for symbolic merging.
 
@@ -159,8 +320,6 @@ class StateMerger:
         4. Same set of local variables (roughly)
         5. Same block stack structure (block_type + handler_pc per entry)
         """
-        if state1.pc != state2.pc:
-            return False
         if len(state1.stack) != len(state2.stack):
             return False
         if len(state1.call_stack) != len(state2.call_stack):
@@ -171,7 +330,7 @@ class StateMerger:
             return False
         if len(state1.block_stack) != len(state2.block_stack):
             return False
-        for b1, b2 in zip(state1.block_stack, state2.block_stack):
+        for b1, b2 in zip(state1.block_stack, state2.block_stack, strict=False):
             if b1.block_type != b2.block_type or b1.handler_pc != b2.handler_pc:
                 return False
         return True
@@ -182,8 +341,8 @@ class StateMerger:
         """Find the condition that distinguishes state1 from state2.
         Returns (condition, common_len).
         """
-        cons1 = state1.path_constraints
-        cons2 = state2.path_constraints
+        cons1 = state1.path_constraints.to_list()
+        cons2 = state2.path_constraints.to_list()
         common_len = 0
         min_len = min(len(cons1), len(cons2))
         while common_len < min_len:
@@ -213,48 +372,55 @@ class StateMerger:
         if condition is None:
             return None
 
-        def _merge_pair(left: object, right: object, merge_condition: z3.BoolRef) -> object | None:
+        def _merge_pair(
+            left: StackValue,
+            right: StackValue,
+            merge_condition: z3.BoolRef,
+        ) -> StackValue | None:
             """Merge pair."""
             from pysymex.core.types import SymbolicValue
 
-            # Refuse to merge incompatible container types (e.g. list vs int)
             from pysymex.core.types_containers import (
                 SymbolicDict,
                 SymbolicList,
                 SymbolicObject,
                 SymbolicString,
             )
+
             _CONTAINER_TYPES = (SymbolicList, SymbolicDict, SymbolicString, SymbolicObject)
             left_is_container = isinstance(left, _CONTAINER_TYPES)
             right_is_container = isinstance(right, _CONTAINER_TYPES)
             if left_is_container != right_is_container:
-                return None  # incompatible types (e.g. list vs int)
+                return None
             if left_is_container and right_is_container and type(left) is not type(right):
-                return None  # different container types (e.g. list vs dict)
-
-
-            left_symbolic = (
-                left if hasattr(left, "conditional_merge") else SymbolicValue.from_const(left)
-            )
-            right_symbolic = (
-                right if hasattr(right, "conditional_merge") else SymbolicValue.from_const(right)
-            )
-            try:
-                return left_symbolic.conditional_merge(right_symbolic, merge_condition)
-            except TypeError:
                 return None
 
+            left_symbolic: object = (
+                left if _is_any_symbolic(left) else SymbolicValue.from_const(left)
+            )
+            right_symbolic: object = (
+                right if _is_any_symbolic(right) else SymbolicValue.from_const(right)
+            )
+            try:
+                merged_obj = cast("_ConditionalMergeable", left_symbolic).conditional_merge(
+                    right_symbolic,
+                    merge_condition,
+                )
+                return cast("StackValue", merged_obj)
+            except TypeError:
+                return None
 
         merged = state1.fork()
 
         new_chain = ConstraintChain.empty()
 
-        common_cons = list(state1.path_constraints[:common_len])
+        base_constraints = state1.path_constraints.to_list()
+        common_cons = base_constraints[:common_len]
         for c in common_cons:
             new_chain = new_chain.append(c)
 
-        extra1 = state1.path_constraints[common_len:]
-        extra2 = state2.path_constraints[common_len:]
+        extra1 = base_constraints[common_len:]
+        extra2 = state2.path_constraints.to_list()[common_len:]
 
         for c in extra1:
             new_chain = new_chain.append(z3.Implies(condition, c))
@@ -282,7 +448,7 @@ class StateMerger:
                 merged.global_vars[name] = val1
             elif val2 is not None:
                 merged.global_vars[name] = val2
-        merged_stack: list[object] = []
+        merged_stack: list[StackValue] = []
         for i in range(len(state1.stack)):
             val1 = state1.stack[i]
             val2 = state2.stack[i]
@@ -296,7 +462,7 @@ class StateMerger:
             from pysymex.core.state import wrap_cow_dict
 
             merged_call_stack = []
-            for f1, f2 in zip(state1.call_stack, state2.call_stack):
+            for f1, f2 in zip(state1.call_stack, state2.call_stack, strict=False):
                 if f1.function_name != f2.function_name or f1.return_pc != f2.return_pc:
                     return None
 
@@ -311,7 +477,6 @@ class StateMerger:
                             return None
                         merged_frame_locals[k] = mv
                     else:
-
                         merged_frame_locals[k] = v1 if v1 is not None else v2
 
                 from dataclasses import replace
@@ -324,9 +489,23 @@ class StateMerger:
         all_addrs = set(state1.memory.keys()) | set(state2.memory.keys())
         merged.memory = CowDict()
         for addr in all_addrs:
-            dict1 = state1.memory.get(addr, {})
-            dict2 = state2.memory.get(addr, {})
-            merged_dict = {}
+            cell1 = state1.memory.get(addr)
+            cell2 = state2.memory.get(addr)
+            dict1 = _as_string_object_mapping(cell1)
+            dict2 = _as_string_object_mapping(cell2)
+            if dict1 is None or dict2 is None:
+                if cell1 is not None and cell2 is not None:
+                    merged_cell = _merge_pair(cell1, cell2, condition)
+                    if merged_cell is None:
+                        return None
+                    merged.memory[addr] = merged_cell
+                elif cell1 is not None:
+                    merged.memory[addr] = cell1
+                elif cell2 is not None:
+                    merged.memory[addr] = cell2
+                continue
+
+            merged_dict: dict[str, object] = {}
             all_attrs = set(dict1.keys()) | set(dict2.keys())
             for attr in all_attrs:
                 v1 = dict1.get(attr)
@@ -338,34 +517,26 @@ class StateMerger:
                     if self._values_structurally_equal(v1, v2):
                         merged_dict[attr] = v1
                         continue
-                    merged_val = _merge_pair(v1, v2, condition)
+                    merged_val = _merge_pair(
+                        cast("StackValue", v1), cast("StackValue", v2), condition
+                    )
                     if merged_val is None:
                         return None
                     merged_dict[attr] = merged_val
                 elif v1 is not None:
-                    from pysymex.core.types import SymbolicNone
-
-                    merged_val = _merge_pair(v1, SymbolicNone(f"{attr}_missing"), condition)
-                    if merged_val is None:
-                        return None
-                    merged_dict[attr] = merged_val
+                    merged_dict[attr] = v1
                 elif v2 is not None:
-                    from pysymex.core.types import SymbolicNone
-
-                    merged_val = _merge_pair(v2, SymbolicNone(f"{attr}_missing"), z3.Not(condition))
-                    if merged_val is None:
-                        return None
-                    merged_dict[attr] = merged_val
+                    merged_dict[attr] = v2
             from pysymex.core.state import wrap_cow_dict
 
             merged.memory[addr] = wrap_cow_dict(merged_dict)
         return merged
 
-    def _symbolic_values_equal(self, left: "SymbolicValue", right: "SymbolicValue") -> bool:
+    def _symbolic_values_equal(self, left: SymbolicValue, right: SymbolicValue) -> bool:
         """Check structural equality of SymbolicValue instances."""
         if left.taint_labels != right.taint_labels:
             return False
-        if left._h_active != right._h_active:
+        if bool(getattr(left, "_h_active", False)) != bool(getattr(right, "_h_active", False)):
             return False
         if left.affinity_type != right.affinity_type:
             return False
@@ -412,8 +583,8 @@ class StateMerger:
         """Best-effort structural equality without trusting hash collisions."""
         if left is right:
             return True
-        if isinstance(left, z3.AstRef):
-            return isinstance(right, z3.AstRef) and z3.eq(left, right)
+        if isinstance(left, z3.ExprRef):
+            return isinstance(right, z3.ExprRef) and z3.eq(left, right)
 
         from pysymex.core.types import SymbolicValue
 
@@ -424,21 +595,20 @@ class StateMerger:
                 return False
             return self._symbolic_values_equal(left, right)
 
-        if hasattr(left, "hash_value") and hasattr(right, "hash_value"):
-            try:
-                if left.hash_value() != right.hash_value():
-                    return False
-            except Exception:
+        if isinstance(left, _HashableValue) and isinstance(right, _HashableValue):
+            if left.hash_value() != right.hash_value():
                 return False
 
         try:
             eq_result = left == right
         except Exception:
             return False
-        return isinstance(eq_result, bool) and eq_result
+        return eq_result
 
     def _constraints_equal(self, c1: z3.BoolRef, c2: z3.BoolRef) -> bool:
         """Check if two constraints are equivalent."""
+        if c1 is c2 or c1.hash() == c2.hash():
+            return True
         try:
             return z3.eq(c1, c2)
         except z3.Z3Exception:
@@ -446,7 +616,7 @@ class StateMerger:
 
     def get_pending_states(self, pc: int) -> list[VMState]:
         """Get pending states at a join point."""
-        return self._pending_states.get(pc, [])
+        return [state for bucket in self._pending_states.get(pc, {}).values() for state in bucket]
 
     def clear_pending(self, pc: int) -> None:
         """Clear pending states at a join point."""
@@ -457,6 +627,48 @@ class StateMerger:
         """Reset merger state."""
         self._pending_states.clear()
         self.stats = MergeStatistics()
+
+
+@runtime_checkable
+class _ConditionalMergeable(Protocol):
+    def conditional_merge(self, other: object, condition: z3.BoolRef) -> object: ...
+
+
+@runtime_checkable
+class _HashableValue(Protocol):
+    def hash_value(self) -> int: ...
+
+
+def _is_any_symbolic(value: object) -> bool:
+    from pysymex.core.types import (
+        SymbolicDict,
+        SymbolicList,
+        SymbolicNone,
+        SymbolicObject,
+        SymbolicString,
+        SymbolicValue,
+    )
+
+    return isinstance(
+        value,
+        (SymbolicValue, SymbolicNone, SymbolicString, SymbolicList, SymbolicDict, SymbolicObject),
+    )
+
+
+def _as_string_object_mapping(value: object | None) -> Mapping[str, object] | None:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return (
+            cast("Mapping[str, object]", value)
+            if all(isinstance(key, str) for key in value)
+            else None
+        )
+    if isinstance(value, CowDict):
+        keys = list(value.keys())
+        if all(isinstance(key, str) for key in keys):
+            return cast("Mapping[str, object]", value)
+    return None
 
 
 def create_state_merger(

@@ -1,0 +1,18 @@
+{
+  "include": ["pysymex"],
+  "stubPath": "typings",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": false,
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning",
+  "reportUnsupportedDunderAll": false,
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none",
+  "exclude": [
+    "scripts",
+    "examples",
+    "benchmarks",
+    "tests"
+  ]
+}

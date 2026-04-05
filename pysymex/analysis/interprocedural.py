@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Inter-procedural analysis for pysymex.
 This module provides support for analyzing function calls symbolically,
 building call graphs, and performing whole-program analysis.
@@ -13,7 +31,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
     TYPE_CHECKING,
-    Any,
     cast,
 )
 
@@ -75,14 +92,15 @@ class FunctionSummary:
         self,
         args: list[object],
         state: VMState,
-    ) -> tuple[Any, list[z3.BoolRef]]:
+    ) -> tuple[object | None, list[z3.BoolRef]]:
         """Apply this summary to concrete/symbolic arguments.
         Returns the symbolic return value and additional constraints.
         """
         subst: dict[z3.ExprRef, z3.ExprRef] = {}
         for param, arg in zip(self.parameters, args, strict=False):
-            if hasattr(arg, "z3_expr"):
-                subst[z3.Const(param, arg.z3_expr.sort())] = arg.z3_expr
+            z3_expr = getattr(arg, "z3_expr", None)
+            if isinstance(z3_expr, z3.ExprRef):
+                subst[z3.Const(param, z3_expr.sort())] = z3_expr
         if self.return_expr is not None:
             result = z3.substitute(self.return_expr, list(subst.items()))
         else:
@@ -96,7 +114,7 @@ class FunctionSummary:
 class CallGraph:
     """Represents the call graph of analyzed functions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._nodes: set[str] = set()
         self._edges: dict[str, set[str]] = {}
         self._call_sites: dict[tuple[str, str], list[CallSite]] = {}
@@ -185,10 +203,10 @@ class CallGraph:
             style = ""
             if self.is_recursive(node):
                 style = " [style=filled, fillcolor=yellow]"
-            lines.append(f'  "{node }"{style };')
+            lines.append(f'  "{node}"{style};')
         for caller, callees in self._edges.items():
             for callee in callees:
-                lines.append(f'  "{caller }" -> "{callee }";')
+                lines.append(f'  "{caller}" -> "{callee}";')
         lines.append("}")
         return "\n".join(lines)
 
@@ -204,7 +222,7 @@ class InterproceduralAnalyzer:
         max_inline_depth: int = 3,
         max_recursion_depth: int = 5,
         use_summaries: bool = True,
-    ):
+    ) -> None:
         self.max_inline_depth = max_inline_depth
         self.max_recursion_depth = max_recursion_depth
         self.use_summaries = use_summaries
@@ -357,9 +375,9 @@ class ContextSensitiveAnalyzer:
     where contexts are distinguished by the last k call sites.
     """
 
-    def __init__(self, k: int = 2):
+    def __init__(self, k: int = 2) -> None:
         self.k = k
-        self._results: dict[tuple[str, CallContext], Any] = {}
+        self._results: dict[tuple[str, CallContext], object] = {}
 
     def analyze_with_context(
         self,

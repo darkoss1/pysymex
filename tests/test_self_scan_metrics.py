@@ -21,38 +21,38 @@ _ANALYSIS_DIR = os.path.join(
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(600)
 class TestSelfScanMetrics:
     """Self-scan metrics: run pysymex on its own source."""
 
-    def test_self_scan_no_crashes(self):
-        """Scanner should complete on its own source without exceptions."""
+    @pytest.fixture(scope="class")
+    def _self_scan_issues(self):
+        """Run self-scan once and reuse results across assertions."""
         scanner = Scanner(
             ScannerConfig(
                 suppress_likely_false_positives=True,
                 verbose=False,
             )
         )
+        return scanner.scan_directory(_ANALYSIS_DIR)
+
+    def test_self_scan_no_crashes(self, _self_scan_issues):
+        """Scanner should complete on its own source without exceptions."""
         # This should not raise any exceptions
-        issues = scanner.scan_directory(_ANALYSIS_DIR)
+        issues = _self_scan_issues
         # Basic sanity: we should get at least some issues (it is a large codebase)
         assert isinstance(issues, list)
 
-    def test_self_scan_fp_count_under_target(self):
+    def test_self_scan_fp_count_under_target(self, _self_scan_issues):
         """Unsuppressed issues should be under the regression threshold."""
-        scanner = Scanner(
-            ScannerConfig(
-                suppress_likely_false_positives=True,
-                verbose=False,
-            )
-        )
-        issues = scanner.scan_directory(_ANALYSIS_DIR)
+        issues = _self_scan_issues
         active = [i for i in issues if not i.is_suppressed()]
         assert len(active) < 50, (
             f"Expected < 50 unsuppressed issues, got {len(active)}. "
             f"Breakdown by kind: {_count_by_kind(active)}"
         )
 
-    def test_self_scan_report_generation(self):
+    def test_self_scan_report_generation(self, _self_scan_issues):
         """Report generation should work on self-scan results."""
         scanner = Scanner(
             ScannerConfig(
@@ -60,7 +60,7 @@ class TestSelfScanMetrics:
                 verbose=False,
             )
         )
-        issues = scanner.scan_directory(_ANALYSIS_DIR)
+        issues = _self_scan_issues
         # Text report should not crash
         text_report = scanner.generate_report(issues, format="text")
         assert "pysymex Enhanced Scan Report" in text_report

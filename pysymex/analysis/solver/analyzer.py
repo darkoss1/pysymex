@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Z3 Engine — Function analyzer core.
 
@@ -8,12 +26,17 @@ handlers from OpcodeHandlersMixin.
 
 from __future__ import annotations
 
+import dis
 import hashlib
 import inspect
 import logging
+import operator
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from types import CodeType
+from typing import TYPE_CHECKING, cast
+
+import z3 as z3py
 
 from pysymex.analysis.solver.graph import CFGBuilder, SymbolicState
 from pysymex.analysis.solver.opcodes import OpcodeHandlersMixin
@@ -77,13 +100,14 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         24: "/=",
         25: "^=",
     }
-    COMPARE_OPS: dict[str, Callable[[object, object], object]] = {
-        "<": lambda a, b: a < b,
-        "<=": lambda a, b: a <= b,
-        "==": lambda a, b: a == b,
-        "!=": lambda a, b: a != b,
-        ">": lambda a, b: a > b,
-        ">=": lambda a, b: a >= b,
+
+    COMPARE_OPS: dict[str, Callable[..., object]] = {
+        "<": operator.lt,
+        "<=": operator.le,
+        "==": operator.eq,
+        "!=": operator.ne,
+        ">": operator.gt,
+        ">=": operator.ge,
     }
     DANGEROUS_SINKS = {
         "eval",
@@ -98,7 +122,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         "cursor.execute",
     }
 
-    def __init__(self, engine: Z3Engine):
+    def __init__(self, engine: Z3Engine) -> None:
         self.engine = engine
         self.cfg_builder = CFGBuilder()
         self.current_function = ""
@@ -107,14 +131,14 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
 
     def analyze(
         self,
-        code: object,
+        code: CodeType | Callable[..., object],
         initial_state: SymbolicState | None = None,
         context: dict[str, SymValue] | None = None,
     ) -> tuple[list[CrashCondition], FunctionSummary]:
         """Analyse a function and return crash conditions and a summary.
 
         Args:
-            code: Python code object to analyse.
+            code: Python code object or callable to analyse.
             initial_state: Optional pre-seeded symbolic state.
             context: Optional mapping of param names to ``SymValue`` overrides.
 
@@ -122,9 +146,10 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             Tuple of (crash conditions found, function summary).
         """
         param_annotations: dict[str, object] = {}
+        code_obj: CodeType
         if hasattr(code, "__code__"):
-            func_obj = code
-            code = code.__code__
+            func_obj = cast("Callable[..., object]", code)
+            code_obj = func_obj.__code__
             try:
                 sig = inspect.signature(func_obj)
                 for param_name, param in sig.parameters.items():
@@ -134,15 +159,24 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
                         param_annotations[param_name] = type(param.default)
             except (TypeError, ValueError):
                 logger.debug("Failed to inspect function signature", exc_info=True)
+        else:
+            code_obj = cast("CodeType", code)
 
-        self.current_function = code.co_name
-        self.current_line = code.co_firstlineno
-        cfg = self.cfg_builder.build(code)
+        self.current_function = code_obj.co_name
+        self.current_line = code_obj.co_firstlineno
+        cfg = self.cfg_builder.build(code_obj)
         if not cfg:
-            return [], self._empty_summary(code)
+            return [], self._empty_summary(code_obj)
         state = initial_state or SymbolicState()
         state.call_stack.append(self.current_function)
-        params = code.co_varnames[: code.co_argcount]
+
+        pos_params = code_obj.co_varnames[: code_obj.co_argcount]
+        kwonly_count = getattr(code_obj, "co_kwonlyargcount", 0)
+        kwonly_params = code_obj.co_varnames[
+            code_obj.co_argcount : code_obj.co_argcount + kwonly_count
+        ]
+        params = tuple(pos_params) + tuple(kwonly_params)
+
         for p in params:
             if context and p in context:
                 state.set_var(p, context[p])
@@ -151,7 +185,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         crashes: list[CrashCondition] = []
         call_sites: list[CallSite] = []
         self._explore_paths(cfg, 0, state, crashes, call_sites, visited=set(), depth=0)
-        summary = self._build_summary(code, params, crashes, call_sites)
+        summary = self._build_summary(code_obj, params, crashes, call_sites)
         return crashes, summary
 
     def _make_symbolic_param(self, name: str, annotation: object | None = None) -> SymValue:
@@ -166,9 +200,9 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         elif sym_type == SymType.REAL:
             expr = z3.Real(expr_name)
         elif sym_type == SymType.STRING:
-            expr = z3.Int(f"{expr_name }_len")
+            expr = z3.Int(f"{expr_name}_len")
         elif sym_type == SymType.LIST:
-            expr = z3.Int(f"{expr_name }_len")
+            expr = z3.Int(f"{expr_name}_len")
             is_list = True
         elif sym_type in {
             SymType.DICT,
@@ -177,7 +211,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             SymType.CALLABLE,
             SymType.OBJECT,
         }:
-            expr = z3.Int(f"{expr_name }_ref")
+            expr = z3.Int(f"{expr_name}_ref")
         elif sym_type == SymType.NONE:
             expr = z3.IntVal(0)
             is_none = True
@@ -190,7 +224,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             sym_type=sym_type,
             is_none=is_none,
             is_list=is_list,
-            origin=f"param:{name }",
+            origin=f"param:{name}",
         )
 
     def _annotation_to_sym_type(self, annotation: object | None) -> SymType:
@@ -236,11 +270,47 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             return SymType.INT
         return SymType.UNKNOWN
 
+    def do_binary_op(
+        self, left: SymValue, right: SymValue, op: str, state: SymbolicState
+    ) -> SymValue:
+        return self._do_binary_op(left, right, op, state)
+
+    def get_branch_constraint(self, opname: str, edge_type: str, cond: SymValue) -> object | None:
+        return self._get_branch_constraint(opname, edge_type, cond)
+
+    def op_call(
+        self,
+        argc: int,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> None:
+        self._op_CALL(argc, state, crashes, call_sites)
+
+    def op_store_attr(
+        self,
+        attr_name: str,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> None:
+        self._op_STORE_ATTR(attr_name, state, crashes, call_sites)
+
+    def op_call_function_ex(
+        self,
+        flags: int,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> None:
+        self._op_CALL_FUNCTION_EX(flags, state, crashes, call_sites)
+
     def _expr_fingerprint(self, expr: object) -> str:
         """Expr fingerprint."""
-        if hasattr(expr, "sexpr"):
+        sexpr_fn = getattr(expr, "sexpr", None)
+        if sexpr_fn is not None and callable(sexpr_fn):
             try:
-                return expr.sexpr()
+                return str(sexpr_fn())
             except z3.Z3Exception:
                 logger.debug("Failed to serialize Z3 expression", exc_info=True)
         return repr(expr)
@@ -307,15 +377,14 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             return
         state = state.fork()
         last_cond: SymValue | None = None
-        for instr in block.instructions:
-            self._update_line(instr)
-            last_cond = self._execute_instruction(instr, state, crashes, call_sites)
+        for instr_obj in block.instructions:
+            self._update_line(instr_obj)
+            last_cond = self._execute_instruction(instr_obj, state, crashes, call_sites)
         for succ_id, edge_type in block.successors:
             new_state = state.fork()
             if last_cond is not None and block.instructions:
-                constraint = self._get_branch_constraint(
-                    block.instructions[-1].opname, edge_type, last_cond
-                )
+                last_instr = block.instructions[-1]
+                constraint = self._get_branch_constraint(last_instr.opname, edge_type, last_cond)
                 if constraint is not None:
                     new_state.add_constraint(constraint)
             if self._is_path_feasible(new_state.path_constraints):
@@ -324,54 +393,83 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
                     cfg, succ_id, new_state, crashes, call_sites, visited, priority_depth
                 )
 
-    def _update_line(self, instr: object) -> None:
+    def _update_line(self, instr: dis.Instruction) -> None:
         """Update current line number from instruction."""
-        if hasattr(instr, "positions") and instr.positions and instr.positions.lineno:
-            self.current_line = instr.positions.lineno
-        elif instr.starts_line and isinstance(instr.starts_line, int):
+        positions = getattr(instr, "positions", None)
+        if positions is not None and getattr(positions, "lineno", None):
+            self.current_line = positions.lineno
+        elif instr.starts_line:
             self.current_line = instr.starts_line
 
     def _get_branch_constraint(self, opname: str, edge_type: str, cond: SymValue) -> object | None:
         """Get constraint for branch edge."""
         try:
-
             cond_expr = getattr(cond, "expr", None)
             if cond_expr is None:
                 return None
+
+            is_false_jump = (
+                "JUMP_IF_FALSE" in opname
+                or "JUMP_FORWARD_IF_FALSE" in opname
+                or "JUMP_BACKWARD_IF_FALSE" in opname
+            )
+            is_true_jump = (
+                "JUMP_IF_TRUE" in opname
+                or "JUMP_FORWARD_IF_TRUE" in opname
+                or "JUMP_BACKWARD_IF_TRUE" in opname
+            )
+            is_none_jump = (
+                "JUMP_IF_NONE" in opname
+                or "JUMP_FORWARD_IF_NONE" in opname
+                or "JUMP_BACKWARD_IF_NONE" in opname
+            )
+            is_not_none_jump = (
+                "JUMP_IF_NOT_NONE" in opname
+                or "JUMP_FORWARD_IF_NOT_NONE" in opname
+                or "JUMP_BACKWARD_IF_NOT_NONE" in opname
+            )
+
             if edge_type == "fall":
-                if opname == "POP_JUMP_IF_FALSE":
+                if is_false_jump:
                     return cond_expr if z3.is_bool(cond_expr) else cond_expr != 0
-                elif opname == "POP_JUMP_IF_TRUE":
+                elif is_true_jump:
                     return z3.Not(cond_expr) if z3.is_bool(cond_expr) else cond_expr == 0
-                elif opname == "POP_JUMP_IF_NONE":
+                elif is_none_jump:
                     return cond_expr != 0
-                elif opname == "POP_JUMP_IF_NOT_NONE":
+                elif is_not_none_jump:
                     return cond_expr == 0
             elif edge_type == "jump":
-                if opname == "POP_JUMP_IF_FALSE":
+                if is_false_jump:
                     return z3.Not(cond_expr) if z3.is_bool(cond_expr) else cond_expr == 0
-                elif opname == "POP_JUMP_IF_TRUE":
+                elif is_true_jump:
                     return cond_expr if z3.is_bool(cond_expr) else cond_expr != 0
-                elif opname == "POP_JUMP_IF_NONE":
+                elif is_none_jump:
                     return cond_expr == 0
-                elif opname == "POP_JUMP_IF_NOT_NONE":
+                elif is_not_none_jump:
                     return cond_expr != 0
         except z3.Z3Exception:
             logger.debug("Failed to build edge condition for %s", opname, exc_info=True)
         return None
 
-    def _is_path_feasible(self, constraints: list[object]) -> bool:
+    def _is_path_feasible(
+        self,
+        constraints: list[object],
+    ) -> bool:
         """Quick check if path is feasible using IncrementalSolver."""
         if not constraints:
             return True
         from pysymex.core.solver import IncrementalSolver
 
         solver = IncrementalSolver(timeout_ms=200)
-        return solver.is_sat(constraints)
+
+        typed_constraints: list[z3py.BoolRef] = [
+            cast("z3py.BoolRef", c) for c in constraints if isinstance(c, z3.BoolRef)
+        ]
+        return solver.is_sat(typed_constraints)
 
     def _execute_instruction(
         self,
-        instr: object,
+        instr: dis.Instruction,
         state: SymbolicState,
         crashes: list[CrashCondition],
         call_sites: list[CallSite],
@@ -379,7 +477,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         """Execute single instruction symbolically."""
         op = instr.opname
         arg = instr.argval
-        handler = getattr(self, f"_op_{op }", None)
+        handler = getattr(self, f"_op_{op}", None)
         if handler:
             return handler(arg, state, crashes, call_sites)
         else:
@@ -402,10 +500,9 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             taint = TaintInfo(
                 is_tainted=True,
                 sources=left_sources | right_sources,
-                propagation_path=left_path + [op],
+                propagation_path=[*left_path, op],
             )
         try:
-
             left_expr = getattr(left, "expr", None)
             right_expr = getattr(right, "expr", None)
             if left_expr is None or right_expr is None:
@@ -419,19 +516,60 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             elif op == "/":
                 expr = z3.ToReal(left_expr) / z3.ToReal(right_expr)
             elif op == "//":
-                expr = left_expr / right_expr
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    divisor = right_expr.as_long()
+                    expr = (
+                        z3.IntVal(left_expr.as_long() // divisor)
+                        if divisor != 0
+                        else z3.Int(state.fresh_name("floordiv"))
+                    )
+                else:
+                    expr = left_expr / right_expr
             elif op == "%":
-                expr = left_expr % right_expr
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    divisor = right_expr.as_long()
+                    expr = (
+                        z3.IntVal(left_expr.as_long() % divisor)
+                        if divisor != 0
+                        else z3.Int(state.fresh_name("mod"))
+                    )
+                else:
+                    expr = left_expr % right_expr
             elif op == "&":
-                expr = left_expr & right_expr
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    expr = z3.IntVal(left_expr.as_long() & right_expr.as_long())
+                else:
+                    expr = z3.Int(state.fresh_name("bitand"))
             elif op == "|":
-                expr = left_expr | right_expr
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    expr = z3.IntVal(left_expr.as_long() | right_expr.as_long())
+                else:
+                    expr = z3.Int(state.fresh_name("bitor"))
             elif op == "^":
-                expr = left_expr ^ right_expr
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    expr = z3.IntVal(left_expr.as_long() ^ right_expr.as_long())
+                else:
+                    expr = z3.Int(state.fresh_name("bitxor"))
             elif op == "<<":
-                expr = left_expr * (2**right_expr)
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    shift = right_expr.as_long()
+                    expr = (
+                        z3.IntVal(left_expr.as_long() << shift)
+                        if shift >= 0
+                        else z3.Int(state.fresh_name("lshift"))
+                    )
+                else:
+                    expr = left_expr * (2**right_expr)
             elif op == ">>":
-                expr = left_expr / (2**right_expr)
+                if isinstance(left_expr, z3.IntNumRef) and isinstance(right_expr, z3.IntNumRef):
+                    shift = right_expr.as_long()
+                    expr = (
+                        z3.IntVal(left_expr.as_long() >> shift)
+                        if shift >= 0
+                        else z3.Int(state.fresh_name("rshift"))
+                    )
+                else:
+                    expr = left_expr / (2**right_expr)
             elif op == "**":
                 expr = z3.Int(state.fresh_name("pow"))
             else:
@@ -439,20 +577,20 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             left_name = getattr(left, "name", "?")
             right_name = getattr(right, "name", "?")
             return SymValue(expr, f"({left_name}{op}{right_name})", SymType.INT, taint=taint)
-        except z3.Z3Exception:
+        except (z3.Z3Exception, TypeError, ValueError):
             logger.debug("Z3 binary op %s failed", op, exc_info=True)
             return SymValue(z3.Int(state.fresh_name("binop")), "", SymType.INT, taint=taint)
 
     def _check_division(
         self, divisor: SymValue, op: str, state: SymbolicState, crashes: list[CrashCondition]
-    ):
+    ) -> None:
         """Check for division by zero."""
 
         divisor_expr = getattr(divisor, "expr", None)
         divisor_name = getattr(divisor, "name", None)
         if divisor_expr is None:
             return
-        name_str = divisor_name if divisor_name else "divisor"
+        name_str = divisor_name or "divisor"
         self._add_crash(
             BugType.DIVISION_BY_ZERO,
             divisor_expr == 0,
@@ -463,14 +601,16 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             Severity.CRITICAL,
         )
 
-    def _check_modulo(self, divisor: SymValue, state: SymbolicState, crashes: list[CrashCondition]):
+    def _check_modulo(
+        self, divisor: SymValue, state: SymbolicState, crashes: list[CrashCondition]
+    ) -> None:
         """Check for modulo by zero."""
 
         divisor_expr = getattr(divisor, "expr", None)
         divisor_name = getattr(divisor, "name", None)
         if divisor_expr is None:
             return
-        name_str = divisor_name if divisor_name else "divisor"
+        name_str = divisor_name or "divisor"
         self._add_crash(
             BugType.MODULO_BY_ZERO,
             divisor_expr == 0,
@@ -483,14 +623,14 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
 
     def _check_shift(
         self, amount: SymValue, op: str, state: SymbolicState, crashes: list[CrashCondition]
-    ):
+    ) -> None:
         """Check for negative shift amount."""
 
         amount_expr = getattr(amount, "expr", None)
         amount_name = getattr(amount, "name", None)
         if amount_expr is None:
             return
-        name_str = amount_name if amount_name else "amount"
+        name_str = amount_name or "amount"
         self._add_crash(
             BugType.NEGATIVE_SHIFT,
             amount_expr < 0,
@@ -507,7 +647,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         container: SymValue,
         state: SymbolicState,
         crashes: list[CrashCondition],
-    ):
+    ) -> None:
         """Check for index out of bounds."""
 
         container_length = getattr(container, "length", None)
@@ -516,7 +656,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         if container_length is None or index_expr is None:
             return
         condition = z3.Or(index_expr < 0, index_expr >= container_length)
-        name_str = index_name if index_name else "index"
+        name_str = index_name or "index"
         self._add_crash(
             BugType.INDEX_OUT_OF_BOUNDS,
             condition,
@@ -537,7 +677,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         variables: dict[str, object],
         severity: Severity = Severity.HIGH,
         taint_info: TaintInfo | None = None,
-    ):
+    ) -> None:
         """Add a crash condition."""
         crashes.append(
             CrashCondition(
@@ -571,7 +711,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             case _:
                 return SymValue(z3.Int(state.fresh_name("const")), "", SymType.UNKNOWN)
 
-    def _empty_summary(self, code: object) -> FunctionSummary:
+    def _empty_summary(self, code: CodeType) -> FunctionSummary:
         """Create empty summary for functions that can't be analyzed."""
         return FunctionSummary(
             name=code.co_name,
@@ -592,7 +732,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
 
     def _build_summary(
         self,
-        code: object,
+        code: CodeType,
         params: tuple[str, ...],
         crashes: list[CrashCondition],
         call_sites: list[CallSite],

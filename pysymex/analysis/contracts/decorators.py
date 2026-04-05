@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Contract decorator functions for pysymex.
 
 Provides the @requires, @ensures, @invariant, and @loop_invariant decorators
@@ -10,6 +28,7 @@ import functools
 import inspect
 import logging
 from collections.abc import Callable
+from typing import Protocol, cast
 
 from pysymex.analysis.contracts.types import (
     Contract,
@@ -22,9 +41,17 @@ logger = logging.getLogger(__name__)
 function_contracts: dict[str, FunctionContract] = {}
 
 
+class _ContractWrapped(Protocol):
+    __contract__: FunctionContract
+
+
+class _InvariantAnnotatedType(Protocol):
+    __invariants__: list[Contract]
+
+
 def get_function_contract(func: Callable[..., object]) -> FunctionContract | None:
     """Get the contract for a function."""
-    key = f"{func .__module__ }.{func .__qualname__ }"
+    key = f"{func.__module__}.{func.__qualname__}"
     return function_contracts.get(key)
 
 
@@ -41,7 +68,7 @@ def requires(
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
         """Decorator."""
-        key = f"{func .__module__ }.{func .__qualname__ }"
+        key = f"{func.__module__}.{func.__qualname__}"
         if key not in function_contracts:
             function_contracts[key] = FunctionContract(function_name=func.__name__)
         contract = function_contracts[key]
@@ -57,7 +84,7 @@ def requires(
         def wrapper(*args: object, **kwargs: object) -> object:
             return func(*args, **kwargs)
 
-        wrapper.__contract__ = contract
+        cast("_ContractWrapped", wrapper).__contract__ = contract
         return wrapper
 
     return decorator
@@ -78,7 +105,7 @@ def ensures(
 
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
         """Decorator."""
-        key = f"{func .__module__ }.{func .__qualname__ }"
+        key = f"{func.__module__}.{func.__qualname__}"
         if key not in function_contracts:
             function_contracts[key] = FunctionContract(function_name=func.__name__)
         contract = function_contracts[key]
@@ -94,7 +121,7 @@ def ensures(
         def wrapper(*args: object, **kwargs: object) -> object:
             return func(*args, **kwargs)
 
-        wrapper.__contract__ = contract
+        cast("_ContractWrapped", wrapper).__contract__ = contract
         return wrapper
 
     return decorator
@@ -112,13 +139,14 @@ def invariant(condition: str, message: str | None = None):
 
     def decorator(cls: type) -> type:
         """Decorator."""
-        if not hasattr(cls, "__invariants__"):
-            cls.__invariants__ = []
-        cls.__invariants__.append(
+        annotated_cls = cast("_InvariantAnnotatedType", cls)
+        if not hasattr(annotated_cls, "__invariants__"):
+            annotated_cls.__invariants__ = []
+        annotated_cls.__invariants__.append(
             Contract(
                 kind=ContractKind.INVARIANT,
                 condition=condition,
-                message=message or f"Invariant: {condition }",
+                message=message or f"Invariant: {condition}",
             )
         )
         return cls
@@ -141,7 +169,7 @@ def loop_invariant(condition: str, message: str | None = None):
     return Contract(
         kind=ContractKind.LOOP_INVARIANT,
         condition=condition,
-        message=message or f"Loop invariant: {condition }",
+        message=message or f"Loop invariant: {condition}",
     )
 
 

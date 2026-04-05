@@ -1,6 +1,12 @@
 import pytest
 import sys
-from pysymex.security import safe_exec, timeout_context, resource_limits, SecurityError, ExecutionTimeout
+from pysymex.sandbox import (
+    ExecutionTimeout,
+    SecurityError,
+    resource_limits,
+    safe_exec,
+    timeout_context,
+)
 
 def test_safe_exec_blocks_imports():
     with pytest.raises(SecurityError):

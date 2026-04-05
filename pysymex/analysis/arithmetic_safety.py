@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Advanced Arithmetic Safety Analysis with Z3.
 This module provides comprehensive arithmetic safety checking using Z3 SMT solver
 for mathematical proofs of correctness. Covers:
@@ -11,8 +29,14 @@ for mathematical proofs of correctness. Covers:
 
 from __future__ import annotations
 
-import icontract
 import logging
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+import icontract
+
+if TYPE_CHECKING:
+    import z3
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +77,12 @@ class IntegerBounds:
     min_val: int
     max_val: int
 
+    @staticmethod
+    def _post_for_width(result: IntegerBounds) -> bool:
+        return result.min_val <= result.max_val
+
     @classmethod
-    @icontract.ensure(lambda result: result.min_val <= result.max_val)
+    @icontract.ensure(_post_for_width)
     def for_width(cls, width: IntegerWidth, signed: bool = True) -> IntegerBounds:
         """Create bounds for a specific bit width."""
         if width == IntegerWidth.ARBITRARY:
@@ -104,19 +132,19 @@ class ArithmeticIssue:
     message: str
     location: str | None = None
     line_number: int | None = None
-    constraints: list[object] = field(default_factory=list[object])
-    counterexample: dict[str, object] = field(default_factory=dict[str, object])
+    constraints: Sequence[z3.BoolRef] = field(default_factory=list)
+    counterexample: dict[str, object] = field(default_factory=dict)
     severity: str = "error"
 
     def format(self) -> str:
         """Format issue for display."""
-        loc = f" at line {self .line_number }" if self.line_number else ""
+        loc = f" at line {self.line_number}" if self.line_number else ""
         ce = ""
         if self.counterexample:
             ce = " | Counterexample: " + ", ".join(
-                f"{k }={v }" for k, v in self.counterexample.items()
+                f"{k}={v}" for k, v in self.counterexample.items()
             )
-        return f"[{self .kind .name }]{loc }: {self .message }{ce }"
+        return f"[{self.kind.name}]{loc}: {self.message}{ce}"
 
 
 class ArithmeticSafetyAnalyzer:
@@ -132,7 +160,7 @@ class ArithmeticSafetyAnalyzer:
         default_width: IntegerWidth = IntegerWidth.INT64,
         signed: bool = True,
         timeout_ms: int = 5000,
-    ):
+    ) -> None:
         self.mode = mode
         self.default_width = default_width
         self.signed = signed
@@ -165,30 +193,30 @@ class ArithmeticSafetyAnalyzer:
         if self.signed:
             overflow_cond = z3.And(a > 0, b > 0, result > self.bounds.max_val)
             underflow_cond = z3.And(a < 0, b < 0, result < self.bounds.min_val)
-            if is_satisfiable(constraints + [overflow_cond]):
-                model = get_model(constraints + [overflow_cond])
+            if is_satisfiable([*constraints, overflow_cond]):
+                model = get_model([*constraints, overflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.SIGNED_OVERFLOW,
-                    message=f"Addition overflow: {a } + {b } exceeds {self .bounds .max_val }",
-                    constraints=constraints + [overflow_cond],
+                    message=f"Addition overflow: {a} + {b} exceeds {self.bounds.max_val}",
+                    constraints=[*constraints, overflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
-            if is_satisfiable(constraints + [underflow_cond]):
-                model = get_model(constraints + [underflow_cond])
+            if is_satisfiable([*constraints, underflow_cond]):
+                model = get_model([*constraints, underflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.SIGNED_UNDERFLOW,
-                    message=f"Addition underflow: {a } + {b } below {self .bounds .min_val }",
-                    constraints=constraints + [underflow_cond],
+                    message=f"Addition underflow: {a} + {b} below {self.bounds.min_val}",
+                    constraints=[*constraints, underflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
         else:
             overflow_cond = result > self.bounds.max_val
-            if is_satisfiable(constraints + [overflow_cond]):
-                model = get_model(constraints + [overflow_cond])
+            if is_satisfiable([*constraints, overflow_cond]):
+                model = get_model([*constraints, overflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.UNSIGNED_OVERFLOW,
                     message="Unsigned addition overflow",
-                    constraints=constraints + [overflow_cond],
+                    constraints=[*constraints, overflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
         return None
@@ -205,30 +233,30 @@ class ArithmeticSafetyAnalyzer:
         if self.signed:
             overflow_cond = z3.And(a > 0, b < 0, result > self.bounds.max_val)
             underflow_cond = z3.And(a < 0, b > 0, result < self.bounds.min_val)
-            if is_satisfiable(constraints + [overflow_cond]):
-                model = get_model(constraints + [overflow_cond])
+            if is_satisfiable([*constraints, overflow_cond]):
+                model = get_model([*constraints, overflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.SIGNED_OVERFLOW,
-                    message=f"Subtraction overflow: {a } - {b }",
-                    constraints=constraints + [overflow_cond],
+                    message=f"Subtraction overflow: {a} - {b}",
+                    constraints=[*constraints, overflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
-            if is_satisfiable(constraints + [underflow_cond]):
-                model = get_model(constraints + [underflow_cond])
+            if is_satisfiable([*constraints, underflow_cond]):
+                model = get_model([*constraints, underflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.SIGNED_UNDERFLOW,
-                    message=f"Subtraction underflow: {a } - {b }",
-                    constraints=constraints + [underflow_cond],
+                    message=f"Subtraction underflow: {a} - {b}",
+                    constraints=[*constraints, underflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
         else:
             underflow_cond = a < b
-            if is_satisfiable(constraints + [underflow_cond]):
-                model = get_model(constraints + [underflow_cond])
+            if is_satisfiable([*constraints, underflow_cond]):
+                model = get_model([*constraints, underflow_cond])
                 return ArithmeticIssue(
                     kind=ArithmeticIssueKind.UNSIGNED_UNDERFLOW,
                     message="Unsigned subtraction underflow",
-                    constraints=constraints + [underflow_cond],
+                    constraints=[*constraints, underflow_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
         return None
@@ -243,16 +271,16 @@ class ArithmeticSafetyAnalyzer:
         constraints = list(path_constraints or [])
         result = a * b
         overflow_cond = z3.Or(result > self.bounds.max_val, result < self.bounds.min_val)
-        if is_satisfiable(constraints + [overflow_cond]):
-            model = get_model(constraints + [overflow_cond])
+        if is_satisfiable([*constraints, overflow_cond]):
+            model = get_model([*constraints, overflow_cond])
             return ArithmeticIssue(
                 kind=(
                     ArithmeticIssueKind.SIGNED_OVERFLOW
                     if self.signed
                     else ArithmeticIssueKind.UNSIGNED_OVERFLOW
                 ),
-                message=f"Multiplication overflow: {a } * {b }",
-                constraints=constraints + [overflow_cond],
+                message=f"Multiplication overflow: {a} * {b}",
+                constraints=[*constraints, overflow_cond],
                 counterexample=self._extract_model(model, [a, b]),
             )
         return None
@@ -272,26 +300,26 @@ class ArithmeticSafetyAnalyzer:
         issues: list[ArithmeticIssue] = []
         constraints = list(path_constraints or [])
         div_zero_cond = b == 0
-        if is_satisfiable(constraints + [div_zero_cond]):
-            model = get_model(constraints + [div_zero_cond])
+        if is_satisfiable([*constraints, div_zero_cond]):
+            model = get_model([*constraints, div_zero_cond])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.DIVISION_BY_ZERO,
                     message="Division by zero possible",
-                    constraints=constraints + [div_zero_cond],
+                    constraints=[*constraints, div_zero_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
             )
         if self.signed and self.default_width != IntegerWidth.ARBITRARY:
             int_min = self.bounds.min_val
             overflow_cond = z3.And(a == int_min, b == -1)
-            if is_satisfiable(constraints + [overflow_cond]):
-                model = get_model(constraints + [overflow_cond])
+            if is_satisfiable([*constraints, overflow_cond]):
+                model = get_model([*constraints, overflow_cond])
                 issues.append(
                     ArithmeticIssue(
                         kind=ArithmeticIssueKind.DIVISION_OVERFLOW,
-                        message=f"Division overflow: {int_min } / -1",
-                        constraints=constraints + [overflow_cond],
+                        message=f"Division overflow: {int_min} / -1",
+                        constraints=[*constraints, overflow_cond],
                         counterexample=self._extract_model(model, [a, b]),
                     )
                 )
@@ -307,12 +335,12 @@ class ArithmeticSafetyAnalyzer:
         """Check if a % b is safe (b != 0)."""
         constraints = list(path_constraints or [])
         mod_zero_cond = b == 0
-        if is_satisfiable(constraints + [mod_zero_cond]):
-            model = get_model(constraints + [mod_zero_cond])
+        if is_satisfiable([*constraints, mod_zero_cond]):
+            model = get_model([*constraints, mod_zero_cond])
             return ArithmeticIssue(
                 kind=ArithmeticIssueKind.MODULO_BY_ZERO,
                 message="Modulo by zero possible",
-                constraints=constraints + [mod_zero_cond],
+                constraints=[*constraints, mod_zero_cond],
                 counterexample=self._extract_model(model, [a, b]),
             )
         return None
@@ -334,24 +362,24 @@ class ArithmeticSafetyAnalyzer:
         constraints = list(path_constraints or [])
         bit_width = self.default_width.value if self.default_width != IntegerWidth.ARBITRARY else 64
         neg_shift_cond = shift_amount < 0
-        if is_satisfiable(constraints + [neg_shift_cond]):
-            model = get_model(constraints + [neg_shift_cond])
+        if is_satisfiable([*constraints, neg_shift_cond]):
+            model = get_model([*constraints, neg_shift_cond])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.NEGATIVE_SHIFT,
                     message="Shift by negative amount",
-                    constraints=constraints + [neg_shift_cond],
+                    constraints=[*constraints, neg_shift_cond],
                     counterexample=self._extract_model(model, [value, shift_amount]),
                 )
             )
         overflow_cond = shift_amount >= bit_width
-        if is_satisfiable(constraints + [overflow_cond]):
-            model = get_model(constraints + [overflow_cond])
+        if is_satisfiable([*constraints, overflow_cond]):
+            model = get_model([*constraints, overflow_cond])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.SHIFT_OVERFLOW,
-                    message=f"Shift amount >= {bit_width } bits",
-                    constraints=constraints + [overflow_cond],
+                    message=f"Shift amount >= {bit_width} bits",
+                    constraints=[*constraints, overflow_cond],
                     counterexample=self._extract_model(model, [value, shift_amount]),
                 )
             )
@@ -372,25 +400,25 @@ class ArithmeticSafetyAnalyzer:
         issues: list[ArithmeticIssue] = []
         constraints = list(path_constraints or [])
         zero_neg_cond = z3.And(base == 0, exponent < 0)
-        if is_satisfiable(constraints + [zero_neg_cond]):
-            model = get_model(constraints + [zero_neg_cond])
+        if is_satisfiable([*constraints, zero_neg_cond]):
+            model = get_model([*constraints, zero_neg_cond])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.DIVISION_BY_ZERO,
                     message="0 raised to negative power (division by zero)",
-                    constraints=constraints + [zero_neg_cond],
+                    constraints=[*constraints, zero_neg_cond],
                     counterexample=self._extract_model(model, [base, exponent]),
                 )
             )
         if self.default_width != IntegerWidth.ARBITRARY:
             overflow_cond = z3.And(z3.Or(base > 1, base < -1), exponent > self.default_width.value)
-            if is_satisfiable(constraints + [overflow_cond]):
-                model = get_model(constraints + [overflow_cond])
+            if is_satisfiable([*constraints, overflow_cond]):
+                model = get_model([*constraints, overflow_cond])
                 issues.append(
                     ArithmeticIssue(
                         kind=ArithmeticIssueKind.POWER_OVERFLOW,
                         message="Power operation may overflow",
-                        constraints=constraints + [overflow_cond],
+                        constraints=[*constraints, overflow_cond],
                         counterexample=self._extract_model(model, [base, exponent]),
                     )
                 )
@@ -411,12 +439,12 @@ class ArithmeticSafetyAnalyzer:
         constraints = list(path_constraints or [])
         int_min = self.bounds.min_val
         overflow_cond = value == int_min
-        if is_satisfiable(constraints + [overflow_cond]):
-            model = get_model(constraints + [overflow_cond])
+        if is_satisfiable([*constraints, overflow_cond]):
+            model = get_model([*constraints, overflow_cond])
             return ArithmeticIssue(
                 kind=ArithmeticIssueKind.ABS_OVERFLOW,
-                message=f"abs({int_min }) overflows",
-                constraints=constraints + [overflow_cond],
+                message=f"abs({int_min}) overflows",
+                constraints=[*constraints, overflow_cond],
                 counterexample=self._extract_model(model, [value]),
             )
         return None
@@ -436,36 +464,36 @@ class ArithmeticSafetyAnalyzer:
         constraints = list(path_constraints or [])
         target_bounds = IntegerBounds.for_width(target_width, target_signed)
         too_large = value > target_bounds.max_val
-        if is_satisfiable(constraints + [too_large]):
-            model = get_model(constraints + [too_large])
+        if is_satisfiable([*constraints, too_large]):
+            model = get_model([*constraints, too_large])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.TRUNCATION,
-                    message=f"Value exceeds {target_width .name } max ({target_bounds .max_val })",
-                    constraints=constraints + [too_large],
+                    message=f"Value exceeds {target_width.name} max ({target_bounds.max_val})",
+                    constraints=[*constraints, too_large],
                     counterexample=self._extract_model(model, [value]),
                 )
             )
         too_small = value < target_bounds.min_val
-        if is_satisfiable(constraints + [too_small]):
-            model = get_model(constraints + [too_small])
+        if is_satisfiable([*constraints, too_small]):
+            model = get_model([*constraints, too_small])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.TRUNCATION,
-                    message=f"Value below {target_width .name } min ({target_bounds .min_val })",
-                    constraints=constraints + [too_small],
+                    message=f"Value below {target_width.name} min ({target_bounds.min_val})",
+                    constraints=[*constraints, too_small],
                     counterexample=self._extract_model(model, [value]),
                 )
             )
         if self.signed and not target_signed:
             sign_loss = value < 0
-            if is_satisfiable(constraints + [sign_loss]):
-                model = get_model(constraints + [sign_loss])
+            if is_satisfiable([*constraints, sign_loss]):
+                model = get_model([*constraints, sign_loss])
                 issues.append(
                     ArithmeticIssue(
                         kind=ArithmeticIssueKind.SIGN_LOSS,
                         message="Negative value converted to unsigned",
-                        constraints=constraints + [sign_loss],
+                        constraints=[*constraints, sign_loss],
                         counterexample=self._extract_model(model, [value]),
                     )
                 )
@@ -481,24 +509,24 @@ class ArithmeticSafetyAnalyzer:
         issues: list[ArithmeticIssue] = []
         constraints = list(path_constraints or [])
         div_zero = b == 0
-        if is_satisfiable(constraints + [div_zero]):
-            model = get_model(constraints + [div_zero])
+        if is_satisfiable([*constraints, div_zero]):
+            model = get_model([*constraints, div_zero])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.FLOAT_INFINITY,
                     message="Float division by zero produces infinity",
-                    constraints=constraints + [div_zero],
+                    constraints=[*constraints, div_zero],
                     counterexample=self._extract_model(model, [a, b]),
                 )
             )
         nan_cond = z3.And(a == 0, b == 0)
-        if is_satisfiable(constraints + [nan_cond]):
-            model = get_model(constraints + [nan_cond])
+        if is_satisfiable([*constraints, nan_cond]):
+            model = get_model([*constraints, nan_cond])
             issues.append(
                 ArithmeticIssue(
                     kind=ArithmeticIssueKind.FLOAT_NAN,
                     message="0.0 / 0.0 produces NaN",
-                    constraints=constraints + [nan_cond],
+                    constraints=[*constraints, nan_cond],
                     counterexample=self._extract_model(model, [a, b]),
                 )
             )
@@ -576,10 +604,9 @@ class SafeArithmetic:
     Each operation returns (result, is_safe, issue) tuple.
     """
 
-    def __init__(self, analyzer: ArithmeticSafetyAnalyzer | None = None):
+    def __init__(self, analyzer: ArithmeticSafetyAnalyzer | None = None) -> None:
         self.analyzer = analyzer or ArithmeticSafetyAnalyzer()
 
-    @icontract.ensure(lambda result: isinstance(result[0], z3.ArithRef))
     def safe_add(
         self,
         a: z3.ArithRef,

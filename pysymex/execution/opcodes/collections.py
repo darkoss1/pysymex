@@ -1,7 +1,26 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Collection opcodes (lists, tuples, dicts, sets)."""
 
 from __future__ import annotations
 
+import dataclasses
 import dis
 from typing import TYPE_CHECKING, cast
 
@@ -15,8 +34,8 @@ from pysymex.core.type_checks import is_type_subscription
 from pysymex.core.types import (
     Z3_FALSE,
     SymbolicNone,
-    SymbolicValue,
     SymbolicString,
+    SymbolicValue,
 )
 from pysymex.core.types_containers import (
     SymbolicDict,
@@ -27,8 +46,118 @@ from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
+    from pysymex.core.copy_on_write import CowDict
     from pysymex.core.state import VMState
     from pysymex.execution.dispatcher import OpcodeDispatcher
+
+
+def _state_memory(state: VMState) -> CowDict[int, StackValue]:
+    return state.memory
+
+
+def _coerce_symbolic_value(value: StackValue) -> SymbolicValue:
+    if isinstance(value, SymbolicValue):
+        return value
+    if isinstance(value, SymbolicString):
+        return value.as_unified()
+    if isinstance(value, SymbolicList):
+        return value.as_unified()
+    if isinstance(value, SymbolicDict):
+        return value.as_unified()
+    if isinstance(value, SymbolicObject):
+        return value.as_unified()
+    if isinstance(value, SymbolicNone):
+        return value.as_unified()
+    return SymbolicValue.from_const(value)
+
+
+def _coerce_symbolic_index(value: StackValue) -> SymbolicValue | None:
+    if isinstance(value, SymbolicValue):
+        return value
+    if isinstance(value, (int, bool)):
+        return SymbolicValue.from_const(int(value))
+    return None
+
+
+def _coerce_symbolic_key(value: StackValue) -> SymbolicString | None:
+    if isinstance(value, SymbolicString):
+        return value
+    if isinstance(value, str):
+        return SymbolicString.from_const(value)
+    if isinstance(value, SymbolicValue):
+        return SymbolicString(_name=value.name, _unified=value)
+    return None
+
+
+def _extract_concrete_sequence(value: object) -> list[object] | tuple[object, ...] | None:
+    if isinstance(value, (list, tuple)):
+        return value
+    if isinstance(value, SymbolicValue):
+        enhanced = getattr(value, "_enhanced_object", None)
+        if isinstance(enhanced, (list, tuple)):
+            return enhanced
+        const_value = value.value
+        if isinstance(const_value, (list, tuple)):
+            return const_value
+    concrete_items = getattr(value, "_concrete_items", None)
+    if isinstance(concrete_items, list):
+        return concrete_items
+    return None
+
+
+def _extract_concrete_mapping(value: object) -> SymbolicDict | dict[str, object] | None:
+    if isinstance(value, SymbolicDict):
+        return value
+    if isinstance(value, SymbolicValue):
+        const_value = value.value
+        if isinstance(const_value, dict):
+            return {str(k): v for k, v in const_value.items()}
+    concrete_items = getattr(value, "_concrete_items", None)
+    if isinstance(concrete_items, dict):
+        return {str(k): v for k, v in concrete_items.items()}
+    return None
+
+
+def _resolve_runtime_container(container: StackValue, state: VMState) -> object:
+    memory = _state_memory(state)
+    if isinstance(container, SymbolicObject):
+        return memory.get(container.address, container)
+
+    if isinstance(container, SymbolicValue):
+        enhanced = getattr(container, "_enhanced_object", None)
+        if isinstance(enhanced, SymbolicObject):
+            return memory.get(enhanced.address, enhanced)
+        if enhanced is not None:
+            return enhanced
+        const_value = container.value
+        if const_value is not None:
+            return const_value
+
+    return container
+
+
+def _extract_none_expr(value: object) -> z3.BoolRef | None:
+    if isinstance(value, SymbolicValue):
+        return value.is_none
+    if isinstance(value, SymbolicObject):
+        return value.is_none
+    return None
+
+
+def _extract_length_expr(value: object) -> z3.ArithRef | None:
+    if isinstance(value, (SymbolicList, SymbolicDict, SymbolicString)):
+        return value.z3_len
+    return None
+
+
+def _symbolic_int_expr(name: str, expr: z3.ArithRef) -> SymbolicValue:
+    return SymbolicValue(
+        _name=name,
+        z3_int=expr,
+        is_int=z3.BoolVal(True),
+        z3_bool=z3.BoolVal(False),
+        is_bool=z3.BoolVal(False),
+    )
 
 
 @opcode_handler("BUILD_LIST")
@@ -51,14 +180,19 @@ def handle_build_list(
         elif isinstance(item, SymbolicList):
             z3_array = z3.Store(z3_array, i, z3.IntVal(next_address()))
         else:
-            val: object = SymbolicValue.from_const(item) if not hasattr(item, "z3_int") else item
-            z3_array = z3.Store(z3_array, i, val.z3_int if hasattr(val, "z3_int") else z3.IntVal(0))
-    sym_list.z3_array = z3_array
-    sym_list.z3_len = z3.IntVal(count)
-    sym_list._concrete_items = items
+            z3_array = z3.Store(z3_array, i, _coerce_symbolic_value(item).z3_int)
+
+    concrete_items: list[object] = list(items)
+    sym_list = dataclasses.replace(
+        sym_list,
+        z3_array=z3_array,
+        z3_len=z3.IntVal(count),
+        _concrete_items=concrete_items,
+    )
 
     addr = next_address()
-    state.memory[addr] = sym_list
+    memory = _state_memory(state)
+    memory[addr] = sym_list
     obj_handle = SymbolicObject(f"list_{addr}", addr, z3.IntVal(addr), {addr})
 
     state = state.push(obj_handle)
@@ -85,11 +219,14 @@ def handle_build_tuple(
         elif isinstance(item, (int, bool)):
             z3_array = z3.Store(z3_array, i, z3.IntVal(int(item)))
         else:
-            val: object = SymbolicValue.from_const(item) if not hasattr(item, "z3_int") else item
-            z3_array = z3.Store(z3_array, i, val.z3_int if hasattr(val, "z3_int") else z3.IntVal(0))
-    sym_list.z3_array = z3_array
-    sym_list.z3_len = z3.IntVal(count)
-    sym_list._concrete_items = items
+            z3_array = z3.Store(z3_array, i, _coerce_symbolic_value(item).z3_int)
+    concrete_items: list[object] = list(items)
+    sym_list = dataclasses.replace(
+        sym_list,
+        z3_array=z3_array,
+        z3_len=z3.IntVal(count),
+        _concrete_items=concrete_items,
+    )
     state = state.push(sym_list)
     state = state.add_constraint(constraint)
     state = state.advance_pc()
@@ -122,12 +259,12 @@ def handle_build_map(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
             items.append((key, val))
     items.reverse()
     sym_dict, constraint = SymbolicDict.symbolic(f"dict_{state.pc}")
-    sym_dict._concrete_items = {}
+    sym_dict = dataclasses.replace(sym_dict, _concrete_items={})
     for key, val in items:
         s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
-        s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+        s_val = _coerce_symbolic_value(cast("StackValue", val))
         sym_dict = sym_dict.__setitem__(s_key, s_val)
-    sym_dict.z3_len = z3.IntVal(count)
+    sym_dict = dataclasses.replace(sym_dict, z3_len=z3.IntVal(count))
 
     state = state.push(sym_dict)
     state = state.add_constraint(constraint)
@@ -141,9 +278,9 @@ def handle_build_const_key_map(
 ) -> OpcodeResult:
     """Build a dict with constant keys, preserving key-value pairs."""
     count = int(instr.argval) if instr.argval else 0
-    
+
     keys_tuple = state.pop()
-    
+
     values = []
     for _ in range(count):
         val = state.pop()
@@ -151,23 +288,19 @@ def handle_build_const_key_map(
     values.reverse()
 
     sym_dict, constraint = SymbolicDict.symbolic(f"dict_{state.pc}")
-    sym_dict._concrete_items = {}
-    
+    sym_dict = dataclasses.replace(sym_dict, _concrete_items={})
+
     concrete_keys: list[object] | None = None
-    if keys_tuple:
-        if hasattr(keys_tuple, "_enhanced_object") and isinstance(keys_tuple._enhanced_object, (list, tuple)):
-             concrete_keys = list(keys_tuple._enhanced_object)
-        elif hasattr(keys_tuple, "_constant_value") and isinstance(keys_tuple._constant_value, (list, tuple)):
-             concrete_keys = list(keys_tuple._constant_value)
+    seq_keys = _extract_concrete_sequence(keys_tuple)
+    if seq_keys is not None:
+        concrete_keys = list(seq_keys)
 
     if concrete_keys and len(concrete_keys) == len(values):
         for key, val in zip(concrete_keys, values, strict=False):
             s_key = key if isinstance(key, SymbolicString) else SymbolicString.from_const(str(key))
-            s_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+            s_val = _coerce_symbolic_value(cast("StackValue", val))
             sym_dict = sym_dict.__setitem__(s_key, s_val)
-    else:
-        pass
-    sym_dict.z3_len = z3.IntVal(count)
+    sym_dict = dataclasses.replace(sym_dict, z3_len=z3.IntVal(count))
 
     state = state.push(sym_dict)
     state = state.add_constraint(constraint)
@@ -202,7 +335,10 @@ def handle_build_string(
             )
             new_z3_str = z3.IntToStr(z3_expr)
             part = SymbolicString(
-                _name=f"str({item.name})", _z3_str=new_z3_str, _z3_len=z3.Length(new_z3_str), taint_labels=item.taint_labels
+                _name=f"str({item.name})",
+                _z3_str=new_z3_str,
+                _z3_len=z3.Length(new_z3_str),
+                taint_labels=item.taint_labels,
             )
         else:
             part = SymbolicString.from_const(str(item))
@@ -242,25 +378,27 @@ def handle_list_extend(
     index = int(instr.argval) if instr.argval is not None else 1
     container = state.peek(index - 1)
     container_addr: int | None = None
-    real_container = container
+    memory = _state_memory(state)
+    real_container: object = container
     if isinstance(container, SymbolicObject):
         container_addr = container.address
-        real_container = state.memory.get(container.address, container)
+        real_container = memory.get(container.address, container)
 
     if isinstance(real_container, SymbolicList):
-        extend_val: object = val
-        if isinstance(val, SymbolicValue):
-            enhanced = getattr(val, "_enhanced_object", None)
-            const_val = getattr(val, "_constant_value", None)
-            if isinstance(enhanced, (list, tuple)):
-                extend_val = enhanced
-            elif isinstance(const_val, (list, tuple)):
-                extend_val = const_val
-        new_container = real_container.extend(extend_val)
-        if container_addr is not None:
-            state.memory[container_addr] = new_container
+        extend_source: SymbolicList | list[object] | tuple[object, ...] | None = None
+        if isinstance(val, SymbolicList):
+            extend_source = val
         else:
-            state.stack[-index] = new_container
+            seq = _extract_concrete_sequence(val)
+            if seq is not None:
+                extend_source = seq
+
+        if extend_source is not None:
+            new_container = real_container.extend(extend_source)
+            if container_addr is not None:
+                memory[container_addr] = new_container
+            else:
+                state.stack[-index] = new_container
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -276,26 +414,14 @@ def handle_collection_update(
     container = state.peek(index - 1)
 
     if instr.opname in ("DICT_UPDATE", "DICT_MERGE") and isinstance(container, SymbolicDict):
-        new_container, constraint = container.update(val)
-        state.stack[-index] = new_container
-        state = state.add_constraint(constraint)
-    elif instr.opname == "SET_UPDATE":
-        # Support for SymbolicSet if added, or fallback
-        if hasattr(container, "update"):
-            result = container.update(val)
-            if isinstance(result, tuple):
-                new_container, constraint = result
-                state = state.add_constraint(constraint)
-            else:
-                new_container = result
+        update_arg = _extract_concrete_mapping(val)
+        if update_arg is not None:
+            new_container, constraint = container.update(update_arg)
             state.stack[-index] = new_container
+            state = state.add_constraint(constraint)
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
-
-
-
-
 
 
 @opcode_handler("LIST_APPEND")
@@ -308,16 +434,17 @@ def handle_list_append(
 
     container = state.peek(index - 1)
     container_addr: int | None = None
-    real_container = container
+    memory = _state_memory(state)
+    real_container: object = container
     if isinstance(container, SymbolicObject):
         container_addr = container.address
-        real_container = state.memory.get(container.address, container)
+        real_container = memory.get(container.address, container)
 
     if isinstance(real_container, SymbolicList):
-        s_item = val if hasattr(val, "z3_int") else SymbolicValue.from_const(val)
-        new_list = real_container.append(cast("SymbolicValue", s_item))
+        s_item = _coerce_symbolic_value(val)
+        new_list = real_container.append(s_item)
         if container_addr is not None:
-            state.memory[container_addr] = new_list
+            memory[container_addr] = new_list
         else:
             state.stack[-index] = new_list
     state = state.advance_pc()
@@ -327,7 +454,7 @@ def handle_list_append(
 @opcode_handler("SET_ADD")
 def handle_set_add(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Add to a set (used in set comprehensions)."""
-    state.pop()  # val
+    state.pop()
 
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
@@ -374,74 +501,101 @@ def handle_binary_subscr(
         state = state.advance_pc()
         return OpcodeResult.continue_with(state)
     issues: list[Issue] = []
+    real_container = _resolve_runtime_container(container, state)
+    symbolic_index = _coerce_symbolic_index(index)
 
-    
-    real_container = container
-    if hasattr(container, "address"):
-        real_container = state.memory.get(container.address, container)
-    elif hasattr(container, "_enhanced_object") and container._enhanced_object is not None:
-        eo = container._enhanced_object
-        if hasattr(eo, "address"):
-            real_container = state.memory.get(eo.address, eo)
-        else:
-            real_container = eo
-    elif hasattr(container, "_constant_value") and container._constant_value is not None:
-         real_container = container._constant_value
-
-    if isinstance(real_container, (SymbolicList, SymbolicString)) and isinstance(
-        index, SymbolicValue
-    ):
-        name = "index" if isinstance(real_container, SymbolicList) else "string index"
+    if isinstance(real_container, SymbolicList) and symbolic_index is not None:
         oob_check = [
             *state.path_constraints,
-            index.is_int,
+            symbolic_index.is_int,
             z3.Or(
-                index.z3_int < -real_container.z3_len,
-                index.z3_int >= real_container.z3_len,
+                symbolic_index.z3_int < -real_container.z3_len,
+                symbolic_index.z3_int >= real_container.z3_len,
             ),
         ]
         if is_satisfiable(oob_check):
             issues.append(
                 Issue(
                     kind=IssueKind.INDEX_ERROR,
-                    message=f"Possible {name} out of bounds: {real_container.name}[{index.name}]",
+                    message=(
+                        f"Possible index out of bounds: "
+                        f"{real_container.name}[{symbolic_index.name}]"
+                    ),
                     constraints=list(oob_check),
                     model=get_model(oob_check),
                     pc=state.pc,
                 )
             )
         state = state.add_constraint(
-            z3.And(index.z3_int >= -real_container.z3_len, index.z3_int < real_container.z3_len)
-        )
-        result = real_container[index]
-    elif (isinstance(real_container, SymbolicDict) or (hasattr(real_container, 'z3_array') and hasattr(real_container, 'known_keys'))) and isinstance(index, (SymbolicString, SymbolicValue)):
-        result, presence_check = real_container[index]
-        
-        # Check if KeyError is possible
-        missing_check = list(state.path_constraints) + [z3.Not(presence_check)]
-        if is_satisfiable(missing_check):
-            issue = Issue(
-                kind=IssueKind.KEY_ERROR,
-                message=f"Possible KeyError: {index.name} not in {getattr(real_container, '_name', 'dict')}",
-                constraints=list(missing_check),
-                model=get_model(missing_check),
-                pc=state.pc,
+            z3.And(
+                symbolic_index.z3_int >= -real_container.z3_len,
+                symbolic_index.z3_int < real_container.z3_len,
             )
-            # IMPORTANT: Fork by copying BEFORE adding constraints to preserve independence
-            state_continue = state.fork().add_constraint(presence_check)
-            state_error = state.fork().add_constraint(z3.Not(presence_check))
-            
-            # The continuation state gets the result and moves forward
-            state_continue = state_continue.push(result)
-            state_continue = state_continue.advance_pc()
-            
-            return OpcodeResult.fork([state_continue, state_error], [None, issue])
+        )
+        result = real_container[symbolic_index]
+    elif isinstance(real_container, SymbolicString) and symbolic_index is not None:
+        oob_check = [
+            *state.path_constraints,
+            symbolic_index.is_int,
+            z3.Or(
+                symbolic_index.z3_int < -real_container.z3_len,
+                symbolic_index.z3_int >= real_container.z3_len,
+            ),
+        ]
+        if is_satisfiable(oob_check):
+            issues.append(
+                Issue(
+                    kind=IssueKind.INDEX_ERROR,
+                    message=(
+                        f"Possible string index out of bounds: "
+                        f"{real_container.name}[{symbolic_index.name}]"
+                    ),
+                    constraints=list(oob_check),
+                    model=get_model(oob_check),
+                    pc=state.pc,
+                )
+            )
+        state = state.add_constraint(
+            z3.And(
+                symbolic_index.z3_int >= -real_container.z3_len,
+                symbolic_index.z3_int < real_container.z3_len,
+            )
+        )
+        real_idx = z3.If(
+            symbolic_index.z3_int < 0,
+            symbolic_index.z3_int + real_container.z3_len,
+            symbolic_index.z3_int,
+        )
+        start_idx = _symbolic_int_expr(f"str_index_start_{state.pc}", real_idx)
+        end_idx = _symbolic_int_expr(f"str_index_end_{state.pc}", real_idx + 1)
+        result = real_container.substring(start_idx, end_idx)
+    elif isinstance(real_container, SymbolicDict):
+        dict_key = _coerce_symbolic_key(index)
+        if dict_key is not None:
+            result, presence_check = real_container[dict_key]
 
-        # If missing is UNSAT, key MUST be present
-        state = state.add_constraint(presence_check)
-        state = state.push(result)
-        state = state.advance_pc()
-        return OpcodeResult.continue_with(state)
+            missing_check = [*list(state.path_constraints), z3.Not(presence_check)]
+            if is_satisfiable(missing_check):
+                issue = Issue(
+                    kind=IssueKind.KEY_ERROR,
+                    message=f"Possible KeyError: {dict_key.name} not in {real_container.name}",
+                    constraints=list(missing_check),
+                    model=get_model(missing_check),
+                    pc=state.pc,
+                )
+                state_continue = state.fork().add_constraint(presence_check)
+                state_error = state.fork().add_constraint(z3.Not(presence_check))
+                state_continue = state_continue.push(result)
+                state_continue = state_continue.advance_pc()
+                return OpcodeResult.fork([state_continue, state_error], [None, issue])
+
+            state = state.add_constraint(presence_check)
+            state = state.push(result)
+            state = state.advance_pc()
+            return OpcodeResult.continue_with(state)
+
+        result, constraint = SymbolicValue.symbolic(f"subscr_{state.pc}")
+        state = state.add_constraint(constraint)
     else:
         try:
             import collections.abc
@@ -485,25 +639,30 @@ def handle_store_subscr(
     val = state.pop()
     issues: list[Issue] = []
 
-    real_container = container
+    memory = _state_memory(state)
+    real_container: object = container
     container_addr = -1
     if isinstance(container, SymbolicObject):
         container_addr = container.address
-        real_container = state.memory.get(container_addr, container)
+        real_container = memory.get(container_addr, container)
 
-    if isinstance(real_container, (SymbolicList, SymbolicString)) and isinstance(
-        key, SymbolicValue
-    ):
-
+    symbolic_key = _coerce_symbolic_index(key)
+    if isinstance(real_container, (SymbolicList, SymbolicString)) and symbolic_key is not None:
         oob_check = [
             *state.path_constraints,
-            key.is_int,
-            z3.Or(key.z3_int < -real_container.z3_len, key.z3_int >= real_container.z3_len),
+            symbolic_key.is_int,
+            z3.Or(
+                symbolic_key.z3_int < -real_container.z3_len,
+                symbolic_key.z3_int >= real_container.z3_len,
+            ),
         ]
         if is_satisfiable(oob_check):
             issue = Issue(
                 kind=IssueKind.INDEX_ERROR,
-                message=f"Possible index out of bounds on store: {real_container.name}[{key.name}]",
+                message=(
+                    f"Possible index out of bounds on store: "
+                    f"{real_container.name}[{symbolic_key.name}]"
+                ),
                 constraints=list(oob_check),
                 model=get_model(oob_check),
                 pc=state.pc,
@@ -513,9 +672,9 @@ def handle_store_subscr(
                 [
                     *state.path_constraints,
                     z3.And(
-                        key.is_int,
-                        key.z3_int >= -real_container.z3_len,
-                        key.z3_int < real_container.z3_len,
+                        symbolic_key.is_int,
+                        symbolic_key.z3_int >= -real_container.z3_len,
+                        symbolic_key.z3_int < real_container.z3_len,
                     ),
                 ]
             ):
@@ -523,39 +682,42 @@ def handle_store_subscr(
             issues.append(issue)
 
         if isinstance(real_container, SymbolicList):
+            new_container = real_container.__setitem__(symbolic_key, _coerce_symbolic_value(val))
+            if container_addr != -1:
+                memory[container_addr] = new_container
 
-            if hasattr(real_container, "__setitem__"):
+    elif isinstance(real_container, SymbolicDict):
+        dict_key = _coerce_symbolic_key(key)
+        if dict_key is None:
+            state = state.advance_pc()
+            if issues:
+                return OpcodeResult(new_states=[state], issues=issues)
+            return OpcodeResult.continue_with(state)
 
-                new_container = real_container.__setitem__(key, val)
-                if container_addr != -1:
-                    state.memory[container_addr] = new_container
-            else:
-                return OpcodeResult.error(
-                    Issue(
-                        IssueKind.TYPE_ERROR,
-                        f"Cannot store to {real_container.name}",
-                        list(state.path_constraints),
-                        get_model(state.path_constraints),
-                        state.pc,
-                    ),
-                    state,
-                )
-
-    elif isinstance(real_container, SymbolicDict) and isinstance(key, SymbolicString):
-
-        new_container = real_container.__setitem__(key, val)
+        new_container = real_container.__setitem__(dict_key, _coerce_symbolic_value(val))
         if container_addr != -1:
-            state.memory[container_addr] = new_container
+            memory[container_addr] = new_container
 
-    elif real_container is None or (
-        hasattr(real_container, "is_none")
-        and is_satisfiable([*state.path_constraints, real_container.is_none])
-    ):
-        must_be_none = real_container is None or not is_satisfiable(
-            [*state.path_constraints, z3.Not(getattr(real_container, "is_none", Z3_FALSE))]
+    else:
+        none_expr = _extract_none_expr(real_container)
+        can_be_none = real_container is None or (
+            none_expr is not None and is_satisfiable([*state.path_constraints, none_expr])
         )
-        is_unconstrained_var = hasattr(real_container, "is_none") and z3.is_const(real_container.is_none) and getattr(real_container, "is_none").decl().kind() == z3.Z3_OP_UNINTERPRETED
-        
+        if not can_be_none:
+            state = state.advance_pc()
+            if issues:
+                return OpcodeResult(new_states=[state], issues=issues)
+            return OpcodeResult.continue_with(state)
+
+        must_be_none = real_container is None or not is_satisfiable(
+            [*state.path_constraints, z3.Not(none_expr if none_expr is not None else Z3_FALSE)]
+        )
+        is_unconstrained_var = (
+            none_expr is not None
+            and z3.is_const(none_expr)
+            and none_expr.decl().kind() == z3.Z3_OP_UNINTERPRETED
+        )
+
         if must_be_none or not is_unconstrained_var:
             issue = Issue(
                 IssueKind.NULL_DEREFERENCE,
@@ -568,8 +730,8 @@ def handle_store_subscr(
                 return OpcodeResult.error(issue, state)
             issues.append(issue)
 
-        if hasattr(real_container, "is_none"):
-            state = state.add_constraint(z3.Not(real_container.is_none))
+        if none_expr is not None:
+            state = state.add_constraint(z3.Not(none_expr))
 
     state = state.advance_pc()
     if issues:
@@ -714,31 +876,49 @@ def handle_unpack_sequence(
     container = state.pop() if state.stack else None
 
     issues = []
-    if hasattr(container, "z3_len"):
-        len_check = [*state.path_constraints, container.z3_len != count]
+    container_len = _extract_length_expr(container)
+    if container_len is not None:
+        len_check = [*state.path_constraints, container_len != count]
         if is_satisfiable(len_check):
             issue = Issue(
                 kind=IssueKind.VALUE_ERROR,
-                message=f"Possible ValueError: expected {count} items to unpack, got length {container.z3_len}",
+                message=f"Possible ValueError: expected {count} items to unpack, got length {container_len}",
                 constraints=list(len_check),
                 model=get_model(len_check),
                 pc=state.pc,
             )
 
-            if not is_satisfiable([*state.path_constraints, container.z3_len == count]):
+            if not is_satisfiable([*state.path_constraints, container_len == count]):
                 return OpcodeResult.error(issue, state)
             issues.append(issue)
-        state = state.add_constraint(container.z3_len == count)
-    elif container is None or (
-        hasattr(container, "is_none")
-        and is_satisfiable([*state.path_constraints, container.is_none])
-    ):
-        must_be_none = container is None or not is_satisfiable(
-            [*state.path_constraints, z3.Not(getattr(container, "is_none", Z3_FALSE))]
+        state = state.add_constraint(container_len == count)
+    else:
+        none_expr = _extract_none_expr(container)
+        can_be_none = container is None or (
+            none_expr is not None and is_satisfiable([*state.path_constraints, none_expr])
         )
-        
-        is_unconstrained_var = hasattr(container, "is_none") and z3.is_const(container.is_none) and container.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
-        
+        if not can_be_none:
+            for i in range(count):
+                if isinstance(container, SymbolicList):
+                    val = container[SymbolicValue.from_const(i)]
+                else:
+                    val, constraint = SymbolicValue.symbolic(f"unpack_{state.pc}_{i}")
+                    state = state.add_constraint(constraint)
+                state = state.push(val)
+            state = state.advance_pc()
+            if issues:
+                return OpcodeResult(new_states=[state], issues=issues)
+            return OpcodeResult.continue_with(state)
+
+        must_be_none = container is None or not is_satisfiable(
+            [*state.path_constraints, z3.Not(none_expr if none_expr is not None else Z3_FALSE)]
+        )
+        is_unconstrained_var = (
+            none_expr is not None
+            and z3.is_const(none_expr)
+            and none_expr.decl().kind() == z3.Z3_OP_UNINTERPRETED
+        )
+
         if must_be_none or not is_unconstrained_var:
             issue = Issue(
                 IssueKind.NULL_DEREFERENCE,
@@ -750,10 +930,9 @@ def handle_unpack_sequence(
             if must_be_none:
                 return OpcodeResult.error(issue, state)
             issues.append(issue)
-        
-        # Assume it's actually not None on the continuation path to avoid cascading FPs
-        if hasattr(container, "is_none"):
-            state = state.add_constraint(z3.Not(container.is_none))
+
+        if none_expr is not None:
+            state = state.add_constraint(z3.Not(none_expr))
 
     for i in range(count):
         if isinstance(container, SymbolicList):
@@ -790,19 +969,23 @@ def _format_value_symbolic(val: object, state: VMState) -> SymbolicString:
     if isinstance(val, SymbolicString):
         return val
     if isinstance(val, SymbolicValue):
-
         z3_expr = z3.If(
             val.is_int,
             val.z3_int,
             z3.If(val.is_bool, z3.If(val.z3_bool, z3.IntVal(1), z3.IntVal(0)), z3.IntVal(0)),
         )
 
-        new_z3_str = z3.If(z3_expr < 0, z3.Concat("-", z3.IntToStr(-z3_expr)), z3.IntToStr(z3_expr))
-
-        new_z3_str = z3.If(val.is_none, z3.StringVal("None"), new_z3_str)
+        new_z3_str_expr = z3.If(
+            z3_expr < 0, z3.Concat("-", z3.IntToStr(-z3_expr)), z3.IntToStr(z3_expr)
+        )
+        new_z3_str_expr = z3.If(val.is_none, z3.StringVal("None"), new_z3_str_expr)
+        new_z3_str = cast("z3.SeqRef", new_z3_str_expr)
 
         return SymbolicString(
-            _name=f"str({val.name})", _z3_str=new_z3_str, _z3_len=z3.Length(new_z3_str), taint_labels=val.taint_labels
+            _name=f"str({val.name})",
+            _z3_str=new_z3_str,
+            _z3_len=z3.Length(new_z3_str),
+            taint_labels=val.taint_labels,
         )
     return SymbolicString.from_const(str(val))
 
@@ -872,7 +1055,6 @@ def handle_format_with_spec(
 ) -> OpcodeResult:
     """Format with spec (Python 3.13+)."""
     if len(state.stack) < 2:
-
         if state.stack:
             state.pop()
         sym_str, constraint = SymbolicString.symbolic(f"format_spec_{state.pc}")
@@ -880,7 +1062,7 @@ def handle_format_with_spec(
             state.push(sym_str).add_constraint(constraint).advance_pc()
         )
 
-    state.pop()  # spec
+    state.pop()
     val = state.pop()
 
     result = _format_value_symbolic(val, state)

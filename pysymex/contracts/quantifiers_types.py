@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Quantifier Types for pysymex.
 Dataclasses, enums, and type-only definitions for quantifier support.
@@ -35,7 +53,7 @@ class QuantifierVar:
     sort: z3.SortRef
     z3_var: z3.ExprRef | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.z3_var is None:
             if self.sort == z3.IntSort():
                 object.__setattr__(self, "z3_var", z3.Int(self.name))
@@ -71,16 +89,16 @@ class BoundSpec:
         """Convert bound to Z3 constraint."""
         if var is None:
             return z3.BoolVal(True)
-        arith_var = cast(z3.ArithRef, var)
+        arith_var = cast("z3.ArithRef", var)
         constraints: list[z3.BoolRef] = []
         if self.lower is not None:
-            lower = cast(z3.ArithRef, self.lower)
+            lower = cast("z3.ArithRef", self.lower)
             if self.lower_inclusive:
                 constraints.append(arith_var >= lower)
             else:
                 constraints.append(arith_var > lower)
         if self.upper is not None:
-            upper = cast(z3.ArithRef, self.upper)
+            upper = cast("z3.ArithRef", self.upper)
             if self.upper_inclusive:
                 constraints.append(arith_var <= upper)
             else:
@@ -89,7 +107,7 @@ class BoundSpec:
             try:
                 constraints.append(z3.Select(self.in_collection, var) != z3.IntVal(0))
             except z3.Z3Exception:
-                pass  # collection not an array; leave unconstrained
+                pass
         if not constraints:
             return z3.BoolVal(True)
         return z3.And(*constraints)
@@ -121,7 +139,10 @@ class Quantifier:
         for var, bound in zip(self.variables, self.bounds, strict=False):
             bound_constraints.append(bound.to_constraint(var.z3_var))
         bound_constraint = z3.And(*bound_constraints) if bound_constraints else z3.BoolVal(True)
-        z3_vars = [v.z3_var for v in self.variables]
+        z3_vars: list[z3.ExprRef] = []
+        for var in self.variables:
+            if var.z3_var is not None:
+                z3_vars.append(var.z3_var)
         if self.kind == QuantifierKind.FORALL:
             return z3.ForAll(z3_vars, z3.Implies(bound_constraint, self.body))
         elif self.kind == QuantifierKind.EXISTS:
@@ -130,16 +151,14 @@ class Quantifier:
             y_vars = [z3.FreshConst(v.sort, "y") for v in self.variables]
             body_with_y = z3.substitute(self.body, *zip(z3_vars, y_vars, strict=False))
             bound_with_y = z3.substitute(bound_constraint, *zip(z3_vars, y_vars, strict=False))
-            # All bound variables must be equal for any two witnesses.
+
             eq_all = z3.And(*[x == y for x, y in zip(z3_vars, y_vars, strict=False)])
-            uniqueness = z3.ForAll(
-                y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), eq_all)
-            )
-            return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body), uniqueness))
+            uniqueness = z3.ForAll(y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), eq_all))
+            return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body)), uniqueness)
         elif self.kind == QuantifierKind.COUNT:
             raise NotImplementedError("COUNT quantifier requires special handling")
         else:
-            raise ValueError(f"Unknown quantifier kind: {self .kind }")
+            raise ValueError(f"Unknown quantifier kind: {self.kind}")
 
 
 __all__ = [

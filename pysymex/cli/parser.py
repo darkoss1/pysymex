@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Argument parser creation for PySyMex CLI."""
 
 from __future__ import annotations
@@ -30,7 +48,7 @@ Examples:
     try:
         __version__ = pkg_version("pysymex")
     except PackageNotFoundError:
-        __version__ = "0.1.0a0"
+        __version__ = "0.1.0a3"
 
     parser.add_argument(
         "-V",
@@ -99,7 +117,7 @@ Examples:
         default=0,
         help=(
             "Number of parallel worker processes. "
-            "0 = auto-detect from CPU count (default). "
+            "0 = conservative auto mode (caps to avoid memory spikes). "
             "1 = sequential (no subprocess overhead)."
         ),
     )
@@ -155,6 +173,30 @@ Examples:
         choices=["quiet", "delta_only", "full"],
         default="delta_only",
         help="Trace detail level (default: delta_only)",
+    )
+    scan_parser.add_argument(
+        "--sandbox",
+        dest="sandbox",
+        action="store_true",
+        help="Compile scan targets through sandbox bridge (default)",
+    )
+    scan_parser.add_argument(
+        "--no-sandbox",
+        dest="sandbox",
+        action="store_false",
+        help="Disable sandboxed compilation for scan targets",
+    )
+    scan_parser.set_defaults(sandbox=True)
+    scan_parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Use deterministic non-dynamic exploration for reproducible runs",
+    )
+    scan_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for deterministic runs (default: 42)",
     )
 
     analyze_parser = subparsers.add_parser(
@@ -221,6 +263,19 @@ Examples:
         action="store_true",
         help="Verbose output",
     )
+    verify_parser.add_argument(
+        "--sandbox",
+        dest="sandbox",
+        action="store_true",
+        help="Execute target loading through sandbox bridge (default)",
+    )
+    verify_parser.add_argument(
+        "--no-sandbox",
+        dest="sandbox",
+        action="store_false",
+        help="Disable sandboxed target loading (trusted code only)",
+    )
+    verify_parser.set_defaults(sandbox=True)
 
     concolic_parser = subparsers.add_parser(
         "concolic",
@@ -247,6 +302,19 @@ Examples:
         action="store_true",
         help="Verbose output",
     )
+    concolic_parser.add_argument(
+        "--sandbox",
+        dest="sandbox",
+        action="store_true",
+        help="Execute target loading through sandbox bridge (default)",
+    )
+    concolic_parser.add_argument(
+        "--no-sandbox",
+        dest="sandbox",
+        action="store_false",
+        help="Disable sandboxed target loading (trusted code only)",
+    )
+    concolic_parser.set_defaults(sandbox=True)
 
     bench_parser = subparsers.add_parser(
         "benchmark",

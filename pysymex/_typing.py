@@ -1,3 +1,21 @@
+# PySyMex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 PySyMex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Shared type aliases, TypeVars, and Protocol definitions for pysymex.
 
 This module is the single source of truth for cross-cutting type
@@ -7,9 +25,11 @@ rather than re-declaring ``TypeVar`` / ``Protocol`` locally.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import (
+    TYPE_CHECKING,
     Protocol,
+    Self,
     TypeAlias,
     TypeGuard,
     TypeVar,
@@ -24,19 +44,45 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-from pysymex.core.havoc import HavocValue
 from pysymex.core.types import AnySymbolic
 
-StackValue: TypeAlias = AnySymbolic | int | bool | str | float | bytes | None
+if TYPE_CHECKING:
+    from pysymex.core.floats import SymbolicFloat
+    from pysymex.core.solver import SolverResult
+    from pysymex.core.types_containers import SymbolicIterator
+
+    _SymbolicFloatType = SymbolicFloat
+    _SymbolicIteratorType = SymbolicIterator
+else:
+    _SymbolicFloatType = object
+    _SymbolicIteratorType = object
+
+StackValue: TypeAlias = (
+    AnySymbolic
+    | int
+    | bool
+    | str
+    | float
+    | bytes
+    | None
+    | type
+    | Callable[..., object]
+    | list["StackValue"]
+    | dict[str, "StackValue"]
+    | tuple["StackValue", ...]
+    | _SymbolicFloatType
+    | _SymbolicIteratorType
+)
 
 
-SideEffects: TypeAlias = dict[str, object]
+SideEffects: TypeAlias = dict[str, StackValue]
 
 
 ConstraintList: TypeAlias = Sequence[z3.ExprRef | z3.BoolRef]
 
 
-JsonDict: TypeAlias = dict[str, object]
+JsonValue: TypeAlias = int | str | bool | float | None | list["JsonValue"] | dict[str, "JsonValue"]
+JsonDict: TypeAlias = dict[str, JsonValue]
 
 
 UserCallable: TypeAlias = Callable[..., object]
@@ -46,7 +92,7 @@ UserCallable: TypeAlias = Callable[..., object]
 class SummaryProtocol(Protocol):
     """Protocol for function summaries being built."""
 
-    parameters: list[str]
+    parameters: list[object]
     preconditions: list[object]
     postconditions: list[object]
     modified: list[object]
@@ -60,6 +106,7 @@ class SummaryBuilderProtocol(Protocol):
     """Protocol for summary builders in state management."""
 
     summary: SummaryProtocol
+    _initial_args: list[object]
 
 
 Counterexample: TypeAlias = Mapping[str, int | str | bool | float | None]
@@ -91,7 +138,7 @@ class SymbolicTypeProtocol(Protocol):
 class SolverProtocol(Protocol):
     """Abstract solver interface satisfied by IncrementalSolver, ShadowSolver, etc."""
 
-    def check(self, *assumptions: z3.BoolRef) -> object:
+    def check(self, *assumptions: z3.BoolRef) -> SolverResult | z3.CheckSatResult:
         """Check satisfiability of current constraints with optional assumptions."""
         ...
 
@@ -107,6 +154,26 @@ class SolverProtocol(Protocol):
         """Add one or more constraints to the current scope."""
         ...
 
+    def reset(self) -> None:
+        """Reset internal solver state and caches."""
+        ...
+
+    def is_sat(
+        self,
+        constraints: Iterable[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> bool:
+        """Convenience SAT check for a standalone constraint list."""
+        ...
+
+    def get_stats(self) -> dict[str, object]:
+        """Return implementation-defined solver statistics."""
+        ...
+
+    def constraint_optimizer(self) -> object:
+        """Expose the associated constraint optimizer instance."""
+        ...
+
 
 @runtime_checkable
 class DetectorProtocol(Protocol):
@@ -117,7 +184,7 @@ class DetectorProtocol(Protocol):
         """The human-readable name of the detector."""
         ...
 
-    def check(self, state: object, instruction: object) -> object | None:
+    def check(self, state: StateViewProtocol, instruction: object) -> object | None:
         """Perform a bug detection check at the current execution point."""
         ...
 
@@ -244,6 +311,24 @@ def is_symbolic_container(obj: object) -> TypeGuard[SymbolicContainerProtocol]:
     return isinstance(obj, (SymbolicList, SymbolicDict, SymbolicObject))
 
 
+@runtime_checkable
+class TaintableProtocol(Protocol):
+    """Protocol for values that can have taint labels applied."""
+
+    def with_taint(self, label: str | set[str] | frozenset[str]) -> Self:
+        """Return a copy with the given taint label(s) applied."""
+        ...
+
+
+def is_taintable(obj: object) -> TypeGuard[TaintableProtocol]:
+    """TypeGuard narrowing for types that support taint propagation.
+
+    Returns True if the object has a `with_taint` method that can
+    be used to propagate taint labels during symbolic execution.
+    """
+    return hasattr(obj, "with_taint") and callable(getattr(obj, "with_taint", None))
+
+
 __all__ = [
     "AnySymbolic",
     "ConstraintList",
@@ -260,9 +345,11 @@ __all__ = [
     "SymbolicTypeProtocol",
     "T",
     "T_co",
+    "TaintableProtocol",
     "UserCallable",
     "V",
     "is_symbolic_container",
     "is_symbolic_string",
     "is_symbolic_value",
+    "is_taintable",
 ]
