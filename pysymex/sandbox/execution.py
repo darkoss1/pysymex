@@ -46,9 +46,11 @@ Public API:
 
 from __future__ import annotations
 
+import os
 import signal
 import sys
 import threading
+import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -225,18 +227,64 @@ def resource_limits(
 
     import resource  # type: ignore[import-not-found]
 
-    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    memory_bytes = max_memory_mb * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, hard))
+    def _is_infinity(limit_value: int) -> bool:
+        return limit_value == getattr(resource, "RLIM_INFINITY", -1)
 
+    def _current_address_space_bytes() -> int | None:
+        try:
+            with open("/proc/self/statm", "r", encoding="ascii") as f:
+                parts = f.read().strip().split()
+            if not parts:
+                return None
+            pages = int(parts[0])
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            return pages * page_size
+        except (OSError, ValueError, AttributeError):
+            return None
+
+    as_soft, as_hard = resource.getrlimit(resource.RLIMIT_AS)
     cpu_soft, cpu_hard = resource.getrlimit(resource.RLIMIT_CPU)
-    resource.setrlimit(resource.RLIMIT_CPU, (max_cpu_seconds, cpu_hard))
+
+    memory_limit_set = False
+    cpu_limit_set = False
+
+    requested_memory_bytes = max_memory_mb * 1024 * 1024
+    current_as = _current_address_space_bytes()
+    # Keep a headroom above current VAS so lowering RLIMIT_AS cannot destabilize the worker.
+    if current_as is not None:
+        requested_memory_bytes = max(requested_memory_bytes, current_as + (64 * 1024 * 1024))
+    if not _is_infinity(as_hard):
+        requested_memory_bytes = min(requested_memory_bytes, as_hard)
+
+    requested_cpu_seconds = max_cpu_seconds
+    if not _is_infinity(cpu_hard):
+        requested_cpu_seconds = min(requested_cpu_seconds, cpu_hard)
+
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (requested_memory_bytes, as_hard))
+        memory_limit_set = True
+    except (OSError, ValueError):
+        warnings.warn("Unable to set RLIMIT_AS in resource_limits(); continuing without memory cap")
+
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (requested_cpu_seconds, cpu_hard))
+        cpu_limit_set = True
+    except (OSError, ValueError):
+        warnings.warn("Unable to set RLIMIT_CPU in resource_limits(); continuing without CPU cap")
 
     try:
         yield
     finally:
-        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_soft, cpu_hard))
+        if memory_limit_set:
+            try:
+                resource.setrlimit(resource.RLIMIT_AS, (as_soft, as_hard))
+            except (OSError, ValueError):
+                warnings.warn("Failed to restore RLIMIT_AS after resource_limits()")
+        if cpu_limit_set:
+            try:
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu_soft, cpu_hard))
+            except (OSError, ValueError):
+                warnings.warn("Failed to restore RLIMIT_CPU after resource_limits()")
 
 
 def safe_exec(
