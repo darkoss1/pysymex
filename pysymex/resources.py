@@ -265,17 +265,34 @@ class ResourceTracker:
     def memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
         try:
-            if sys.platform != "win32":
-                usage = sys_resource.getrusage(sys_resource.RUSAGE_SELF)
-                return usage.ru_maxrss / 1024
-            else:
-                try:
-                    import psutil
+            # Prefer current RSS to avoid poisoning long-lived test workers.
+            # ``ru_maxrss`` is a peak metric on Linux and never decreases.
+            try:
+                import importlib
 
-                    process = psutil.Process()
-                    return process.memory_info().rss / (1024 * 1024)
-                except ImportError:
-                    return 0.0
+                psutil_mod = importlib.import_module("psutil")
+                process = psutil_mod.Process()
+                return process.memory_info().rss / (1024 * 1024)
+            except ImportError:
+                pass
+
+            if sys.platform != "win32":
+                # Fallback for environments without psutil.
+                try:
+                    with open("/proc/self/statm", "r", encoding="ascii") as f:
+                        parts = f.read().strip().split()
+                    if len(parts) >= 2:
+                        rss_pages = int(parts[1])
+                        page_bytes = 4096
+                        return (rss_pages * page_bytes) / (1024 * 1024)
+                except (OSError, ValueError):
+                    pass
+
+                if sys_resource is not None:
+                    usage = sys_resource.getrusage(sys_resource.RUSAGE_SELF)
+                    return usage.ru_maxrss / 1024
+
+            return 0.0
         except OSError:
             logger.debug("Failed to get peak memory usage", exc_info=True)
             return 0.0

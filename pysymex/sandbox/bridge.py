@@ -386,6 +386,9 @@ def _run_json_worker(
         and (
             "Unable to create process using" in launch_error_text
             or "failed to spawn" in launch_error_lower
+            or "fork failed" in launch_error_lower
+            or "resource temporarily unavailable" in launch_error_lower
+            or "unshare:" in launch_error_lower
             or "trampoline" in launch_error_lower
             or "failed to execute" in launch_error_lower
             or "no such file or directory" in launch_error_lower
@@ -496,6 +499,9 @@ def _run_raw_worker(
         and (
             "Unable to create process using" in launch_error_text
             or "failed to spawn" in launch_error_lower
+            or "fork failed" in launch_error_lower
+            or "resource temporarily unavailable" in launch_error_lower
+            or "unshare:" in launch_error_lower
             or "trampoline" in launch_error_lower
             or "failed to execute" in launch_error_lower
             or "no such file or directory" in launch_error_lower
