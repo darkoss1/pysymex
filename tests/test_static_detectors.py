@@ -83,12 +83,18 @@ def _make_context(
         for name, typ in type_overrides.items():
             type_env.set_type(name, typ)
 
+    line_number = getattr(target, "line_number", None)
+    if line_number is None:
+        line_number = getattr(target, "starts_line", None)
+    if line_number is None and hasattr(target, "positions") and target.positions:
+        line_number = target.positions.lineno
+
     return DetectionContext(
         code=code,
         instructions=instructions,
         pc=target.offset,
         instruction=target,
-        line=target.line_number or code.co_firstlineno,
+        line=line_number or code.co_firstlineno,
         type_env=type_env,
         file_path=file_path,
         function_name=code.co_name,

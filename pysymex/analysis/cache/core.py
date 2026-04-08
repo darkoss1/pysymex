@@ -31,6 +31,7 @@ import pickle
 import secrets
 import sqlite3
 import stat
+import tempfile
 import threading
 import time
 import types
@@ -363,13 +364,53 @@ class PersistentCache:
     CREATE INDEX IF NOT EXISTS idx_cache_deps_dep ON cache_deps(dependency);
     """
 
+    @staticmethod
+    def _is_writable_directory(path: Path) -> bool:
+        """Return True when ``path`` can be created and written to."""
+        probe = path / ".pysymex_write_probe"
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe.write_bytes(b"ok")
+            probe.unlink(missing_ok=True)
+            return True
+        except OSError:
+            return False
+
+    @classmethod
+    def _default_db_path(cls) -> Path:
+        """Select a writable default cache database path."""
+        explicit_db = os.environ.get("PYSYMEX_CACHE_DB")
+        if explicit_db:
+            return Path(explicit_db)
+
+        candidate_dirs: list[Path] = []
+        explicit_dir = os.environ.get("PYSYMEX_CACHE_DIR")
+        if explicit_dir:
+            candidate_dirs.append(Path(explicit_dir))
+
+        candidate_dirs.extend(
+            [
+                Path.home() / ".pysymex",
+                Path(tempfile.gettempdir()) / "pysymex",
+                Path.cwd() / ".pysymex",
+            ]
+        )
+
+        for directory in candidate_dirs:
+            if cls._is_writable_directory(directory):
+                return directory / "cache.db"
+
+        # Fall back to the final candidate and surface any real filesystem
+        # error from the standard initialization path.
+        return candidate_dirs[-1] / "cache.db"
+
     def __init__(
         self,
         db_path: Path | None = None,
         max_entries: int = 10000,
         max_age_days: int = 30,
     ) -> None:
-        self.db_path = db_path or Path.home() / ".pysymex" / "cache.db"
+        self.db_path = db_path or self._default_db_path()
         self.max_entries = max_entries
         self.max_age_days = max_age_days
         self._integrity = _CacheIntegrity(
@@ -425,6 +466,13 @@ class PersistentCache:
                     pass
                 self._conn.close()
                 self._conn = None
+
+    def __del__(self) -> None:
+        """Best-effort close to avoid leaking SQLite connections in tests."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def __getstate__(self) -> dict[str, object]:
         state = self.__dict__.copy()
@@ -697,6 +745,17 @@ class TieredCache:
         """Clear both caches."""
         self.memory.clear()
         self.persistent.clear()
+
+    def close(self) -> None:
+        """Close persistent resources held by this cache."""
+        self.persistent.close()
+
+    def __del__(self) -> None:
+        """Best-effort close for deterministic cleanup in short-lived test objects."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def stats(self) -> dict[str, object]:
         """Get combined statistics."""

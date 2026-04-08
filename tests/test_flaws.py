@@ -8,30 +8,33 @@ from pysymex.analysis.concurrency.core import ConcurrencyAnalyzer, MemoryOrder
 
 def _make_instruction(opname: str, opcode: int, arg: int, argval: object) -> dis.Instruction:
     params = set(inspect.signature(dis.Instruction).parameters)
+    kwargs: dict[str, object] = {
+        "opname": opname,
+        "opcode": opcode,
+        "arg": arg,
+        "argval": argval,
+        "argrepr": "",
+        "offset": 0,
+    }
+    if "start_offset" in params:
+        kwargs["start_offset"] = 0
+    if "starts_line" in params:
+        kwargs["starts_line"] = True if "line_number" in params else None
     if "line_number" in params:
-        kwargs: dict[str, object] = {
-            "opname": opname,
-            "opcode": opcode,
-            "arg": arg,
-            "argval": argval,
-            "argrepr": "",
-            "offset": 0,
-            "start_offset": 0,
-            "starts_line": None,
-            "line_number": 1,
-            "positions": None,
-            "cache_info": None,
-        }
-        if "is_jump_target" in params:
-            kwargs["is_jump_target"] = False
-        if "label" in params:
-            kwargs["label"] = None
-        if "baseopname" in params:
-            kwargs["baseopname"] = opname
-        if "baseopcode" in params:
-            kwargs["baseopcode"] = opcode
-        return dis.Instruction(**kwargs)
-    return dis.Instruction(opname, opcode, arg, argval, "", 0, None, False)
+        kwargs["line_number"] = 1
+    if "is_jump_target" in params:
+        kwargs["is_jump_target"] = False
+    if "label" in params:
+        kwargs["label"] = None
+    if "baseopname" in params:
+        kwargs["baseopname"] = opname
+    if "baseopcode" in params:
+        kwargs["baseopcode"] = opcode
+    if "positions" in params:
+        kwargs["positions"] = None
+    if "cache_info" in params:
+        kwargs["cache_info"] = None
+    return dis.Instruction(**kwargs)
 
 def test_issue_2():
     class MockSymValue:

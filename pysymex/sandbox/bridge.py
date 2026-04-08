@@ -139,14 +139,32 @@ def _make_sandbox_config(
         "max_cpu_seconds": "cpu_seconds",
         "max_output_bytes": "max_output_bytes",
     }
-    
+
     _KNOWN_KEYS = {
-        "timeout_seconds", "cpu_seconds", "memory_mb", "max_processes", "max_file_descriptors",
-        "max_file_size_mb", "max_output_bytes", "backend", "working_directory", "environment",
-        "python_executable", "capture_output", "allow_stdin", "allow_weak_backends",
-        "_block_network", "_block_filesystem", "_block_process_spawn", "harness_blocked_modules",
-        "harness_allowed_imports", "harness_restrict_builtins", "harness_install_audit_hook",
-        "harness_block_ast_imports", "required_capabilities", "allow_compat_fallback"
+        "timeout_seconds",
+        "cpu_seconds",
+        "memory_mb",
+        "max_processes",
+        "max_file_descriptors",
+        "max_file_size_mb",
+        "max_output_bytes",
+        "backend",
+        "working_directory",
+        "environment",
+        "python_executable",
+        "capture_output",
+        "allow_stdin",
+        "allow_weak_backends",
+        "_block_network",
+        "_block_filesystem",
+        "_block_process_spawn",
+        "harness_blocked_modules",
+        "harness_allowed_imports",
+        "harness_restrict_builtins",
+        "harness_install_audit_hook",
+        "harness_block_ast_imports",
+        "required_capabilities",
+        "allow_compat_fallback",
     }
 
     normalized: dict[str, object] = {}
@@ -154,6 +172,7 @@ def _make_sandbox_config(
         norm_key = aliases.get(key, key)
         if norm_key not in _KNOWN_KEYS:
             import warnings
+
             warnings.warn(f"Unknown sandbox config key: {key}")
         normalized[norm_key] = value
 
@@ -376,7 +395,10 @@ def _run_json_worker(
             pass
         else:
             import warnings
-            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
+
+            warnings.warn(
+                "Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True"
+            )
             fallback_config = dict(sandbox_config or {})
             fallback_config["backend"] = SandboxBackend.SUBPROCESS
             fallback_config["allow_weak_backends"] = True
@@ -395,7 +417,10 @@ def _run_json_worker(
             in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
         ):
             import warnings
-            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
+
+            warnings.warn(
+                "Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True"
+            )
             fallback_config = dict(sandbox_config or {})
             fallback_config["backend"] = SandboxBackend.SUBPROCESS
             fallback_config["allow_weak_backends"] = True
@@ -480,7 +505,10 @@ def _run_raw_worker(
             pass
         else:
             import warnings
-            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
+
+            warnings.warn(
+                "Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True"
+            )
             fallback_config = dict(sandbox_config or {})
             fallback_config["backend"] = SandboxBackend.SUBPROCESS
             fallback_config["allow_weak_backends"] = True

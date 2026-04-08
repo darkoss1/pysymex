@@ -148,7 +148,7 @@ class DictGetHandler(PatternHandler):
         """
         Match pattern:
         LOAD_FAST/NAME dict_var
-        LOAD_ATTR 'get'
+        LOAD_ATTR/LOAD_METHOD 'get'
         LOAD_... key
         [LOAD_... default]  # optional
         CALL 1 or 2
@@ -200,10 +200,10 @@ class DictGetHandler(PatternHandler):
         start_idx: int,
         attr_name: str,
     ) -> int:
-        """Find LOAD_ATTR with given attribute name."""
+        """Find LOAD_ATTR/LOAD_METHOD with given attribute name."""
         for i in range(start_idx, min(start_idx + 5, len(instructions))):
             instr = instructions[i]
-            if instr.opname == "LOAD_ATTR" and instr.argval == attr_name:
+            if instr.opname in {"LOAD_ATTR", "LOAD_METHOD"} and instr.argval == attr_name:
                 return i
         return -1
 
@@ -258,7 +258,7 @@ class DictSetdefaultHandler(PatternHandler):
             return None
         dict_var = instr.argval
         for i in range(start_idx + 1, min(start_idx + 5, len(instructions))):
-            if instructions[i].opname == "LOAD_ATTR":
+            if instructions[i].opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                 if instructions[i].argval == "setdefault":
                     return PatternMatch(
                         kind=PatternKind.DICT_SETDEFAULT,
@@ -415,7 +415,7 @@ class SafeIterationHandler(PatternHandler):
             prev_instr = instructions[prev_idx]
             if prev_instr.opname in {"CALL", "CALL_FUNCTION"}:
                 return self._identify_iterable_call(instructions, prev_idx, get_iter_idx, env)
-            if prev_instr.opname == "LOAD_ATTR":
+            if prev_instr.opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                 attr = prev_instr.argval
                 if attr in {"items", "keys", "values"}:
                     kind_map = {

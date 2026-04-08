@@ -7,6 +7,8 @@ Tests for:
 - Real-world code patterns
 """
 
+import pytest
+
 from pysymex.analysis.detectors import IssueKind
 from pysymex.api import analyze
 
@@ -183,6 +185,7 @@ class TestLoopIntegration:
         result = analyze(matrix_sum, {"n": "int", "m": "int"})
         assert result is not None
 
+    @pytest.mark.slow
     def test_loop_with_break(self):
         """Test loop with break condition."""
 
@@ -195,6 +198,7 @@ class TestLoopIntegration:
         result = analyze(find_first, {"lst": "list", "target": "int"})
         assert result is not None
 
+    @pytest.mark.slow
     def test_loop_with_continue(self):
         """Test loop with continue."""
 
@@ -462,6 +466,7 @@ class TestComplexRealPatterns:
         result = analyze(fibonacci, {"n": "int"})
         assert result is not None
 
+    @pytest.mark.slow
     def test_gcd(self):
         """Test GCD computation."""
 
@@ -487,6 +492,7 @@ class TestComplexRealPatterns:
         result = analyze(is_prime, {"n": "int"})
         assert result is not None
 
+    @pytest.mark.slow
     def test_sorting_pattern(self):
         """Test sorting pattern."""
 

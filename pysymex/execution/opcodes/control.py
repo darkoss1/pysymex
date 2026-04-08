@@ -700,6 +700,7 @@ def handle_to_bool(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
             is_int=z3.BoolVal(False),
             z3_bool=truthy,
             is_bool=z3.BoolVal(True),
+            affinity_type="bool",
         )
         state = state.push(result)
     state = state.advance_pc()
@@ -743,17 +744,76 @@ def handle_enter_executor(
 def handle_call_intrinsic_1(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Call single-argument intrinsic function (print, repr, etc.)."""
-    if state.stack:
-        _arg = state.pop()
+    """Call single-argument intrinsic function.
+
+    CPython 3.12+ intrinsic IDs:
+      1  INTRINSIC_PRINT           – print import * (push None)
+      2  INTRINSIC_IMPORT_STAR     – from module import * (push None)
+      3  INTRINSIC_STOPITERATION_ERROR – wrap StopIteration as RuntimeError
+      4  INTRINSIC_ASYNC_GEN_WRAP  – wrap value for async generator yield
+      5  INTRINSIC_UNARY_POSITIVE  – +x (identity for numerics)
+      6  INTRINSIC_LIST_TO_TUPLE   – convert list to tuple
+      7  INTRINSIC_TYPEVAR         – create TypeVar
+      8  INTRINSIC_PARAMSPEC       – create ParamSpec
+      9  INTRINSIC_TYPEVARTUPLE    – create TypeVarTuple
+     10  INTRINSIC_SUBSCRIPT_GENERIC – generic subscript (e.g. list[int])
+     11  INTRINSIC_TYPEALIAS       – create type alias
+    """
+    arg = state.pop() if state.stack else None
     intrinsic_id = int(instr.argval) if instr.argval else 0
+
     if intrinsic_id == 1:
+        # INTRINSIC_PRINT – print() during import *, result is None
         state = state.push(SymbolicNone())
+    elif intrinsic_id == 2:
+        # INTRINSIC_IMPORT_STAR – from module import *; updates namespace, push None
+        state = state.push(SymbolicNone())
+    elif intrinsic_id == 3:
+        # INTRINSIC_STOPITERATION_ERROR – wrap StopIteration as RuntimeError
+        exc_val, constraint = SymbolicValue.symbolic(f"runtime_error_{state.pc}")
+        state = state.push(exc_val)
+        state = state.add_constraint(constraint)
+    elif intrinsic_id == 4:
+        # INTRINSIC_ASYNC_GEN_WRAP – wrap value for async generator
+        wrapped, constraint = SymbolicValue.symbolic(f"async_gen_wrap_{state.pc}")
+        state = state.push(wrapped)
+        state = state.add_constraint(constraint)
+    elif intrinsic_id == 5:
+        # INTRINSIC_UNARY_POSITIVE – +x, identity for int/float
+        if arg is not None:
+            state = state.push(arg)
+        else:
+            val, constraint = SymbolicValue.symbolic(f"upos_{state.pc}")
+            state = state.push(val)
+            state = state.add_constraint(constraint)
     elif intrinsic_id == 6:
-        result, constraint = SymbolicValue.symbolic(f"tuple_{state.pc}")
+        # INTRINSIC_LIST_TO_TUPLE – convert list to tuple
+        if isinstance(arg, SymbolicList):
+            # Preserve the symbolic list unchanged — tuple and list share
+            # the same Z3 Array+length representation in the engine.
+            state = state.push(arg)
+        else:
+            result, constraint = SymbolicValue.symbolic(f"tuple_{state.pc}")
+            state = state.push(result)
+            state = state.add_constraint(constraint)
+    elif intrinsic_id in (7, 8, 9):
+        # INTRINSIC_TYPEVAR / PARAMSPEC / TYPEVARTUPLE
+        _type_names = {7: "TypeVar", 8: "ParamSpec", 9: "TypeVarTuple"}
+        type_val, constraint = SymbolicValue.symbolic(f"{_type_names[intrinsic_id]}_{state.pc}")
+        state = state.push(type_val)
+        state = state.add_constraint(constraint)
+    elif intrinsic_id == 10:
+        # INTRINSIC_SUBSCRIPT_GENERIC – e.g. list[int], dict[str, int]
+        result, constraint = SymbolicValue.symbolic(f"generic_alias_{state.pc}")
         state = state.push(result)
         state = state.add_constraint(constraint)
+    elif intrinsic_id == 11:
+        # INTRINSIC_TYPEALIAS – create type alias
+        alias_val, constraint = SymbolicValue.symbolic(f"type_alias_{state.pc}")
+        state = state.push(alias_val)
+        state = state.add_constraint(constraint)
     else:
+        # Unknown intrinsic – safe overapproximation
         result, constraint = SymbolicValue.symbolic(f"intrinsic1_{state.pc}")
         state = state.push(result)
         state = state.add_constraint(constraint)
@@ -765,14 +825,45 @@ def handle_call_intrinsic_1(
 def handle_call_intrinsic_2(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Call two-argument intrinsic function."""
-    if state.stack:
-        state.pop()
-    if state.stack:
-        state.pop()
-    result, constraint = SymbolicValue.symbolic(f"intrinsic2_{state.pc}")
-    state = state.push(result)
-    state = state.add_constraint(constraint)
+    """Call two-argument intrinsic function.
+
+    CPython 3.12+ two-argument intrinsic IDs:
+      1  INTRINSIC_PREP_RERAISE           – prepare exception for re-raise
+      2  INTRINSIC_TYPEVAR_WITH_BOUND     – TypeVar('T', bound=X)
+      3  INTRINSIC_TYPEVAR_WITH_CONSTRAINTS – TypeVar('T', X, Y)
+      4  INTRINSIC_SET_FUNCTION_TYPE_PARAMS – set __type_params__ on function
+    """
+    _arg2 = state.pop() if state.stack else None
+    arg1 = state.pop() if state.stack else None
+    intrinsic_id = int(instr.argval) if instr.argval else 0
+
+    if intrinsic_id == 1:
+        # INTRINSIC_PREP_RERAISE – prepare re-raise: push the exception back
+        if arg1 is not None:
+            state = state.push(arg1)
+        else:
+            exc_val, constraint = SymbolicValue.symbolic(f"reraise_{state.pc}")
+            state = state.push(exc_val)
+            state = state.add_constraint(constraint)
+    elif intrinsic_id in (2, 3):
+        # INTRINSIC_TYPEVAR_WITH_BOUND / INTRINSIC_TYPEVAR_WITH_CONSTRAINTS
+        _names = {2: "TypeVar_bound", 3: "TypeVar_constrained"}
+        tv_val, constraint = SymbolicValue.symbolic(f"{_names[intrinsic_id]}_{state.pc}")
+        state = state.push(tv_val)
+        state = state.add_constraint(constraint)
+    elif intrinsic_id == 4:
+        # INTRINSIC_SET_FUNCTION_TYPE_PARAMS – set type params on function, push function back
+        if arg1 is not None:
+            state = state.push(arg1)
+        else:
+            func_val, constraint = SymbolicValue.symbolic(f"typed_func_{state.pc}")
+            state = state.push(func_val)
+            state = state.add_constraint(constraint)
+    else:
+        # Unknown two-arg intrinsic – safe overapproximation
+        result, constraint = SymbolicValue.symbolic(f"intrinsic2_{state.pc}")
+        state = state.push(result)
+        state = state.add_constraint(constraint)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 

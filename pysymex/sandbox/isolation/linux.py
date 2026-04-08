@@ -53,50 +53,50 @@ if TYPE_CHECKING:
 
 _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
     {
-        0,
-        1,
-        2,
-        3,
-        5,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        17,
-        21,
-        28,
-        35,
-        60,
-        72,
-        79,
-        89,
-        97,
-        102,
-        104,
-        107,
-        108,
-        110,
-        158,
-        202,
-        204,
-        217,
-        218,
-        228,
-        231,
-        234,
-        257,
-        262,
-        273,
-        302,
-        318,
-        332,
-        334,
-        435,
-        439,
+        0,  # read
+        1,  # write
+        2,  # open
+        3,  # close
+        5,  # fstat
+        8,  # lseek
+        9,  # mmap
+        10,  # mprotect
+        11,  # munmap
+        12,  # brk
+        13,  # rt_sigaction
+        14,  # rt_sigprocmask
+        15,  # rt_sigreturn
+        17,  # pread64
+        21,  # access
+        28,  # madvise
+        35,  # nanosleep
+        60,  # exit
+        72,  # fcntl
+        79,  # getcwd
+        89,  # readlink
+        97,  # getrlimit
+        102,  # getuid
+        104,  # getgid
+        107,  # geteuid
+        108,  # getegid
+        110,  # getppid
+        158,  # arch_prctl
+        202,  # futex
+        204,  # sched_getaffinity
+        217,  # getdents64
+        218,  # set_tid_address
+        228,  # clock_gettime
+        231,  # exit_group
+        234,  # tgkill
+        257,  # openat
+        262,  # fstatat
+        273,  # set_robust_list
+        302,  # prlimit64
+        318,  # getrandom
+        332,  # statx
+        334,  # rseq
+        435,  # clone3
+        439,  # faccessat2
     }
 )
 
@@ -228,7 +228,7 @@ class LinuxNamespaceBackend(IsolationBackend):
             "--net",
             "--ipc",
             *python_cmd,
-            str(harness_path),
+            HARNESS_FILENAME,
             filename,
         ]
 

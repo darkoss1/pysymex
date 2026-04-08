@@ -173,7 +173,7 @@ class ResourceLeakDetector:
             arg = instr.argval
             if opname in {"LOAD_GLOBAL", "LOAD_NAME"}:
                 call_stack.append(str(arg))
-            elif opname == "LOAD_ATTR":
+            elif opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                 if str(arg) in RESOURCE_CLOSERS and i > 0:
                     prev = instructions[i - 1]
                     if prev.opname in {"LOAD_FAST", "LOAD_NAME"}:
@@ -328,7 +328,7 @@ class ReferenceCycleDetector:
                 attr = str(arg)
                 self_attrs[attr] = current_line
                 loading_self = False
-            elif opname == "LOAD_ATTR" and loading_self:
+            elif opname in {"LOAD_ATTR", "LOAD_METHOD"} and loading_self:
                 loading_self = False
             else:
                 loading_self = False
@@ -395,7 +395,7 @@ class LockSafetyAnalyzer:
             if opname in {"LOAD_FAST", "LOAD_NAME"}:
                 loading_var = str(arg)
                 loading_attr = None
-            elif opname == "LOAD_ATTR":
+            elif opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                 attr = str(arg)
                 if loading_var and attr in {"acquire", "release", "__enter__", "__exit__"}:
                     loading_attr = attr

@@ -298,7 +298,11 @@ def handle_before_async_with(
 def handle_end_async_for(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """End of async for loop."""
+    """End of async for loop — clean up exception info from stack."""
+    # CPython pops the exhausted async iterator and exception info
+    for _ in range(2):
+        if state.stack:
+            state.pop()
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
@@ -329,23 +333,41 @@ def handle_get_anext(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
 def handle_get_awaitable(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Get awaitable from object."""
-    if state.stack:
-        state.pop()
+    """Get awaitable from object.
+
+    Pops the coroutine/awaitable object, pushes a symbolic representing
+    the iterator that ``__await__`` returns.  The result is constrained
+    to be non-None since a valid awaitable always yields an iterator.
+    Taint from the source awaitable is propagated.
+    """
+    source = state.pop() if state.stack else None
+    source_taint = frozenset(getattr(source, "taint_labels", None) or ())
     awaitable, constraint = SymbolicValue.symbolic(f"awaitable_{state.pc}")
+    if source_taint:
+        awaitable = awaitable.with_taint(source_taint)
     state = state.push(awaitable)
     state = state.add_constraint(constraint)
+    import z3 as _z3
+
+    state = state.add_constraint(_z3.Not(awaitable.is_none))
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
 
 @opcode_handler("SEND")
 def handle_send(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Send value to generator/coroutine."""
-    if len(state.stack) >= 2:
-        state.pop()
-        state.pop()
+    """Send value to generator/coroutine.
+
+    Stack: TOS = value to send, TOS1 = generator/coroutine.
+    Pushes the yielded result.  Taint from the sent value is propagated
+    to the result since generator data-flow links send → yield.
+    """
+    sent_val = state.pop() if state.stack else None
+    _gen_obj = state.pop() if state.stack else None
+    sent_taint = frozenset(getattr(sent_val, "taint_labels", None) or ())
     result, constraint = SymbolicValue.symbolic(f"send_{state.pc}")
+    if sent_taint:
+        result = result.with_taint(sent_taint)
     state = state.push(result)
     state = state.add_constraint(constraint)
     state = state.advance_pc()
@@ -356,10 +378,18 @@ def handle_send(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
 def handle_yield_value(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Yield a value from a generator."""
-    if state.stack:
-        state.pop()
+    """Yield a value from a generator.
+
+    Pops the value to yield, then pushes a symbolic representing the
+    value that will be sent back via ``generator.send()``.  Taint from
+    the yielded value implicitly flows to the sent-back result because
+    the caller observes the yielded data.
+    """
+    yielded = state.pop() if state.stack else None
+    yielded_taint = frozenset(getattr(yielded, "taint_labels", None) or ())
     sent, constraint = SymbolicValue.symbolic(f"yield_sent_{state.pc}")
+    if yielded_taint:
+        sent = sent.with_taint(yielded_taint)
     state = state.push(sent)
     state = state.add_constraint(constraint)
     state = state.advance_pc()

@@ -296,6 +296,7 @@ def handle_cell_ops(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
     return OpcodeResult.continue_with(state)
 
 
+@opcode_handler("DELETE_DEREF")
 def handle_delete_deref(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
@@ -303,6 +304,41 @@ def handle_delete_deref(
     name = str(instr.argval)
     if name in state.local_vars:
         del state.local_vars[name]
+    state = state.advance_pc()
+    return OpcodeResult.continue_with(state)
+
+
+@opcode_handler("LOAD_CLASSDEREF")
+def handle_load_classderef(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Load variable in class body that closes over an enclosing scope.
+
+    Semantics (CPython 3.12+): first look in the class namespace dict
+    (``__locals__``), then fall back to the cell/free variable.  For
+    symbolic execution we unify this into a single lookup through
+    locals → globals → fresh symbolic, which mirrors LOAD_DEREF but is
+    also reachable from class-level expressions.
+    """
+    name = str(instr.argval)
+    # Try class-local namespace first
+    raw_value = state.get_local(name)
+    if is_bound(raw_value) and raw_value is not None:
+        value = raw_value
+    else:
+        # Fall back to enclosing scope (global / cell variable)
+        value = state.get_global(name)
+    if value is None:
+        sym_val, type_constraint = SymbolicValue.symbolic(f"classderef_{name}")
+
+        import z3 as _z3
+
+        state = state.add_constraint(_z3.Not(sym_val.is_none))
+
+        state = state.set_local(name, sym_val)
+        state = state.add_constraint(type_constraint)
+        value = sym_val
+    state = state.push(value)
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 

@@ -34,21 +34,37 @@ def _make_instr(
     line_number: int = 1,
     positions: Any = None,
 ) -> dis.Instruction:
-    """Create a dis.Instruction compatible with Python 3.12+ / 3.13+."""
-    # Python 3.13 renamed starts_line from int to bool and replaced
-    # is_jump_target; also requires start_offset and line_number.
-    return dis.Instruction(
-        opname=opname,
-        opcode=opcode,
-        arg=arg,
-        argval=argval,
-        argrepr=argrepr,
-        offset=offset,
-        start_offset=offset,
-        starts_line=starts_line,
-        line_number=line_number,
-        positions=positions,
-    )
+    """Create a ``dis.Instruction`` across Python 3.11/3.12/3.13 signatures."""
+    import inspect
+
+    params = set(inspect.signature(dis.Instruction).parameters)
+    kwargs: dict[str, Any] = {
+        "opname": opname,
+        "opcode": opcode,
+        "arg": arg,
+        "argval": argval,
+        "argrepr": argrepr,
+        "offset": offset,
+    }
+    if "start_offset" in params:
+        kwargs["start_offset"] = offset
+    if "starts_line" in params:
+        kwargs["starts_line"] = bool(starts_line) if "line_number" in params else line_number
+    if "line_number" in params:
+        kwargs["line_number"] = line_number
+    if "is_jump_target" in params:
+        kwargs["is_jump_target"] = False
+    if "label" in params:
+        kwargs["label"] = None
+    if "baseopname" in params:
+        kwargs["baseopname"] = opname
+    if "baseopcode" in params:
+        kwargs["baseopcode"] = opcode
+    if "positions" in params:
+        kwargs["positions"] = positions
+    if "cache_info" in params:
+        kwargs["cache_info"] = None
+    return dis.Instruction(**kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════

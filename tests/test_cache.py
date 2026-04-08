@@ -265,6 +265,23 @@ class TestPersistentCache:
 
         assert db.exists()
 
+    def test_default_path_falls_back_when_home_is_not_writable(self, tmp_path, monkeypatch):
+        """Default DB path should skip unwritable home directories."""
+        home_file = tmp_path / "home_file"
+        home_file.write_text("not-a-directory", encoding="utf-8")
+        temp_root = tmp_path / "temp_root"
+        temp_root.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.delenv("PYSYMEX_CACHE_DB", raising=False)
+        monkeypatch.delenv("PYSYMEX_CACHE_DIR", raising=False)
+        monkeypatch.setattr(Path, "home", lambda *_args, **_kwargs: home_file)
+        monkeypatch.setattr("pysymex.analysis.cache.core.tempfile.gettempdir", lambda: str(temp_root))
+
+        cache = PersistentCache()
+
+        assert cache.db_path == temp_root / "pysymex" / "cache.db"
+        assert cache.db_path.exists()
+
     def test_close_releases_connection(self, tmp_path):
         """Persistent cache should support explicit connection shutdown."""
         cache = PersistentCache(db_path=tmp_path / "test.db")

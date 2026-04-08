@@ -109,6 +109,7 @@ def benchmark_single(
 class TestScaling:
     """Test performance scaling with treewidth."""
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("w", [8, 10, 12, 14, 16, 18])
     def test_treewidth_scaling(self, z3_module, dispatcher, w):
         """Benchmark scaling with treewidth."""
@@ -127,6 +128,7 @@ class TestScaling:
         assert result.kernel_time_ms < 10000                        
         assert result.throughput_mops > 0
 
+    @pytest.mark.slow
     def test_instruction_scaling(self, z3_module, dispatcher):
         """Test scaling with instruction count."""
         from pysymex.h_acceleration.bytecode import compile_constraint
@@ -172,6 +174,7 @@ class TestScaling:
 class TestBackendComparison:
     """Compare performance across backends."""
 
+    @pytest.mark.slow
     def test_all_backends(self, z3_module):
         """Compare all available backends at fixed treewidth."""
         from pysymex.h_acceleration.bytecode import compile_constraint

@@ -112,9 +112,11 @@ def handle_swap(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -
     return OpcodeResult.continue_with(state)
 
 
-@opcode_handler("NOP", "RESUME", "EXTENDED_ARG")
-def handle_nop(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """No operation (EXTENDED_ARG is handled by dis.get_instructions pre-calculating operands)."""
+@opcode_handler("EXTENDED_ARG")
+def handle_extended_arg(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Extended argument prefix (handled by dis pre-calculating operands)."""
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)
 
@@ -131,5 +133,46 @@ def handle_push_null(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatch
 @opcode_handler("CACHE")
 def handle_cache(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Cache instruction - skip."""
+    state = state.advance_pc()
+    return OpcodeResult.continue_with(state)
+
+
+# ---------------------------------------------------------------------------
+# Python 3.13 instrumented opcodes
+# These only appear when ``sys.monitoring`` or ``sys.settrace`` is active.
+# For a scanner tool they are effectively never seen, but registering them
+# prevents ``NotImplementedError`` crashes if bytecode from a traced session
+# is ever analyzed.
+# ---------------------------------------------------------------------------
+@opcode_handler(
+    "INSTRUMENTED_RESUME",
+    "INSTRUMENTED_END_FOR",
+    "INSTRUMENTED_END_SEND",
+    "INSTRUMENTED_RETURN_VALUE",
+    "INSTRUMENTED_RETURN_CONST",
+    "INSTRUMENTED_YIELD_VALUE",
+    "INSTRUMENTED_LOAD_SUPER_ATTR",
+    "INSTRUMENTED_FOR_ITER",
+    "INSTRUMENTED_CALL",
+    "INSTRUMENTED_CALL_KW",
+    "INSTRUMENTED_CALL_FUNCTION_EX",
+    "INSTRUMENTED_INSTRUCTION",
+    "INSTRUMENTED_JUMP_FORWARD",
+    "INSTRUMENTED_JUMP_BACKWARD",
+    "INSTRUMENTED_POP_JUMP_IF_TRUE",
+    "INSTRUMENTED_POP_JUMP_IF_FALSE",
+    "INSTRUMENTED_POP_JUMP_IF_NONE",
+    "INSTRUMENTED_POP_JUMP_IF_NOT_NONE",
+    "INSTRUMENTED_LINE",
+)
+def handle_instrumented(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Instrumented opcode pass-through (Python 3.13+ sys.monitoring).
+
+    These opcodes wrap their base counterparts with monitoring hooks.
+    In symbolic execution we simply advance past them since tracing
+    metadata has no semantic effect on program behaviour.
+    """
     state = state.advance_pc()
     return OpcodeResult.continue_with(state)

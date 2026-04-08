@@ -7,6 +7,7 @@ and Z3 SAT/validity helpers.
 from __future__ import annotations
 
 import dis
+import inspect
 from typing import Any
 
 import z3
@@ -46,20 +47,34 @@ def make_instruction(
     offset: int = 0,
 ) -> dis.Instruction:
     """Build a dis.Instruction namedtuple with sensible defaults."""
-    return dis.Instruction(
-        opname=opname,
-        opcode=dis.opmap.get(opname, 0),
-        arg=arg,
-        argval=argval,
-        argrepr=argrepr or str(argval),
-        offset=offset,
-        start_offset=offset,
-        starts_line=True,
-        line_number=1,
-        label=None,
-        positions=None,
-        cache_info=None,
-    )
+    params = set(inspect.signature(dis.Instruction).parameters)
+    kwargs: dict[str, Any] = {
+        "opname": opname,
+        "opcode": dis.opmap.get(opname, 0),
+        "arg": arg,
+        "argval": argval,
+        "argrepr": argrepr or str(argval),
+        "offset": offset,
+    }
+    if "start_offset" in params:
+        kwargs["start_offset"] = offset
+    if "starts_line" in params:
+        kwargs["starts_line"] = True if "line_number" in params else 1
+    if "line_number" in params:
+        kwargs["line_number"] = 1
+    if "is_jump_target" in params:
+        kwargs["is_jump_target"] = False
+    if "label" in params:
+        kwargs["label"] = None
+    if "baseopname" in params:
+        kwargs["baseopname"] = opname
+    if "baseopcode" in params:
+        kwargs["baseopcode"] = dis.opmap.get(opname, 0)
+    if "positions" in params:
+        kwargs["positions"] = None
+    if "cache_info" in params:
+        kwargs["cache_info"] = None
+    return dis.Instruction(**kwargs)
 
 
 def make_state(

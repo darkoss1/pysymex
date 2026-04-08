@@ -405,17 +405,15 @@ def generate_harness_script(
         )
         if _INSTALL_AUDIT_HOOK and hasattr(_sys, "addaudithook"):
             def _create_audit_hook():
-                import os as _init_os
-                _LOCAL_JAIL_DIR = _init_os.path.abspath(_init_os.getcwd()) + _init_os.sep
-                _LOCAL_PY_PREFIX = _init_os.path.abspath(_sys.prefix) + _init_os.sep
-                _LOCAL_PY_BASE_PREFIX = _init_os.path.abspath(_sys.base_prefix) + _init_os.sep
-                _LOCAL_WIN_DIR = _init_os.environ.get("SystemRoot", "C:\\\\Windows")
+                import os as _os
+                _LOCAL_JAIL_DIR = _os.path.abspath(_os.getcwd()) + _os.sep
+                _LOCAL_PY_PREFIX = _os.path.abspath(_sys.prefix) + _os.sep
+                _LOCAL_PY_BASE_PREFIX = _os.path.abspath(_sys.base_prefix) + _os.sep
+                _LOCAL_WIN_DIR = _os.environ.get("SystemRoot", "C:\\\\Windows")
                 _AUDIT_PREFIXES = _AUDIT_BLOCKED_PREFIXES
                 _BLOCKED_TOP_LEVEL = _BLOCKED
-                del _init_os
 
                 def _sandbox_audit_hook(_event: str, _args: object) -> None:
-                    import os as _os
                     for _prefix in _AUDIT_PREFIXES:
                         if _event == _prefix or _event.startswith(_prefix):
                             raise RuntimeError(

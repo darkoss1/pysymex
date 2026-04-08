@@ -497,6 +497,12 @@ class IncrementalSolver:
             if z3.is_false(c):
                 return False
 
+        cache_key = self._make_cache_key_for_constraints(constraints, constraint_list)
+        cache_disc = self._constraints_discriminator_for_constraints(constraints, constraint_list)
+        cached = self._cache_lookup(cache_key, cache_disc)
+        if cached is not None:
+            return cached.is_sat
+
         if known_sat_prefix_len is not None and 0 < known_sat_prefix_len <= len(constraint_list):
             prefix = constraint_list[:known_sat_prefix_len]
             suffix = constraint_list[known_sat_prefix_len:]
@@ -506,25 +512,22 @@ class IncrementalSolver:
             self._sync_path(sliced_prefix)
 
             if not suffix:
+                result = SolverResult.sat(None)
+                self._cache_store(cache_key, cache_disc, result)
                 return True
 
             self._solver.push()
             try:
                 for c in suffix:
                     self._solver.add(c)
-                result = self.check()
+                result_check = self.check()
             finally:
                 self._solver.pop()
 
-            if result.is_unknown:
+            self._cache_store(cache_key, cache_disc, result_check)
+            if result_check.is_unknown:
                 return True
-            return result.is_sat
-
-        cache_key = self._make_cache_key_for_constraints(constraints, constraint_list)
-        cache_disc = self._constraints_discriminator_for_constraints(constraints, constraint_list)
-        cached = self._cache_lookup(cache_key, cache_disc)
-        if cached is not None:
-            return cached.is_sat
+            return result_check.is_sat
 
         if len(constraint_list) <= 3:
             self._solver.push()
@@ -565,17 +568,9 @@ class IncrementalSolver:
                             self._cache_store(cache_key, cache_disc, result)
                             return False
 
-                self._solver.push()
-                try:
-                    for c in constraint_list:
-                        self._solver.add(c)
-                    full_result = self.check()
-                finally:
-                    self._solver.pop()
-                self._cache_store(cache_key, cache_disc, full_result)
-                if full_result.is_unknown:
-                    return True
-                return full_result.is_sat
+                result = SolverResult.sat(None)
+                self._cache_store(cache_key, cache_disc, result)
+                return True
 
         theory = self._detect_theory(constraint_list)
         self._configure_for_theory(theory)
@@ -591,8 +586,8 @@ class IncrementalSolver:
             self._reset_theory_config()
         elapsed_ms = (time.perf_counter() - start_ns) * 1000
 
-        if result.is_unknown or elapsed_ms >= self._escalation_threshold_ms:
-            escalated = self._try_escalate(constraint_list, elapsed_ms, force=result.is_unknown)
+        if result.is_unknown:
+            escalated = self._try_escalate(constraint_list, elapsed_ms, force=True)
             if escalated is not None and not escalated.is_unknown:
                 self._cache_store(cache_key, cache_disc, escalated)
                 return escalated.is_sat
@@ -617,7 +612,7 @@ class IncrementalSolver:
         cache_key = self._make_cache_key(constraints)
         cache_disc = self._constraints_discriminator(constraints)
         cached = self._cache_lookup(cache_key, cache_disc)
-        if cached is not None:
+        if cached is not None and (not cached.is_sat or cached.model is not None):
             return cached
 
         self._solver.push()
@@ -801,6 +796,9 @@ class IncrementalSolver:
                 decl = expr.decl()
                 dk = decl.kind()
 
+                if dk in (z3.Z3_OP_MOD, z3.Z3_OP_REM, z3.Z3_OP_IDIV):
+                    has_nonlinear = True
+
                 if dk == z3.Z3_OP_MUL and expr.num_args() >= 2:
                     non_const = sum(
                         1
@@ -817,7 +815,7 @@ class IncrementalSolver:
                         stack.append(child)
 
         theory_count = sum([has_string, has_bv, has_nonlinear])
-        if theory_count > 1:
+        if theory_count > 1 or has_nonlinear:
             return "mixed"
         if has_string:
             return "qfs"

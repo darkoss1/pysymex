@@ -131,6 +131,17 @@ class FileCache:
         self.cache = cache or TieredCache()
         self._file_hashes: dict[str, str] = {}
 
+    def close(self) -> None:
+        """Close underlying cache resources."""
+        self.cache.close()
+
+    def __del__(self) -> None:
+        """Best-effort close for test runs that create short-lived caches."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def get_or_analyze(
         self,
         path: Path,

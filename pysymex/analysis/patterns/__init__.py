@@ -154,7 +154,7 @@ class OptionalChainHandler(PatternHandler):
                     next_load = instructions[i + 1]
                     if next_load.opname in {"LOAD_FAST", "LOAD_NAME"}:
                         if next_load.argval == var_name:
-                            if instructions[i + 2].opname == "LOAD_ATTR":
+                            if instructions[i + 2].opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                                 return PatternMatch(
                                     kind=PatternKind.OPTIONAL_CHAIN,
                                     confidence=0.9,
@@ -240,7 +240,7 @@ class SafeCollectionHandler(PatternHandler):
         var_type = env.get_type(var_name)
         for i in range(start_idx + 1, min(start_idx + 3, len(instructions))):
             attr_instr = instructions[i]
-            if attr_instr.opname == "LOAD_ATTR":
+            if attr_instr.opname in {"LOAD_ATTR", "LOAD_METHOD"}:
                 method = attr_instr.argval
                 if var_type.kind == TypeKind.LIST and method in {"append", "extend", "insert"}:
                     kind_map = {

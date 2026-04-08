@@ -100,7 +100,7 @@ class ExecutionConfig:
     max_iterations: int = 100000
     timeout_seconds: float = 300.0
     strategy: ExplorationStrategy = ExplorationStrategy.ADAPTIVE
-    max_loop_iterations: int = 100
+    max_loop_iterations: int = 10
     unroll_loops: bool = True
     solver_timeout_ms: int = 10000
     use_incremental_solving: bool = True
@@ -112,7 +112,7 @@ class ExecutionConfig:
     detect_value_errors: bool = True
     verbose: bool = False
     collect_coverage: bool = True
-    use_loop_analysis: bool = False
+    use_loop_analysis: bool = True
     enable_taint_tracking: bool = True
     enable_caching: bool = True
     use_type_hints: bool = True
@@ -132,7 +132,8 @@ class ExecutionConfig:
     enable_interaction_graph: bool = True
     enable_chtd: bool = True
     enable_h_acceleration: bool = True
-    deterministic_mode: bool = False
+    # Default to deterministic scheduling so CI and API-level checks are reproducible.
+    deterministic_mode: bool = True
     random_seed: int = 42
     chtd_max_branch_infos: int = 256
     chtd_check_interval: int = 64
