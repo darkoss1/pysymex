@@ -107,12 +107,12 @@ def run_differential_validation() -> list[DifferentialResult]:
     safe_instr = list(dis.get_instructions(safe_get))
     safe_matches = matcher.find_patterns(safe_instr, env)
     _ = safe_matches
-    old_keys = matcher.cache_keys()
 
     plain_instr = list(dis.get_instructions(plain_sub))
-    matcher.find_patterns(plain_instr, env)
+    plain_matches = matcher.find_patterns(plain_instr, env)
     samples += 1
-    if old_keys and any(k in matcher.cache_keys() for k in old_keys):
+    # Differential invariant: plain dict subscription is not dict.get semantics.
+    if any(m.kind == PatternKind.DICT_GET for m in plain_matches):
         mismatches += 1
 
     analyzer = PatternAnalyzer()

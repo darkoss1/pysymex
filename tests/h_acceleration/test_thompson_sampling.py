@@ -168,7 +168,7 @@ class TestThompsonSampler:
         not _cuda_available(),
         reason="CUDA not available"
     )
-    @pytest.mark.filterwarnings("ignore::numba.core.errors.NumbaPerformanceWarning")
+    @pytest.mark.filterwarnings("ignore::UserWarning")
     def test_gpu_backend(self):
         """Test with CUDA backend if available."""
         from pysymex.h_acceleration.thompson_sampling import ThompsonSampler

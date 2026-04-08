@@ -11,7 +11,26 @@ from pathlib import Path
 import pytest
 
 # Add the parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_TEST_RUNTIME_ROOT_ENV = "PYSYMEX_TEST_RUNTIME_ROOT"
+sys.path.insert(0, str(_PROJECT_ROOT))
+
+
+@pytest.fixture(autouse=True)
+def clear_all_caches():
+    """Clear all global caches before every test to prevent state leakage."""
+    try:
+        from pysymex.core.solver import clear_solver_caches
+        clear_solver_caches()
+    except ImportError:
+        pass
+
+    try:
+        from pysymex.core.types import FROM_CONST_CACHE, SYMBOLIC_CACHE
+        FROM_CONST_CACHE.clear()
+        SYMBOLIC_CACHE.clear()
+    except ImportError:
+        pass
 
 
 @pytest.fixture
@@ -124,105 +143,157 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: marks integration tests")
     config.addinivalue_line("markers", "unit: marks unit tests")
 
+    runtime_root = _PROJECT_ROOT / ".pytest_runtime" / f"_tmp_rt_{uuid.uuid4().hex}"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    runtime_root_str = str(runtime_root.resolve())
+
+    # Windows temp ACL handling with multiprocess workers is fragile across
+    # Python/pytest versions; run serially for deterministic behavior.
+    if os.name == "nt" and getattr(config.option, "numprocesses", None):
+        config.option.numprocesses = 0
+        if hasattr(config.option, "dist"):
+            config.option.dist = "no"
+
+    os.environ[_TEST_RUNTIME_ROOT_ENV] = runtime_root_str
+
 
 def pytest_sessionstart(session):
     """Use a unique workspace-local temp root for this pytest process."""
-    temp_root = Path(__file__).parent / f"_tmp_rt_{uuid.uuid4().hex}"
-    temp_root.mkdir(parents=True, exist_ok=True)
+    temp_root_str = os.environ.get(_TEST_RUNTIME_ROOT_ENV)
+    if not temp_root_str:
+        runtime_root = _PROJECT_ROOT / ".pytest_runtime" / f"_tmp_rt_{uuid.uuid4().hex}"
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        temp_root_str = str(runtime_root.resolve())
+        os.environ[_TEST_RUNTIME_ROOT_ENV] = temp_root_str
 
-    # Pre-create pytest's user-scoped temp root to avoid Windows ACL issues
-    # triggered when pytest creates this path with mode=0o700 itself.
-    user = getpass.getuser() or "unknown"
-    (temp_root / f"pytest-of-{user}").mkdir(parents=True, exist_ok=True)
-
-    temp_root_str = str(temp_root.resolve())
     os.environ["TMP"] = temp_root_str
     os.environ["TEMP"] = temp_root_str
     os.environ["TMPDIR"] = temp_root_str
     tempfile.tempdir = temp_root_str
 
-    def _workspace_mkdtemp(
-        suffix: str | None = None,
-        prefix: str | None = None,
-        dir: str | os.PathLike[str] | None = None,
-    ) -> str:
-        base = Path(dir) if dir is not None else temp_root
-        base.mkdir(parents=True, exist_ok=True)
-        name_prefix = "tmp" if prefix is None else prefix
-        name_suffix = "" if suffix is None else suffix
-        while True:
-            candidate = base / f"{name_prefix}{uuid.uuid4().hex}{name_suffix}"
+    if os.name == "nt":
+        user = (
+            os.environ.get("PYTEST_XDIST_WORKER_USER")
+            or os.environ.get("USERNAME")
+            or os.environ.get("USER")
+            or os.environ.get("LOGNAME")
+        )
+        if not user:
             try:
-                candidate.mkdir(parents=False, exist_ok=False)
-                return str(candidate)
-            except FileExistsError:
-                continue
+                user = getpass.getuser() or "unknown"
+            except Exception:
+                user = "unknown"
+        (Path(temp_root_str) / f"pytest-of-{user}").mkdir(parents=True, exist_ok=True)
 
-    class _WorkspaceTemporaryDirectory:
-        def __init__(
-            self,
+        def _workspace_mkdtemp(
             suffix: str | None = None,
             prefix: str | None = None,
             dir: str | os.PathLike[str] | None = None,
-            ignore_cleanup_errors: bool = False,
-        ) -> None:
-            self.name = _workspace_mkdtemp(suffix=suffix, prefix=prefix, dir=dir)
-            self._ignore_cleanup_errors = ignore_cleanup_errors
+        ) -> str:
+            base = Path(dir) if dir is not None else Path(temp_root_str)
+            base.mkdir(parents=True, exist_ok=True)
+            name_prefix = "tmp" if prefix is None else prefix
+            name_suffix = "" if suffix is None else suffix
+            while True:
+                candidate = base / f"{name_prefix}{uuid.uuid4().hex}{name_suffix}"
+                try:
+                    candidate.mkdir(parents=False, exist_ok=False)
+                    return str(candidate)
+                except FileExistsError:
+                    continue
 
-        def __enter__(self) -> str:
-            return self.name
+        class _WorkspaceTemporaryDirectory:
+            def __init__(
+                self,
+                suffix: str | None = None,
+                prefix: str | None = None,
+                dir: str | os.PathLike[str] | None = None,
+                ignore_cleanup_errors: bool = False,
+                delete: bool = True,
+            ) -> None:
+                self.name = _workspace_mkdtemp(suffix=suffix, prefix=prefix, dir=dir)
+                self._ignore_cleanup_errors = ignore_cleanup_errors
+                self._delete = delete
 
-        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
-            self.cleanup()
+            def __enter__(self) -> str:
+                return self.name
 
-        def cleanup(self) -> None:
-            try:
-                shutil.rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
-            except Exception:
-                if not self._ignore_cleanup_errors:
-                    raise
+            def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+                self.cleanup()
 
-    tempfile.mkdtemp = _workspace_mkdtemp  # type: ignore[assignment]
-    tempfile.TemporaryDirectory = _WorkspaceTemporaryDirectory  # type: ignore[assignment]
+            def cleanup(self) -> None:
+                if not self._delete:
+                    return
+                try:
+                    shutil.rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+                except Exception:
+                    if not self._ignore_cleanup_errors:
+                        raise
 
-    # On this Windows sandbox, pytest's default 0o700 temp dirs can become
-    # unreadable/unwritable to the same process. Force permissive mode.
-    try:
-        import _pytest.pathlib as _pytest_pathlib
-        import _pytest.tmpdir as _pytest_tmpdir
+        tempfile.mkdtemp = _workspace_mkdtemp  # type: ignore[assignment]
+        tempfile.TemporaryDirectory = _WorkspaceTemporaryDirectory  # type: ignore[assignment]
 
-        _orig_make_numbered_dir = _pytest_pathlib.make_numbered_dir
-        _orig_make_numbered_dir_with_cleanup = _pytest_pathlib.make_numbered_dir_with_cleanup
-        _orig_cleanup_dead_symlinks = _pytest_pathlib.cleanup_dead_symlinks
-        def _patched_make_numbered_dir(root, prefix, mode):  # noqa: ANN001
-            return _orig_make_numbered_dir(root, prefix, 0o777)
+        try:
+            import _pytest.pathlib as _pytest_pathlib
+            import _pytest.tmpdir as _pytest_tmpdir
 
-        def _patched_make_numbered_dir_with_cleanup(*args, **kwargs):  # noqa: ANN002, ANN003
-            kwargs["mode"] = 0o777
-            return _orig_make_numbered_dir_with_cleanup(*args, **kwargs)
+            _orig_make_numbered_dir = _pytest_pathlib.make_numbered_dir
+            _orig_make_numbered_dir_with_cleanup = _pytest_pathlib.make_numbered_dir_with_cleanup
+            _orig_cleanup_dead_symlinks = _pytest_pathlib.cleanup_dead_symlinks
 
-        _pytest_pathlib.make_numbered_dir = _patched_make_numbered_dir
-        _pytest_pathlib.make_numbered_dir_with_cleanup = _patched_make_numbered_dir_with_cleanup
+            def _patched_make_numbered_dir(root, prefix, mode):  # noqa: ANN001
+                return _orig_make_numbered_dir(root, prefix, 0o777)
 
-        def _patched_cleanup_dead_symlinks(root):  # noqa: ANN001
-            try:
-                _orig_cleanup_dead_symlinks(root)
-            except PermissionError:
-                # Best-effort cleanup in ACL-restricted Windows sandboxes.
-                return
+            def _patched_make_numbered_dir_with_cleanup(*args, **kwargs):  # noqa: ANN002, ANN003
+                kwargs["mode"] = 0o777
+                return _orig_make_numbered_dir_with_cleanup(*args, **kwargs)
 
-        _pytest_pathlib.cleanup_dead_symlinks = _patched_cleanup_dead_symlinks
+            def _patched_cleanup_dead_symlinks(root):  # noqa: ANN001
+                try:
+                    _orig_cleanup_dead_symlinks(root)
+                except PermissionError:
+                    return
 
-        def _patched_mktemp(self, basename: str, numbered: bool = True):  # noqa: ANN001
-            basename = self._ensure_relative_to_basetemp(basename)
-            if not numbered:
-                p = self.getbasetemp().joinpath(basename)
-                p.mkdir(mode=0o777)
+            def _patched_getbasetemp(self):  # noqa: ANN001
+                if self._basetemp is not None:
+                    return self._basetemp
+                if self._given_basetemp is not None:
+                    base = Path(self._given_basetemp)
+                else:
+                    base = Path(temp_root_str) / "pytest-basetemp"
+                base.mkdir(parents=True, exist_ok=True)
+                self._basetemp = base.resolve()
+                return self._basetemp
+
+            _pytest_pathlib.make_numbered_dir = _patched_make_numbered_dir
+            _pytest_pathlib.make_numbered_dir_with_cleanup = _patched_make_numbered_dir_with_cleanup
+            _pytest_pathlib.cleanup_dead_symlinks = _patched_cleanup_dead_symlinks
+            _pytest_tmpdir.TempPathFactory.getbasetemp = _patched_getbasetemp
+
+            def _patched_mktemp(self, basename: str, numbered: bool = True):  # noqa: ANN001
+                basename = self._ensure_relative_to_basetemp(basename)
+                base = self.getbasetemp()
+                if not numbered:
+                    p = base.joinpath(basename)
+                    p.mkdir(parents=True, exist_ok=True)
+                    return p
+                while True:
+                    p = base / f"{basename}-{uuid.uuid4().hex}"
+                    try:
+                        p.mkdir(parents=False, exist_ok=False)
+                        break
+                    except FileExistsError:
+                        continue
+                self._trace("mktemp", p)
                 return p
-            p = _pytest_pathlib.make_numbered_dir(root=self.getbasetemp(), prefix=basename, mode=0o777)
-            self._trace("mktemp", p)
-            return p
 
-        _pytest_tmpdir.TempPathFactory.mktemp = _patched_mktemp
-    except Exception:
-        pass
+            _pytest_tmpdir.TempPathFactory.mktemp = _patched_mktemp
+        except Exception:
+            pass
+
+
+def pytest_sessionfinish(session, exitstatus):  # noqa: ANN001
+    """Best-effort cleanup for workspace runtime temp roots."""
+    runtime_root = os.environ.get(_TEST_RUNTIME_ROOT_ENV)
+    if runtime_root:
+        shutil.rmtree(runtime_root, ignore_errors=True)

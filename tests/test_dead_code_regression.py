@@ -170,7 +170,25 @@ def compute():
         import dis
 
         instructions = list(dis.get_instructions(code))
-        has_dead_bytecode = len(instructions) > 2  # More than RESUME + RETURN
+        terminators = {"RETURN_VALUE", "RETURN_CONST", "RAISE_VARARGS", "RERAISE"}
+        implicit_or_meta = {
+            "RESUME",
+            "RETURN_VALUE",
+            "RETURN_CONST",
+            "LOAD_CONST",
+            "NOP",
+            "CACHE",
+            "PUSH_NULL",
+            "POP_TOP",
+        }
+
+        has_dead_bytecode = False
+        for idx, instr in enumerate(instructions):
+            if instr.opname in terminators:
+                trailing = instructions[idx + 1 :]
+                has_dead_bytecode = any(t.opname not in implicit_or_meta for t in trailing)
+                break
+
         if has_dead_bytecode:
             assert len(unreachable) >= 1, "Real dead code should be detected when present"
         # else: compiler removed it, so 0 is acceptable
