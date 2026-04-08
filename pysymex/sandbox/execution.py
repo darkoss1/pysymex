@@ -256,7 +256,16 @@ def resource_limits(
     if not _is_infinity(as_hard):
         requested_memory_bytes = min(requested_memory_bytes, as_hard)
 
-    requested_cpu_seconds = max_cpu_seconds
+    consumed_cpu_seconds = 0.0
+    try:
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        consumed_cpu_seconds = float(usage.ru_utime) + float(usage.ru_stime)
+    except (AttributeError, OSError, ValueError):
+        consumed_cpu_seconds = 0.0
+
+    # RLIMIT_CPU is absolute process CPU time, not incremental. Convert requested
+    # per-context budget into an absolute cap to avoid killing long-lived workers.
+    requested_cpu_seconds = int(consumed_cpu_seconds) + max_cpu_seconds + 1
     if not _is_infinity(cpu_hard):
         requested_cpu_seconds = min(requested_cpu_seconds, cpu_hard)
 
@@ -267,8 +276,13 @@ def resource_limits(
         warnings.warn("Unable to set RLIMIT_AS in resource_limits(); continuing without memory cap")
 
     try:
-        resource.setrlimit(resource.RLIMIT_CPU, (requested_cpu_seconds, cpu_hard))
-        cpu_limit_set = True
+        if requested_cpu_seconds > int(consumed_cpu_seconds):
+            resource.setrlimit(resource.RLIMIT_CPU, (requested_cpu_seconds, cpu_hard))
+            cpu_limit_set = True
+        else:
+            warnings.warn(
+                "Skipping RLIMIT_CPU in resource_limits(); process CPU budget already exhausted"
+            )
     except (OSError, ValueError):
         warnings.warn("Unable to set RLIMIT_CPU in resource_limits(); continuing without CPU cap")
 
