@@ -63,7 +63,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short -m "not slow" --ignore=tests/test_resources.py --cov=pysymex --cov-report=xml --cov-branch -x
+        run: pytest tests/ -v --tb=short -m "not slow" --ignore=tests/test_resources.py --cov=pysymex --cov-report=xml --cov-branch --maxfail=0
 
       - name: Cleanup test artifacts
         shell: bash

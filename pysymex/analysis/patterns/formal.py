@@ -21,7 +21,6 @@ import dis
 import inspect
 from dataclasses import asdict, dataclass
 from types import ModuleType
-from typing import cast
 
 from pysymex.analysis.patterns import (
     PatternAnalyzer,

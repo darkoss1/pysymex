@@ -20,7 +20,6 @@ from __future__ import annotations
 import inspect
 import json
 import tempfile
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType

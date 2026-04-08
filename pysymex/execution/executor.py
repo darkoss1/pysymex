@@ -30,7 +30,6 @@ from collections.abc import Callable
 from dataclasses import replace as dc_replace
 from typing import cast
 
-import pysymex.execution.opcodes as _opcodes
 from pysymex.analysis.detectors import Issue
 from pysymex.execution.executor_core import SymbolicExecutor as SymbolicExecutor
 from pysymex.execution.executor_types import BRANCH_OPCODES as BRANCH_OPCODES

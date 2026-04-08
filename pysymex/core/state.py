@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeGuard, TypeVar
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue, SummaryBuilderProtocol, TaintTrackerProtocol
+    from pysymex._typing import StackValue
     from pysymex.core.object_model import ObjectState
     from pysymex.core.oop_support import EnhancedClassRegistry
 
