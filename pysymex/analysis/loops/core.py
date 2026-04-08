@@ -87,18 +87,32 @@ class LoopDetector:
                 "JUMP_NO_INTERRUPT",
             }
         )
+        _conditional_jumps = frozenset(
+            {
+                "POP_JUMP_IF_TRUE",
+                "POP_JUMP_IF_FALSE",
+                "POP_JUMP_IF_NONE",
+                "POP_JUMP_IF_NOT_NONE",
+                "POP_JUMP_FORWARD_IF_TRUE",
+                "POP_JUMP_FORWARD_IF_FALSE",
+                "POP_JUMP_FORWARD_IF_NONE",
+                "POP_JUMP_FORWARD_IF_NOT_NONE",
+                "POP_JUMP_BACKWARD_IF_TRUE",
+                "POP_JUMP_BACKWARD_IF_FALSE",
+                "POP_JUMP_BACKWARD_IF_NONE",
+                "POP_JUMP_BACKWARD_IF_NOT_NONE",
+                "JUMP_IF_TRUE_OR_POP",
+                "JUMP_IF_FALSE_OR_POP",
+                "JUMP_IF_NOT_EXC_MATCH",
+            }
+        )
         for i, instr in enumerate(instructions):
             pc = instr.offset
             if pc not in cfg:
                 cfg[pc] = set()
             if instr.opname in _unconditional_jumps:
                 cfg[pc].add(instr.argval)
-            elif instr.opname in (
-                "POP_JUMP_IF_TRUE",
-                "POP_JUMP_IF_FALSE",
-                "POP_JUMP_IF_NONE",
-                "POP_JUMP_IF_NOT_NONE",
-            ):
+            elif instr.opname in _conditional_jumps:
                 cfg[pc].add(instr.argval)
                 if i + 1 < len(instructions):
                     cfg[pc].add(instructions[i + 1].offset)

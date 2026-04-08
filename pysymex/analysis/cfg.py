@@ -142,16 +142,12 @@ class BasicBlock:
         """Check if this block ends with a conditional branch."""
         term = self.get_terminator()
         if term:
-            return term.opname in {
-                "POP_JUMP_IF_TRUE",
-                "POP_JUMP_IF_FALSE",
-                "POP_JUMP_IF_NONE",
-                "POP_JUMP_IF_NOT_NONE",
-                "JUMP_IF_TRUE_OR_POP",
-                "JUMP_IF_FALSE_OR_POP",
-                "FOR_ITER",
-                "SEND",
-            }
+            op = term.opname
+            return (
+                op.startswith("POP_JUMP_")
+                or op.startswith("JUMP_IF_")
+                or op in {"FOR_ITER", "SEND"}
+            )
         return False
 
     def __repr__(self) -> str:
@@ -294,14 +290,25 @@ class CFGBuilder:
         "JUMP_BACKWARD",
         "JUMP_ABSOLUTE",
         "JUMP_BACKWARD_NO_INTERRUPT",
+        "JUMP",
+        "JUMP_NO_INTERRUPT",
     }
     CONDITIONAL_JUMP_OPS = {
         "POP_JUMP_IF_TRUE",
         "POP_JUMP_IF_FALSE",
         "POP_JUMP_IF_NONE",
         "POP_JUMP_IF_NOT_NONE",
+        "POP_JUMP_FORWARD_IF_TRUE",
+        "POP_JUMP_FORWARD_IF_FALSE",
+        "POP_JUMP_FORWARD_IF_NONE",
+        "POP_JUMP_FORWARD_IF_NOT_NONE",
+        "POP_JUMP_BACKWARD_IF_TRUE",
+        "POP_JUMP_BACKWARD_IF_FALSE",
+        "POP_JUMP_BACKWARD_IF_NONE",
+        "POP_JUMP_BACKWARD_IF_NOT_NONE",
         "JUMP_IF_TRUE_OR_POP",
         "JUMP_IF_FALSE_OR_POP",
+        "JUMP_IF_NOT_EXC_MATCH",
     }
     LOOP_OPS = {
         "FOR_ITER",

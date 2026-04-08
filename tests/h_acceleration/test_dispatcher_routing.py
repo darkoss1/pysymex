@@ -58,7 +58,7 @@ def _constraint(num_variables: int, instruction_count: int = 4) -> CompiledConst
 
 
 def test_dispatcher_gpu_guardrail_falls_back_to_cpu() -> None:
-    disp = _TestableDispatcher(force_backend=BackendType.CPU)
+    disp = _TestableDispatcher(force_backend=None)
     disp.set_test_routing_state(
         backends={
             BackendType.GPU: _FakeBackend("gpu"),
@@ -90,7 +90,7 @@ def test_dispatcher_gpu_guardrail_falls_back_to_cpu() -> None:
 
 
 def test_dispatcher_uses_latency_ewma_for_routing() -> None:
-    disp = _TestableDispatcher(force_backend=BackendType.CPU)
+    disp = _TestableDispatcher(force_backend=None)
     disp.set_test_routing_state(
         backends={
             BackendType.GPU: _FakeBackend("gpu"),

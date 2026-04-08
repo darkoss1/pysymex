@@ -82,46 +82,34 @@ class TestDeleteNotHandled:
         def _make_instr(opname, opcode, argval, offset, line):
             """Create a dis.Instruction compatible with current Python version."""
             import dis
-            import sys
-            if sys.version_info >= (3, 13):
-                params = set(inspect.signature(dis.Instruction).parameters)
-                kwargs: dict[str, object] = {
-                    "opname": opname,
-                    "opcode": opcode,
-                    "arg": 0,
-                    "argval": argval,
-                    "argrepr": str(argval),
-                    "offset": offset,
-                    "start_offset": offset,
-                    "starts_line": True,
-                    "line_number": line,
-                    "positions": None,
-                    "cache_info": None,
-                }
-                if "label" in params:
-                    kwargs["label"] = None
-                if "is_jump_target" in params:
-                    kwargs["is_jump_target"] = False
-                if "baseopname" in params:
-                    kwargs["baseopname"] = opname
-                if "baseopcode" in params:
-                    kwargs["baseopcode"] = opcode
-                return dis.Instruction(**kwargs)
-            elif sys.version_info >= (3, 12):
-                return dis.Instruction(
-                    opname=opname, opcode=opcode, arg=0, argval=argval,
-                    argrepr=str(argval), offset=offset,
-                    start_offset=offset, starts_line=True, line_number=line,
-                    is_jump_target=False, positions=None,
-                    cache_info=None,
-                )
-            else:
-                return dis.Instruction(
-                    opname=opname, opcode=opcode, arg=0, argval=argval,
-                    argrepr=str(argval), offset=offset,
-                    starts_line=line, is_jump_target=False,
-                    positions=None,
-                )
+            params = set(inspect.signature(dis.Instruction).parameters)
+            kwargs: dict[str, object] = {
+                "opname": opname,
+                "opcode": opcode,
+                "arg": 0,
+                "argval": argval,
+                "argrepr": str(argval),
+                "offset": offset,
+            }
+            if "start_offset" in params:
+                kwargs["start_offset"] = offset
+            if "starts_line" in params:
+                kwargs["starts_line"] = True if "line_number" in params else line
+            if "line_number" in params:
+                kwargs["line_number"] = line
+            if "is_jump_target" in params:
+                kwargs["is_jump_target"] = False
+            if "positions" in params:
+                kwargs["positions"] = None
+            if "cache_info" in params:
+                kwargs["cache_info"] = None
+            if "label" in params:
+                kwargs["label"] = None
+            if "baseopname" in params:
+                kwargs["baseopname"] = opname
+            if "baseopcode" in params:
+                kwargs["baseopcode"] = opcode
+            return dis.Instruction(**kwargs)
 
         block = BasicBlock(id=0, start_pc=0, end_pc=4)
         block.instructions = [
@@ -159,46 +147,36 @@ class TestDeleteNotHandled:
         from pysymex.analysis.cfg import BasicBlock, ControlFlowGraph
 
         def _make_instr(opname, opcode, argval, offset, line):
-            import dis, sys
-            if sys.version_info >= (3, 13):
-                params = set(inspect.signature(dis.Instruction).parameters)
-                kwargs: dict[str, object] = {
-                    "opname": opname,
-                    "opcode": opcode,
-                    "arg": 0,
-                    "argval": argval,
-                    "argrepr": str(argval),
-                    "offset": offset,
-                    "start_offset": offset,
-                    "starts_line": True,
-                    "line_number": line,
-                    "positions": None,
-                    "cache_info": None,
-                }
-                if "label" in params:
-                    kwargs["label"] = None
-                if "is_jump_target" in params:
-                    kwargs["is_jump_target"] = False
-                if "baseopname" in params:
-                    kwargs["baseopname"] = opname
-                if "baseopcode" in params:
-                    kwargs["baseopcode"] = opcode
-                return dis.Instruction(**kwargs)
-            elif sys.version_info >= (3, 12):
-                return dis.Instruction(
-                    opname=opname, opcode=opcode, arg=0, argval=argval,
-                    argrepr=str(argval), offset=offset,
-                    start_offset=offset, starts_line=True, line_number=line,
-                    is_jump_target=False, positions=None,
-                    cache_info=None,
-                )
-            else:
-                return dis.Instruction(
-                    opname=opname, opcode=opcode, arg=0, argval=argval,
-                    argrepr=str(argval), offset=offset,
-                    starts_line=line, is_jump_target=False,
-                    positions=None,
-                )
+            import dis
+
+            params = set(inspect.signature(dis.Instruction).parameters)
+            kwargs: dict[str, object] = {
+                "opname": opname,
+                "opcode": opcode,
+                "arg": 0,
+                "argval": argval,
+                "argrepr": str(argval),
+                "offset": offset,
+            }
+            if "start_offset" in params:
+                kwargs["start_offset"] = offset
+            if "starts_line" in params:
+                kwargs["starts_line"] = True if "line_number" in params else line
+            if "line_number" in params:
+                kwargs["line_number"] = line
+            if "is_jump_target" in params:
+                kwargs["is_jump_target"] = False
+            if "positions" in params:
+                kwargs["positions"] = None
+            if "cache_info" in params:
+                kwargs["cache_info"] = None
+            if "label" in params:
+                kwargs["label"] = None
+            if "baseopname" in params:
+                kwargs["baseopname"] = opname
+            if "baseopcode" in params:
+                kwargs["baseopcode"] = opcode
+            return dis.Instruction(**kwargs)
 
         block = BasicBlock(id=0, start_pc=0, end_pc=2)
         block.instructions = [

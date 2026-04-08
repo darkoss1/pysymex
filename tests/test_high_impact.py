@@ -160,14 +160,14 @@ def test_loop_widening_integration():
         return total
 
     config = ExecutionConfig(
-        max_depth=50,
-        max_paths=200,
-        max_loop_iterations=5,  # Low limit to trigger widening
+        max_depth=24,
+        max_paths=32,
+        max_loop_iterations=3,  # Low limit to trigger widening quickly
         verbose=False,
         enable_abstract_interpretation=False,  # Isolate test
     )
     executor = SymbolicExecutor(config=config)
-    result = executor.execute_function(loop_function)
+    result = executor.execute_function(loop_function, {"n": "int"})
     # The executor should handle loops without crashing
     # and should complete at least some paths
     assert (

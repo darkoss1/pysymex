@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dis
 import inspect
-import sys
 
 from pysymex.analysis.dataflow.types import NullInfo, NullState
 from pysymex.analysis.cfg import BasicBlock, ControlFlowGraph
@@ -32,56 +31,34 @@ def test_null_join_unknown_path_must_not_collapse_to_definitely_not_null() -> No
 
 
 def _make_instr(opname: str, opcode: int, argval: str, offset: int, line: int) -> dis.Instruction:
-    if sys.version_info >= (3, 13):
-        params = set(inspect.signature(dis.Instruction).parameters)
-        kwargs: dict[str, object] = {
-            "opname": opname,
-            "opcode": opcode,
-            "arg": 0,
-            "argval": argval,
-            "argrepr": str(argval),
-            "offset": offset,
-            "start_offset": offset,
-            "starts_line": True,
-            "line_number": line,
-            "positions": None,
-            "cache_info": None,
-        }
-        if "label" in params:
-            kwargs["label"] = None
-        if "is_jump_target" in params:
-            kwargs["is_jump_target"] = False
-        if "baseopname" in params:
-            kwargs["baseopname"] = opname
-        if "baseopcode" in params:
-            kwargs["baseopcode"] = opcode
-        return dis.Instruction(**kwargs)
-    if sys.version_info >= (3, 12):
-        return dis.Instruction(
-            opname=opname,
-            opcode=opcode,
-            arg=0,
-            argval=argval,
-            argrepr=str(argval),
-            offset=offset,
-            start_offset=offset,
-            starts_line=True,
-            line_number=line,
-            is_jump_target=False,
-            positions=None,
-            cache_info=None,
-        )
-    return dis.Instruction(
-        opname=opname,
-        opcode=opcode,
-        arg=0,
-        argval=argval,
-        argrepr=str(argval),
-        offset=offset,
-        starts_line=line,
-        is_jump_target=False,
-        positions=None,
-    )
+    params = set(inspect.signature(dis.Instruction).parameters)
+    kwargs: dict[str, object] = {
+        "opname": opname,
+        "opcode": opcode,
+        "arg": 0,
+        "argval": argval,
+        "argrepr": str(argval),
+        "offset": offset,
+    }
+    if "start_offset" in params:
+        kwargs["start_offset"] = offset
+    if "starts_line" in params:
+        kwargs["starts_line"] = True if "line_number" in params else line
+    if "line_number" in params:
+        kwargs["line_number"] = line
+    if "is_jump_target" in params:
+        kwargs["is_jump_target"] = False
+    if "positions" in params:
+        kwargs["positions"] = None
+    if "cache_info" in params:
+        kwargs["cache_info"] = None
+    if "label" in params:
+        kwargs["label"] = None
+    if "baseopname" in params:
+        kwargs["baseopname"] = opname
+    if "baseopcode" in params:
+        kwargs["baseopcode"] = opcode
+    return dis.Instruction(**kwargs)
 
 
 def test_reaching_defs_delete_fast_kills_definition() -> None:
