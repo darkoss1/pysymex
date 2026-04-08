@@ -220,6 +220,29 @@ class TestResourceTracker:
 
         assert exc_info.value.resource_type == ResourceType.ITERATIONS
 
+    def test_memory_limit_uses_growth_from_start_baseline(self, monkeypatch):
+        """Memory limit should apply to per-analysis growth, not total process RSS."""
+        limits = ResourceLimits(max_memory_mb=100)
+        tracker = ResourceTracker(limits)
+
+        current_memory_mb = {"value": 1200.0}
+        monkeypatch.setattr(
+            ResourceTracker,
+            "memory_usage_mb",
+            property(lambda _self: current_memory_mb["value"]),
+        )
+
+        tracker.start()
+
+        current_memory_mb["value"] = 1250.0
+        tracker.check_memory_limit()
+
+        current_memory_mb["value"] = 1305.0
+        with pytest.raises(LimitExceeded) as exc_info:
+            tracker.check_memory_limit()
+
+        assert exc_info.value.resource_type == ResourceType.MEMORY
+
     def test_snapshot(self):
         """Test getting resource snapshot."""
         tracker = ResourceTracker()

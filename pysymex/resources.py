@@ -212,17 +212,21 @@ class ResourceTracker:
         self._warnings_issued: set[ResourceType] = set()
         self._degraded: bool = False
         self._degradation_reason: str | None = None
+        self._memory_baseline_mb: float = 0.0
         self._lock = threading.RLock()
 
     def start(self) -> None:
         """Start resource tracking."""
         self._start_time = time.perf_counter()
         self._reset_counters()
+        # Use per-analysis memory growth rather than process lifetime RSS.
+        self._memory_baseline_mb = self.memory_usage_mb
 
     def reset(self) -> None:
         """Reset for a new analysis unit while keeping limits."""
         self._reset_counters()
         self._start_time = None
+        self._memory_baseline_mb = 0.0
 
     def _reset_counters(self) -> None:
         """Reset all counters."""
@@ -379,10 +383,16 @@ class ResourceTracker:
     def check_memory_limit(self) -> None:
         """Check memory limit."""
         memory_mb = self.memory_usage_mb
-        if memory_mb > 0 and memory_mb >= self.limits.max_memory_mb:
+        if memory_mb <= 0:
+            return
+
+        baseline_mb = self._memory_baseline_mb if self._memory_baseline_mb > 0 else memory_mb
+        growth_mb = max(0.0, memory_mb - baseline_mb)
+
+        if growth_mb >= self.limits.max_memory_mb:
             raise LimitExceeded(
                 ResourceType.MEMORY,
-                memory_mb,
+                growth_mb,
                 self.limits.max_memory_mb,
             )
 
