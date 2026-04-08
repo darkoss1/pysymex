@@ -547,10 +547,33 @@ def dead():
         code = _compile_function(source, "dead")
         detector = UnreachableCodeDetector()
         issues = detector.detect(code, "<test>")
-        # CPython 3.13+ may optimize away dead code at compile time
+        # CPython may optimize away dead code at compile time depending on version,
+        # so only assert when there is real post-return user-line bytecode.
         instructions = list(dis.get_instructions(code))
-        has_dead_bytecode = len(instructions) > 2
-        if has_dead_bytecode:
+        return_idx = next((i for i, ins in enumerate(instructions) if ins.opname == "RETURN_VALUE"), -1)
+        terminator_line = None
+        if return_idx >= 0:
+            sl = instructions[return_idx].starts_line
+            if isinstance(sl, int):
+                terminator_line = sl
+            elif instructions[return_idx].positions is not None:
+                terminator_line = instructions[return_idx].positions.lineno
+
+        has_real_dead_user_lines = False
+        if return_idx >= 0:
+            for ins in instructions[return_idx + 1 :]:
+                line_val = None
+                if isinstance(ins.starts_line, int):
+                    line_val = ins.starts_line
+                elif ins.positions is not None:
+                    line_val = ins.positions.lineno
+                if line_val is not None and (
+                    terminator_line is None or line_val > terminator_line
+                ):
+                    has_real_dead_user_lines = True
+                    break
+
+        if has_real_dead_user_lines:
             unreachable = _find_issues(issues, DeadCodeKind.UNREACHABLE_CODE)
             assert len(unreachable) >= 1, "Real dead code should still be detected"
 

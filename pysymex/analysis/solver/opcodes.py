@@ -558,6 +558,86 @@ class OpcodeHandlersMixin:
         """Op pop jump if not none."""
         return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
 
+    def _op_POP_JUMP_FORWARD_IF_FALSE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump forward if false."""
+        return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_FORWARD_IF_TRUE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump forward if true."""
+        return self._op_POP_JUMP_IF_TRUE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_FORWARD_IF_NONE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump forward if none."""
+        return self._op_POP_JUMP_IF_NONE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_FORWARD_IF_NOT_NONE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump forward if not none."""
+        return self._op_POP_JUMP_IF_NOT_NONE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_BACKWARD_IF_FALSE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump backward if false."""
+        return self._op_POP_JUMP_IF_FALSE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_BACKWARD_IF_TRUE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump backward if true."""
+        return self._op_POP_JUMP_IF_TRUE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_BACKWARD_IF_NONE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump backward if none."""
+        return self._op_POP_JUMP_IF_NONE(arg, state, crashes, call_sites)
+
+    def _op_POP_JUMP_BACKWARD_IF_NOT_NONE(
+        self,
+        arg: object,
+        state: SymbolicState,
+        crashes: list[CrashCondition],
+        call_sites: list[CallSite],
+    ) -> SymValue | None:
+        """Op pop jump backward if not none."""
+        return self._op_POP_JUMP_IF_NOT_NONE(arg, state, crashes, call_sites)
+
     def _op_UNARY_NEGATIVE(
         self,
         arg: object,
