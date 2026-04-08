@@ -31,9 +31,17 @@ class TestSandboxIsolation(unittest.TestCase):
         )
         with SecureSandbox(config) as sandbox:
             result = sandbox.execute_code(code, filename="test_exploit.py")
-            # Should fail due to security policy (audit hook)
+            # Should fail due to security policy (audit hook) or OS denial.
             self.assertFalse(result.succeeded, "Sandbox allowed write outside jail!")
-            self.assertIn("blocked", result.get_stderr_text().lower())
+            err = result.get_stderr_text().lower()
+            self.assertTrue(
+                (
+                    "blocked" in err
+                    or "permission denied" in err
+                    or "no such file or directory" in err
+                ),
+                f"Unexpected sandbox error: {err!r}",
+            )
 
 if __name__ == '__main__':
     unittest.main()

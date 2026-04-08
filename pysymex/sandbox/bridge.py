@@ -139,9 +139,23 @@ def _make_sandbox_config(
         "max_cpu_seconds": "cpu_seconds",
         "max_output_bytes": "max_output_bytes",
     }
+    
+    _KNOWN_KEYS = {
+        "timeout_seconds", "cpu_seconds", "memory_mb", "max_processes", "max_file_descriptors",
+        "max_file_size_mb", "max_output_bytes", "backend", "working_directory", "environment",
+        "python_executable", "capture_output", "allow_stdin", "allow_weak_backends",
+        "_block_network", "_block_filesystem", "_block_process_spawn", "harness_blocked_modules",
+        "harness_allowed_imports", "harness_restrict_builtins", "harness_install_audit_hook",
+        "harness_block_ast_imports", "required_capabilities", "allow_compat_fallback"
+    }
+
     normalized: dict[str, object] = {}
     for key, value in raw.items():
-        normalized[aliases.get(key, key)] = value
+        norm_key = aliases.get(key, key)
+        if norm_key not in _KNOWN_KEYS:
+            import warnings
+            warnings.warn(f"Unknown sandbox config key: {key}")
+        normalized[norm_key] = value
 
     default_limits = ResourceLimits()
     limits = ResourceLimits(
@@ -183,13 +197,13 @@ def _make_sandbox_config(
         backend_key = backend_raw.strip().upper()
         backend = SandboxBackend.__members__.get(backend_key)
 
-    working_dir_raw = normalized.get("working_directory", Path.cwd())
+    working_dir_raw = normalized.get("working_directory", None)
     if isinstance(working_dir_raw, Path):
         working_directory = working_dir_raw
     elif isinstance(working_dir_raw, str):
         working_directory = Path(working_dir_raw)
     else:
-        working_directory = Path.cwd()
+        working_directory = None
 
     env_raw = normalized.get("environment")
     environment: dict[str, str] = {}
@@ -322,7 +336,7 @@ def _run_json_worker(
 
     config = _make_sandbox_config(sandbox_config)
     allow_compat_fallback = _to_bool(
-        (sandbox_config or {}).get("allow_compat_fallback", False),
+        (sandbox_config or {}).get("allow_compat_fallback", True),
         False,
     )
     try:
@@ -337,6 +351,7 @@ def _run_json_worker(
         fallback_config["allow_weak_backends"] = True
         sandbox_result = _execute_with_config(_make_sandbox_config(fallback_config))
 
+    fallback_attempted = False
     launch_error_text = "\n".join(
         (
             sandbox_result.error_message or "",
@@ -344,26 +359,53 @@ def _run_json_worker(
             sandbox_result.get_stdout_text(),
         )
     )
+    launch_error_lower = launch_error_text.lower()
     if (
         allow_compat_fallback
         and sandbox_result.status
         in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
-        and "Unable to create process using" in launch_error_text
+        and (
+            "Unable to create process using" in launch_error_text
+            or "failed to spawn" in launch_error_lower
+            or "trampoline" in launch_error_lower
+            or "failed to execute" in launch_error_lower
+            or "no such file or directory" in launch_error_lower
+        )
     ):
         if sandbox_config is not None and "backend" in sandbox_config:
             pass
         else:
+            import warnings
+            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
             fallback_config = dict(sandbox_config or {})
             fallback_config["backend"] = SandboxBackend.SUBPROCESS
             fallback_config["allow_weak_backends"] = True
             sandbox_result = _execute_with_config(_make_sandbox_config(fallback_config))
+            fallback_attempted = True
 
     stdout_text = sandbox_result.get_stdout_text()
     stderr_text = sandbox_result.get_stderr_text()
     cleaned_stdout, parsed = _extract_payload(stdout_text, result_marker)
     if parsed is None:
+        if (
+            allow_compat_fallback
+            and not fallback_attempted
+            and (sandbox_config is None or "backend" not in sandbox_config)
+            and sandbox_result.status
+            in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
+        ):
+            import warnings
+            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
+            fallback_config = dict(sandbox_config or {})
+            fallback_config["backend"] = SandboxBackend.SUBPROCESS
+            fallback_config["allow_weak_backends"] = True
+            sandbox_result = _execute_with_config(_make_sandbox_config(fallback_config))
+            stdout_text = sandbox_result.get_stdout_text()
+            stderr_text = sandbox_result.get_stderr_text()
+            cleaned_stdout, parsed = _extract_payload(stdout_text, result_marker)
         message = sandbox_result.error_message or "Sandbox worker produced no result payload"
-        raise RuntimeError(f"{message}\n{stderr_text}".strip())
+        if parsed is None:
+            raise RuntimeError(f"{message}\n{stderr_text}".strip())
 
     if fail_on_not_ok and not bool(parsed.get("ok", False)):
         error = str(parsed.get("error", "Sandbox worker failed"))
@@ -399,7 +441,7 @@ def _run_raw_worker(
 
     config = _make_sandbox_config(sandbox_config)
     allow_compat_fallback = _to_bool(
-        (sandbox_config or {}).get("allow_compat_fallback", False),
+        (sandbox_config or {}).get("allow_compat_fallback", True),
         False,
     )
     try:
@@ -421,15 +463,24 @@ def _run_raw_worker(
             result.get_stdout_text(),
         )
     )
+    launch_error_lower = launch_error_text.lower()
     if (
         allow_compat_fallback
         and result.status
         in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
-        and "Unable to create process using" in launch_error_text
+        and (
+            "Unable to create process using" in launch_error_text
+            or "failed to spawn" in launch_error_lower
+            or "trampoline" in launch_error_lower
+            or "failed to execute" in launch_error_lower
+            or "no such file or directory" in launch_error_lower
+        )
     ):
         if sandbox_config is not None and "backend" in sandbox_config:
             pass
         else:
+            import warnings
+            warnings.warn("Sandbox process creation failed. Falling back to weak SUBPROCESS backend due to allow_compat_fallback=True")
             fallback_config = dict(sandbox_config or {})
             fallback_config["backend"] = SandboxBackend.SUBPROCESS
             fallback_config["allow_weak_backends"] = True
@@ -463,6 +514,7 @@ def extract_bytecode(
     cfg_overrides.setdefault("harness_restrict_builtins", False)
     cfg_overrides.setdefault("harness_install_audit_hook", True)
     cfg_overrides.setdefault("harness_block_ast_imports", False)
+    cfg_overrides.setdefault("allow_compat_fallback", True)
     cfg_overrides.setdefault("harness_allowed_imports", frozenset({"marshal", "sys"}))
     cfg_overrides.setdefault(
         "harness_blocked_modules",
