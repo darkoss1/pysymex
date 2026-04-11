@@ -239,8 +239,8 @@ pysymex/
 pytest tests/ -v
 
 # Run specific modules
-pytest tests/test_z3_prover.py -v
-pytest tests/test_interprocedural.py -v
+pytest tests/unit/core/solver/test_engine.py -v
+pytest tests/unit/analysis/interprocedural/test_callgraph.py -v
 
 # Run with coverage
 pytest --cov=pysymex tests/ -v

@@ -32,6 +32,41 @@ taint/          Taint tracking and CFG-based taint-flow checking
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pysymex.analysis.concolic import (
+        BranchRecord as BranchRecord,
+        ConcreteInput as ConcreteInput,
+        ConcolicExecutor as ConcolicExecutor,
+        ExecutionTrace as ExecutionTrace,
+        GenerationalSearch as GenerationalSearch,
+    )
+    from pysymex.analysis.detectors.base import DetectorRegistry as DetectorRegistry
+    from pysymex.analysis.detectors.specialized import (
+        InfiniteLoopDetector as InfiniteLoopDetector,
+        IntegerOverflowDetector as IntegerOverflowDetector,
+        NullDereferenceDetector as NullDereferenceDetector,
+        UnreachableCodeDetector as UnreachableCodeDetector,
+        register_advanced_detectors as register_advanced_detectors,
+    )
+    from pysymex.analysis.interprocedural import (
+        CallGraph as CallGraph,
+        CallSite as CallSite,
+        CallType as CallType,
+        FunctionSummary as FunctionSummary,
+        InterproceduralAnalyzer as InterproceduralAnalyzer,
+    )
+    from pysymex.analysis.taint import (
+        TaintAnalyzer as TaintAnalyzer,
+        TaintedValue as TaintedValue,
+        TaintFlow as TaintFlow,
+        TaintLabel as TaintLabel,
+        TaintPolicy as TaintPolicy,
+        TaintSink as TaintSink,
+        TaintSource as TaintSource,
+        TaintTracker as TaintTracker,
+    )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "AbstractInterpreter": ("pysymex.analysis.abstract.domains", "AbstractInterpreter"),
@@ -81,10 +116,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "hash_dict": ("pysymex.analysis.cache", "hash_dict"),
     "hash_file": ("pysymex.analysis.cache", "hash_file"),
     "hash_function": ("pysymex.analysis.cache", "hash_function"),
-    "CG": ("pysymex.analysis.callgraph", "CallGraph"),
-    "CallGraphBuilder": ("pysymex.analysis.callgraph", "CallGraphBuilder"),
-    "CallGraphEdge": ("pysymex.analysis.callgraph", "CallGraphEdge"),
-    "CallGraphNode": ("pysymex.analysis.callgraph", "CallGraphNode"),
+    "CG": ("pysymex.analysis.interprocedural.callgraph", "CallGraph"),
+    "CallGraphBuilder": ("pysymex.analysis.interprocedural.callgraph", "CallGraphBuilder"),
+    "CallGraphEdge": ("pysymex.analysis.interprocedural.callgraph", "CallGraphEdge"),
+    "CallGraphNode": ("pysymex.analysis.interprocedural.callgraph", "CallGraphNode"),
     "BranchRecord": ("pysymex.analysis.concolic", "BranchRecord"),
     "ConcolicExecutor": ("pysymex.analysis.concolic", "ConcolicExecutor"),
     "ConcolicResult": ("pysymex.analysis.concolic", "ConcolicResult"),
@@ -158,28 +193,28 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "Scanner": ("pysymex.analysis.pipeline", "Scanner"),
     "ScannerConfig": ("pysymex.analysis.pipeline", "ScannerConfig"),
-    "ExceptionAnalyzer": ("pysymex.analysis.exceptions.analysis", "ExceptionAnalyzer"),
-    "FlowSensitiveAnalyzer": ("pysymex.analysis.flow_sensitive", "FlowSensitiveAnalyzer"),
-    "AssertionContext": ("pysymex.analysis.false_positive_filter", "AssertionContext"),
-    "Confidence": ("pysymex.analysis.false_positive_filter", "Confidence"),
-    "FilterResult": ("pysymex.analysis.false_positive_filter", "FilterResult"),
-    "calculate_confidence": ("pysymex.analysis.false_positive_filter", "calculate_confidence"),
-    "deduplicate_issues": ("pysymex.analysis.false_positive_filter", "deduplicate_issues"),
+    "ExceptionAnalyzer": ("pysymex.analysis.exceptions.analyzer", "ExceptionAnalyzer"),
+    "FlowSensitiveAnalyzer": ("pysymex.analysis.specialized.flow", "FlowSensitiveAnalyzer"),
+    "AssertionContext": ("pysymex.analysis.detectors.filter", "AssertionContext"),
+    "Confidence": ("pysymex.analysis.detectors.filter", "Confidence"),
+    "FilterResult": ("pysymex.analysis.detectors.filter", "FilterResult"),
+    "calculate_confidence": ("pysymex.analysis.detectors.filter", "calculate_confidence"),
+    "deduplicate_issues": ("pysymex.analysis.detectors.filter", "deduplicate_issues"),
     "detect_assertion_context": (
-        "pysymex.analysis.false_positive_filter",
+        "pysymex.analysis.detectors.filter",
         "detect_assertion_context",
     ),
-    "filter_issue": ("pysymex.analysis.false_positive_filter", "filter_issue"),
-    "filter_issues": ("pysymex.analysis.false_positive_filter", "filter_issues"),
+    "filter_issue": ("pysymex.analysis.detectors.filter", "filter_issue"),
+    "filter_issues": ("pysymex.analysis.detectors.filter", "filter_issues"),
     "is_type_checking_block_issue": (
-        "pysymex.analysis.false_positive_filter",
+        "pysymex.analysis.detectors.filter",
         "is_type_checking_block_issue",
     ),
     "is_typing_false_positive": (
-        "pysymex.analysis.false_positive_filter",
+        "pysymex.analysis.detectors.filter",
         "is_typing_false_positive",
     ),
-    "FunctionSummarizer": ("pysymex.analysis.function_models", "FunctionSummarizer"),
+    "FunctionSummarizer": ("pysymex.models.builtins.functions", "FunctionSummarizer"),
     "CallContext": ("pysymex.analysis.interprocedural", "CallContext"),
     "CallGraph": ("pysymex.analysis.interprocedural", "CallGraph"),
     "CallSite": ("pysymex.analysis.interprocedural", "CallSite"),
@@ -203,7 +238,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "PropertyProof": ("pysymex.analysis.properties", "PropertyProof"),
     "PropertyProver": ("pysymex.analysis.properties", "PropertyProver"),
     "PropertySpec": ("pysymex.analysis.properties", "PropertySpec"),
-    "ValueRangeChecker": ("pysymex.analysis.range_analysis", "ValueRangeChecker"),
+    "ValueRangeChecker": ("pysymex.analysis.specialized.ranges", "ValueRangeChecker"),
     "ResourceAnalyzer": ("pysymex.analysis.resources.analysis", "ResourceAnalyzer"),
     "FileResourceChecker": ("pysymex.analysis.resources.lifecycle", "FileResourceChecker"),
     "LockResourceChecker": ("pysymex.analysis.resources.lifecycle", "LockResourceChecker"),
@@ -219,7 +254,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "StateTransition": ("pysymex.analysis.resources.lifecycle", "StateTransition"),
     "TrackedResource": ("pysymex.analysis.resources.lifecycle", "TrackedResource"),
     "AnalysisPipeline": ("pysymex.analysis.integration", "AnalysisPipeline"),
-    "StringAnalyzer": ("pysymex.analysis.string_analysis", "StringAnalyzer"),
+    "StringAnalyzer": ("pysymex.analysis.specialized.strings", "StringAnalyzer"),
     "ExceptionInfo": ("pysymex.analysis.summaries", "ExceptionInfo"),
     "FuncSummary": ("pysymex.analysis.summaries", "FunctionSummary"),
     "ModifiedVariable": ("pysymex.analysis.summaries", "ModifiedVariable"),

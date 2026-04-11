@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -45,7 +45,7 @@ Security Model:
 
 from __future__ import annotations
 
-from ._errors import (
+from .errors import (
     ResourceExhaustedError,
     SandboxCleanupError,
     SandboxError,
@@ -53,7 +53,7 @@ from ._errors import (
     SandboxTimeoutError,
     SecurityViolationError,
 )
-from ._types import (
+from .types import (
     ExecutionStatus,
     ResourceLimits,
     SandboxBackend,
@@ -127,3 +127,4 @@ __all__ = [
     "validate_config",
     "validate_path",
 ]
+

@@ -286,7 +286,7 @@ class ContractAnalyzer:
         self._reports: dict[str, VerificationReport] = {}
 
         try:
-            from pysymex.analysis.invariants import InvariantState
+            from pysymex.analysis.specialized.invariants import InvariantState
 
             self.invariant_state = InvariantState()
         except ImportError:
@@ -357,7 +357,7 @@ class ContractAnalyzer:
             return
         if not hasattr(owner_class, "__invariants__"):
             return
-        from pysymex.analysis.invariants import (
+        from pysymex.analysis.specialized.invariants import (
             get_invariants,
             parse_invariant_condition,
         )

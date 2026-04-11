@@ -26,6 +26,21 @@ Provides performance benchmarking, regression testing, and profiling.
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pysymex.benchmarks.suite import (
+        Benchmark as Benchmark,
+        BenchmarkCategory as BenchmarkCategory,
+        BenchmarkComparator as BenchmarkComparator,
+        BenchmarkReporter as BenchmarkReporter,
+        BenchmarkResult as BenchmarkResult,
+        BenchmarkSuite as BenchmarkSuite,
+        RegressionResult as RegressionResult,
+        benchmark as benchmark,
+        create_builtin_benchmarks as create_builtin_benchmarks,
+        run_benchmarks as run_benchmarks,
+    )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "Benchmark": ("pysymex.benchmarks.suite", "Benchmark"),

@@ -112,8 +112,8 @@ pysymex = ["py.typed"]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-norecursedirs = [".hypothesis", ".pytest_runtime", "_tmp_rt_*", "__pycache__", ".git", ".venv"]
-addopts = "-v --tb=short -n auto --durations=25 --durations-min=2.0"
+norecursedirs = [".hypothesis", ".pytest_runtime", "_tmp_rt_*", "__pycache__", ".git", ".venv", "tests_backup"]
+addopts = "-v --tb=short -n auto --import-mode=importlib --durations=25 --durations-min=2.0"
 asyncio_mode = "auto"
 timeout = 120
 timeout_method = "thread"
@@ -152,6 +152,7 @@ exclude = [
     "examples",
     "benchmarks",
     "tests",
+    "tests_backup",
 ]
 
 [tool.mypy]

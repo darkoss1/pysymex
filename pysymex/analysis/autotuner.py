@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -27,8 +27,8 @@ from __future__ import annotations
 import types
 from dataclasses import dataclass, replace
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
-from pysymex.execution.executor import ExecutionConfig
+from pysymex.core.cache import get_instructions as _cached_get_instructions
+from pysymex.execution.executors import ExecutionConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,3 +112,6 @@ class AutoTuner:
             )
 
         return config
+
+
+

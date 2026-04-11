@@ -38,7 +38,7 @@ from pysymex.analysis.summaries.types import (
     ParameterInfo,
     ReadVariable,
 )
-from pysymex.core.solver import create_solver
+from pysymex.core.solver.engine import create_solver
 
 
 class SummaryBuilder:

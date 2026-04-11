@@ -43,6 +43,13 @@ With coverage:
 
    pytest tests/ -v --cov=pysymex --cov-report=html
 
+Test architecture:
+
+- Unit tests follow a shadow tree under ``tests/unit/...`` mirroring ``pysymex/...``.
+- Integration scenarios live in ``tests/integration/...``.
+- Historical regressions live in ``tests/repro/...``.
+- Archived legacy tests are under ``tests_backup/`` and excluded from default discovery.
+
 
 Code Style
 ----------

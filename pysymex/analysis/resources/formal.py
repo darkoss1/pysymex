@@ -109,10 +109,9 @@ def _wilson_upper_95(k: int, n: int) -> float:
 def _resource_modules() -> list[ModuleType]:
     import pysymex.analysis.resources.analysis as analysis_mod
     import pysymex.analysis.resources.lifecycle as lifecycle_mod
-    import pysymex.analysis.resources.lifecycle_state_machines as sm_mod
-    import pysymex.analysis.resources.lifecycle_types as types_mod
+    import pysymex.analysis.resources.types as types_mod
 
-    return [analysis_mod, lifecycle_mod, sm_mod, types_mod]
+    return [analysis_mod, lifecycle_mod, types_mod]
 
 
 def function_checklist() -> list[FunctionChecklistItem]:

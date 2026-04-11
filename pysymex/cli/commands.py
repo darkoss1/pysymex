@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -362,7 +362,7 @@ def cmd_verify(args: _Namespace) -> int:
         verified_executor_cls: _VerifiedExecutorFactory | None = None
         verified_execution_config_cls: _VerifiedConfigFactory | None = None
         try:
-            from pysymex.execution.verified_executor import (
+            from pysymex.execution.executors.verified import (
                 VerifiedExecutionConfig,
                 VerifiedExecutor,
             )
@@ -542,3 +542,4 @@ def cmd_concolic(args: _Namespace) -> int:
     except Exception as e:
         print(f"\u274c Error in concolic execution for {filepath}: {e}", file=sys.stderr)
         return 1
+

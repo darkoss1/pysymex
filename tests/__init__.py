@@ -1,1 +1,0 @@
-"""pysymex test suite."""

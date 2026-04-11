@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -20,7 +20,7 @@
 
 Defines structural interfaces that decouple the executor from concrete
 analysis and core types.  Analysis code, detector plugins, and
-visualisation hooks should depend on these protocols — never on the
+visualisation hooks should depend on these protocols â€” never on the
 :class:`SymbolicExecutor` class directly.
 """
 
@@ -31,7 +31,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from pysymex.core.solver import IncrementalSolver
+    from pysymex.core.solver.engine import IncrementalSolver
 
 __all__ = [
     "ExecutionContext",
@@ -43,11 +43,11 @@ class ExecutionContext(Protocol):
     """Read-side structural interface of the symbolic executor.
 
     Any concrete ``SymbolicExecutor`` satisfies this protocol through
-    structural subtyping — no inheritance or registration required.
+    structural subtyping â€” no inheritance or registration required.
 
     Consumers (detectors, visualisation plugins, analysis passes) should
     import this protocol instead of depending on
-    ``pysymex.execution.executor_core.SymbolicExecutor``.
+    ``pysymex.execution.executors.core.SymbolicExecutor``.
     """
 
     _instructions: Sequence[dis.Instruction]
@@ -61,3 +61,4 @@ class ExecutionContext(Protocol):
     _issues: Sequence[object]
 
     def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None: ...
+

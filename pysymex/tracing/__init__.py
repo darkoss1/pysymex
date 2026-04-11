@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -16,10 +16,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""``pysymex.tracing`` — LLM-optimised execution observability layer.
+"""``pysymex.tracing`` â€” LLM-optimised execution observability layer.
 
 This package provides a completely decoupled tracing system for
-:class:`~pysymex.execution.executor_core.SymbolicExecutor`.  It emits
+:class:`~pysymex.execution.executors.core.SymbolicExecutor`.  It emits
 structured JSONL trace files designed for consumption by LLM agents.
 
 Quick start
@@ -61,7 +61,7 @@ Public API
 
 from __future__ import annotations
 
-from pysymex.tracing._hook_adapter import TracingHookPlugin
+from pysymex.tracing.hooks import TracingHookPlugin
 from pysymex.tracing.schemas import (
     ConstraintEntry,
     IssueEvent,
@@ -97,3 +97,5 @@ __all__ = [
     "Z3Serializer",
     "attach_tracer",
 ]
+
+

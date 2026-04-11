@@ -267,6 +267,7 @@ class AnalysisConfig:
             "**/test_*.py",
             "**/*_test.py",
             "**/tests/**",
+            "**/tests_backup/**",
             "**/.venv/**",
             "**/venv/**",
             "**/node_modules/**",

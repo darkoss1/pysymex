@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.analysis.protocol_checker import (
+from pysymex.analysis.detectors.protocols import (
     Protocol,
     ProtocolChecker,
 )

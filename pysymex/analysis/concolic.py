@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 import z3
 
-from pysymex.core.solver import create_solver
+from pysymex.core.solver.engine import create_solver
 
 
 @dataclass
@@ -218,7 +218,7 @@ class ConcolicExecutor:
         concrete_input: ConcreteInput,
     ) -> ExecutionTrace:
         """Execute function with concrete values while tracking symbolically."""
-        from pysymex.execution.executor import ExecutionConfig, SymbolicExecutor
+        from pysymex.execution.executors import ExecutionConfig, SymbolicExecutor
 
         trace = ExecutionTrace(input=concrete_input)
         config = ExecutionConfig(max_paths=1)
@@ -381,3 +381,5 @@ __all__ = [
     "ExecutionTrace",
     "GenerationalSearch",
 ]
+
+

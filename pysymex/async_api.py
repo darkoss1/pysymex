@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -38,10 +38,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
-from pysymex.execution.executor import ExecutionResult
+from pysymex.execution.executors import ExecutionResult
 
 if TYPE_CHECKING:
-    from pysymex.execution.executor_types import ExecutionConfig
+    from pysymex.execution.types import ExecutionConfig
 
 
 class AnalyzeConfigKwargs(TypedDict, total=False):
@@ -246,3 +246,5 @@ __all__ = [
     "analyze_file_async",
     "scan_directory_async",
 ]
+
+

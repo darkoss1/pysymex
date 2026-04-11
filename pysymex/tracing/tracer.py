@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -22,19 +22,19 @@ Architecture
 ~~~~~~~~~~~~
 The tracer is built around three collaborating objects:
 
-* :class:`TracingSolverProxy` — A transparent proxy that wraps
+* :class:`TracingSolverProxy` â€” A transparent proxy that wraps
   :class:`~pysymex.core.solver.IncrementalSolver`.  It intercepts ``is_sat``
   and ``check`` calls to capture SMT telemetry (latency, cache hit, result)
   without modifying any logic in the solver itself.
 
-* :class:`ExecutionTracer` — The main session manager and event dispatcher.
+* :class:`ExecutionTracer` â€” The main session manager and event dispatcher.
   It owns the JSONL file handle, the monotonic sequence counter, and the
   Keyframe + Delta buffering strategy.  Its hook methods (``pre_step``,
   ``post_step``, ``on_fork``, ``on_prune``, ``on_solve``, ``on_issue``) are
   registered with the executor and called by the executor's lifecycle
   methods.
 
-* :func:`attach_tracer` — A convenience factory that creates a fully
+* :func:`attach_tracer` â€” A convenience factory that creates a fully
   configured tracer, starts its session, installs it into an executor, and
   optionally returns a context manager for structured cleanup.
 
@@ -91,7 +91,7 @@ if TYPE_CHECKING:
     from pysymex._typing import SolverProtocol, StackValue
     from pysymex.analysis.detectors.base import Issue
     from pysymex.core.state import VMState
-    from pysymex.execution.executor_core import SymbolicExecutor
+    from pysymex.execution.executors.core import SymbolicExecutor
 
 
 class _TraceWriter(Protocol):
@@ -145,7 +145,7 @@ class TracingSolverProxy:
     ~~~~~~~~~~~~~~~
     * Any exception raised inside the proxy's interception logic is caught and
       written to ``stderr``.  The actual solver result is **always** returned
-      to the caller unchanged — the proxy never interferes with correctness.
+      to the caller unchanged â€” the proxy never interferes with correctness.
     * The proxy does not store or copy constraint objects beyond the duration
       of the call, preventing memory leaks on long analyses.
     """
@@ -251,13 +251,13 @@ class TracingSolverProxy:
 
 
 class ExecutionTracer:
-    """LLM-optimised observability layer for :class:`~pysymex.execution.executor_core.SymbolicExecutor`.
+    """LLM-optimised observability layer for :class:`~pysymex.execution.executors.core.SymbolicExecutor`.
 
     Session lifecycle
     ~~~~~~~~~~~~~~~~~
     1. Construct the tracer with a :class:`~pysymex.tracing.schemas.TracerConfig`.
     2. Call :meth:`start_session` (or use as a context manager).
-    3. Call :meth:`install` on a :class:`~pysymex.execution.executor_core.SymbolicExecutor`
+    3. Call :meth:`install` on a :class:`~pysymex.execution.executors.core.SymbolicExecutor`
        **before** ``execute_function`` / ``execute_code`` is called.
     4. Let the executor run.
     5. Call :meth:`end_session` (or exit the context manager) to flush and
@@ -324,7 +324,7 @@ class ExecutionTracer:
             func_name:       Qualified name of the function under analysis.
             signature_str:   String representation of the function signature.
             initial_args:    ``{parameter_name: type_string}`` mapping.
-            config_snapshot: Serialised :class:`~pysymex.execution.executor_types.ExecutionConfig`
+            config_snapshot: Serialised :class:`~pysymex.execution.types.ExecutionConfig`
                              as a plain dict, or ``None``.
             source_file:     Absolute path to the source file.
 
@@ -444,7 +444,7 @@ class ExecutionTracer:
         but **after** ``start_session``.
 
         Args:
-            executor: The :class:`~pysymex.execution.executor_core.SymbolicExecutor`
+            executor: The :class:`~pysymex.execution.executors.core.SymbolicExecutor`
                       whose execution will be traced.
         """
         if not self._config.enabled:
@@ -900,9 +900,9 @@ class ExecutionTracer:
         """Serialise *event* to JSONL and manage the write buffer.
 
         Force-flush behaviour:
-        * ``force_flush=True`` → append the line, then flush the entire
+        * ``force_flush=True`` â†’ append the line, then flush the entire
           buffer to disk and call ``file.flush()`` for OS-level durability.
-        * ``force_flush=False`` → append to buffer; only flush if buffer
+        * ``force_flush=False`` â†’ append to buffer; only flush if buffer
           reaches ``delta_batch_size``.
 
         Args:
@@ -968,3 +968,4 @@ def attach_tracer(
     )
     tracer.install(executor)
     return tracer, trace_path
+

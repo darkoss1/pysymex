@@ -30,6 +30,22 @@ Provides integrations for:
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pysymex.ci.core import (
+        CIRunner as CIRunner,
+        GitHubActionsReporter as GitHubActionsReporter,
+        GitLabReporter as GitLabReporter,
+        generate_precommit_config as generate_precommit_config,
+        generate_precommit_hook_script as generate_precommit_hook_script,
+        run_ci_check as run_ci_check,
+    )
+    from pysymex.ci.types import (
+        CIResult as CIResult,
+        ExitCode as ExitCode,
+        FailureThreshold as FailureThreshold,
+    )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "CIRunner": ("pysymex.ci.core", "CIRunner"),

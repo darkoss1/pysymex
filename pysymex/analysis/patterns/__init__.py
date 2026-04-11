@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Python Pattern Handlers for PySyMex — hub module.
+Python Pattern Handlers for PySyMex â€” hub module.
 
 Remaining handlers (StringMultiply, OptionalChain, NullCoalesce,
 SafeCollection, TryExcept) plus PatternRegistry, PatternMatcher,
@@ -48,7 +48,7 @@ from pysymex.analysis.patterns.core import (
     PatternMatch,
     SafeIterationHandler,
 )
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from ..type_inference import PyType, TypeEnvironment, TypeKind
 
@@ -498,3 +498,4 @@ class FunctionPatternInfo:
     def get_type_refinements(self, pc: int) -> dict[str, PyType]:
         """Get type refinements at PC."""
         return self.matcher.get_type_refinements_at(pc)
+

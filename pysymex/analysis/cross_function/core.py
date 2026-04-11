@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cross-function analysis — core logic classes and helpers."""
+"""Cross-function analysis â€” core logic classes and helpers."""
 
 from __future__ import annotations
 
@@ -29,11 +29,11 @@ from typing import (
 import z3
 
 from pysymex._compat import get_starts_line
-from pysymex.analysis.escape_analysis import EscapeAnalyzer, EscapeInfo
-from pysymex.core.constraint_hash import structural_hash_sorted
-from pysymex.core.constraint_independence import ConstraintIndependenceOptimizer
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
-from pysymex.core.types import SymbolicValue
+from pysymex.analysis.specialized.escape import EscapeAnalyzer, EscapeInfo
+from pysymex.core.solver.constraints import structural_hash_sorted
+from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
+from pysymex.core.cache import get_instructions as _cached_get_instructions
+from pysymex.core.types.scalars import SymbolicValue
 
 from ..type_inference import PyType, TypeKind
 from .types import (
@@ -692,3 +692,4 @@ class CrossFunctionAnalyzer:
                 if name not in code_objects:
                     code_objects[name] = const
                 self._collect_code_objects(const, code_objects, qualified)
+

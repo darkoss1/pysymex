@@ -42,7 +42,7 @@ from typing import (
 
 import z3
 
-from pysymex.core.solver import create_solver
+from pysymex.core.solver.engine import create_solver
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class ConstraintCache:
 
     def _hash_constraints(self, constraints: list[z3.ExprRef] | list[z3.BoolRef]) -> int:
         """Generate a hash for a list of constraints using structural hashing."""
-        from pysymex.core.constraint_hash import structural_hash_sorted
+        from pysymex.core.solver.constraints import structural_hash_sorted
 
         return structural_hash_sorted(constraints)
 
@@ -301,7 +301,7 @@ class StateMerger:
         branch_cond_for_locals: z3.BoolRef | None = None
 
         if state1.path_constraints and state2.path_constraints:
-            from pysymex.core.copy_on_write import ConstraintChain
+            from pysymex.core.memory.cow import ConstraintChain
 
             constraints_list1 = state1.path_constraints.to_list()
             constraints_list2 = state2.path_constraints.to_list()
@@ -345,7 +345,7 @@ class StateMerger:
             if name not in merged.locals:
                 merged.locals[name] = value2
             elif not _z3_values_equal(merged.locals[name], value2):
-                from pysymex.core.types import SymbolicValue
+                from pysymex.core.types.scalars import SymbolicValue
 
                 s1: StackValue = merged.locals[name]
                 s2: StackValue = value2

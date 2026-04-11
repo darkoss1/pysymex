@@ -32,7 +32,7 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 
-from pysymex.core.types import SymbolicValue
+from pysymex.core.types.scalars import SymbolicValue
 
 
 def symbolic_integers(

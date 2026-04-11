@@ -36,13 +36,13 @@ import subprocess
 import time
 from typing import TYPE_CHECKING
 
-from .._errors import SandboxSetupError
-from .._types import ExecutionStatus, SandboxResult, SecurityCapabilities
+from ..errors import SandboxSetupError
+from ..types import ExecutionStatus, SandboxResult, SecurityCapabilities
 from . import IsolationBackend
-from ._harness import HARNESS_FILENAME, generate_harness_script
+from .harness import HARNESS_FILENAME, generate_harness_script
 
 if TYPE_CHECKING:
-    from .._types import SandboxConfig
+    from ..types import SandboxConfig
 
 
 class WasmBackend(IsolationBackend):

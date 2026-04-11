@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -27,37 +27,39 @@ from importlib import import_module
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "ExecutionContext": ("pysymex.execution.protocols", "ExecutionContext"),
+    "execute_function": ("pysymex.execution.vm", "execute_function"),
+    "execute_code": ("pysymex.execution.vm", "execute_code"),
     "OpcodeDispatcher": ("pysymex.execution.dispatcher", "OpcodeDispatcher"),
     "OpcodeResult": ("pysymex.execution.dispatcher", "OpcodeResult"),
     "opcode_handler": ("pysymex.execution.dispatcher", "opcode_handler"),
-    "SymbolicExecutor": ("pysymex.execution.executor", "SymbolicExecutor"),
-    "ExecutionConfig": ("pysymex.execution.executor", "ExecutionConfig"),
-    "ExecutionResult": ("pysymex.execution.executor", "ExecutionResult"),
-    "analyze": ("pysymex.execution.executor", "analyze"),
-    "analyze_code": ("pysymex.execution.executor", "analyze_code"),
-    "quick_check": ("pysymex.execution.executor", "quick_check"),
-    "VerifiedExecutor": ("pysymex.execution.verified_executor", "VerifiedExecutor"),
-    "VerifiedExecutionConfig": ("pysymex.execution.verified_executor", "VerifiedExecutionConfig"),
-    "VerifiedExecutionResult": ("pysymex.execution.verified_executor", "VerifiedExecutionResult"),
-    "TerminationStatus": ("pysymex.execution.verified_executor", "TerminationStatus"),
-    "TerminationProof": ("pysymex.execution.verified_executor", "TerminationProof"),
-    "RankingFunction": ("pysymex.execution.verified_executor", "RankingFunction"),
-    "TerminationAnalyzer": ("pysymex.execution.verified_executor", "TerminationAnalyzer"),
-    "ContractIssue": ("pysymex.execution.verified_executor", "ContractIssue"),
-    "ArithmeticIssue": ("pysymex.execution.verified_executor", "ArithmeticIssue"),
-    "InferredProperty": ("pysymex.execution.verified_executor", "InferredProperty"),
-    "verify": ("pysymex.execution.verified_executor", "verify"),
-    "check_contracts": ("pysymex.execution.verified_executor", "check_contracts"),
-    "check_arithmetic": ("pysymex.execution.verified_executor", "check_arithmetic"),
-    "prove_termination": ("pysymex.execution.verified_executor", "prove_termination"),
-    "AsyncSymbolicExecutor": ("pysymex.execution.async_executor", "AsyncSymbolicExecutor"),
-    "SymbolicEventLoop": ("pysymex.execution.async_executor", "SymbolicEventLoop"),
-    "analyze_async": ("pysymex.execution.async_executor", "analyze_async"),
+    "SymbolicExecutor": ("pysymex.execution.executors", "SymbolicExecutor"),
+    "ExecutionConfig": ("pysymex.execution.executors", "ExecutionConfig"),
+    "ExecutionResult": ("pysymex.execution.executors", "ExecutionResult"),
+    "analyze": ("pysymex.api", "analyze"),
+    "analyze_code": ("pysymex.api", "analyze_code"),
+    "quick_check": ("pysymex.api", "quick_check"),
+    "VerifiedExecutor": ("pysymex.execution.executors.verified", "VerifiedExecutor"),
+    "VerifiedExecutionConfig": ("pysymex.execution.executors.verified", "VerifiedExecutionConfig"),
+    "VerifiedExecutionResult": ("pysymex.execution.executors.verified", "VerifiedExecutionResult"),
+    "TerminationStatus": ("pysymex.execution.executors.verified", "TerminationStatus"),
+    "TerminationProof": ("pysymex.execution.executors.verified", "TerminationProof"),
+    "RankingFunction": ("pysymex.execution.executors.verified", "RankingFunction"),
+    "TerminationAnalyzer": ("pysymex.execution.executors.verified", "TerminationAnalyzer"),
+    "ContractIssue": ("pysymex.execution.executors.verified", "ContractIssue"),
+    "ArithmeticIssue": ("pysymex.execution.executors.verified", "ArithmeticIssue"),
+    "InferredProperty": ("pysymex.execution.executors.verified", "InferredProperty"),
+    "verify": ("pysymex.execution.executors.verified", "verify"),
+    "check_contracts": ("pysymex.execution.executors.verified", "check_contracts"),
+    "check_arithmetic": ("pysymex.execution.executors.verified", "check_arithmetic"),
+    "prove_termination": ("pysymex.execution.executors.verified", "prove_termination"),
+    "AsyncSymbolicExecutor": ("pysymex.execution.executors.async_exec", "AsyncSymbolicExecutor"),
+    "SymbolicEventLoop": ("pysymex.execution.executors.async_exec", "SymbolicEventLoop"),
+    "analyze_async": ("pysymex.execution.executors.async_exec", "analyze_async"),
     "ConcurrentSymbolicExecutor": (
-        "pysymex.execution.concurrency_executor",
+        "pysymex.execution.executors.concurrent",
         "ConcurrentSymbolicExecutor",
     ),
-    "analyze_concurrent": ("pysymex.execution.concurrency_executor", "analyze_concurrent"),
+    "analyze_concurrent": ("pysymex.execution.executors.concurrent", "analyze_concurrent"),
 }
 
 
@@ -103,8 +105,11 @@ __all__: list[str] = [
     "analyze_concurrent",
     "check_arithmetic",
     "check_contracts",
+    "execute_code",
+    "execute_function",
     "opcode_handler",
     "prove_termination",
     "quick_check",
     "verify",
 ]
+

@@ -37,7 +37,7 @@ import icontract
 
 from pysymex._compat import get_starts_line
 
-from ..cfg import BasicBlock, ControlFlowGraph
+from ..control.cfg import BasicBlock, ControlFlowGraph
 from ..type_inference import PyType, TypeAnalyzer, TypeEnvironment
 from .types import (
     Definition,

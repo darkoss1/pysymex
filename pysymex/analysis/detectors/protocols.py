@@ -16,166 +16,117 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Protocol interfaces for the detector subsystem.
+"""Protocol checking for structural typing verification.
 
-Defines structural interfaces that decouple analysis.detectors from
-concrete execution layer types.  Execution types implement these
-protocols implicitly (structural subtyping), so no circular import
-is needed.
+Checks whether concrete types satisfy protocol requirements using
+the type constraint checker.
 """
 
 from __future__ import annotations
 
-import dis
-from collections.abc import Callable, Mapping, Sequence
-from typing import Protocol, runtime_checkable
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol as TypingProtocol, runtime_checkable
 
-from pysymex.execution.protocols import ExecutionContext
-
-__all__ = [
-    "DetectorLike",
-    "ExecutionContext",
-    "ExecutionContextLike",
-    "ScanReporter",
-    "SolverCheck",
-    "StateView",
-]
+if TYPE_CHECKING:
+    from pysymex.analysis.type_constraints.types import SymbolicType, TypeIssue
+    from pysymex.analysis.type_constraints import TypeConstraintChecker
+else:
+    SymbolicType = object
 
 
-@runtime_checkable
-class StateView(Protocol):
-    """Read-only view of VM state consumed by detectors.
-
-    Any concrete ``VMState`` satisfies this protocol without
-    inheriting from it — structural subtyping only.
-    """
-
-    @property
-    def pc(self) -> int:
-        """The current program counter (instruction offset)."""
-        ...
-
-    @property
-    def stack(self) -> Sequence[object]:
-        """A read-only view of the operand stack."""
-        ...
-
-    @property
-    def path_constraints(self) -> Sequence[object]:
-        """The sequence of symbolic constraints active on the current path."""
-        ...
-
-    @property
-    def locals(self) -> Mapping[str, object]:
-        """A mapping of local variable names to their symbolic or concrete values."""
-        ...
-
-    @property
-    def depth(self) -> int:
-        """The current execution depth (number of forks or recursive calls)."""
-        ...
-
-    def peek(self, offset: int = 0) -> object:
-        """Return the value on the stack at the given offset from the top."""
-        ...
-
-    def get_local(self, name: str) -> object:
-        """Retrieve the value of a local variable by name."""
-        ...
-
-    def fork(self) -> StateView:
-        """Create a new state view branching from the current one."""
-        ...
-
-    def add_constraint(self, constraint: object) -> None:
-        """Register a new symbolic constraint on the state's path."""
-        ...
-
-
-@runtime_checkable
-class SolverCheck(Protocol):
-    """Callable protocol for satisfiability checks passed to detectors."""
-
-    def __call__(
-        self,
-        constraints: Sequence[object],
-        *,
-        timeout_ms: int = ...,
-    ) -> bool:
-        """Check if the provided constraints are satisfiable under a timeout."""
-        ...
-
-
-@runtime_checkable
-class DetectorLike(Protocol):
-    """Structural interface for bug detectors.
-
-    Matches ``Detector`` ABC in ``base.py`` without requiring
-    a concrete import.
-    """
+@dataclass
+class Protocol:
+    """Represents a structural protocol (like typing.Protocol)."""
 
     name: str
-    description: str
+    required_methods: dict[str, SymbolicType] = field(default_factory=dict)
+    required_attributes: dict[str, SymbolicType] = field(default_factory=dict)
 
-    def check(
+
+class ProtocolChecker:
+    """Checks if types satisfy protocols."""
+
+    def __init__(self, type_checker: TypeConstraintChecker) -> None:
+        self.type_checker = type_checker
+
+    def check_protocol_satisfaction(
         self,
-        state: StateView,
-        instruction: dis.Instruction,
-        _solver_check: Callable[..., object],
-    ) -> object | None:
-        """Perform a bug check for the given instruction and state."""
-        ...
+        concrete_type: SymbolicType,
+        protocol: Protocol,
+        available_methods: dict[str, SymbolicType],
+        available_attributes: dict[str, SymbolicType],
+    ) -> list[TypeIssue]:
+        """Check if concrete type satisfies protocol requirements."""
+        from pysymex.analysis.type_constraints.types import TypeIssue, TypeIssueKind
+
+        issues: list[TypeIssue] = []
+        for method_name, expected_type in protocol.required_methods.items():
+            if method_name not in available_methods:
+                issues.append(
+                    TypeIssue(
+                        kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
+                        message=f"Missing method '{method_name}' required by protocol '{protocol.name}'",
+                        expected_type=expected_type,
+                    )
+                )
+            else:
+                actual_type = available_methods[method_name]
+                is_sub, _reason = self.type_checker.is_subtype(actual_type, expected_type)
+                if not is_sub:
+                    issues.append(
+                        TypeIssue(
+                            kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
+                            message=f"Method '{method_name}' has incompatible type for protocol '{protocol.name}'",
+                            expected_type=expected_type,
+                            actual_type=actual_type,
+                        )
+                    )
+        for attr_name, expected_type in protocol.required_attributes.items():
+            if attr_name not in available_attributes:
+                issues.append(
+                    TypeIssue(
+                        kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
+                        message=f"Missing attribute '{attr_name}' required by protocol '{protocol.name}'",
+                        expected_type=expected_type,
+                    )
+                )
+            else:
+                actual_type = available_attributes[attr_name]
+                is_sub, _reason = self.type_checker.is_subtype(actual_type, expected_type)
+                if not is_sub:
+                    issues.append(
+                        TypeIssue(
+                            kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
+                            message=f"Attribute '{attr_name}' has incompatible type for protocol '{protocol.name}'",
+                            expected_type=expected_type,
+                            actual_type=actual_type,
+                        )
+                    )
+        return issues
 
 
-@runtime_checkable
-class ScanReporter(Protocol):
-    """Callback protocol for scan progress reporting.
+class ScanReporter(TypingProtocol):
+    """Protocol for scanner reporting sinks used by scanner.core."""
 
-    Implementations live in CLI/reporting layers; scanner core
-    depends only on this interface.
-    """
-
-    def on_file_start(self, file_path: object) -> None:
-        """Called when analysis begins for a new file."""
-        ...
-
-    def on_file_done(self, file_path: object, result: object) -> None:
-        """Called when analysis completes for a file."""
-        ...
-
-    def on_issue(self, issue: dict[str, object]) -> None:
-        """Report a detected issue/bug."""
-        ...
-
-    def on_error(self, file_path: object, error: str) -> None:
-        """Report a fatal error encountered during analysis."""
-        ...
-
+    def on_status(self, message: str) -> None: ...
+    def on_issue(self, issue: dict[str, object]) -> None: ...
+    def on_error(self, file_path: object, error: str) -> None: ...
     def on_progress(
-        self,
-        completed: int,
-        total: int,
-        file_path: object,
-        result: object | None,
-    ) -> None:
-        """Update progress metrics (e.g. for progress bars)."""
-        ...
-
-    def on_status(self, message: str) -> None:
-        """Update the UI with a status message."""
-        ...
-
-    def on_summary(self, results: Sequence[object], total_files: int) -> None:
-        """Report the final analysis summary."""
-        ...
+        self, completed: int, total: int, file_path: object, result: object | None
+    ) -> None: ...
+    def on_summary(self, results: Sequence[object], total_files: int) -> None: ...
 
 
 @runtime_checkable
-class ExecutionContextLike(ExecutionContext, Protocol):
-    """Backward-compatible alias for :class:`ExecutionContext`.
+class ExecutionContextLike(TypingProtocol):
+    """Minimal hook-registration protocol used by executor integration tests."""
 
-    New code should use ``ExecutionContext`` from
-    ``pysymex.execution.protocols`` directly.
-    """
+    def register_hook(self, hook_name: str, callback: object) -> None: ...
 
-    ...
+
+__all__ = [
+    "Protocol",
+    "ProtocolChecker",
+    "ScanReporter",
+]

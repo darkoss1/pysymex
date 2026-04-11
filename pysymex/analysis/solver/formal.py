@@ -40,7 +40,7 @@ import pysymex.analysis.solver as solver_init
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
 from pysymex.analysis.solver.graph import SymbolicState
 from pysymex.analysis.solver.types import BugType, CallSite, CrashCondition, SymType, SymValue
-from pysymex.core.solver import is_satisfiable
+from pysymex.core.solver.engine import is_satisfiable
 
 
 @dataclass(frozen=True, slots=True)

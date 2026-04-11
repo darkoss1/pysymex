@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from types import CodeType
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 
 def find_dataclass_class_names(source: str) -> set[str]:
@@ -153,3 +153,4 @@ class DeadCode:
         if self.end_line and self.end_line != self.line:
             location += f"-{self.end_line}"
         return f"[{self.kind.name}] {location}: {self.message}"
+

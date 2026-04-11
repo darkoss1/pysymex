@@ -27,14 +27,12 @@ import types
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from ..detectors.static_types import (
+from ..detectors.types import (
     Issue,
     IssueKind,
     Severity,
 )
-from ..flow_sensitive import (
-    ControlFlowGraph,
-)
+from ..control.cfg import ControlFlowGraph
 from ..patterns import (
     PatternMatch,
 )

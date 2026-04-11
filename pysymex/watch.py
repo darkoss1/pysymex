@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -39,7 +39,7 @@ from typing import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from pysymex.execution.executor import SymbolicExecutor as SymbolicEngine
+    from pysymex.execution.executors import SymbolicExecutor as SymbolicEngine
 
 
 class FileEventType(Enum):
@@ -446,7 +446,7 @@ class WatchModeRunner:
     def start(self) -> None:
         """Start watch mode."""
         self._running = True
-        print("👀 PySyMex Watch Mode")
+        print("ðŸ‘€ PySyMex Watch Mode")
         print(f"   Watching: {', '.join(str(p) for p in self.paths)}")
         print("   Press Ctrl+C to stop\n")
         self._analyze_all()
@@ -462,7 +462,7 @@ class WatchModeRunner:
         """Stop watch mode."""
         self._running = False
         self.watcher.stop()
-        print("\n👋 Watch mode stopped")
+        print("\nðŸ‘‹ Watch mode stopped")
 
     def _analyze_all(self) -> None:
         """Analyze all watched files."""
@@ -478,12 +478,12 @@ class WatchModeRunner:
         file_str = str(path)
         cached = self.analyzer.get_cached(file_str)
         if cached:
-            print(f"📦 Using cached: {path.name}")
+            print(f"ðŸ“¦ Using cached: {path.name}")
             if self.on_result:
                 self.on_result(file_str, cached.result)
             return
         try:
-            print(f"🔍 Analyzing: {path.name}")
+            print(f"ðŸ” Analyzing: {path.name}")
             if self.engine:
                 result = self._run_analysis(path)
             else:
@@ -492,7 +492,7 @@ class WatchModeRunner:
             if self.on_result:
                 self.on_result(file_str, result)
         except Exception as e:
-            print(f"❌ Error analyzing {path.name}: {e}")
+            print(f"âŒ Error analyzing {path.name}: {e}")
             if self.on_error:
                 self.on_error(file_str, e)
 
@@ -503,11 +503,11 @@ class WatchModeRunner:
     def _handle_change(self, event: FileEvent) -> None:
         """Handle a file change event."""
         if event.event_type == FileEventType.DELETED:
-            print(f"🗑️  Deleted: {event.path.name}")
+            print(f"ðŸ—‘ï¸  Deleted: {event.path.name}")
             self.analyzer.invalidate(str(event.path))
             return
         print(
-            f"\n{'✨' if event.event_type == FileEventType.CREATED else '📝'} "
+            f"\n{'âœ¨' if event.event_type == FileEventType.CREATED else 'ðŸ“'} "
             f"{'Created' if event.event_type == FileEventType.CREATED else 'Modified'}: "
             f"{event.path.name}"
         )
@@ -582,3 +582,5 @@ __all__ = [
     "IncrementalAnalyzer",
     "WatchModeRunner",
 ]
+
+

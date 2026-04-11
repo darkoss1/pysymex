@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Exception Flow Analysis – Core logic.
+Exception Flow Analysis â€“ Core logic.
 
 AST and bytecode analyzers, helper functions, and the high-level
 ExceptionAnalyzer facade.
@@ -36,7 +36,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from pysymex._compat import get_starts_line
-from pysymex.analysis.exceptions.analysis_types import (
+from pysymex.analysis.exceptions.types import (
     KNOWN_CRASHY_APIS,
     ExceptionHandler,
     ExceptionWarning,
@@ -44,7 +44,7 @@ from pysymex.analysis.exceptions.analysis_types import (
     HandlerIntent,
     TryBlock,
 )
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 
 def _try_body_calls_crashy_api(try_node: ast.Try) -> bool:
@@ -492,8 +492,8 @@ class UncaughtExceptionAnalyzer:
         """Populate *protected_ranges* from exception-handling bytecode.
 
         Works across Python versions:
-        - Python < 3.11: ``SETUP_FINALLY``/``SETUP_EXCEPT`` … ``POP_BLOCK``
-        - Python 3.11+: ``PUSH_EXC_INFO`` … ``POP_EXCEPT`` with
+        - Python < 3.11: ``SETUP_FINALLY``/``SETUP_EXCEPT`` â€¦ ``POP_BLOCK``
+        - Python 3.11+: ``PUSH_EXC_INFO`` â€¦ ``POP_EXCEPT`` with
           ``CHECK_EXC_MATCH`` indicating which types are caught.
         """
 
@@ -643,3 +643,4 @@ class ExceptionAnalyzer:
 try_body_calls_crashy_api = _try_body_calls_crashy_api
 classify_handler_intent = _classify_handler_intent
 infer_caught_at = _infer_caught_at
+

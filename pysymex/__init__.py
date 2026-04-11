@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -21,8 +21,18 @@
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 from pysymex._deps import ensure_z3_ready
+
+if TYPE_CHECKING:
+    from pysymex.api import (
+        analyze as analyze,
+        check_assertions as check_assertions,
+        check_division_by_zero as check_division_by_zero,
+        quick_check as quick_check,
+    )
+    from pysymex.scanner import scan_directory as scan_directory, scan_file as scan_file
 
 __version__ = "0.1.0a4"
 
@@ -46,17 +56,17 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "check_assertions": ("pysymex.api", "check_assertions"),
     "check_index_errors": ("pysymex.api", "check_index_errors"),
     "format_issues": ("pysymex.api", "format_issues"),
-    "SymbolicExecutor": ("pysymex.execution.executor", "SymbolicExecutor"),
-    "ExecutionConfig": ("pysymex.execution.executor", "ExecutionConfig"),
-    "ExecutionResult": ("pysymex.execution.executor", "ExecutionResult"),
-    "SymbolicValue": ("pysymex.core.types", "SymbolicValue"),
-    "SymbolicString": ("pysymex.core.types_containers", "SymbolicString"),
-    "SymbolicList": ("pysymex.core.types_containers", "SymbolicList"),
-    "SymbolicDict": ("pysymex.core.types_containers", "SymbolicDict"),
-    "SymbolicObject": ("pysymex.core.types_containers", "SymbolicObject"),
-    "SymbolicNone": ("pysymex.core.types", "SymbolicNone"),
+    "SymbolicExecutor": ("pysymex.execution.executors", "SymbolicExecutor"),
+    "ExecutionConfig": ("pysymex.execution.executors", "ExecutionConfig"),
+    "ExecutionResult": ("pysymex.execution.executors", "ExecutionResult"),
+    "SymbolicValue": ("pysymex.core.types.scalars", "SymbolicValue"),
+    "SymbolicString": ("pysymex.core.types.containers", "SymbolicString"),
+    "SymbolicList": ("pysymex.core.types.containers", "SymbolicList"),
+    "SymbolicDict": ("pysymex.core.types.containers", "SymbolicDict"),
+    "SymbolicObject": ("pysymex.core.types.containers", "SymbolicObject"),
+    "SymbolicNone": ("pysymex.core.types.scalars", "SymbolicNone"),
     "VMState": ("pysymex.core.state", "VMState"),
-    "ShadowSolver": ("pysymex.core.solver", "ShadowSolver"),
+    "ShadowSolver": ("pysymex.core.solver.engine", "ShadowSolver"),
     "Issue": ("pysymex.analysis.detectors", "Issue"),
     "IssueKind": ("pysymex.analysis.detectors", "IssueKind"),
     "PysymexConfig": ("pysymex.config", "PysymexConfig"),
@@ -65,19 +75,19 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "get_logger": ("pysymex.logging", "get_logger"),
     "LogLevel": ("pysymex.logging", "LogLevel"),
     "format_result": ("pysymex.reporting.formatters", "format_result"),
-    "VerifiedExecutor": ("pysymex.execution.verified_executor", "VerifiedExecutor"),
+    "VerifiedExecutor": ("pysymex.execution.executors.verified", "VerifiedExecutor"),
     "VerifiedExecutionConfig": (
-        "pysymex.execution.verified_executor",
+        "pysymex.execution.executors.verified",
         "VerifiedExecutionConfig",
     ),
     "VerifiedExecutionResult": (
-        "pysymex.execution.verified_executor",
+        "pysymex.execution.executors.verified",
         "VerifiedExecutionResult",
     ),
-    "verify": ("pysymex.execution.verified_executor", "verify"),
-    "check_contracts": ("pysymex.execution.verified_executor", "check_contracts"),
-    "check_arithmetic": ("pysymex.execution.verified_executor", "check_arithmetic"),
-    "prove_termination": ("pysymex.execution.verified_executor", "prove_termination"),
+    "verify": ("pysymex.execution.executors.verified", "verify"),
+    "check_contracts": ("pysymex.execution.executors.verified", "check_contracts"),
+    "check_arithmetic": ("pysymex.execution.executors.verified", "check_arithmetic"),
+    "prove_termination": ("pysymex.execution.executors.verified", "prove_termination"),
     "scan_file": ("pysymex.scanner", "scan_file"),
     "scan_directory": ("pysymex.scanner", "scan_directory"),
     "scan_directory_async": ("pysymex.scanner", "scan_directory_async"),
@@ -189,3 +199,4 @@ def __getattr__(name: str) -> object:
 def __dir__() -> list[str]:
     """Dir."""
     return sorted(set(__all__) | set(globals()))
+

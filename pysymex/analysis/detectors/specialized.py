@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 import z3
 
 from pysymex.analysis.detectors.base import Detector, DetectorRegistry, Issue, IssueKind
-from pysymex.core.havoc import is_havoc
+from pysymex.core.types.havoc import is_havoc
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
@@ -48,7 +48,7 @@ def _pure_check_null_deref(
     is_satisfiable_fn: _IsSatFn,
 ) -> Issue | None:
     """Pure: check whether *top* could be None for the given *opname*."""
-    from pysymex.core.types import SymbolicNone, SymbolicValue
+    from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
 
     if is_havoc(top):
         return None
@@ -66,7 +66,7 @@ def _pure_check_null_deref(
                 z3.is_const(top.is_none) and top.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
             )
             if must_be_none or not is_unconstrained:
-                from pysymex.core.solver import get_model
+                from pysymex.core.solver.engine import get_model
 
                 return Issue(
                     kind=IssueKind.NULL_DEREFERENCE,
@@ -90,7 +90,7 @@ def _pure_check_bounded_overflow(
     is_satisfiable_fn: _IsSatFn,
 ) -> Issue | None:
     """Pure: check whether arithmetic on *left*/*right* can overflow within *bits*."""
-    from pysymex.core.types import SymbolicValue
+    from pysymex.core.types.scalars import SymbolicValue
 
     if is_havoc(left) or is_havoc(right):
         return None
@@ -109,7 +109,7 @@ def _pure_check_bounded_overflow(
         z3.Or(result_expr > max_val, result_expr < min_val),
     ]
     if is_satisfiable_fn(overflow_check):
-        from pysymex.core.solver import get_model
+        from pysymex.core.solver.engine import get_model
 
         return Issue(
             kind=IssueKind.OVERFLOW,
@@ -205,7 +205,7 @@ class InfiniteLoopDetector(Detector):
                 )
         if instruction.opname in ("POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"):
             if state.stack:
-                from pysymex.core.types import SymbolicValue
+                from pysymex.core.types.scalars import SymbolicValue
 
                 cond = state.peek()
                 if isinstance(cond, SymbolicValue):

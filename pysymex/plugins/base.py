@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -39,7 +39,7 @@ from typing import (
 if TYPE_CHECKING:
     from pysymex.analysis.detectors import Detector
     from pysymex.execution.dispatcher import OpcodeResult
-    from pysymex.execution.executor import SymbolicExecutor as SymbolicEngine
+    from pysymex.execution.executors import SymbolicExecutor as SymbolicEngine
 
 
 class PluginType(Enum):
@@ -468,3 +468,5 @@ __all__ = [
     "PluginRegistry",
     "PluginType",
 ]
+
+

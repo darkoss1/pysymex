@@ -1,4 +1,4 @@
-"""Example: integrating ExecutionTracer with SymbolicExecutor.
+﻿"""Example: integrating ExecutionTracer with SymbolicExecutor.
 
 This script demonstrates every major capability of the tracing module:
 
@@ -35,7 +35,7 @@ def divide(x: int, y: int) -> int:
 
 
 def binary_search(arr: list[int], target: int) -> int:
-    """Classic binary search — exercises branching and path explosion."""
+    """Classic binary search â€” exercises branching and path explosion."""
     lo, hi = 0, len(arr) - 1
     while lo <= hi:
         mid = (lo + hi) // 2
@@ -49,7 +49,7 @@ def binary_search(arr: list[int], target: int) -> int:
 
 
 def nested_branches(a: int, b: int, c: int) -> int:
-    """Deeply nested branches — good for observing fork/keyframe events."""
+    """Deeply nested branches â€” good for observing fork/keyframe events."""
     if a > 0:
         if b > a:
             if c > b:
@@ -82,7 +82,7 @@ def summarise_trace(path: Path) -> None:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as exc:
-                print(f"  [WARN] Line {line_no}: JSON parse error — {exc}", file=sys.stderr)
+                print(f"  [WARN] Line {line_no}: JSON parse error â€” {exc}", file=sys.stderr)
                 continue
             etype = event.get("event_type", "<unknown>")
             counts[etype] = counts.get(etype, 0) + 1
@@ -113,7 +113,7 @@ def summarise_trace(path: Path) -> None:
     if issues:
         print(f"\n  Issues detected: {len(issues)}")
         for iss in issues:
-            print(f"    [{iss.get('severity', '?')}] {iss.get('issue_kind', '?')} — "
+            print(f"    [{iss.get('severity', '?')}] {iss.get('issue_kind', '?')} â€” "
                   f"{iss.get('message', '')[:80]}")
             if iss.get("z3_model"):
                 print(f"      model: {iss['z3_model']}")
@@ -129,7 +129,7 @@ def example_manual(func=divide) -> None:
     print("\n=== Example 1: manual session ===")
 
     # Late import so the example can stand alone if pysymex is on PYTHONPATH
-    from pysymex.execution.executor import SymbolicExecutor, ExecutionConfig
+    from pysymex.execution.executors.facade import SymbolicExecutor, ExecutionConfig
     from pysymex.tracing import ExecutionTracer, TracerConfig, VerbosityLevel
 
     config = ExecutionConfig(
@@ -150,7 +150,7 @@ def example_manual(func=divide) -> None:
     )
     tracer = ExecutionTracer(tracer_cfg)
 
-    # Auto-register symbolic arg names so the Z3 registry can rename k!N → x / y
+    # Auto-register symbolic arg names so the Z3 registry can rename k!N â†’ x / y
     try:
         from pysymex.core.types import SymbolicValue
         sym_x = SymbolicValue.symbolic("x")
@@ -160,7 +160,7 @@ def example_manual(func=divide) -> None:
     except Exception as exc:
         print(f"  [NOTE] SymbolicValue pre-registration skipped: {exc}")
 
-    # Optional manual overrides — highest priority
+    # Optional manual overrides â€” highest priority
     tracer.registry.update({"k!0": "x", "k!1": "y"})
 
     sig = str(inspect.signature(func))
@@ -172,7 +172,7 @@ def example_manual(func=divide) -> None:
         initial_args={"x": "int", "y": "int"},
         source_file=source_file,
     )
-    print(f"  Writing trace → {trace_path}")
+    print(f"  Writing trace â†’ {trace_path}")
 
     # Install the tracer (registers hooks + wraps solver)
     tracer.install(executor)
@@ -196,7 +196,7 @@ def example_convenience(func=nested_branches) -> None:
     """Trace ``nested_branches`` with the convenience factory."""
     print("\n=== Example 2: attach_tracer factory ===")
 
-    from pysymex.execution.executor import SymbolicExecutor, ExecutionConfig
+    from pysymex.execution.executors.facade import SymbolicExecutor, ExecutionConfig
     from pysymex.tracing import TracerConfig, VerbosityLevel, attach_tracer
 
     config = ExecutionConfig(max_paths=100, max_depth=30, solver_timeout_ms=5000)
@@ -219,7 +219,7 @@ def example_convenience(func=nested_branches) -> None:
         source_file=source_file,
     )
 
-    print(f"  Writing trace → {trace_path}")
+    print(f"  Writing trace â†’ {trace_path}")
 
     # Use the tracer as a context manager for automatic end_session
     with tracer:
@@ -240,9 +240,9 @@ def example_plugin_adapter(func=divide) -> None:
     """Install tracing via the HookPlugin adapter (plugin-manager path)."""
     print("\n=== Example 3: TracingHookPlugin adapter ===")
 
-    from pysymex.execution.executor import SymbolicExecutor, ExecutionConfig
+    from pysymex.execution.executors.facade import SymbolicExecutor, ExecutionConfig
     from pysymex.tracing import ExecutionTracer, TracerConfig, VerbosityLevel
-    from pysymex.tracing._hook_adapter import TracingHookPlugin
+    from pysymex.tracing.hooks import TracingHookPlugin
 
     config = ExecutionConfig(max_paths=30, detect_division_by_zero=True)
     executor = SymbolicExecutor(config=config)
@@ -258,7 +258,7 @@ def example_plugin_adapter(func=divide) -> None:
         initial_args={"x": "int", "y": "int"},
         source_file=source_file,
     )
-    print(f"  Writing trace → {trace_path}")
+    print(f"  Writing trace â†’ {trace_path}")
 
     # Install via plugin adapter instead of direct tracer.install()
     plugin = TracingHookPlugin(tracer)
@@ -286,7 +286,7 @@ def example_validate(func=divide) -> None:
 
     from pydantic import TypeAdapter
 
-    from pysymex.execution.executor import SymbolicExecutor, ExecutionConfig
+    from pysymex.execution.executors.facade import SymbolicExecutor, ExecutionConfig
     from pysymex.tracing import ExecutionTracer, TracerConfig, TraceEvent
     from pysymex.tracing import VerbosityLevel
 
@@ -333,8 +333,8 @@ def example_validate(func=divide) -> None:
     assert isinstance(events[0], SystemContextEvent), (
         f"First event must be system_context, got {type(events[0]).__name__}"
     )
-    print(f"  ✓ First event is system_context: func={events[0].function_name!r}")
-    print(f"  ✓ All {len(events)} events parse cleanly.")
+    print(f"  âœ“ First event is system_context: func={events[0].function_name!r}")
+    print(f"  âœ“ All {len(events)} events parse cleanly.")
 
 
 # ---------------------------------------------------------------------------
@@ -352,3 +352,5 @@ if __name__ == "__main__":
     example_validate()
 
     print("\nAll examples completed successfully.")
+
+

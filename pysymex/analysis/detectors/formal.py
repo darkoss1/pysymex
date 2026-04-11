@@ -38,10 +38,10 @@ import pysymex.analysis.detectors.base as detectors_base
 from pysymex.analysis.detectors.base import (
     KeyErrorDetector,
 )
-from pysymex.core.solver import is_satisfiable
+from pysymex.core.solver.engine import is_satisfiable
 from pysymex.core.state import VMState
-from pysymex.core.types import SymbolicString, SymbolicValue
-from pysymex.core.types_containers import SymbolicDict, SymbolicList
+from pysymex.core.types.scalars import SymbolicString, SymbolicValue
+from pysymex.core.types.containers import SymbolicDict, SymbolicList
 
 _PURE_CHECK_DIVISION_BY_ZERO = getattr(detectors_base, "_pure_check_division_by_zero")
 _PURE_CHECK_INDEX_BOUNDS = getattr(detectors_base, "_pure_check_index_bounds")

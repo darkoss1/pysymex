@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -36,7 +36,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 
 class ExceptionHandlerType(Enum):
@@ -374,3 +374,4 @@ def should_skip_issue_in_handler(
             return True
 
     return False
+

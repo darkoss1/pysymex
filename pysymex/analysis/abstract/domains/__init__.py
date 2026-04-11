@@ -31,11 +31,11 @@ from dataclasses import dataclass, field
 
 import z3
 
-from pysymex.analysis.abstract.domains_base import (
+from pysymex.analysis.abstract.domains.base import (
     AbstractValue,
     Interval,
 )
-from pysymex.analysis.abstract.domains_lattices import (
+from pysymex.analysis.abstract.domains.lattices import (
     Null,
     NullValue,
     Parity,

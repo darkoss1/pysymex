@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -38,10 +38,10 @@ from typing import cast
 from pysymex.analysis.autotuner import AutoTuner
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.detectors.protocols import ScanReporter
-from pysymex.analysis.range_analysis import ValueRangeChecker
-from pysymex.cli.scan_reporter import ConsoleScanReporter
-from pysymex.core.solver import clear_solver_caches
-from pysymex.execution.executor import ExecutionConfig, SymbolicExecutor
+from pysymex.analysis.specialized.ranges import ValueRangeChecker
+from pysymex.cli.reporter import ConsoleScanReporter
+from pysymex.core.solver.engine import clear_solver_caches
+from pysymex.execution.executors import ExecutionConfig, SymbolicExecutor
 from pysymex.scanner.types import ScanResult, ScanResultBuilder, ScanSession
 from pysymex.watch import FileEventType, FileWatcher
 
@@ -77,7 +77,7 @@ def _hardware_acceleration_status(*, use_h_acceleration: bool, use_chtd: bool) -
         return "none (disabled by configuration)"
 
     try:
-        from pysymex.h_acceleration.dispatcher import get_dispatcher
+        from pysymex.accel.dispatcher import get_dispatcher
 
         dispatcher = get_dispatcher()
         backends = dispatcher.list_backends()
@@ -136,7 +136,7 @@ def analyze_source(
     max_depth: int = 50,
     timeout_seconds: float = 30.0,
 ) -> ScanResult:
-    """Analyse already-loaded source text — pure-ish core (no file I/O).
+    """Analyse already-loaded source text â€” pure-ish core (no file I/O).
 
     This is the functional core of ``analyze_file`` and ``scan_file``.
     It receives *source text* instead of touching the filesystem, so
@@ -284,7 +284,7 @@ def _get_default_scanner_globals() -> dict[str, object]:
     """
     import z3
 
-    from pysymex.core.types_containers import SymbolicObject
+    from pysymex.core.types.containers import SymbolicObject
 
     defaults = {}
 
@@ -322,7 +322,7 @@ def analyze_file(file_path: Path) -> ScanResult:
     """
     session = _session_var.get()
     print(f"\n{'=' * 70}")
-    print(f"🔍 Scanning: {file_path}")
+    print(f"ðŸ” Scanning: {file_path}")
     print("=" * 70)
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -339,19 +339,19 @@ def analyze_file(file_path: Path) -> ScanResult:
     result = analyze_source(content, str(file_path))
 
     if result.issues:
-        print(f"\n⚠️  Found {len(result.issues)} potential issues:\n")
+        print(f"\nâš ï¸  Found {len(result.issues)} potential issues:\n")
         for issue in result.issues:
-            print(f"   • [{issue['kind']}] {issue['message']} (Line {issue['line']})")
+            print(f"   â€¢ [{issue['kind']}] {issue['message']} (Line {issue['line']})")
             counterexample = issue.get("counterexample")
             if isinstance(counterexample, dict):
                 for var, val in counterexample.items():
-                    print(f"       └─ {var} = {val}")
+                    print(f"       â””â”€ {var} = {val}")
     elif result.error:
-        print(f"\n❌ {result.error}")
+        print(f"\nâŒ {result.error}")
     else:
-        print("\n✅ No issues found!")
+        print("\nâœ… No issues found!")
     print(
-        f"\n   📊 Stats: {result.code_objects} code objects | {result.paths_explored} paths explored"
+        f"\n   ðŸ“Š Stats: {result.code_objects} code objects | {result.paths_explored} paths explored"
     )
     if session:
         session.add_result(result)
@@ -616,19 +616,19 @@ def scan_file(
 
         if verbose and not reporter:
             status_msg = f"{len(result.issues)} issues found" if result.issues else "No issues"
-            print(f"{'⚠️' if result.issues else '✅'} {file_path}: {status_msg}")
+            print(f"{'âš ï¸' if result.issues else 'âœ…'} {file_path}: {status_msg}")
     except SyntaxError as e:
         result.error = f"Syntax Error: {e}"
         if reporter:
             reporter.on_error(file_path, result.error)
         elif verbose:
-            print(f"\n❌ {result.error}")
+            print(f"\nâŒ {result.error}")
     except Exception as e:
         result.error = f"Analysis Error: {e}"
         if reporter:
             reporter.on_error(file_path, result.error)
         elif verbose:
-            print(f"\n❌ {result.error}")
+            print(f"\nâŒ {result.error}")
     finally:
         if tracer is not None:
             try:
@@ -667,9 +667,10 @@ def scan_directory(
     files = sorted(dir_path.glob(pattern))
 
     if not reporter:
-        from pysymex.cli.scan_reporter import ConsoleScanReporter
+        from pysymex.cli.reporter import ConsoleScanReporter
 
         reporter = ConsoleScanReporter()
+    assert reporter is not None
 
     if files:
         reporter.on_status(f"Scanning {len(files)} Python files in {dir_path}...\n")
@@ -909,7 +910,7 @@ def _scan_parallel(
                             if reporter:
                                 reporter.on_error(file_path, str(exc))
                             else:
-                                print(f"❌ Error scanning {file_path.name}: {exc}")
+                                print(f"âŒ Error scanning {file_path.name}: {exc}")
 
                     completed += 1
                     if verbose:
@@ -949,10 +950,10 @@ def _scan_parallel(
         logger.warning("Parallel scanning failed (%s), falling back to sequential", exc)
         if reporter:
             reporter.on_status(
-                "⚠️  Parallel scanning unavailable, falling back to sequential mode (workers=1)."
+                "âš ï¸  Parallel scanning unavailable, falling back to sequential mode (workers=1)."
             )
         elif verbose:
-            print("⚠️  Parallel scanning unavailable, falling back to sequential mode (workers=1).")
+            print("âš ï¸  Parallel scanning unavailable, falling back to sequential mode (workers=1).")
         return _scan_sequential(
             files=files,
             verbose=verbose,
@@ -999,11 +1000,11 @@ def _print_parallel_progress(
 ) -> None:
     """Print a single progress line for parallel scanning."""
     pct = completed * 100 // total if total > 0 else 0
-    status = "✅"
+    status = "âœ…"
     if result is None or result.error:
-        status = "❌"
+        status = "âŒ"
     elif result.issues:
-        status = f"⚠️  {len(result.issues)}"
+        status = f"âš ï¸  {len(result.issues)}"
     print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
 
 
@@ -1018,7 +1019,7 @@ def _print_scan_summary(results: list[ScanResult], total_files: int) -> None:
     else:
         print()
     if len(results) < total_files:
-        print(f"  ⚠️  {total_files - len(results)} file(s) could not be scanned")
+        print(f"  âš ï¸  {total_files - len(results)} file(s) could not be scanned")
 
 
 def on_file_event(event: object, reporter: ScanReporter | None = None) -> None:
@@ -1208,3 +1209,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+

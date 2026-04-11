@@ -46,7 +46,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str) -> object:
+from typing import Any
+
+def __getattr__(name: str) -> Any:
     """Getattr."""
     target = _EXPORTS.get(name)
     if target is None:

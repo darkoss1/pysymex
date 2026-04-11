@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -32,11 +32,11 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "MarkdownFormatter": ("pysymex.reporting.formatters", "MarkdownFormatter"),
     "TextFormatter": ("pysymex.reporting.formatters", "TextFormatter"),
     "format_result": ("pysymex.reporting.formatters", "format_result"),
-    "AnalysisReport": ("pysymex.reporting.html_report", "AnalysisReport"),
-    "IssueReport": ("pysymex.reporting.html_report", "IssueReport"),
-    "create_report_from_result": ("pysymex.reporting.html_report", "create_report_from_result"),
-    "generate_html_report": ("pysymex.reporting.html_report", "generate_html_report"),
-    "save_html_report": ("pysymex.reporting.html_report", "save_html_report"),
+    "AnalysisReport": ("pysymex.reporting.html", "AnalysisReport"),
+    "IssueReport": ("pysymex.reporting.html", "IssueReport"),
+    "create_report_from_result": ("pysymex.reporting.html", "create_report_from_result"),
+    "generate_html_report": ("pysymex.reporting.html", "generate_html_report"),
+    "save_html_report": ("pysymex.reporting.html", "save_html_report"),
     "SECURITY_RULES": ("pysymex.reporting.sarif", "SECURITY_RULES"),
     "SARIFGenerator": ("pysymex.reporting.sarif", "SARIFGenerator"),
     "SARIFLog": ("pysymex.reporting.sarif", "SARIFLog"),
@@ -80,3 +80,4 @@ __all__: list[str] = [
     "generate_sarif",
     "save_html_report",
 ]
+

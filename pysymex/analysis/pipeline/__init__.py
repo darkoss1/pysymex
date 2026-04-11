@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -38,10 +38,10 @@ from collections import defaultdict
 from pathlib import Path
 from types import CodeType
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from ..exceptions.handler import ExceptionHandlerAnalyzer
-from ..none_check import NoneCheckAnalyzer
+from ..specialized.none import NoneCheckAnalyzer
 from .phases import (
     BugDetectionPhase,
     DeadCodePhase,
@@ -405,3 +405,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

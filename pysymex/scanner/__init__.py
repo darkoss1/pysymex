@@ -36,6 +36,25 @@ Usage as CLI::
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pysymex.scanner.core import (
+        analyze_file as analyze_file,
+        analyze_source as analyze_source,
+        get_code_objects_with_context as get_code_objects_with_context,
+        main as main,
+        on_file_event as on_file_event,
+        print_final_summary as print_final_summary,
+        scan_directory as scan_directory,
+        scan_file as scan_file,
+    )
+    from pysymex.scanner.types import (
+        ScanResult as ScanResult,
+        ScanResultBuilder as ScanResultBuilder,
+        ScanSession as ScanSession,
+    )
+    from pysymex.scanner.async_scanner import scan_directory_async as scan_directory_async
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "ScanResult": ("pysymex.scanner.types", "ScanResult"),

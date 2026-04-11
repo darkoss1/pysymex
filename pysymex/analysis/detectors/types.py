@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 
-from pysymex.analysis.flow_sensitive import FlowContext
+from pysymex.analysis.specialized.flow import FlowContext
 from pysymex.analysis.patterns import (
     FunctionPatternInfo,
     PatternKind,

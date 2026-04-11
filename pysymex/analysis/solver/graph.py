@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Z3 Engine — Graph and state infrastructure.
+Z3 Engine â€” Graph and state infrastructure.
 
 Provides call graph analysis, control flow graph building,
 and symbolic execution state management.
@@ -30,7 +30,7 @@ from collections import defaultdict
 from types import CodeType
 
 from pysymex.analysis.solver.types import BasicBlock, CallSite, SymValue
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -310,3 +310,4 @@ class SymbolicState:
         if len(self.stack) >= n:
             return self.stack[-n]
         return None
+

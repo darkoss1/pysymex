@@ -37,10 +37,10 @@ import z3
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
-from pysymex.core.havoc import is_havoc
-from pysymex.core.solver import get_model, is_satisfiable
-from pysymex.core.type_checks import is_overloaded_arithmetic, is_type_subscription
-from pysymex.core.types import (
+from pysymex.core.types.havoc import is_havoc
+from pysymex.core.solver.engine import get_model, is_satisfiable
+from pysymex.core.types.checks import is_overloaded_arithmetic, is_type_subscription
+from pysymex.core.types.scalars import (
     SymbolicDict,
     SymbolicList,
     SymbolicNone,

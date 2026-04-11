@@ -1,4 +1,4 @@
-# Roofline And Guardrails
+﻿# Roofline And Guardrails
 
 This document defines performance guardrails for CHTD hardware acceleration and backend routing.
 
@@ -26,7 +26,7 @@ Where:
 
 For GPU routing, we apply a VRAM-aware max treewidth estimate using:
 
-- `estimate_max_treewidth(device_memory_mb)` from [pysymex/h_acceleration/memory.py](../../pysymex/h_acceleration/memory.py)
+- `estimate_max_treewidth(device_memory_mb)` from [pysymex/accel/memory.py](../../pysymex/accel/memory.py)
 - if a constraint exceeds this bound, dispatcher routes to CPU/reference fallback
 
 This guardrail avoids out-of-memory behavior and keeps routing stable across devices.
@@ -52,3 +52,4 @@ The executor exposes CHTD phase telemetry under:
 - `guardrail_fallbacks` should stay near zero for expected benchmark workloads.
 - CHTD phase timers should be present and non-negative in benchmark output.
 - Median wall time regression threshold should remain under 15% for fixed benchmark matrix.
+

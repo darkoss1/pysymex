@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, TypedDict
 logger = logging.getLogger(__name__)
 
 from pysymex.analysis.detectors import Issue
-from pysymex.execution.executor import ExecutionConfig, SymbolicExecutor
+from pysymex.execution.executors import ExecutionConfig, SymbolicExecutor
 from pysymex.plugins.base import (
     HookPlugin,
     PluginMetadata,
@@ -46,7 +46,7 @@ from pysymex.scanner.types import ScanResult
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
-    from pysymex.execution.executor import SymbolicExecutor as SymbolicEngine
+    from pysymex.execution.executors import SymbolicExecutor as SymbolicEngine
 
     class RealtimeStats(TypedDict):
         paths: int
@@ -83,7 +83,7 @@ HTML_TEMPLATE = """
 <body>
     <div id="graph"></div>
     <div id="info">
-        <h1>🔮 PySyMex Live Map</h1>
+        <h1>ðŸ”® PySyMex Live Map</h1>
         <div id="details">Waiting for engine connection...</div>
 
         <div class="legend">
@@ -462,8 +462,8 @@ def run_realtime_scan(
 
     webbrowser.open("http://127.0.0.1:8080")
     print("\n" + "=" * 70)
-    print("🔮 PySyMex Live Directory Map Server Running!")
-    print("🔗 http://127.0.0.1:8080")
+    print("ðŸ”® PySyMex Live Directory Map Server Running!")
+    print("ðŸ”— http://127.0.0.1:8080")
     print("=" * 70 + "\n")
     print("Analyzing target directory paths and broadcasting dots data...")
     time.sleep(1.5)
@@ -598,3 +598,5 @@ def run_realtime_scan(
     server.shutdown()
 
     return results
+
+

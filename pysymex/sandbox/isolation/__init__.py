@@ -32,10 +32,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .._types import SecurityCapabilities
+from ..types import SecurityCapabilities
 
 if TYPE_CHECKING:
-    from .._types import SandboxConfig, SandboxResult
+    from ..types import SandboxConfig, SandboxResult
 
 
 class IsolationBackend(ABC):

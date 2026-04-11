@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -558,14 +558,14 @@ class LoopSummarizer:
         new_state = state.copy()
         for name, final_value in summary.variable_effects.items():
             if name in new_state.locals:
-                from pysymex.core.types import SymbolicValue
+                from pysymex.core.types.scalars import SymbolicValue
 
                 new_state.locals[name] = SymbolicValue.from_z3(final_value, name)
         for addr, effects in summary.memory_effects.items():
             if addr in new_state.memory:
                 mem_obj = new_state.memory[addr]
                 if isinstance(mem_obj, dict):
-                    from pysymex.core.types import SymbolicValue as SV
+                    from pysymex.core.types.scalars import SymbolicValue as SV
 
                     for attr, value in effects.items():
                         mem_obj[attr] = SV.from_z3(value, f"mem_{addr}_{attr}")
@@ -628,7 +628,7 @@ class LoopInvariantGenerator:
         state: VMState,
     ) -> bool:
         """Verify that an invariant holds."""
-        from pysymex.core.solver import is_satisfiable
+        from pysymex.core.solver.engine import is_satisfiable
 
         constraints = [*list(state.path_constraints), z3.Not(invariant)]
         return not is_satisfiable(constraints)
@@ -664,7 +664,7 @@ class LoopWidening:
         constraints from ``SymbolicValue.symbolic()`` are added to the path
         so widened values retain proper typing.
         """
-        from pysymex.core.types import SymbolicString, SymbolicValue, merge_taint
+        from pysymex.core.types.scalars import SymbolicString, SymbolicValue, merge_taint
 
         widened = new_state.copy()
 
@@ -766,3 +766,4 @@ __all__ = [
     "LoopSummarizer",
     "LoopWidening",
 ]
+

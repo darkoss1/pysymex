@@ -44,12 +44,12 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-from pysymex.core.types import AnySymbolic
+from pysymex.core.types.scalars import AnySymbolic
 
 if TYPE_CHECKING:
-    from pysymex.core.floats import SymbolicFloat
-    from pysymex.core.solver import SolverResult
-    from pysymex.core.types_containers import SymbolicIterator
+    from pysymex.core.types.floats import SymbolicFloat
+    from pysymex.core.solver.engine import SolverResult
+    from pysymex.core.types.containers import SymbolicIterator
 
     _SymbolicFloatType = SymbolicFloat
     _SymbolicIteratorType = SymbolicIterator
@@ -59,6 +59,7 @@ else:
 
 StackValue: TypeAlias = (
     AnySymbolic
+    | z3.ExprRef
     | int
     | bool
     | str
@@ -216,7 +217,7 @@ class StateViewProtocol(Protocol):
 
 def is_symbolic_value(obj: object) -> TypeGuard[SymbolicTypeProtocol]:
     """TypeGuard narrowing for any symbolic type (SymbolicValue from core.types)."""
-    from pysymex.core.types import SymbolicValue
+    from pysymex.core.types.scalars import SymbolicValue
 
     return isinstance(obj, SymbolicValue)
 
@@ -295,14 +296,14 @@ class SymbolicContainerProtocol(Protocol):
 
 def is_symbolic_string(obj: object) -> TypeGuard[SymbolicStringProtocol]:
     """TypeGuard narrowing for symbolic string types."""
-    from pysymex.core.types_containers import SymbolicString
+    from pysymex.core.types.containers import SymbolicString
 
     return isinstance(obj, SymbolicString)
 
 
 def is_symbolic_container(obj: object) -> TypeGuard[SymbolicContainerProtocol]:
     """TypeGuard narrowing for symbolic container types (list, dict, set, tuple)."""
-    from pysymex.core.types_containers import (
+    from pysymex.core.types.containers import (
         SymbolicDict,
         SymbolicList,
         SymbolicObject,

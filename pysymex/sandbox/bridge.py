@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -130,7 +130,7 @@ def _make_sandbox_config(
 ) -> SandboxConfig:
     from pysymex._constants import SANDBOX_IMPORT_ALLOWLIST
     from pysymex.sandbox import SandboxBackend, SandboxConfig
-    from pysymex.sandbox._types import ResourceLimits, SecurityCapabilities
+    from pysymex.sandbox.types import ResourceLimits, SecurityCapabilities
 
     raw = dict(overrides or {})
     aliases = {
@@ -338,7 +338,7 @@ def _run_json_worker(
     fail_on_not_ok: bool = True,
 ) -> tuple[dict[str, object], str, str]:
     from pysymex.sandbox import SandboxBackend, SandboxResult, SecureSandbox
-    from pysymex.sandbox._types import ExecutionStatus
+    from pysymex.sandbox.types import ExecutionStatus
 
     all_files: dict[str, bytes] = {}
     if extra_files:
@@ -452,7 +452,7 @@ def _run_raw_worker(
     input_data: bytes | None = None,
 ) -> bytes:
     from pysymex.sandbox import SandboxBackend, SecureSandbox
-    from pysymex.sandbox._types import ExecutionStatus
+    from pysymex.sandbox.types import ExecutionStatus
 
     all_files: dict[str, bytes] = {}
     if extra_files:
@@ -669,3 +669,4 @@ __all__ = [
     "execute_concrete",
     "extract_bytecode",
 ]
+

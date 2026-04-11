@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pysymex.analysis.abstract.interpreter_values import (
+from pysymex.analysis.abstract.interpreter.values import (
     AbstractValue,
     Congruence,
     Interval,

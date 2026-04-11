@@ -21,7 +21,9 @@ This module imports all opcode handlers to ensure they are registered
 with the global dispatcher when the module is loaded.
 """
 
-from pysymex.execution.opcodes import (
+import sys
+
+from pysymex.execution.opcodes.base import (
     arithmetic,
     async_ops,
     collections,
@@ -33,6 +35,13 @@ from pysymex.execution.opcodes import (
     stack,
 )
 
+if sys.version_info >= (3, 13):
+    from pysymex.execution.opcodes import py313 as py_version
+elif sys.version_info >= (3, 12):
+    from pysymex.execution.opcodes import py312 as py_version
+else:
+    from pysymex.execution.opcodes import py311 as py_version
+
 __all__ = [
     "arithmetic",
     "async_ops",
@@ -42,5 +51,6 @@ __all__ = [
     "exceptions",
     "functions",
     "locals",
+    "py_version",
     "stack",
 ]

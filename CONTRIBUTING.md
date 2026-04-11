@@ -52,6 +52,8 @@ pytest tests/ -v --cov=pysymex --cov-report=xml --cov-branch
 
 - Keep changes focused and easy to review.
 - Add or update tests for behavior changes.
+- Place unit tests in the shadow tree under `tests/unit/...` mirroring `pysymex/...` module paths.
+- Legacy tests are archived under `tests_backup/` and are excluded from default discovery.
 - Update docs when public behavior or workflows change.
 - Follow the existing formatting and typing standards.
 - Prefer small, descriptive commits and pull requests.

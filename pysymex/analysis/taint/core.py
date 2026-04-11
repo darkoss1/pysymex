@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -210,7 +210,7 @@ class TaintTracker:
     """Tracks taint propagation during symbolic execution.
 
     Note: taint tracking uses ``id(value)`` as the object key. In CPython,
-    ``id()`` values can be reused after garbage collection — a newly-allocated
+    ``id()`` values can be reused after garbage collection â€” a newly-allocated
     object may occupy the same memory address as a previously-sanitized object,
     causing it to be incorrectly considered tainted (or untainted). This is a
     known Python limitation for ``id()``-based identity tracking. For
@@ -318,7 +318,7 @@ class TaintTracker:
 
         **Propagation Algebra:**
         The result of an operation inherits the union of all taint labels
-        associated with its operands: `Labels(Result) = ∪ Labels(Operand_i)`.
+        associated with its operands: `Labels(Result) = âˆª Labels(Operand_i)`.
         This enables 'tracking through' transformations like string
         concatenation or numeric arithmetic.
 
@@ -396,7 +396,7 @@ class TaintAnalyzer:
         Returns:
             List of detected taint flows
         """
-        from pysymex.execution.executor import SymbolicExecutor
+        from pysymex.execution.executors import SymbolicExecutor
 
         self.tracker.clear()
         if tainted_params:
@@ -422,3 +422,5 @@ __all__ = [
     "TaintTracker",
     "TaintedValue",
 ]
+
+

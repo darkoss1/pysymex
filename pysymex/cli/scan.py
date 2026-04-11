@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -133,7 +133,7 @@ async def _handle_symbolic_scan_async(
     """Handle symbolic scan using async TaskGroup scanner."""
     import asyncio
 
-    from pysymex.cli.scan_reporter import ConsoleScanReporter
+    from pysymex.cli.reporter import ConsoleScanReporter
     from pysymex.scanner.async_scanner import scan_directory_async
 
     reporter = ConsoleScanReporter() if args.verbose else None
@@ -354,7 +354,7 @@ def _handle_symbolic_scan(args: _Namespace, path: Path, start_time: float) -> in
             path, recursive=args.recursive, max_paths=args.max_paths, timeout=args.timeout
         )
     else:
-        from pysymex.cli.scan_reporter import ConsoleScanReporter
+        from pysymex.cli.reporter import ConsoleScanReporter
         from pysymex.scanner.core import scan_directory, scan_file
 
         reporter = ConsoleScanReporter() if args.verbose else None
@@ -631,3 +631,4 @@ def _print_static_sarif(issues: Sequence[object]) -> None:
                 issue_dicts.append(result)
     sarif_log = generate_sarif(issues=issue_dicts)
     print(sarif_log.to_json())
+

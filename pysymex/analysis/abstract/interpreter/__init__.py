@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -40,22 +40,22 @@ import dis
 from collections import defaultdict
 
 from pysymex._compat import get_starts_line
-from pysymex.analysis.abstract.interpreter_state import (
+from pysymex.analysis.abstract.interpreter.state import (
     AbstractState,
     AbstractWarning,
     DivisionByZeroWarning,
     IndexOutOfBoundsWarning,
     NumericProduct,
 )
-from pysymex.analysis.abstract.interpreter_values import (
+from pysymex.analysis.abstract.interpreter.values import (
     AbstractValue,
     Congruence,
     Interval,
     Sign,
     SignValue,
 )
-from pysymex.analysis.flow_sensitive import BasicBlock, CFGBuilder, ControlFlowGraph
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.analysis.specialized.flow import BasicBlock, CFGBuilder, ControlFlowGraph
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 __all__ = [
     "AbstractAnalyzer",
@@ -132,7 +132,7 @@ class AbstractInterpreter:
     ) -> list[object]:
         """Fast-path analysis for trivial functions.
 
-        Does a single linear pass — no CFG, no worklist, no widening.
+        Does a single linear pass â€” no CFG, no worklist, no widening.
         Only detects obvious issues like division by literal zero.
         """
         warnings: list[object] = []
@@ -251,7 +251,7 @@ class AbstractInterpreter:
                         worklist.append(succ_block)
         if worklist and global_iterations >= max_global_iterations:
             logger.warning(
-                "Abstract interpreter hit iteration limit (%d) — analysis may be unsound",
+                "Abstract interpreter hit iteration limit (%d) â€” analysis may be unsound",
                 max_global_iterations,
             )
         return states
@@ -451,3 +451,4 @@ class AbstractAnalyzer:
                 func_name = const.co_name
                 results[func_name] = self.analyze_function(const, file_path)
         return results
+

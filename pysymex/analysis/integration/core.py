@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -31,25 +31,23 @@ from typing import (
     cast,
 )
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from ..abstract.interpreter import (
     AbstractAnalyzer,
     DivisionByZeroWarning,
 )
 from ..detectors.static import StaticAnalyzer
-from ..detectors.static_types import (
+from ..detectors.types import (
     Issue,
     IssueKind,
     Severity,
 )
-from ..flow_sensitive import (
-    CFGBuilder,
+from ..specialized.flow import (
     FlowSensitiveAnalyzer,
 )
-from ..function_models import (
-    FunctionSummarizer,
-)
+from pysymex.analysis.control.cfg import CFGBuilder
+from pysymex.models.builtins.functions import FunctionSummarizer
 from ..patterns import (
     FunctionPatternInfo,
     PatternAnalyzer,
@@ -429,18 +427,18 @@ class ReportGenerator:
             lines.append(f"  Issues: {len(result.issues)}")
             for issue in result.issues:
                 severity_symbol = {
-                    Severity.CRITICAL: "🔴",
-                    Severity.HIGH: "🟠",
-                    Severity.MEDIUM: "🟡",
-                    Severity.LOW: "🔵",
-                    Severity.INFO: "⚪",
+                    Severity.CRITICAL: "ðŸ”´",
+                    Severity.HIGH: "ðŸŸ ",
+                    Severity.MEDIUM: "ðŸŸ¡",
+                    Severity.LOW: "ðŸ”µ",
+                    Severity.INFO: "âšª",
                 }.get(issue.severity, "  ")
                 lines.append(
                     f"  {severity_symbol} Line {issue.line}: [{issue.kind.name}] {issue.message}"
                 )
             for violation in result.taint_violations:
                 lines.append(
-                    f"  🔒 Line {violation.sink_line}: "
+                    f"  ðŸ”’ Line {violation.sink_line}: "
                     f"[TAINT] {violation.sink.kind.name} - "
                     f"{violation.source.source}"
                 )
@@ -572,3 +570,4 @@ class ReportGenerator:
                     }
                 )
         return results
+

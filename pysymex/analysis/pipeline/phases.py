@@ -40,15 +40,15 @@ from typing import Protocol, cast, runtime_checkable
 
 from ..dead_code import DeadCodeAnalyzer, find_dataclass_class_names, is_class_body
 from ..detectors.static import StaticAnalyzer
-from ..detectors.static_types import Issue, IssueKind, Severity
-from ..exceptions.analysis import ExceptionAnalyzer
+from ..detectors.types import Issue, IssueKind, Severity
+from ..exceptions.analyzer import ExceptionAnalyzer
 from ..exceptions.handler import should_skip_issue_in_handler
-from ..false_positive_filter import IssueLike, filter_issue
-from ..flow_sensitive import FlowSensitiveAnalyzer
-from ..none_check import is_none_check_in_message
+from ..detectors.filter import IssueLike, filter_issue
+from ..specialized.flow import FlowSensitiveAnalyzer
+from ..specialized.none import is_none_check_in_message
 from ..patterns import FunctionPatternInfo, PatternAnalyzer, PatternKind
 from ..resources.analysis import ResourceAnalyzer
-from ..string_analysis import StringAnalyzer
+from ..specialized.strings import StringAnalyzer
 from ..taint.checker import TaintChecker
 from ..type_inference import TypeAnalyzer, TypeEnvironment
 from .types import (

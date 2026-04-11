@@ -1,5 +1,5 @@
 {
-  "include": ["pysymex"],
+  "include": ["pysymex", "tests"],
   "stubPath": "typings",
   "typeCheckingMode": "strict",
   "reportMissingTypeStubs": false,

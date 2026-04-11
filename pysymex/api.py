@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -41,13 +41,13 @@ from pysymex.analysis.pipeline import (
     ScannerConfig,
 )
 from pysymex.async_api import AnalyzeConfigKwargs
-from pysymex.execution.concurrency_executor import analyze_concurrent
-from pysymex.execution.executor import (
+from pysymex.execution.executors.concurrent import analyze_concurrent
+from pysymex.execution.executors import (
     ExecutionConfig,
     ExecutionResult,
     SymbolicExecutor,
 )
-from pysymex.execution.verified_executor import verify
+from pysymex.execution.executors.verified import verify
 from pysymex.reporting.formatters import format_result
 
 
@@ -570,3 +570,5 @@ def scan_pipeline(
         return pipeline.analyze_directory(str(path_obj), recursive=recursive)
     else:
         raise ValueError(f"Path not found: {path}")
+
+

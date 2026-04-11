@@ -458,7 +458,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         """Quick check if path is feasible using IncrementalSolver."""
         if not constraints:
             return True
-        from pysymex.core.solver import IncrementalSolver
+        from pysymex.core.solver.engine import IncrementalSolver
 
         solver = IncrementalSolver(timeout_ms=200)
 

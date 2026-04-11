@@ -29,7 +29,7 @@ from typing import cast
 
 import z3
 
-from pysymex.core.addressing import next_address
+from pysymex.core.memory.addressing import next_address
 
 logger = logging.getLogger(__name__)
 

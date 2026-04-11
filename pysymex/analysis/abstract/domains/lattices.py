@@ -30,7 +30,7 @@ from enum import Enum, auto
 import icontract
 import z3
 
-from pysymex.analysis.abstract.domains_base import AbstractValue
+from pysymex.analysis.abstract.domains.base import AbstractValue
 
 
 class SignValue(Enum):

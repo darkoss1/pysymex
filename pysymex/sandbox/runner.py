@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -29,11 +29,11 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ._errors import (
+from .errors import (
     SandboxError,
     SandboxSetupError,
 )
-from ._types import (
+from .types import (
     ResourceLimits,
     SandboxBackend,
     SandboxConfig,
@@ -158,7 +158,7 @@ def _validate_sandbox_filename(name: str) -> None:
 def _pre_screen_code(code: bytes) -> list[str]:
     """Perform a fast heuristic scan for known attack patterns.
 
-    This is **not** a security boundary — it's defence-in-depth.
+    This is **not** a security boundary â€” it's defence-in-depth.
     OS-level isolation is the real boundary.
 
     Returns:
@@ -432,7 +432,7 @@ class SandboxRunner:
 
 def _import_status() -> type:
     """Lazy import to avoid circular references."""
-    from ._types import ExecutionStatus
+    from .types import ExecutionStatus
 
     return ExecutionStatus
 
@@ -488,3 +488,4 @@ __all__ = [
     "SandboxRunner",
     "SecureSandbox",
 ]
+

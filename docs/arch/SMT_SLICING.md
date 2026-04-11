@@ -1,4 +1,4 @@
-# SMT Slicing and Incremental Execution Architecture
+﻿# SMT Slicing and Incremental Execution Architecture
 
 This document describes the current SMT-performance architecture in PySymEx, with explicit status labels for what is implemented today versus what remains future work.
 
@@ -105,7 +105,8 @@ For best speed with integrity:
 - `pysymex/core/solver.py`
 - `pysymex/core/copy_on_write.py`
 - `pysymex/execution/executor_core.py`
-- `pysymex/h_acceleration/chtd_solver.py`
-- `tests/test_incremental_solver.py`
-- `tests/test_constraint_chain.py`
-- `tests/test_chtd_smoke.py`
+- `pysymex/accel/chtd_solver.py`
+- `tests/unit/core/solver/test_engine.py`
+- `tests/unit/core/solver/test_constraints.py`
+- `tests/unit/accel/test_chtd.py`
+

@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -29,7 +29,7 @@ from pysymex import __version__
 
 if TYPE_CHECKING:
     from pysymex.analysis.detectors import Issue
-    from pysymex.execution.executor import ExecutionResult
+    from pysymex.execution.executors import ExecutionResult
 
 
 class Formatter(ABC):
@@ -59,15 +59,15 @@ class TextFormatter(Formatter):
     name = "text"
     extension = ".txt"
     SEVERITY_ICONS = {
-        "DIVISION_BY_ZERO": "🔴 CRITICAL",
-        "ASSERTION_ERROR": "🔴 CRITICAL",
-        "NULL_DEREFERENCE": "🔴 CRITICAL",
-        "INDEX_ERROR": "🟠 HIGH",
-        "KEY_ERROR": "🟠 HIGH",
-        "TYPE_ERROR": "🟡 MEDIUM",
-        "ATTRIBUTE_ERROR": "🟡 MEDIUM",
-        "UNREACHABLE": "🔵 INFO",
-        "INVALID_ARGUMENT": "🔵 INFO",
+        "DIVISION_BY_ZERO": "ðŸ”´ CRITICAL",
+        "ASSERTION_ERROR": "ðŸ”´ CRITICAL",
+        "NULL_DEREFERENCE": "ðŸ”´ CRITICAL",
+        "INDEX_ERROR": "ðŸŸ  HIGH",
+        "KEY_ERROR": "ðŸŸ  HIGH",
+        "TYPE_ERROR": "ðŸŸ¡ MEDIUM",
+        "ATTRIBUTE_ERROR": "ðŸŸ¡ MEDIUM",
+        "UNREACHABLE": "ðŸ”µ INFO",
+        "INVALID_ARGUMENT": "ðŸ”µ INFO",
     }
 
     def __init__(self, color: bool = True, verbose: bool = False) -> None:
@@ -91,22 +91,22 @@ class TextFormatter(Formatter):
         """
         lines: list[str] = []
         lines.append("")
-        lines.append("╔" + "═" * 58 + "╗")
-        lines.append("║" + "  🔮 PySyMex - Symbolic Execution Report".center(58) + "║")
-        lines.append("╚" + "═" * 58 + "╝")
+        lines.append("â•”" + "â•" * 58 + "â•—")
+        lines.append("â•‘" + "  ðŸ”® PySyMex - Symbolic Execution Report".center(58) + "â•‘")
+        lines.append("â•š" + "â•" * 58 + "â•")
         lines.append("")
-        lines.append(f"  📁 File:      {result.source_file}")
-        lines.append(f"  🎯 Function:  {result.function_name}()")
-        lines.append(f"  🕐 Time:      {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"  ðŸ“ File:      {result.source_file}")
+        lines.append(f"  ðŸŽ¯ Function:  {result.function_name}()")
+        lines.append(f"  ðŸ• Time:      {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
-        lines.append("┌─ Statistics " + "─" * 45 + "┐")
+        lines.append("â”Œâ”€ Statistics " + "â”€" * 45 + "â”")
         lines.append(
-            f"│  Paths explored:   {result.paths_explored:<8}  Paths completed: {result.paths_completed:<8} │"
+            f"â”‚  Paths explored:   {result.paths_explored:<8}  Paths completed: {result.paths_completed:<8} â”‚"
         )
         lines.append(
-            f"│  Instructions:     {len(result.coverage):<8}  Execution time:  {result.total_time_seconds:.3f}s       │"
+            f"â”‚  Instructions:     {len(result.coverage):<8}  Execution time:  {result.total_time_seconds:.3f}s       â”‚"
         )
-        lines.append("└" + "─" * 58 + "┘")
+        lines.append("â””" + "â”€" * 58 + "â”˜")
         lines.append("")
         if result.issues:
             issue_count = len(result.issues)
@@ -116,36 +116,36 @@ class TextFormatter(Formatter):
                 if i.kind.name in ("DIVISION_BY_ZERO", "ASSERTION_ERROR", "NULL_DEREFERENCE")
             )
             lines.append(
-                f"┌─ ⚠️  Issues Found: {issue_count} " + "─" * (38 - len(str(issue_count))) + "┐"
+                f"â”Œâ”€ âš ï¸  Issues Found: {issue_count} " + "â”€" * (38 - len(str(issue_count))) + "â”"
             )
             if critical_count:
                 lines.append(
-                    f"│  🔴 Critical: {critical_count}"
+                    f"â”‚  ðŸ”´ Critical: {critical_count}"
                     + " " * (43 - len(str(critical_count)))
-                    + "│"
+                    + "â”‚"
                 )
-            lines.append("└" + "─" * 58 + "┘")
+            lines.append("â””" + "â”€" * 58 + "â”˜")
             lines.append("")
             for i, issue in enumerate(result.issues, 1):
-                severity = self.SEVERITY_ICONS.get(issue.kind.name, "⚪ UNKNOWN")
+                severity = self.SEVERITY_ICONS.get(issue.kind.name, "âšª UNKNOWN")
                 lines.append(f"  [{i}] {severity}")
                 lines.append(f"      Type: {issue.kind.name}")
                 lines.append(f"      {issue.message}")
                 if issue.line_number:
-                    lines.append(f"      📍 Line {issue.line_number}")
+                    lines.append(f"      ðŸ“ Line {issue.line_number}")
                 counterexample = issue.get_counterexample()
                 if counterexample:
-                    lines.append("      ↳ Counterexample (values that trigger bug):")
+                    lines.append("      â†³ Counterexample (values that trigger bug):")
                     for name, value in sorted(counterexample.items()):
                         lines.append(f"          {name} = {value}")
                 lines.append("")
         else:
-            lines.append("┌" + "─" * 58 + "┐")
-            lines.append("│" + "  ✅ No issues found!".center(58) + "│")
-            lines.append("│" + "  Analysis complete.".center(58) + "│")
-            lines.append("└" + "─" * 58 + "┘")
+            lines.append("â”Œ" + "â”€" * 58 + "â”")
+            lines.append("â”‚" + "  âœ… No issues found!".center(58) + "â”‚")
+            lines.append("â”‚" + "  Analysis complete.".center(58) + "â”‚")
+            lines.append("â””" + "â”€" * 58 + "â”˜")
             lines.append("")
-        lines.append("─" * 60)
+        lines.append("â”€" * 60)
         lines.append(f"  PySyMex v{__version__} | https://github.com/darkoss1/pysymex")
         lines.append("")
         return "\n".join(lines)
@@ -241,7 +241,7 @@ class HTMLFormatter(Formatter):
         Returns:
             Complete HTML string.
         """
-        from pysymex.reporting.html_report import (
+        from pysymex.reporting.html import (
             create_report_from_result,
             generate_html_report,
         )
@@ -308,7 +308,7 @@ class MarkdownFormatter(Formatter):
                     lines.append("```")
                 lines.append("")
         else:
-            lines.append("## ✅ No Issues Found")
+            lines.append("## âœ… No Issues Found")
             lines.append("")
             lines.append("The symbolic execution did not detect any potential issues.")
         return "\n".join(lines)
@@ -365,3 +365,6 @@ def format_result(
     else:
         formatter = formatter_class()
     return formatter.format(result)
+
+
+

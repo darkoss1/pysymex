@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -29,7 +29,7 @@ Copy-on-write fork for O(1) state branching.
 - Structural constraint hashing
 
 Fluent VMState API (Functional Core / Imperative Shell).
-- Mutation helpers (push, pop, set_local, …) return ``self`` so callers
+- Mutation helpers (push, pop, set_local, â€¦) return ``self`` so callers
   can write ``state = state.push(val)`` (preferred) or plain ``state.push(val)``.
 - New convenience helpers: ``advance_pc()``, ``set_pc()``, ``_replace(**kw)``.
 - ``fork()`` / ``replace()`` remain the way to create independent states
@@ -45,12 +45,12 @@ from typing import TYPE_CHECKING, Protocol, TypeGuard, TypeVar
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
-    from pysymex.core.object_model import ObjectState
-    from pysymex.core.oop_support import EnhancedClassRegistry
+    from pysymex.core.objects import ObjectState
+    from pysymex.core.objects.oop import EnhancedClassRegistry
 
 import z3
 
-from pysymex.core.copy_on_write import BranchChain, BranchRecord, ConstraintChain, CowDict, CowSet
+from pysymex.core.memory.cow import BranchChain, BranchRecord, ConstraintChain, CowDict, CowSet
 
 _path_id_counter = itertools.count()
 
@@ -122,7 +122,7 @@ def _copy_summary_builder(builder: object) -> object:
     """Create an independent copy of a SummaryBuilder.
 
     When CallFrames are forked, the summary_builder must NOT be shared
-    by reference — mutations in one branch would contaminate the other.
+    by reference â€” mutations in one branch would contaminate the other.
     We use copy.copy (shallow) because the builder's mutable state
     (summary with its lists) needs independence but the Z3 expressions
     inside those lists are immutable and safe to share.
@@ -362,7 +362,7 @@ class VMState:
     def object_state(self) -> ObjectState:
         """Lazily materialize object-model state only when needed."""
         if self._object_state is None:
-            from pysymex.core.object_model import ObjectState
+            from pysymex.core.objects import ObjectState
 
             self._object_state = ObjectState()
         return self._object_state
@@ -665,3 +665,4 @@ def create_initial_state(
         path_constraints=constraints or [],
         pc=0,
     )
+

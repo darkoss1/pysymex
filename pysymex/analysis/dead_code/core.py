@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -38,10 +38,11 @@ from collections.abc import Sequence
 from types import CodeType
 from typing import cast
 
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from ..cross_function import CallGraph
-from ..flow_sensitive import CFGBuilder, LiveVariables
+from ..control.cfg import CFGBuilder
+from ..dataflow.core import LiveVariables
 from .types import DeadCode, DeadCodeKind
 
 
@@ -578,7 +579,7 @@ class UnusedParameterDetector:
         """Check if a function body is a stub (only ``...``, ``pass``, or ``raise NotImplementedError``).
 
         Protocol methods and abstract stubs inherently don't use their
-        parameters — flagging them as unused is a false positive.
+        parameters â€” flagging them as unused is a false positive.
         """
         for instr in _cached_get_instructions(code):
             if instr.opname in {
@@ -795,3 +796,4 @@ class RedundantConditionDetector:
                     stack.pop()
                 stack.append(None)
         return dead_code
+

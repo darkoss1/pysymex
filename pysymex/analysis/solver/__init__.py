@@ -1,4 +1,4 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+﻿# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -86,7 +86,7 @@ from pysymex.analysis.solver.types import (
     VerificationResult,
     z3,
 )
-from pysymex.core.instruction_cache import get_instructions as _cached_get_instructions
+from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +281,7 @@ class Z3Engine:
 
     def _verify_single_crash(self, crash: CrashCondition) -> VerificationResult:
         """Verify a single crash condition using IncrementalSolver with push/pop."""
-        from pysymex.core.solver import IncrementalSolver
+        from pysymex.core.solver.engine import IncrementalSolver
 
         start = time.time()
 
@@ -617,3 +617,4 @@ def _verify_file_worker(
 
 
 Z3Prover = Z3Engine
+

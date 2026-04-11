@@ -26,8 +26,10 @@ handler   Exception handler detection and skip-issue logic
 
 from __future__ import annotations
 
-from pysymex.analysis.exceptions.analysis import (
+from pysymex.analysis.exceptions.analyzer import (
     ExceptionAnalyzer,
+)
+from pysymex.analysis.exceptions.types import (
     ExceptionWarningKind,
 )
 from pysymex.analysis.exceptions.handler import (
