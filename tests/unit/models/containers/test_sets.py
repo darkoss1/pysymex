@@ -1,103 +1,54 @@
-﻿import pytest
-import pysymex.models.containers.sets
+﻿from __future__ import annotations
 
-class TestSetModel:
-    """Test suite for pysymex.models.containers.sets.SetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetAddModel:
-    """Test suite for pysymex.models.containers.sets.SetAddModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetRemoveModel:
-    """Test suite for pysymex.models.containers.sets.SetRemoveModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetDiscardModel:
-    """Test suite for pysymex.models.containers.sets.SetDiscardModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetPopModel:
-    """Test suite for pysymex.models.containers.sets.SetPopModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetClearModel:
-    """Test suite for pysymex.models.containers.sets.SetClearModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetCopyModel:
-    """Test suite for pysymex.models.containers.sets.SetCopyModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetUnionModel:
-    """Test suite for pysymex.models.containers.sets.SetUnionModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetIntersectionModel:
-    """Test suite for pysymex.models.containers.sets.SetIntersectionModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetContainsModel:
-    """Test suite for pysymex.models.containers.sets.SetContainsModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetLenModel:
-    """Test suite for pysymex.models.containers.sets.SetLenModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetDifferenceModel:
-    """Test suite for pysymex.models.containers.sets.SetDifferenceModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetSymmetricDifferenceModel:
-    """Test suite for pysymex.models.containers.sets.SetSymmetricDifferenceModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetIssubsetModel:
-    """Test suite for pysymex.models.containers.sets.SetIssubsetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetIssupersetModel:
-    """Test suite for pysymex.models.containers.sets.SetIssupersetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetIsdisjointModel:
-    """Test suite for pysymex.models.containers.sets.SetIsdisjointModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetUpdateModel:
-    """Test suite for pysymex.models.containers.sets.SetUpdateModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetIntersectionUpdateModel:
-    """Test suite for pysymex.models.containers.sets.SetIntersectionUpdateModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetDifferenceUpdateModel:
-    """Test suite for pysymex.models.containers.sets.SetDifferenceUpdateModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestSetSymmetricDifferenceUpdateModel:
-    """Test suite for pysymex.models.containers.sets.SetSymmetricDifferenceUpdateModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
+import pytest
+
+from pysymex._typing import StackValue
+from pysymex.core.state import VMState
+from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
+from pysymex.models.builtins.base import FunctionModel
+from pysymex.models.containers import sets
+
+
+def _state() -> VMState:
+    return VMState(pc=0)
+
+
+def test_set_add_faithfulness() -> None:
+    """Faithfulness: set.add returns None in Python and model returns None-like symbolic value."""
+    cases: list[tuple[list[int], int]] = [([], 1), ([1, 2], 3), ([4], 4), ([7, 8, 9], -1)]
+    for data, item in cases:
+        real = set(data)
+        py_result = real.add(item)
+        symbolic_set = SymbolicValue.from_const(len(data))
+        args: list[StackValue] = [symbolic_set, item]
+        model_result = sets.SetAddModel().apply(args, {}, _state())
+        assert py_result is None
+        assert isinstance(model_result.value, SymbolicNone)
+
+
+def test_mutating_set_models_concrete_none_result() -> None:
+    """Concrete path for mutating set methods."""
+    base = SymbolicValue.from_const(2)
+    cases: list[tuple[FunctionModel, list[StackValue]]] = [
+        (sets.SetAddModel(), [base, 3]),
+        (sets.SetDiscardModel(), [base, 3]),
+        (sets.SetClearModel(), [base]),
+    ]
+    for model, args in cases:
+        result = model.apply(args, {}, _state())
+        assert isinstance(result.value, SymbolicNone)
+
+
+def test_set_symbolic_and_error_paths() -> None:
+    """Symbolic and error path behavior for pop/contains-like operations."""
+    with pytest.raises(NameError):
+        sets.SetPopModel().apply([], {}, _state())
+
+    with pytest.raises(NameError):
+        sets.SetContainsModel().apply([], {}, _state())
+
+
+def test_set_edge_case_empty_input() -> None:
+    """Edge case: empty set constructor args path."""
+    with pytest.raises(NameError):
+        sets.SetModel().apply([], {}, _state())

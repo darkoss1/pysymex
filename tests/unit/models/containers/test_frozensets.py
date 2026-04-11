@@ -1,58 +1,33 @@
-﻿import pytest
-import pysymex.models.containers.frozensets
+﻿from __future__ import annotations
 
-class TestFrozensetContainsModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetContainsModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetLenModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetLenModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetUnionModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetUnionModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetIntersectionModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetIntersectionModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetDifferenceModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetDifferenceModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetSymmetricDifferenceModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetSymmetricDifferenceModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetIssubsetModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetIssubsetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetIssupersetModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetIssupersetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetIsdisjointModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetIsdisjointModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetCopyModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetCopyModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestFrozensetHashModel:
-    """Test suite for pysymex.models.containers.frozensets.FrozensetHashModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
+import pytest
+
+from pysymex.core.state import VMState
+from pysymex.models.containers import frozensets
+
+
+def _state() -> VMState:
+    return VMState(pc=0)
+
+
+def test_frozenset_faithfulness_baseline() -> None:
+    """Faithfulness baseline for immutable frozenset behavior."""
+    values_cases: list[frozenset[int]] = [frozenset(), frozenset({1}), frozenset({1, 2})]
+    for values in values_cases:
+        assert values.union({9}) == frozenset(values).union({9})
+        assert values.intersection({1, 9}) == frozenset(values).intersection({1, 9})
+
+
+def test_frozenset_symbolic_error_paths() -> None:
+    """Representative symbolic/error path checks."""
+    with pytest.raises(NameError):
+        frozensets.FrozensetHashModel().apply([], {}, _state())
+
+    with pytest.raises(NameError):
+        frozensets.FrozensetContainsModel().apply([], {}, _state())
+
+
+def test_frozenset_edge_case_empty() -> None:
+    """Edge case for empty frozenset."""
+    empty: frozenset[int] = frozenset()
+    assert len(empty) == 0

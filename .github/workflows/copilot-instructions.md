@@ -159,3 +159,38 @@ these specific bugs were found in accel/ and must have dedicated regression test
   real concurrent execution
 - never test opcode handlers in isolation without
   a real VM state object
+
+## MODEL FAITHFULNESS RULES
+- every model method must have a faithfulness test proving it matches
+  real Python behavior exactly — this is non-negotiable
+- faithfulness pattern:
+  real_result = real_python_operation(inputs)
+  model_result = ModelClass.method(inputs)
+  assert model_result.value == real_result
+- a model that diverges from real Python is a soundness bug not a style issue
+- never assume a model is correct — always verify against real Python
+- for symbolic inputs: assert the result is a Z3 expression of the correct sort
+- for error inputs: assert the error message matches Python's exact error message
+- hypothesis strategies must use real Python type strategies:
+  st.lists(st.integers()) not st.lists(st.nothing())
+  st.dictionaries(st.text(), st.integers()) not st.dictionaries(st.nothing(), st.nothing())
+- never use st.nothing(), st.binary(), or st.just(None) as a primary strategy
+  unless the model explicitly handles those types
+
+## STDLIB MODEL RULES
+- stdlib models must be tested against the real stdlib function behavior
+- import the real stdlib function and compare output directly:
+  import math
+  assert MathModel.sqrt(4.0).value == math.sqrt(4.0)
+- never assume stdlib behavior — always import and compare
+- for os/sys/platform models: use pytest-mock for external side effects only
+- for io models: use tmp_path fixture for real file operations — never mock file I/O
+- for regex models: test with real re module output as the expected value
+
+## CONCURRENCY MODEL RULES
+- asyncio models must be tested with real coroutines — never mock coroutines
+- threading models must be tested with real threads — never mock Thread
+- every concurrency model test must have @pytest.mark.timeout(30)
+- deadlock scenarios must be tested explicitly with a timeout assertion
+- never assert that a concurrent operation completes instantly —
+  always use proper synchronization primitives

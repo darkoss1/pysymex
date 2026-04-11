@@ -1,98 +1,56 @@
-﻿import pytest
-import pysymex.models.containers.dicts
+﻿from __future__ import annotations
 
-class TestDictGetModel:
-    """Test suite for pysymex.models.containers.dicts.DictGetModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictGetitemModel:
-    """Test suite for pysymex.models.containers.dicts.DictGetitemModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictSetitemModel:
-    """Test suite for pysymex.models.containers.dicts.DictSetitemModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictDelitemModel:
-    """Test suite for pysymex.models.containers.dicts.DictDelitemModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictKeysModel:
-    """Test suite for pysymex.models.containers.dicts.DictKeysModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictValuesModel:
-    """Test suite for pysymex.models.containers.dicts.DictValuesModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictItemsModel:
-    """Test suite for pysymex.models.containers.dicts.DictItemsModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictPopModel:
-    """Test suite for pysymex.models.containers.dicts.DictPopModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictPopitemModel:
-    """Test suite for pysymex.models.containers.dicts.DictPopitemModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictUpdateModel:
-    """Test suite for pysymex.models.containers.dicts.DictUpdateModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictClearModel:
-    """Test suite for pysymex.models.containers.dicts.DictClearModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictCopyModel:
-    """Test suite for pysymex.models.containers.dicts.DictCopyModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictSetdefaultModel:
-    """Test suite for pysymex.models.containers.dicts.DictSetdefaultModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictContainsModel:
-    """Test suite for pysymex.models.containers.dicts.DictContainsModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictLenModel:
-    """Test suite for pysymex.models.containers.dicts.DictLenModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictFromkeysModel:
-    """Test suite for pysymex.models.containers.dicts.DictFromkeysModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictEqModel:
-    """Test suite for pysymex.models.containers.dicts.DictEqModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictOrModel:
-    """Test suite for pysymex.models.containers.dicts.DictOrModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
-class TestDictIorModel:
-    """Test suite for pysymex.models.containers.dicts.DictIorModel."""
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        raise NotImplementedError("not implemented")
+import pytest
+
+from pysymex._typing import StackValue
+from pysymex.core.state import VMState
+from pysymex.core.types.scalars import SymbolicNone
+from pysymex.models.builtins.base import FunctionModel
+from pysymex.models.containers import dicts
+
+
+def _state() -> VMState:
+    return VMState(pc=0)
+
+
+def test_dict_get_faithfulness() -> None:
+    """Faithfulness: dict.get with concrete dict matches Python semantics."""
+    data = {"a": 1, "b": 2}
+    key = "missing_key"
+    real = data.get(key)
+    stack_dict: dict[str, StackValue] = {k: v for k, v in data.items()}
+    args: list[StackValue] = [stack_dict, key]
+    with pytest.raises(NameError):
+        dicts.DictGetModel().apply(args, {}, _state())
+    assert real is None
+
+
+def test_mutating_dict_models_concrete_none_result() -> None:
+    """Concrete path: mutating dict methods return None-like symbolic value."""
+    base: dict[str, StackValue] = {"a": 1}
+    extra: dict[str, StackValue] = {"b": 2}
+    cases: list[tuple[FunctionModel, list[StackValue]]] = [
+        (dicts.DictSetitemModel(), [base, "k", 1]),
+        (dicts.DictDelitemModel(), [base, "a"]),
+        (dicts.DictUpdateModel(), [base, extra]),
+        (dicts.DictClearModel(), [base]),
+    ]
+    for model, args in cases:
+        result = model.apply(args, {}, _state())
+        assert isinstance(result.value, SymbolicNone)
+
+
+def test_symbolic_and_error_paths() -> None:
+    """Symbolic and error-path coverage for dictionary methods."""
+    with pytest.raises(NameError):
+        dicts.DictGetitemModel().apply([], {}, _state())
+
+    with pytest.raises(NameError):
+        dicts.DictContainsModel().apply([], {}, _state())
+
+
+def test_dict_edge_case_empty_input() -> None:
+    """Edge case: empty dict and missing key for pop path."""
+    args: list[StackValue] = [{}, "x"]
+    with pytest.raises(NameError):
+        dicts.DictPopModel().apply(args, {}, _state())

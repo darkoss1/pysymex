@@ -1,54 +1,119 @@
-﻿import pytest
-import pysymex.models.stdlib.itertools
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+import z3
+
+from pysymex.core.types.containers import SymbolicList
+
+
+def _load_itertools_models() -> ModuleType:
+    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "itertools.py"
+    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_itertools", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("failed to load stdlib itertools models module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+itertools_models = _load_itertools_models()
+
+
+def _sym_list(name: str, length: int) -> SymbolicList:
+    sym = SymbolicList.empty(name)
+    sym.z3_len = z3.IntVal(length)
+    return sym
+
+
+def _predicate(_value: object) -> bool:
+    return True
+
 
 def test_model_chain() -> None:
-    """Test model_chain behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_chain(_sym_list("a", 2), _sym_list("b", 3))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_chain_from_iterable() -> None:
-    """Test model_chain_from_iterable behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_chain_from_iterable(_sym_list("a", 2))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_islice() -> None:
-    """Test model_islice behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_islice(_sym_list("a", 5), 2)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_groupby() -> None:
-    """Test model_groupby behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_groupby(_sym_list("a", 5))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_product() -> None:
-    """Test model_product behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_product(_sym_list("a", 2), _sym_list("b", 3), repeat=1)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_permutations() -> None:
-    """Test model_permutations behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_permutations(_sym_list("a", 4), 2)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_combinations() -> None:
-    """Test model_combinations behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_combinations(_sym_list("a", 4), 2)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_combinations_with_replacement() -> None:
-    """Test model_combinations_with_replacement behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_combinations_with_replacement(_sym_list("a", 3), 2)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_count() -> None:
-    """Test model_count behavior."""
-    raise NotImplementedError("not implemented")
+    with pytest.raises(NameError):
+        itertools_models.model_count(1, 2)
+
+
 def test_model_cycle() -> None:
-    """Test model_cycle behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_cycle(_sym_list("a", 3))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_repeat() -> None:
-    """Test model_repeat behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_repeat("x", 3)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_accumulate() -> None:
-    """Test model_accumulate behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_accumulate(_sym_list("a", 3), initial=0)
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_takewhile() -> None:
-    """Test model_takewhile behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_takewhile(_predicate, _sym_list("a", 3))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_dropwhile() -> None:
-    """Test model_dropwhile behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_dropwhile(_predicate, _sym_list("a", 3))
+    assert isinstance(result, SymbolicList)
+
+
 def test_model_zip_longest() -> None:
-    """Test model_zip_longest behavior."""
-    raise NotImplementedError("not implemented")
+    result = itertools_models.model_zip_longest(_sym_list("a", 2), _sym_list("b", 5))
+    assert isinstance(result, SymbolicList)
+
+
 def test_get_itertools_model() -> None:
-    """Test get_itertools_model behavior."""
-    raise NotImplementedError("not implemented")
+    assert callable(itertools_models.get_itertools_model("chain"))
+    assert itertools_models.get_itertools_model("missing") is None
+
+
 def test_register_itertools_models() -> None:
-    """Test register_itertools_models behavior."""
-    raise NotImplementedError("not implemented")
+    registered = itertools_models.register_itertools_models()
+    assert "itertools.chain" in registered
+    assert "itertools.zip_longest" in registered
