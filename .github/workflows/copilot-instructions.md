@@ -194,3 +194,35 @@ these specific bugs were found in accel/ and must have dedicated regression test
 - deadlock scenarios must be tested explicitly with a timeout assertion
 - never assert that a concurrent operation completes instantly —
   always use proper synchronization primitives
+
+## SANDBOX TEST RULES
+- sandbox tests are security-critical — every test must verify
+  a security property, not just that code executes
+- every isolation backend test must verify both:
+  1. permitted operations succeed
+  2. forbidden operations raise SandboxError
+- never test sandbox escape — only test sandbox enforcement
+- platform guards are mandatory:
+  linux.py   → @pytest.mark.skipif(not sys.platform == "linux", reason="Linux only")
+  windows.py → @pytest.mark.skipif(not sys.platform == "win32", reason="Windows only")
+  wasm.py    → @pytest.mark.skipif(not wasmtime_available, reason="wasmtime required")
+- every sandbox test must have @pytest.mark.timeout(30) —
+  sandboxes can hang indefinitely on failure
+- pytest-mock is permitted for OS-level APIs that require
+  root privileges (pivot_root, unshare, clone with CLONE_NEWNS)
+  but never for pure pysymex logic
+- SandboxError subclasses must each have their own test —
+  never test the base class only
+- SandboxConfig invalid configurations must raise immediately —
+  never silently accept invalid config
+
+## SECURITY PROPERTY CHECKLIST
+for every isolation backend, these must be explicitly tested:
+- [ ] network access blocked when configured
+- [ ] filesystem writes outside permitted paths blocked
+- [ ] subprocess spawning blocked when configured  
+- [ ] forbidden module imports raise SandboxError
+- [ ] permitted operations succeed correctly
+- [ ] graceful degradation when backend unavailable
+- [ ] SandboxResult fields correctly populated on success
+- [ ] SandboxResult fields correctly populated on failure

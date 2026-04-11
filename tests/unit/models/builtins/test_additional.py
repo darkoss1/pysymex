@@ -18,11 +18,8 @@ def _state() -> VMState:
 @pytest.mark.parametrize("values", [[], [1], [1, 2, 3], [0, 0, 0]])
 def test_len_model_parametrized_faithfulness(values: list[int]) -> None:
     args: list[StackValue] = [list(values)]
-    try:
-        result = core.LenModel().apply(args, {}, _state())
-        assert result.value == len(values)
-    except NameError as exc:
-        assert "next_address" in str(exc)
+    result = core.LenModel().apply(args, {}, _state())
+    assert result.value == len(values)
 
 
 @pytest.mark.parametrize("items", [[], [1], [0, 1, 2], [False, True]])
@@ -47,8 +44,5 @@ def test_extended_auto_discovery_apply() -> None:
             classes.append(obj)
     for cls in classes:
         model = cls()
-        try:
-            result = model.apply([], {}, _state())
-            assert isinstance(result, ModelResult)
-        except NameError as exc:
-            assert "next_address" in str(exc)
+        result = model.apply([], {}, _state())
+        assert isinstance(result, ModelResult)
