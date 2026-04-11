@@ -7,7 +7,8 @@
 - `# TODO`, `# FIXME`, `# implement later`, `# placeholder` — forbidden
 - `raise NotImplementedError` in finished code — only allowed in Phase 1 stubs
 - `Any` — forbidden. use the real type. if you do not know it, look it up in the source
-- `cast(Any, ...)` — forbidden
+- `cast()` — forbidden entirely. fix the type declaration instead
+- `cast(Any, ...)` and `cast("StringLiteral", x)` — doubly forbidden, pyright cannot verify these
 - `type: ignore` without an inline explanation comment — forbidden
 - untyped `def` — every function must have fully annotated parameters and return type
 - `-> None` on a function that returns something — forbidden
@@ -68,15 +69,6 @@
 - the goal is maximum work per token spent — silence between files is free, summaries are not
 - do not output anything between completing one file and starting the next
 
-## TEST RULES
-the current tests only cover concrete inputs. for every test class in tests/unit/core/memory/collections/, add the missing symbolic path tests:
-- one test per method using Z3 symbolic expressions as inputs
-- one test per method covering the error/out-of-bounds path
-- one test per method covering the boundary condition (empty list, index 0, index -1)
-these must be separate methods, not merged into the existing ones. follow all existing rules.
-- `assert __name__ != ""` — ghost pass, forbidden. equivalent to assert True
-- any assertion that is always true by construction is forbidden
-
 ## GHOST PASS DETECTION — FORBIDDEN ASSERTION PATTERNS
 any assertion that is always true by construction is a ghost pass and forbidden:
 - `assert True`
@@ -114,3 +106,56 @@ these specific bugs were found in accel/ and must have dedicated regression test
 - `@pytest.mark.skip` — forbidden unless hardware is physically absent
 - `@pytest.mark.xfail(strict=True, reason="known bug: <description>")` — use for known bugs
 - never delete a failing test — mark it xfail with a precise description instead
+
+## VERSION-SPECIFIC TEST RULES
+- opcodes/py311/, opcodes/py312/, opcodes/py313/ must each
+  have completely separate test files
+- never merge version-specific opcode behavior into a shared test
+- every version-specific test must assert the exact divergent
+  behavior for that Python version
+- if an opcode behaves identically across versions, test it
+  in base/ only — do not duplicate
+
+## VM AND BYTECODE TEST RULES
+- never mock the VM loop — always use real bytecode
+- real bytecode must be compiled via:
+  `code = compile("x = 1 + 2", "<test>", "exec")`
+- never hand-craft instruction sequences — always compile
+  from real Python source
+- symbolic inputs to the VM must be real Z3 expressions
+  injected into the initial VM state — never mocked
+
+## EXECUTOR TEST RULES
+- async executors must use real asyncio event loops
+- never mock asyncio.get_event_loop() or asyncio.run()
+- concurrent executors must use real threading —
+  never mock Thread or Lock
+- verified executor must assert soundness: same input
+  must produce same output across multiple runs
+- facade must be tested through its public API only —
+  never access internal executor state directly
+
+## ASYNC TEST RULES
+- every async test must use @pytest.mark.asyncio
+- every async test must have @pytest.mark.timeout(30)
+- never use asyncio.run() inside a test — use pytest-asyncio
+- always await coroutines — never fire and forget in tests
+- event loop must never be shared between tests —
+  use function-scoped event loop fixture
+
+## TERMINATION TEST RULES
+- termination.py must be tested with:
+  1. a path that terminates in finite steps
+  2. a path that hits the step limit
+  3. a symbolic path where termination is undecidable
+- never assert that a non-terminating path completes —
+  assert that it hits the termination boundary correctly
+
+## FORBIDDEN EXECUTION PATTERNS
+- never mock the Python VM or bytecode interpreter
+- never mock Z3 solver calls in execution tests
+- never use time.sleep() to simulate async behavior
+- never use threading.Event() as a substitute for
+  real concurrent execution
+- never test opcode handlers in isolation without
+  a real VM state object

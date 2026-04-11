@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
 from concurrent.futures import Future
-from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import Iterator, Protocol, cast
 from unittest.mock import patch
+
+import numpy as np
+import numpy.typing as npt
+import z3
 
 from pysymex.accel.async_exec import (
     AsyncGPUExecutor,
@@ -15,6 +16,9 @@ from pysymex.accel.async_exec import (
     get_async_executor,
     reset_async_executor,
 )
+from pysymex.accel.bytecode import CompiledConstraint
+from pysymex.accel.bytecode import compile_constraint
+from pysymex.accel.dispatcher import evaluate_bag
 
 
 class _DummyStream:
@@ -25,37 +29,30 @@ class _DummyStream:
         self.sync_calls += 1
 
 
-class _DummyArray:
-    def __init__(self, values: list[int]) -> None:
-        self._values = values
-
-    def view(self, _dtype: object) -> _DummyArray:
-        return self
-
-    def __getitem__(self, index: int) -> int:
-        return self._values[index]
-
-    def __iter__(self) -> Iterator[int]:
-        return iter(self._values)
+def _compiled_constraint(name: str) -> CompiledConstraint:
+    var = z3.Bool(name)
+    return compile_constraint(var, [name])
 
 
-class _SupportsSourceHash(Protocol):
-    source_hash: int
+def _bitmap_with_first_byte(v: int) -> npt.NDArray[np.uint8]:
+    base = evaluate_bag(compile_constraint(z3.BoolVal(True), ["k0", "k1", "k2", "k3", "k4"])).bitmap.copy()
+    base[0] = v
+    return base
 
 
-@dataclass
-class _Constraint:
-    source_hash: int
-
-
-def _result_array(v: int) -> _DummyArray:
-    return _DummyArray([v])
+def _bitmap_four_bytes(a: int, b: int, c: int, d: int) -> npt.NDArray[np.uint8]:
+    base = evaluate_bag(compile_constraint(z3.BoolVal(True), ["u0", "u1", "u2", "u3", "u4"])).bitmap.copy()
+    base[0] = a
+    base[1] = b
+    base[2] = c
+    base[3] = d
+    return base
 
 
 class TestAsyncHandle:
     def test_wait_and_done(self) -> None:
-        fut: Future[_DummyArray] = Future()
-        fut.set_result(_result_array(7))
+        fut: Future[npt.NDArray[np.uint8]] = Future()
+        fut.set_result(_bitmap_with_first_byte(7))
         handle = AsyncHandle(future=fut, stream_id=2, constraint_hash=11)
 
         result = handle.wait()
@@ -63,7 +60,7 @@ class TestAsyncHandle:
         assert int(result[0]) == 7
 
     def test_cancel(self) -> None:
-        fut: Future[_DummyArray] = Future()
+        fut: Future[npt.NDArray[np.uint8]] = Future()
         handle = AsyncHandle(future=fut, stream_id=0, constraint_hash=3)
 
         assert handle.cancel() is True
@@ -77,7 +74,8 @@ class TestStreamPool:
         s1 = _DummyStream()
 
         def _init_once() -> None:
-            object.__setattr__(pool, "_streams", cast("list[object]", [s0, s1]))
+            streams: list[object] = [s0, s1]
+            object.__setattr__(pool, "_streams", streams)
             object.__setattr__(pool, "_initialized", True)
 
         with patch.object(pool, "_ensure_initialized", _init_once):
@@ -101,7 +99,8 @@ class TestStreamPool:
         s0 = _DummyStream()
         s1 = _DummyStream()
 
-        object.__setattr__(pool, "_streams", cast("list[object]", [s0, s1]))
+        streams: list[object] = [s0, s1]
+        object.__setattr__(pool, "_streams", streams)
         object.__setattr__(pool, "_initialized", True)
 
         pool.synchronize_all()
@@ -123,11 +122,11 @@ class TestAsyncGPUExecutor:
             return _DummyStream(), 1
 
         class _DummyOutput:
-            def get(self) -> _DummyArray:
-                return _DummyArray([1, 0, 1, 0])
+            def get(self) -> npt.NDArray[np.uint8]:
+                return _bitmap_four_bytes(1, 0, 1, 0)
 
         def fake_evaluate_bag_async(
-            _constraint: _SupportsSourceHash, _stream: object
+            _constraint: CompiledConstraint, _stream: object
         ) -> tuple[_DummyOutput, _DummyStream]:
             return _DummyOutput(), out_stream
 
@@ -136,12 +135,12 @@ class TestAsyncGPUExecutor:
 
         with patch.object(StreamPool, "get_stream", fake_get_stream_method):
             with patch("pysymex.accel.backends.gpu.evaluate_bag_async", fake_evaluate_bag_async):
-                constraint = _Constraint(source_hash=123)
-                handle = executor.submit(cast("object", constraint))
+                constraint = _compiled_constraint("c_submit")
+                handle = executor.submit(constraint)
                 result = handle.wait(timeout=2.0)
 
         assert handle.stream_id == 1
-        assert handle.constraint_hash == 123
+        assert handle.constraint_hash == constraint.source_hash
         assert list(result) == [1, 0, 1, 0]
         assert out_stream.sync_calls == 1
 
@@ -150,30 +149,31 @@ class TestAsyncGPUExecutor:
     def test_submit_batch(self) -> None:
         executor = AsyncGPUExecutor(num_streams=1, max_workers=1)
 
-        def fake_submit(constraint: _SupportsSourceHash) -> AsyncHandle:
-            fut: Future[_DummyArray] = Future()
-            fut.set_result(_result_array(int(constraint.source_hash)))
+        def fake_submit(constraint: CompiledConstraint) -> AsyncHandle:
+            fut: Future[npt.NDArray[np.uint8]] = Future()
+            value = 4 if constraint.source_hash == constraints[0].source_hash else 5
+            fut.set_result(_bitmap_with_first_byte(value))
             return AsyncHandle(
                 future=fut,
                 stream_id=0,
                 constraint_hash=int(constraint.source_hash),
             )
 
-        constraints = [_Constraint(source_hash=4), _Constraint(source_hash=5)]
+        constraints = [_compiled_constraint("batch_a"), _compiled_constraint("batch_b")]
 
         with patch.object(executor, "submit", fake_submit):
-            handles = executor.submit_batch(cast("list[object]", constraints))
-        assert [h.constraint_hash for h in handles] == [4, 5]
+            handles = executor.submit_batch(constraints)
+        assert [h.constraint_hash for h in handles] == [c.source_hash for c in constraints]
 
         executor.shutdown()
 
     def test_wait_all(self) -> None:
         executor = AsyncGPUExecutor(num_streams=1, max_workers=1)
 
-        f0: Future[_DummyArray] = Future()
-        f1: Future[_DummyArray] = Future()
-        f0.set_result(_result_array(9))
-        f1.set_result(_result_array(8))
+        f0: Future[npt.NDArray[np.uint8]] = Future()
+        f1: Future[npt.NDArray[np.uint8]] = Future()
+        f0.set_result(_bitmap_with_first_byte(9))
+        f1.set_result(_bitmap_with_first_byte(8))
         handles = [
             AsyncHandle(future=f0, stream_id=0, constraint_hash=9),
             AsyncHandle(future=f1, stream_id=0, constraint_hash=8),
@@ -203,24 +203,29 @@ class TestAsyncGPUExecutor:
 class TestPipelinedEvaluator:
     def test_evaluate_sequence_preserves_order(self) -> None:
         class _FakeExecutor:
+            instances: list["_FakeExecutor"] = []
+
             def __init__(self, num_streams: int = 4) -> None:
                 self.num_streams = num_streams
+                self.values: dict[int, int] = {}
+                _FakeExecutor.instances.append(self)
 
-            def submit(self, constraint: _SupportsSourceHash) -> AsyncHandle:
-                fut: Future[_DummyArray] = Future()
-                fut.set_result(_result_array(int(constraint.source_hash)))
+            def submit(self, constraint: CompiledConstraint) -> AsyncHandle:
+                fut: Future[npt.NDArray[np.uint8]] = Future()
+                value = self.values.get(constraint.source_hash, 0)
+                fut.set_result(_bitmap_with_first_byte(value))
                 return AsyncHandle(
                     future=fut,
                     stream_id=0,
                     constraint_hash=int(constraint.source_hash),
                 )
 
-            def submit_batch(self, constraints: list[_SupportsSourceHash]) -> list[AsyncHandle]:
+            def submit_batch(self, constraints: list[CompiledConstraint]) -> list[AsyncHandle]:
                 return [self.submit(c) for c in constraints]
 
             def wait_all(
                 self, handles: list[AsyncHandle], timeout: float | None = None
-            ) -> list[_DummyArray]:
+            ) -> list[npt.NDArray[np.uint8]]:
                 return [h.wait(timeout) for h in handles]
 
             def shutdown(self, wait: bool = True) -> None:
@@ -229,32 +234,47 @@ class TestPipelinedEvaluator:
         with patch("pysymex.accel.async_exec.AsyncGPUExecutor", _FakeExecutor):
             evaluator = PipelinedEvaluator(num_streams=2, prefetch=1)
 
-            constraints = [_Constraint(source_hash=1), _Constraint(source_hash=2), _Constraint(source_hash=3)]
-            outputs = list(evaluator.evaluate_sequence(iter(cast("list[object]", constraints))))
+            constraints = [
+                _compiled_constraint("seq_a"),
+                _compiled_constraint("seq_b"),
+                _compiled_constraint("seq_c"),
+            ]
+            fake_exec = _FakeExecutor.instances[0]
+            fake_exec.values = {
+                constraints[0].source_hash: 1,
+                constraints[1].source_hash: 2,
+                constraints[2].source_hash: 3,
+            }
+            outputs = list(evaluator.evaluate_sequence(iter(constraints)))
 
         assert [int(x[0]) for x in outputs] == [1, 2, 3]
         evaluator.shutdown()
 
     def test_evaluate_batch(self) -> None:
         class _FakeExecutor:
+            instances: list["_FakeExecutor"] = []
+
             def __init__(self, num_streams: int = 4) -> None:
                 self.num_streams = num_streams
+                self.values: dict[int, int] = {}
+                _FakeExecutor.instances.append(self)
 
-            def submit(self, constraint: _SupportsSourceHash) -> AsyncHandle:
-                fut: Future[_DummyArray] = Future()
-                fut.set_result(_result_array(int(constraint.source_hash)))
+            def submit(self, constraint: CompiledConstraint) -> AsyncHandle:
+                fut: Future[npt.NDArray[np.uint8]] = Future()
+                value = self.values.get(constraint.source_hash, 0)
+                fut.set_result(_bitmap_with_first_byte(value))
                 return AsyncHandle(
                     future=fut,
                     stream_id=0,
                     constraint_hash=int(constraint.source_hash),
                 )
 
-            def submit_batch(self, constraints: list[_SupportsSourceHash]) -> list[AsyncHandle]:
+            def submit_batch(self, constraints: list[CompiledConstraint]) -> list[AsyncHandle]:
                 return [self.submit(c) for c in constraints]
 
             def wait_all(
                 self, handles: list[AsyncHandle], timeout: float | None = None
-            ) -> list[_DummyArray]:
+            ) -> list[npt.NDArray[np.uint8]]:
                 return [h.wait(timeout) for h in handles]
 
             def shutdown(self, wait: bool = True) -> None:
@@ -262,9 +282,14 @@ class TestPipelinedEvaluator:
 
         with patch("pysymex.accel.async_exec.AsyncGPUExecutor", _FakeExecutor):
             evaluator = PipelinedEvaluator(num_streams=3, prefetch=2)
-            constraints = [_Constraint(source_hash=10), _Constraint(source_hash=11)]
+            constraints = [_compiled_constraint("batch_x"), _compiled_constraint("batch_y")]
+            fake_exec = _FakeExecutor.instances[0]
+            fake_exec.values = {
+                constraints[0].source_hash: 10,
+                constraints[1].source_hash: 11,
+            }
 
-            outputs = evaluator.evaluate_batch(cast("list[object]", constraints))
+            outputs = evaluator.evaluate_batch(constraints)
         assert [int(x[0]) for x in outputs] == [10, 11]
         evaluator.shutdown()
 
@@ -293,17 +318,18 @@ def test_get_async_executor_singleton_behavior() -> None:
 
 
 def test_evaluate_async_delegates_to_global_executor() -> None:
-    fut: Future[_DummyArray] = Future()
-    fut.set_result(_result_array(6))
-    expected = AsyncHandle(future=fut, stream_id=3, constraint_hash=66)
+    fut: Future[npt.NDArray[np.uint8]] = Future()
+    fut.set_result(_bitmap_with_first_byte(6))
+    constraint = _compiled_constraint("global_async")
+    expected = AsyncHandle(future=fut, stream_id=3, constraint_hash=constraint.source_hash)
 
     class _FakeGlobal:
-        def submit(self, constraint: _SupportsSourceHash) -> AsyncHandle:
-            assert int(constraint.source_hash) == 66
+        def submit(self, constraint: CompiledConstraint) -> AsyncHandle:
+            assert constraint.source_hash == expected.constraint_hash
             return expected
 
     with patch("pysymex.accel.async_exec.get_async_executor", lambda: _FakeGlobal()):
-        handle = evaluate_async(cast("object", _Constraint(source_hash=66)))
+        handle = evaluate_async(constraint)
 
     assert handle is expected
     assert int(handle.wait()[0]) == 6

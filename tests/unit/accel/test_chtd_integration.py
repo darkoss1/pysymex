@@ -1,11 +1,11 @@
 ﻿from __future__ import annotations
 
-from typing import cast
 from unittest.mock import patch
 
 import z3
 
 from pysymex.accel.backends import BackendInfo, BackendType
+from pysymex.accel.bytecode import CompiledConstraint
 from pysymex.accel.bytecode import compile_constraint
 from pysymex.accel.dispatcher import evaluate_bag
 from pysymex.accel.chtd_integration import (
@@ -81,7 +81,7 @@ class TestGPUBagEvaluator:
             def get_backend_info(self) -> BackendInfo:
                 return info
 
-            def evaluate_bag(self, compiled: object) -> object:
+            def evaluate_bag(self, compiled: CompiledConstraint) -> object:
                 return evaluate_bag(compiled)
 
         with patch("pysymex.accel.chtd_integration._init_gpu", return_value=True):
@@ -90,9 +90,9 @@ class TestGPUBagEvaluator:
                     evaluator = GPUBagEvaluator(gpu_threshold=0, warmup=False)
 
         backend = evaluator.get_backend_info()
-        assert cast("bool", backend["available"]) is True
+        assert backend["available"] is True
         assert backend["name"] == "CPU"
-        assert int(cast("int", backend["max_treewidth"])) == 12
+        assert backend["max_treewidth"] == 12
 
 
 def test_get_bag_evaluator_singleton_and_reset() -> None:

@@ -1,24 +1,11 @@
 ﻿from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import cast
-
 import z3
 
 from pysymex.accel.chtd_solver import BagSolution, GPUBagSolver, create_gpu_bag_solver
 from pysymex.accel.dispatcher import evaluate_bag
 from pysymex.accel.bytecode import compile_constraint
-from pysymex.core.graph.treewidth import BranchInfo
-
-
-@dataclass
-class _DummyTD:
-    bags: dict[int, frozenset[int]]
-    parent: dict[int, int | None]
-    adhesion: dict[tuple[int, int], frozenset[int]]
-
-    def get_parent(self, bag_id: int) -> int | None:
-        return self.parent.get(bag_id)
+from pysymex.core.graph.treewidth import BranchInfo, TreeDecomposition
 
 
 class TestBagSolution:
@@ -94,10 +81,12 @@ class TestGPUBagSolver:
         solver = GPUBagSolver(use_gpu=False, warmup=False)
         x = z3.Bool("x")
 
-        td = _DummyTD(
+        td = TreeDecomposition(
             bags={0: frozenset({1}), 1: frozenset({2})},
-            parent={0: None, 1: 0},
+            tree_edges=[(1, 0)],
             adhesion={(1, 0): frozenset({1})},
+            width=1,
+            parent_map={1: 0},
         )
 
         sat_info = {
@@ -119,8 +108,8 @@ class TestGPUBagSolver:
             ),
         }
 
-        assert solver.propagate_all(cast("TreeDecomposition", td), sat_info) is True
-        assert solver.propagate_all(cast("TreeDecomposition", td), unsat_info) is False
+        assert solver.propagate_all(td, sat_info) is True
+        assert solver.propagate_all(td, unsat_info) is False
 
 
 def test_create_gpu_bag_solver_factory() -> None:

@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import sys
-from typing import cast
 from unittest.mock import patch
 
 import z3
@@ -18,6 +17,34 @@ from pysymex.accel.benchmark import (
     run_benchmarks,
     run_single_benchmark,
 )
+
+
+class _Z3Adapter:
+    def Bool(self, name: str) -> z3.BoolRef:
+        return z3.Bool(name)
+
+    def Not(self, *args: object, **kwargs: object) -> z3.BoolRef:
+        assert len(args) >= 1
+        expr = args[0]
+        assert isinstance(expr, (z3.BoolRef, z3.ExprRef, bool))
+        assert kwargs == {}
+        return z3.Not(expr)
+
+    def Or(self, *args: object, **kwargs: object) -> z3.BoolRef:
+        validated: list[z3.BoolRef | z3.ExprRef | bool] = []
+        for arg in args:
+            assert isinstance(arg, (z3.BoolRef, z3.ExprRef, bool))
+            validated.append(arg)
+        assert kwargs == {}
+        return z3.Or(*validated)
+
+    def And(self, *args: object, **kwargs: object) -> z3.BoolRef:
+        validated: list[z3.BoolRef | z3.ExprRef | bool] = []
+        for arg in args:
+            assert isinstance(arg, (z3.BoolRef, z3.ExprRef, bool))
+            validated.append(arg)
+        assert kwargs == {}
+        return z3.And(*validated)
 
 
 def test_benchmark_config_initialization() -> None:
@@ -79,7 +106,7 @@ def test_get_system_info_has_expected_shape() -> None:
 
 
 def test_create_random_3sat_is_deterministic_for_seed() -> None:
-    z3_module = cast("Z3ModuleLike", z3)
+    z3_module: Z3ModuleLike = _Z3Adapter()
     expr_a, names_a = create_random_3sat(z3_module, num_vars=4, clause_ratio=2.0, seed=123)
     expr_b, names_b = create_random_3sat(z3_module, num_vars=4, clause_ratio=2.0, seed=123)
 
@@ -102,7 +129,7 @@ def test_run_single_benchmark_reference_success() -> None:
         "Reference",
         treewidth=3,
         config=config,
-        z3_module=cast("Z3ModuleLike", z3),
+        z3_module=_Z3Adapter(),
     )
 
     assert result is not None
@@ -128,7 +155,7 @@ def test_run_single_benchmark_skips_when_treewidth_too_large() -> None:
         "Reference",
         treewidth=10_000,
         config=config,
-        z3_module=cast("Z3ModuleLike", z3),
+        z3_module=_Z3Adapter(),
     )
     assert result is None
 
@@ -147,13 +174,14 @@ def test_run_benchmarks_returns_serializable_payload() -> None:
     assert "system_info" in payload
     assert "config" in payload
     assert "results" in payload
-    results_obj = cast("list[object]", payload["results"])
+    results_obj = payload["results"]
     assert isinstance(results_obj, list)
-    assert len(results_obj) >= 1
+    assert results_obj != []
 
 
 def test_main_parses_args_and_writes_output() -> None:
     fake_results: dict[str, object] = {"system_info": {}, "config": {}, "results": []}
+    captured: list[BenchmarkConfig] = []
 
     argv = [
         "benchmark.py",
@@ -169,14 +197,19 @@ def test_main_parses_args_and_writes_output() -> None:
         "out.json",
     ]
 
+    def _fake_run(config: BenchmarkConfig) -> dict[str, object]:
+        captured.append(config)
+        return fake_results
+
     with patch.object(sys, "argv", argv):
-        with patch("pysymex.accel.benchmark.run_benchmarks", return_value=fake_results) as mocked_run:
+        with patch("pysymex.accel.benchmark.run_benchmarks", side_effect=_fake_run) as mocked_run:
             with patch("json.dump") as mocked_dump:
                 with patch("builtins.open") as mocked_open:
                     main()
 
     assert mocked_run.call_count == 1
-    config_arg = cast("BenchmarkConfig", mocked_run.call_args.args[0])
+    assert len(captured) == 1
+    config_arg = captured[0]
     assert config_arg.treewidths == [2]
     assert config_arg.iterations == 1
     assert config_arg.warmup_iterations == 0

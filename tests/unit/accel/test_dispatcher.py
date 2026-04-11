@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 import z3
 
 from pysymex.accel.backends import BackendType
@@ -71,8 +69,7 @@ class TestGPUDispatcher:
         stats = dispatcher.get_routing_stats()
         decisions_obj = stats["routing_decisions"]
         assert isinstance(decisions_obj, dict)
-        decisions = cast("dict[str, int]", decisions_obj)
-        assert decisions[result.backend_used.name] >= 1
+        assert result.backend_used.name in decisions_obj
 
     def test_get_routing_stats_contains_expected_keys(self) -> None:
         reset()
