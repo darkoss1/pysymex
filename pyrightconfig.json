@@ -3,6 +3,7 @@
   "stubPath": "typings",
   "typeCheckingMode": "strict",
   "reportMissingTypeStubs": false,
+  "reportMissingModuleSource": false,
   "reportUnusedImport": "warning",
   "reportUnusedVariable": "warning",
   "reportUnsupportedDunderAll": false,

@@ -51,7 +51,7 @@ class TestBugDetectionPhase:
         """Test analyze behavior."""
         p = BugDetectionPhase()
         p.analyzer.analyze_function = Mock(return_value=[
-            Issue(IssueKind.DIVISION_BY_ZERO, Severity.HIGH, "f.py", 10, "msg") # type: ignore[arg-type]
+            Issue(IssueKind.DIVISION_BY_ZERO, Severity.HIGH, "f.py", 10, "msg")
         ])
         mock_filter = Mock()
         mock_filter.should_filter = False

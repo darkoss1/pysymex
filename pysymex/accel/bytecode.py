@@ -60,7 +60,7 @@ MAX_REGISTERS: Final[int] = 8192
 MAX_VARIABLES: Final[int] = 40
 MAX_INSTRUCTIONS: Final[int] = 8192
 
-_compile_cache: dict[tuple[int, tuple[str, ...]], CompiledConstraint] = {}
+_compile_cache: dict[int, list[tuple["z3.ExprRef", tuple[str, ...], CompiledConstraint]]] = {}
 _compile_lock = threading.Lock()
 
 
@@ -293,7 +293,7 @@ class BytecodeCompiler:
         for i, instr in enumerate(self._instructions):
             instr_array[i] = instr.to_tuple()
 
-        source_hash = structural_hash([expr]) & 0xFFFFFFFF
+        source_hash = structural_hash([expr]) & 0xFFFFFFFFFFFFFFFF
 
         return CompiledConstraint(
             instructions=instr_array,
@@ -579,17 +579,27 @@ def compile_constraint(
         CompiledConstraint ready for GPU execution
     """
 
-    key = (structural_hash([expr]), tuple(variables))
+    key = expr.hash()
+    variables_key = tuple(variables)
 
     with _compile_lock:
-        if key in _compile_cache:
-            return _compile_cache[key]
+        cached_bucket = _compile_cache.get(key)
+        if cached_bucket is not None:
+            for cached_expr, cached_variables, compiled in cached_bucket:
+                try:
+                    if cached_variables == variables_key and expr.eq(cached_expr):  # type: ignore[attr-defined]
+                        return compiled
+                except Exception:
+                    continue
 
     compiler = BytecodeCompiler()
     result = compiler.compile(expr, variables)
 
     with _compile_lock:
-        _compile_cache[key] = result
+        if cached_bucket is None:
+            _compile_cache[key] = [(expr, variables_key, result)]
+        else:
+            cached_bucket.append((expr, variables_key, result))
 
     return result
 

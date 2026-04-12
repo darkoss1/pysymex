@@ -67,7 +67,7 @@ _DISCRIMINATOR_SUFFIXES = (
 
 
 def _base_var_name(z3_var_name: str) -> str:
-    """Strip type-discriminator suffixes to get the SymbolicValue base name.
+    """Strip generated type-discriminator suffixes to get the SymbolicValue base name.
 
     Examples::
 
@@ -75,12 +75,17 @@ def _base_var_name(z3_var_name: str) -> str:
         'x_42'
         >>> _base_var_name("x_42_is_bool")
         'x_42'
+        >>> _base_var_name("result_is_int")
+        'result_is_int'
         >>> _base_var_name("loop_counter")
         'loop_counter'
     """
     for suffix in _DISCRIMINATOR_SUFFIXES:
         if z3_var_name.endswith(suffix):
-            return z3_var_name[: -len(suffix)]
+            candidate = z3_var_name[: -len(suffix)]
+            _stem, sep, maybe_id = candidate.rpartition("_")
+            if sep and maybe_id.isdigit():
+                return candidate
     return z3_var_name
 
 
@@ -234,9 +239,9 @@ class ConstraintInteractionGraph:
 
     def is_stabilized(
         self,
-        stability_threshold: int = 8,
-        max_useful_treewidth: int = 15,
-        min_branches: int = 6,
+        stability_threshold: int = 4,
+        max_useful_treewidth: int = 25,
+        min_branches: int = 3,
     ) -> bool:
         """Check if the graph has stabilized enough for skeleton extraction.
 
@@ -361,15 +366,15 @@ class ConstraintInteractionGraph:
 
         for bid in range(len(bags)):
             bag = bags[bid]
+            v = elimination_order[bid]
+            neighbors_in_remaining = bag - frozenset({v})
 
-            for bid2 in range(bid + 1, len(bags)):
-                overlap = bag & bags[bid2]
-                if overlap:
-                    edge = (bid, bid2)
-                    tree_edges.append(edge)
-                    adhesion[edge] = overlap
-                    parent_map[bid] = bid2
-                    break
+            if neighbors_in_remaining:
+                parent_bid = min(vertex_to_bag[u] for u in neighbors_in_remaining)
+                edge = (bid, parent_bid)
+                tree_edges.append(edge)
+                adhesion[edge] = bag & bags[parent_bid]
+                parent_map[bid] = parent_bid
 
         width = max_bag_size - 1 if max_bag_size > 0 else 0
 

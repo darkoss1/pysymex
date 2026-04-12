@@ -94,7 +94,9 @@ class TestCallGraph:
         cg.add_node(CallGraphNode(name="b"))
         cg.add_edge("a", "b", pc=10)
         assert cg.has_edge("a", "b") is True
-        assert cg.get_edge("a", "b").call_sites == [10] # type: ignore[union-attr]
+        edge = cg.get_edge("a", "b")
+        assert edge is not None
+        assert edge.call_sites == [10]
 
     def test_get_edge(self) -> None:
         """Test get_edge behavior."""

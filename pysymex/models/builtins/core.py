@@ -160,8 +160,38 @@ class RangeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         """Apply range() model."""
+        def _const_int(value: StackValue) -> int | None:
+            if isinstance(value, int):
+                return value
+            if isinstance(value, SymbolicValue) and isinstance(value.value, int):
+                return value.value
+            return None
+
+        def _bounded_range_entries(
+            range_args: list[StackValue],
+        ) -> tuple[int, tuple[int, ...]] | None:
+            concrete_values = [_const_int(arg) for arg in range_args]
+            if any(value is None for value in concrete_values):
+                return None
+
+            values = [value for value in concrete_values if value is not None]
+            if len(values) == 1:
+                seq = tuple(range(values[0]))
+            elif len(values) == 2:
+                seq = tuple(range(values[0], values[1]))
+            elif len(values) >= 3:
+                seq = tuple(range(values[0], values[1], values[2]))
+            else:
+                return None
+            return len(seq), seq
+
         result, constraint = SymbolicList.symbolic(f"range_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
+        bounded_entries = _bounded_range_entries(args)
+        if bounded_entries is not None:
+            _, entries = bounded_entries
+            setattr(result, "_concrete_items", list(entries))
+
         if len(args) == 1 and isinstance(args[0], SymbolicValue):
             stop = args[0]
             constraints.append(result.z3_len == z3.If(stop.z3_int > 0, stop.z3_int, 0))
@@ -186,29 +216,43 @@ class RangeModel(FunctionModel):
                 constraints.append(result.z3_len == z3.If(length > 0, length, z3.IntVal(0)))
 
                 i = z3.Int(f"range_idx_{state.pc}")
-                constraints.append(
-                    z3.ForAll(
-                        [i],
-                        z3.Implies(
-                            z3.And(i >= 0, i < result.z3_len),
-                            z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int,
-                        ),
+                if bounded_entries is not None and bounded_entries[0] <= 10:
+                    _, entries = bounded_entries
+                    for idx, value in enumerate(entries):
+                        constraints.append(
+                            z3.Select(result.z3_array, z3.IntVal(idx)) == z3.IntVal(value)
+                        )
+                else:
+                    constraints.append(
+                        z3.ForAll(
+                            [i],
+                            z3.Implies(
+                                z3.And(i >= 0, i < result.z3_len),
+                                z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int,
+                            ),
+                        )
                     )
-                )
             else:
                 length = z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
                 constraints.append(result.z3_len == length)
 
                 i = z3.Int(f"range_idx_{state.pc}")
-                constraints.append(
-                    z3.ForAll(
-                        [i],
-                        z3.Implies(
-                            z3.And(i >= 0, i < result.z3_len),
-                            z3.Select(result.z3_array, i) == start.z3_int + i,
-                        ),
+                if bounded_entries is not None and bounded_entries[0] <= 10:
+                    _, entries = bounded_entries
+                    for idx, value in enumerate(entries):
+                        constraints.append(
+                            z3.Select(result.z3_array, z3.IntVal(idx)) == z3.IntVal(value)
+                        )
+                else:
+                    constraints.append(
+                        z3.ForAll(
+                            [i],
+                            z3.Implies(
+                                z3.And(i >= 0, i < result.z3_len),
+                                z3.Select(result.z3_array, i) == start.z3_int + i,
+                            ),
+                        )
                     )
-                )
         if len(args) == 1 and isinstance(args[0], SymbolicValue):
             stop = args[0]
             length = z3.If(stop.z3_int > 0, stop.z3_int, 0)
@@ -222,6 +266,27 @@ class RangeModel(FunctionModel):
                     ),
                 )
             )
+        elif len(args) == 1:
+            stop_val = _const_int(args[0])
+            if stop_val is not None:
+                entries = tuple(range(stop_val))
+                constraints.append(result.z3_len == z3.IntVal(len(entries)))
+                if len(entries) <= 10:
+                    for idx, value in enumerate(entries):
+                        constraints.append(
+                            z3.Select(result.z3_array, z3.IntVal(idx)) == z3.IntVal(value)
+                        )
+                else:
+                    i = z3.Int(f"range_idx_{state.pc}")
+                    constraints.append(
+                        z3.ForAll(
+                            [i],
+                            z3.Implies(
+                                z3.And(i >= 0, i < result.z3_len),
+                                z3.Select(result.z3_array, i) == i,
+                            ),
+                        )
+                    )
         return ModelResult(value=result, constraints=constraints)
 
 

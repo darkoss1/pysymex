@@ -1,4 +1,4 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -127,6 +127,13 @@ merge_taint = _merge_taint
 BV_WIDTH: int = _BV_WIDTH
 
 
+def _next_address() -> int:
+    """Resolve the shared address counter lazily to avoid import cycles."""
+    from pysymex.core.memory.addressing import next_address
+
+    return next_address()
+
+
 def fresh_name(prefix: str) -> str:
     """Generate a unique symbolic variable name.
 
@@ -134,7 +141,7 @@ def fresh_name(prefix: str) -> str:
     ``contextvars.ContextVar`` counter, giving each async session its own
     isolated namespace and eliminating cross-session Z3 variable collisions.
     """
-    return f"{prefix}_{next_address()}"
+    return f"{prefix}_{_next_address()}"
 
 
 def _guarded_nonzero_divisor(divisor: z3.ArithRef) -> z3.ArithRef:
@@ -521,12 +528,8 @@ class SymbolicValue(SymbolicType):
 
     @staticmethod
     def symbolic(name: str) -> tuple[SymbolicValue, z3.BoolRef]:
-        """Create a fresh symbolic value with type constraint.
-
-        This method creates a truly 'any' type symbolic value that can be an
-        Integer, Boolean, String, Path, Object (address), or None.
-        """
-        id_suffix = next_address()
+        """Create a fresh symbolic value with type constraint."""
+        id_suffix = _next_address()
         z3_int = z3.Int(f"{name}_{id_suffix}_int")
         z3_bool = z3.Bool(f"{name}_{id_suffix}_bool")
         z3_str = z3.String(f"{name}_{id_suffix}_str")
@@ -543,15 +546,7 @@ class SymbolicValue(SymbolicType):
         is_dict = z3.Bool(f"{name}_{id_suffix}_is_dict")
 
         type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
-
-        at_least_one = z3.Or(*type_vars)
-
-        at_most_one = []
-        for i in range(len(type_vars)):
-            for j in range(i + 1, len(type_vars)):
-                at_most_one.append(z3.Not(z3.And(type_vars[i], type_vars[j])))
-
-        type_constraint = z3.And(at_least_one, *at_most_one)
+        type_constraint = z3.Sum(*[z3.If(v, z3.IntVal(1), z3.IntVal(0)) for v in type_vars]) == z3.IntVal(1)
 
         result = (
             SymbolicValue(
@@ -574,7 +569,6 @@ class SymbolicValue(SymbolicType):
             type_constraint,
         )
         return result
-
     @staticmethod
     def symbolic_int(name: str) -> tuple[SymbolicValue, z3.BoolRef]:
         """Create a specialized symbolic integer (more efficient for solver)."""
@@ -806,13 +800,15 @@ class SymbolicValue(SymbolicType):
         is_int_like_other = z3.Or(other.is_int, other.is_bool)
         is_int_res = z3.And(is_int_like_self, is_int_like_other)
 
-        self_real = z3.ToReal(self.z3_int)
-        other_real = z3.ToReal(other.z3_int)
-
-        real_base = z3.If(self.is_float, z3.fpToReal(self.z3_float), self_real)
-        real_add = z3.If(other.is_float, z3.fpToReal(other.z3_float), other_real)
-
-        res_float = z3.fpToFP(z3.RNE(), real_base + real_add, z3.Float64())
+        left_fp = z3.If(
+            self.is_float, self.z3_float, z3.fpToFP(z3.RNE(), z3.ToReal(self.z3_int), z3.Float64())
+        )
+        right_fp = z3.If(
+            other.is_float,
+            other.z3_float,
+            z3.fpToFP(z3.RNE(), z3.ToReal(other.z3_int), z3.Float64()),
+        )
+        res_float = z3.fpAdd(z3.RNE(), left_fp, right_fp)
         is_float_res = z3.Or(self.is_float, other.is_float)
 
         res_str = z3.If(

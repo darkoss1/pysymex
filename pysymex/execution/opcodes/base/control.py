@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import dis
-from itertools import chain
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import z3
@@ -81,11 +81,17 @@ def _extract_taint_labels(value: object) -> frozenset[str]:
 
 
 def _is_sat_with_extra(constraints: object, extra: z3.BoolRef) -> bool:
-    base = cast("list[z3.BoolRef]", constraints)
-    return is_satisfiable(
-        chain(base, (extra,)),
-        known_sat_prefix_len=len(base),
-    )
+    import z3
+    from pysymex.core.solver.engine import is_satisfiable
+
+    constraint_list = list(cast("Iterable[z3.BoolRef]", constraints))
+
+    if z3.is_false(extra):
+        return False
+    if z3.is_true(extra):
+        return is_satisfiable(constraint_list)
+
+    return is_satisfiable(constraint_list + [extra], known_sat_prefix_len=len(constraint_list))
 
 
 @opcode_handler("RESUME", "NOP")
@@ -598,6 +604,59 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
         if addr in memory:
             iterable = memory[addr]
 
+    idx = iterator.index if isinstance(iterator, SymbolicIterator) else 0
+    concrete_items: object | None = None
+    known_len = None
+
+    if isinstance(iterable, SymbolicList):
+        concrete_from_list = cast("list[object] | None", getattr(iterable, "_concrete_items", None))
+        if concrete_from_list is not None:
+            concrete_items = concrete_from_list
+            known_len = len(concrete_from_list)
+    elif isinstance(iterable, (list, tuple, str, bytes)):
+        concrete_items = iterable
+        known_len = len(concrete_items)
+
+    if concrete_items is not None and known_len is not None:
+        if idx < known_len:
+            item = concrete_items[idx]
+            if isinstance(
+                item,
+                (
+                    SymbolicValue,
+                    SymbolicNone,
+                    SymbolicString,
+                    SymbolicList,
+                    SymbolicDict,
+                    SymbolicObject,
+                    z3.ExprRef,
+                    int,
+                    bool,
+                    str,
+                    float,
+                    bytes,
+                    type,
+                    list,
+                    dict,
+                    tuple,
+                ),
+            ):
+                stack_item = item
+            else:
+                stack_item = SymbolicValue.from_const(item)
+            continue_state = state.fork()
+            if isinstance(iterator, SymbolicIterator):
+                continue_state.stack[-1] = iterator.advance()
+            continue_state = continue_state.push(stack_item)
+            continue_state = continue_state.advance_pc()
+            return OpcodeResult.branch([continue_state])
+        else:
+            exit_state = state.fork()
+            if exit_state.stack:
+                exit_state.pop()
+            exit_state = exit_state.set_pc(target_index)
+            return OpcodeResult.branch([exit_state])
+
     continue_state = state.fork()
 
     if isinstance(iterator, SymbolicIterator):
@@ -644,13 +703,7 @@ def handle_for_iter(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatche
 
             exit_state = exit_state.add_constraint(z3.IntVal(idx) >= z3_len)
 
-            new_states = []
-            if is_satisfiable(continue_state.path_constraints):
-                new_states.append(continue_state)
-            if is_satisfiable(exit_state.path_constraints):
-                new_states.append(exit_state)
-
-            return OpcodeResult.branch(new_states)
+            return OpcodeResult.branch([continue_state, exit_state])
         elif z3_array is not None:
             idx = z3.Int(f"iter_idx_{state.pc}_{state.path_id}")
             continue_state = continue_state.add_constraint(

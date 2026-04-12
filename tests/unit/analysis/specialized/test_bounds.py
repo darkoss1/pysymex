@@ -54,7 +54,7 @@ class TestSymbolicArray:
     def test_total_size(self) -> None:
         """Test total_size behavior."""
         arr = SymbolicArray("arr", z3.IntVal(10), z3.IntSort())
-        assert z3.simplify(arr.total_size()).eq(z3.IntVal(10)) # type: ignore[attr-defined]
+        assert z3.is_true(arr.total_size() == z3.IntVal(10))
 
 class TestSymbolicBuffer:
     """Test suite for pysymex.analysis.specialized.bounds.SymbolicBuffer."""
@@ -62,13 +62,13 @@ class TestSymbolicBuffer:
         """Test contains_address behavior."""
         buf = SymbolicBuffer("buf", z3.IntVal(100), z3.IntVal(0))
         cond = buf.contains_address(z3.IntVal(50))
-        assert z3.simplify(cond)
+        assert z3.is_true(cond)
 
     def test_offset_valid(self) -> None:
         """Test offset_valid behavior."""
         buf = SymbolicBuffer("buf", z3.IntVal(100), z3.IntVal(0))
         cond = buf.offset_valid(z3.IntVal(10))
-        assert z3.simplify(cond)
+        assert z3.is_true(cond)
 
 class TestBoundsChecker:
     """Test suite for pysymex.analysis.specialized.bounds.BoundsChecker."""
@@ -108,7 +108,7 @@ class TestBoundsChecker:
         """Test compute_linear_index behavior."""
         c = BoundsChecker()
         idx = c.compute_linear_index([z3.IntVal(1), z3.IntVal(2)], [z3.IntVal(5), z3.IntVal(5)])
-        assert z3.simplify(idx).eq(z3.IntVal(7)) # type: ignore[attr-defined]
+        assert z3.is_true(idx == z3.IntVal(7))
 
     def test_check_buffer_access(self) -> None:
         """Test check_buffer_access behavior."""

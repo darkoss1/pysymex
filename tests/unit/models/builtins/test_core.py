@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import pytest
+import z3
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -28,6 +29,12 @@ class TestRangeModel:
         args: list[StackValue] = [3]
         result = core.RangeModel().apply(args, {}, _state())
         assert result.value is not None
+
+    def test_apply_unrolls_small_bounded_ranges(self) -> None:
+        """Test small concrete ranges avoid quantified constraints."""
+        result = core.RangeModel().apply([1, 4], {}, _state())
+        assert result.value is not None
+        assert not any(z3.is_quantifier(constraint) for constraint in result.constraints)
 
 
 class TestAbsModel:

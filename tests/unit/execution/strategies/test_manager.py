@@ -249,6 +249,18 @@ class TestAdaptivePathManager:
         assert "arms" in stats
         assert "selections" in stats
 
+    def test_reheat_arm_recovers_structural_prior_mass(self) -> None:
+        """Test reheating pulls a poisoned arm back toward its prior."""
+        manager = AdaptivePathManager(deterministic=False, gamma=0.95)
+        manager._last_arm = manager.ARM_STRUCTURAL
+        for _ in range(25):
+            manager.record_reward(-5.0)
+        before = manager.get_stats()["arms"]["structural"]
+        manager.reheat_arm(manager.ARM_STRUCTURAL, strength=0.5)
+        after = manager.get_stats()["arms"]["structural"]
+        assert after["alpha"] > before["alpha"]
+        assert after["beta"] < before["beta"]
+
 
 def test_create_path_manager() -> None:
     """Test create_path_manager behavior."""

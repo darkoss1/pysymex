@@ -1,5 +1,6 @@
 ﻿import pysymex.core.solver.independence
 import z3
+from unittest.mock import patch
 
 class TestUnionFind:
     """Test suite for pysymex.core.solver.independence.UnionFind."""
@@ -35,6 +36,8 @@ class TestConstraintIndependenceOptimizer:
         _ = opt.register_constraint(z3.Int("x") > 0)
         opt.reset()
         assert opt.get_stats()["total_queries"] == 0
+        assert opt._constraint_index == 0
+        assert opt._var_to_constraint_indices == {}
 
     def test_register_constraint(self) -> None:
         """Scenario: register x>0 constraint; expected variable set contains x."""
@@ -70,3 +73,26 @@ class TestConstraintIndependenceOptimizer:
         _ = opt.register_constraint(c)
         _ = opt.slice_for_query([c], x < 2)
         assert opt.get_stats()["total_queries"] == 1
+
+    def test_register_constraint_tracks_temporal_indices(self) -> None:
+        """Scenario: registration should advance the temporal index and record variable history."""
+        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer(temporal_window=2)
+        x = z3.Int("x")
+        y = z3.Int("y")
+        _ = opt.register_constraint(x + y > 0)
+        assert opt._constraint_index == 1
+        assert opt._var_to_constraint_indices["x"] == [0]
+        assert opt._var_to_constraint_indices["y"] == [0]
+
+    def test_extract_variables_handles_hash_collisions_safely(self) -> None:
+        """Scenario: colliding cache keys should still keep distinct variable sets."""
+        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        x = z3.Int("x")
+        y = z3.Int("y")
+        with patch.object(
+            pysymex.core.solver.independence.ConstraintIndependenceOptimizer,
+            "_cache_key",
+            return_value=1,
+        ):
+            assert opt.get_variables(x > 0) == frozenset({"x"})
+            assert opt.get_variables(y > 0) == frozenset({"y"})

@@ -1,6 +1,7 @@
-﻿import pytest
+import argparse
 import pysymex.cli.parser
 
 def test_create_parser() -> None:
     """Test create_parser behavior."""
-    raise NotImplementedError("not implemented")
+    parser = pysymex.cli.parser.create_parser()
+    assert isinstance(parser, argparse.ArgumentParser)

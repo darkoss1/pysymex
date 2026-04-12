@@ -1,24 +1,27 @@
-﻿import pytest
-import pysymex.benchmarks.suite.types
+from __future__ import annotations
 
-class TestBenchmarkCategory:
-    """Test suite for pysymex.benchmarks.suite.types.BenchmarkCategory."""
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        raise NotImplementedError("not implemented")
-class TestBenchmarkResult:
-    """Test suite for pysymex.benchmarks.suite.types.BenchmarkResult."""
-    def test_throughput(self) -> None:
-        """Test throughput behavior."""
-        raise NotImplementedError("not implemented")
-    def test_paths_per_second(self) -> None:
-        """Test paths_per_second behavior."""
-        raise NotImplementedError("not implemented")
-    def test_to_dict(self) -> None:
-        """Test to_dict behavior."""
-        raise NotImplementedError("not implemented")
-class TestRegressionResult:
-    """Test suite for pysymex.benchmarks.suite.types.RegressionResult."""
-    def test_change_description(self) -> None:
-        """Test change_description behavior."""
-        raise NotImplementedError("not implemented")
+from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult, RegressionResult
+
+
+def test_benchmark_result_computed_metrics_and_dict() -> None:
+    result = BenchmarkResult(
+        name="demo",
+        category=BenchmarkCategory.ANALYSIS,
+        elapsed_seconds=2.0,
+        instructions_executed=200,
+        paths_explored=10,
+    )
+
+    assert result.throughput == 100.0
+    assert result.paths_per_second == 5.0
+    data = result.to_dict()
+    assert data["category"] == "ANALYSIS"
+    assert data["throughput"] == 100.0
+
+
+def test_regression_result_description_direction() -> None:
+    slower = RegressionResult("b1", 1.0, 1.3, 30.0, True, 10.0)
+    faster = RegressionResult("b1", 1.0, 0.7, -30.0, False, 10.0)
+    assert slower.change_description == "30.0% slower"
+    assert faster.change_description == "30.0% faster"
+

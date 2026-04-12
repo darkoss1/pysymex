@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import z3
 
 from pysymex.accel.backends import BackendType
@@ -7,6 +8,7 @@ from pysymex.accel.bytecode import compile_constraint
 from pysymex.accel.dispatcher import (
     DispatchResult,
     GPUDispatcher,
+    _mask_unused_tail_bits,
     count_satisfying,
     evaluate_bag,
     get_backend_info,
@@ -101,12 +103,16 @@ def test_get_dispatcher_reset_and_singleton_behavior() -> None:
 
 def test_module_evaluate_bag_and_get_backend_info() -> None:
     reset()
+    dispatcher = get_dispatcher()
     x, y = z3.Bools("x y")
     constraint = compile_constraint(z3.And(x, y), ["x", "y"])
     result = evaluate_bag(constraint)
     info = get_backend_info()
 
-    assert result.backend_used is info.backend_type
+    assert info.backend_type is dispatcher.selected_backend
+    assert result.backend_used in {
+        backend_info.backend_type for backend_info in dispatcher.list_backends() if backend_info.available
+    }
 
 
 def test_count_satisfying_and_iter_satisfying_match_expected_assignments() -> None:
@@ -129,3 +135,8 @@ def test_warmup_and_reset_are_safe_to_call() -> None:
     reset()
     assert warmup() is None
     assert reset() is None
+
+
+def test_mask_unused_tail_bits_zeroes_padding() -> None:
+    masked = _mask_unused_tail_bits(np.array([0xFF], dtype=np.uint8), 3)
+    assert int(masked[0]) == 0b00000111

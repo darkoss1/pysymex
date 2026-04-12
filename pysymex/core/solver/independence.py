@@ -190,28 +190,21 @@ class ConstraintIndependenceOptimizer:
         "_extract_full",
         "_uf",
         "_var_cache",
+        "_constraint_index",
+        "_var_to_constraint_indices",
+        "_temporal_window",
         "sliced_queries",
         "total_constraints_after",
         "total_constraints_before",
         "total_queries",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, temporal_window: int = 10) -> None:
         self._uf = UnionFind()
-
-        self._var_cache: dict[int, frozenset[str]] = {}
-
-        self._extract_full: int = 0
-        self._extract_cached: int = 0
-        self.sliced_queries: int = 0
-        self.total_queries: int = 0
-        self.total_constraints_before: int = 0
-        self.total_constraints_after: int = 0
-
-    def reset(self) -> None:
-        """Reset all internal state.  Call between analysis units."""
-        self._uf = UnionFind()
-        self._var_cache.clear()
+        self._var_cache: dict[int, list[tuple[_z3.ExprRef, frozenset[str]]]] = {}
+        self._constraint_index = 0
+        self._var_to_constraint_indices: dict[str, list[int]] = {}
+        self._temporal_window = temporal_window
         self._extract_full = 0
         self._extract_cached = 0
         self.sliced_queries = 0
@@ -219,13 +212,35 @@ class ConstraintIndependenceOptimizer:
         self.total_constraints_before = 0
         self.total_constraints_after = 0
 
+    def reset(self) -> None:
+        """Reset all internal state.  Call between analysis units."""
+        self._uf = UnionFind()
+        self._var_cache.clear()
+        self._constraint_index = 0
+        self._var_to_constraint_indices.clear()
+        self._extract_full = 0
+        self._extract_cached = 0
+        self.sliced_queries = 0
+        self.total_queries = 0
+        self.total_constraints_before = 0
+        self.total_constraints_after = 0
+
+    def _cache_key(self, expr: z3.ExprRef) -> int:
+        """Fast pre-filter key for expression cache buckets."""
+        return expr.hash()
+
     def _extract_variables(self, expr: z3.ExprRef) -> frozenset[str]:
         """Extract free variables from Z3 expression, with caching."""
-        key = expr.hash()
-        cached_vars = self._var_cache.get(key)
-        if cached_vars is not None:
-            self._extract_cached += 1
-            return cached_vars
+        key = self._cache_key(expr)
+        cached_bucket = self._var_cache.get(key)
+        if cached_bucket is not None:
+            for cached_expr, cached_vars in cached_bucket:
+                try:
+                    if _z3.eq(expr, cached_expr):
+                        self._extract_cached += 1
+                        return cached_vars
+                except _z3.Z3Exception:
+                    continue
 
         self._extract_full += 1
 
@@ -251,7 +266,10 @@ class ConstraintIndependenceOptimizer:
                     worklist.append(child)
 
         result = frozenset(names)
-        self._var_cache[key] = result
+        if cached_bucket is None:
+            self._var_cache[key] = [(expr, result)]
+        else:
+            cached_bucket.append((expr, result))
         return result
 
     def register_constraint(self, constraint: z3.BoolRef) -> frozenset[str]:
@@ -263,6 +281,10 @@ class ConstraintIndependenceOptimizer:
         This pre-computes the variable set and merges variable clusters
         *eagerly*, so that ``slice_for_query`` can run in near-O(n) time
         rather than needing a full transitive-closure walk.
+
+        Implements temporal locality: only union variables from constraints
+        that remain within the recent temporal window. This keeps loop-heavy
+        paths from collapsing into one giant cluster too early.
 
         Args:
             constraint: A Z3 boolean constraint.
@@ -280,9 +302,20 @@ class ConstraintIndependenceOptimizer:
         first = next(it, None)
         if first is not None:
             self._uf.find(first)
-            for v in it:
-                self._uf.union(first, v)
 
+            current_idx = self._constraint_index
+            for v in var_names:
+                self._var_to_constraint_indices.setdefault(v, []).append(current_idx)
+
+            for v in it:
+                v_indices = self._var_to_constraint_indices.get(v, [])
+                recent_indices = [
+                    idx for idx in v_indices if idx >= current_idx - self._temporal_window
+                ]
+                if not recent_indices or len(recent_indices) <= 1:
+                    self._uf.union(first, v)
+
+        self._constraint_index += 1
         return var_names
 
     def get_variables(self, constraint: z3.BoolRef) -> frozenset[str]:
@@ -395,8 +428,8 @@ class ConstraintIndependenceOptimizer:
             "total_constraints_before": self.total_constraints_before,
             "total_constraints_after": self.total_constraints_after,
             "reduction_ratio": round(reduction_ratio, 4),
-            "registered_constraints": len(self._var_cache),
-            "var_cache_size": len(self._var_cache),
+            "registered_constraints": sum(len(bucket) for bucket in self._var_cache.values()),
+            "var_cache_size": sum(len(bucket) for bucket in self._var_cache.values()),
             "full_extractions": self._extract_full,
             "cached_extractions": self._extract_cached,
         }

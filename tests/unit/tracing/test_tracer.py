@@ -1,64 +1,71 @@
-﻿import pytest
-import pysymex.tracing.tracer
+from __future__ import annotations
 
-class TestTracingSolverProxy:
-    """Test suite for pysymex.tracing.tracer.TracingSolverProxy."""
-    def test_check(self) -> None:
-        """Test check behavior."""
-        raise NotImplementedError("not implemented")
-    def test_push(self) -> None:
-        """Test push behavior."""
-        raise NotImplementedError("not implemented")
-    def test_pop(self) -> None:
-        """Test pop behavior."""
-        raise NotImplementedError("not implemented")
-    def test_add(self) -> None:
-        """Test add behavior."""
-        raise NotImplementedError("not implemented")
-    def test_reset(self) -> None:
-        """Test reset behavior."""
-        raise NotImplementedError("not implemented")
-    def test_is_sat(self) -> None:
-        """Test is_sat behavior."""
-        raise NotImplementedError("not implemented")
-    def test_get_stats(self) -> None:
-        """Test get_stats behavior."""
-        raise NotImplementedError("not implemented")
-    def test_constraint_optimizer(self) -> None:
-        """Test constraint_optimizer behavior."""
-        raise NotImplementedError("not implemented")
-class TestExecutionTracer:
-    """Test suite for pysymex.tracing.tracer.ExecutionTracer."""
-    def test_registry(self) -> None:
-        """Test registry behavior."""
-        raise NotImplementedError("not implemented")
-    def test_start_session(self) -> None:
-        """Test start_session behavior."""
-        raise NotImplementedError("not implemented")
-    def test_end_session(self) -> None:
-        """Test end_session behavior."""
-        raise NotImplementedError("not implemented")
-    def test_install(self) -> None:
-        """Test install behavior."""
-        raise NotImplementedError("not implemented")
-    def test_pre_step(self) -> None:
-        """Test pre_step behavior."""
-        raise NotImplementedError("not implemented")
-    def test_post_step(self) -> None:
-        """Test post_step behavior."""
-        raise NotImplementedError("not implemented")
-    def test_on_fork(self) -> None:
-        """Test on_fork behavior."""
-        raise NotImplementedError("not implemented")
-    def test_on_prune(self) -> None:
-        """Test on_prune behavior."""
-        raise NotImplementedError("not implemented")
-    def test_on_solve(self) -> None:
-        """Test on_solve behavior."""
-        raise NotImplementedError("not implemented")
-    def test_on_issue(self) -> None:
-        """Test on_issue behavior."""
-        raise NotImplementedError("not implemented")
-def test_attach_tracer() -> None:
-    """Test attach_tracer behavior."""
-    raise NotImplementedError("not implemented")
+from typing import Any, cast
+
+import z3
+
+from pysymex.tracing.tracer import TracingSolverProxy
+
+
+class _InnerSolver:
+    def __init__(self) -> None:
+        self._cache_hits = 0
+        self.pushed = 0
+
+    def check(self, *_: object) -> z3.CheckSatResult:
+        self._cache_hits += 1
+        return z3.sat
+
+    def push(self) -> None:
+        self.pushed += 1
+
+    def pop(self) -> None:
+        self.pushed -= 1
+
+    def add(self, *_: object) -> None:
+        return None
+
+    def reset(self) -> None:
+        self.pushed = 0
+
+    def is_sat(self, constraints: object, known_sat_prefix_len: int | None = None) -> bool:
+        return bool(constraints) or known_sat_prefix_len is None
+
+    def get_stats(self) -> dict[str, object]:
+        return {"hits": self._cache_hits}
+
+    def constraint_optimizer(self) -> object:
+        return "optimizer"
+
+
+class _Tracer:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def on_solve(self, **_: object) -> None:
+        self.calls += 1
+
+
+class _State:
+    path_id = 1
+    pc = 2
+
+
+def test_tracing_solver_proxy_delegates_and_emits_telemetry() -> None:
+    inner = _InnerSolver()
+    tracer = _Tracer()
+    proxy = TracingSolverProxy(
+        cast("Any", inner),
+        cast("Any", tracer),
+        cast("Any", (lambda: _State())),
+    )
+
+    result = proxy.check()
+    proxy.push()
+    proxy.pop()
+
+    assert result == z3.sat
+    assert tracer.calls == 1
+    assert proxy.get_stats()["hits"] == 1
+    assert proxy.constraint_optimizer() == "optimizer"
+

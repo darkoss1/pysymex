@@ -1,71 +1,77 @@
-﻿import pytest
-import pysymex.benchmarks.suite.core
+from __future__ import annotations
 
-class TestBenchmarkSuite:
-    """Test suite for pysymex.benchmarks.suite.core.BenchmarkSuite."""
-    def test_add(self) -> None:
-        """Test add behavior."""
-        raise NotImplementedError("not implemented")
-    def test_run_all(self) -> None:
-        """Test run_all behavior."""
-        raise NotImplementedError("not implemented")
-class TestBenchmark:
-    """Test suite for pysymex.benchmarks.suite.core.Benchmark."""
-    def test_run(self) -> None:
-        """Test run behavior."""
-        raise NotImplementedError("not implemented")
-def test_benchmark() -> None:
-    """Test benchmark behavior."""
-    raise NotImplementedError("not implemented")
-class TestBenchmarkReporter:
-    """Test suite for pysymex.benchmarks.suite.core.BenchmarkReporter."""
-    def test_to_console(self) -> None:
-        """Test to_console behavior."""
-        raise NotImplementedError("not implemented")
-    def test_to_json(self) -> None:
-        """Test to_json behavior."""
-        raise NotImplementedError("not implemented")
-    def test_to_json_file(self) -> None:
-        """Test to_json_file behavior."""
-        raise NotImplementedError("not implemented")
-    def test_to_markdown(self) -> None:
-        """Test to_markdown behavior."""
-        raise NotImplementedError("not implemented")
-class TestBenchmarkComparator:
-    """Test suite for pysymex.benchmarks.suite.core.BenchmarkComparator."""
-    def test_compare(self) -> None:
-        """Test compare behavior."""
-        raise NotImplementedError("not implemented")
-    def test_report_regressions(self) -> None:
-        """Test report_regressions behavior."""
-        raise NotImplementedError("not implemented")
-def test_create_builtin_benchmarks() -> None:
-    """Test create_builtin_benchmarks behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_simple_arithmetic() -> None:
-    """Test bench_simple_arithmetic behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_branching() -> None:
-    """Test bench_branching behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_loop_unrolling() -> None:
-    """Test bench_loop_unrolling behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_linear_constraints() -> None:
-    """Test bench_linear_constraints behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_incremental_solver() -> None:
-    """Test bench_incremental_solver behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_state_forking() -> None:
-    """Test bench_state_forking behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_constraint_hashing() -> None:
-    """Test bench_constraint_hashing behavior."""
-    raise NotImplementedError("not implemented")
-def test_bench_race_detection() -> None:
-    """Test bench_race_detection behavior."""
-    raise NotImplementedError("not implemented")
-def test_run_benchmarks() -> None:
-    """Test run_benchmarks behavior."""
-    raise NotImplementedError("not implemented")
+import json
+from pathlib import Path
+
+from pysymex.benchmarks.suite.core import (
+    Benchmark,
+    BenchmarkComparator,
+    BenchmarkReporter,
+    BenchmarkSuite,
+    benchmark,
+)
+from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult
+
+
+def test_benchmark_run_collects_result_metrics() -> None:
+    bench = Benchmark(
+        name="toy",
+        func=lambda: {"instructions": 42, "paths": 2, "solver_calls": 1},
+        category=BenchmarkCategory.OPCODES,
+    )
+    result = bench.run(iterations=1, warmup=0)
+
+    assert result.name == "toy"
+    assert result.category is BenchmarkCategory.OPCODES
+    assert result.instructions_executed == 42
+    assert result.paths_explored == 2
+
+
+def test_suite_run_all_executes_setup_and_teardown() -> None:
+    calls: list[str] = []
+
+    def setup() -> None:
+        calls.append("setup")
+
+    def teardown() -> None:
+        calls.append("teardown")
+
+    suite = BenchmarkSuite("s", setup=setup, teardown=teardown)
+    suite.add(Benchmark("b", func=lambda: {}, category=BenchmarkCategory.END_TO_END))
+    results = suite.run_all(iterations=1, warmup=0)
+
+    assert len(results) == 1
+    assert calls == ["setup", "teardown"]
+
+
+def test_benchmark_decorator_registers_benchmark_metadata() -> None:
+    @benchmark(name="decorated", category=BenchmarkCategory.ANALYSIS)
+    def task() -> dict[str, int]:
+        return {"instructions": 1, "paths": 1, "solver_calls": 1}
+
+    bench_obj = getattr(task, "_benchmark")
+    assert isinstance(bench_obj, Benchmark)
+    assert bench_obj.name == "decorated"
+
+
+def test_reporter_and_comparator_outputs(tmp_path: Path) -> None:
+    baseline = [
+        BenchmarkResult("b1", BenchmarkCategory.OPCODES, elapsed_seconds=1.0, mean_seconds=1.0),
+    ]
+    current = [
+        BenchmarkResult("b1", BenchmarkCategory.OPCODES, elapsed_seconds=1.3, mean_seconds=1.3),
+    ]
+
+    regressions = BenchmarkComparator(threshold_percent=10.0).compare(baseline, current)
+    assert len(regressions) == 1
+    assert regressions[0].is_regression is True
+
+    as_json = BenchmarkReporter.to_json(current)
+    as_md = BenchmarkReporter.to_markdown(current)
+    out = tmp_path / "bench.json"
+    BenchmarkReporter.to_json_file(current, out)
+
+    assert json.loads(as_json)[0]["name"] == "b1"
+    assert "| Benchmark |" in as_md
+    assert out.exists()
+

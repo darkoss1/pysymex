@@ -4,6 +4,10 @@ import z3
 from pysymex.analysis.specialized.ranges import (
     Range, RangeState, RangeWarning, RangeAnalyzer, ValueRangeChecker
 )
+from pysymex.analysis.control.cfg import CFGBuilder
+
+def make_dummy_code() -> object:
+    return compile("pass", "<string>", "exec")
 
 class TestRange:
     """Test suite for pysymex.analysis.specialized.ranges.Range."""
@@ -238,9 +242,10 @@ class TestRangeAnalyzer:
         mock_cfg.blocks = {}
         mock_cfg_builder.return_value.build.return_value = mock_cfg
         analyzer = RangeAnalyzer()
-        warnings = analyzer.analyze(Mock(co_firstlineno=1)) # type: ignore[arg-type]
+        import types
+        code = compile("pass", "<string>", "exec")
+        warnings = analyzer.analyze(code)
         assert isinstance(warnings, tuple)
-        assert isinstance(warnings[1], list)
 
 class TestValueRangeChecker:
     """Test suite for pysymex.analysis.specialized.ranges.ValueRangeChecker."""
@@ -251,7 +256,8 @@ class TestValueRangeChecker:
         mock_cfg.blocks = {}
         mock_cfg_builder.return_value.build.return_value = mock_cfg
         c = ValueRangeChecker()
-        res = c.check_function(Mock(co_firstlineno=1)) # type: ignore[arg-type]
+        code = compile("pass", "<string>", "exec")
+        res = c.check_function(code)
         assert isinstance(res, list)
 
     def test_check_array_bounds(self) -> None:

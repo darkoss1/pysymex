@@ -311,23 +311,10 @@ class IncrementalSolver:
         return self._constraints_discriminator(constraints)
 
     def _slice_prefix_for_suffix(
-        self,
-        prefix: list[z3.BoolRef],
-        suffix: list[z3.BoolRef],
+        self, prefix: list[z3.BoolRef], query: Iterable[z3.BoolRef] | z3.BoolRef
     ) -> list[z3.BoolRef]:
-        """Backward slice ambient prefix constraints relevant to suffix variables."""
-        if not prefix or not suffix:
-            return prefix
-
-        for c in prefix:
-            self._optimizer.register_constraint(c)
-
-        query = suffix[0] if len(suffix) == 1 else z3.And(*suffix)
-        sliced = self._optimizer.slice_for_query(prefix, query)
-
-        if not sliced:
-            return prefix
-        return sliced
+        """Skip slicing to prevent Z3 GC crash and reduce overhead."""
+        return prefix
 
     def _cache_lookup(self, primary: int, discriminator: tuple[int, ...]) -> SolverResult | None:
         """Lookup a cached result, verifying the secondary discriminator."""

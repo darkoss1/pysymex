@@ -61,6 +61,21 @@ def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
     return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
 
 
+def _mask_unused_tail_bits(
+    bitmap: npt.NDArray[np.uint8],
+    num_states: int,
+) -> npt.NDArray[np.uint8]:
+    """Zero padding bits beyond the semantic assignment space."""
+    if bitmap.size == 0:
+        return bitmap
+    remainder = num_states & 7
+    if remainder == 0:
+        return bitmap
+    masked = bitmap.copy()
+    masked[-1] &= np.uint8((1 << remainder) - 1)
+    return masked
+
+
 class Backend(Protocol):
     """Protocol for backend modules."""
 
@@ -255,6 +270,7 @@ class GPUDispatcher:
 
         t_start = time.perf_counter()
         bitmap = backend.evaluate_bag(constraint)
+        bitmap = _mask_unused_tail_bits(bitmap, 1 << constraint.num_variables)
         t_end = time.perf_counter()
 
         elapsed_ms = (t_end - t_start) * 1000

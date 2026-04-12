@@ -43,8 +43,6 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import numpy.typing as npt
 
-from pysymex.core.solver.constraints import structural_hash
-
 if TYPE_CHECKING:
     import z3
 
@@ -52,6 +50,114 @@ if TYPE_CHECKING:
     from pysymex.accel.chtd_integration import GPUBagEvaluator
 
 logger = logging.getLogger(__name__)
+
+
+def _is_bytecode_compatible(expr: "z3.ExprRef") -> bool:
+    """Return True if expression is representable by accel bytecode ops."""
+    import z3
+
+    seen: set[int] = set()
+    stack: list[z3.ExprRef] = [expr]
+
+    allowed_nary = {
+        z3.Z3_OP_AND,
+        z3.Z3_OP_OR,
+        z3.Z3_OP_XOR,
+        z3.Z3_OP_IMPLIES,
+        z3.Z3_OP_IFF,
+        z3.Z3_OP_EQ,
+        z3.Z3_OP_DISTINCT,
+        z3.Z3_OP_NOT,
+        z3.Z3_OP_ITE,
+    }
+
+    while stack:
+        node = stack.pop()
+        node_id = node.get_id()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+
+        if z3.is_true(node) or z3.is_false(node):
+            continue
+
+        if z3.is_const(node):
+            if node.sort() == z3.BoolSort():
+                continue
+            return False
+
+        if node.sort() != z3.BoolSort():
+            return False
+
+        if not z3.is_app(node):
+            return False
+
+        kind = node.decl().kind()
+        if kind not in allowed_nary:
+            return False
+
+        if kind in (z3.Z3_OP_EQ, z3.Z3_OP_IFF, z3.Z3_OP_DISTINCT):
+            if node.num_args() != 2:
+                return False
+            if node.arg(0).sort() != z3.BoolSort() or node.arg(1).sort() != z3.BoolSort():
+                return False
+
+        if kind == z3.Z3_OP_NOT and node.num_args() != 1:
+            return False
+
+        if kind == z3.Z3_OP_ITE:
+            if node.num_args() != 3:
+                return False
+            if (
+                node.arg(0).sort() != z3.BoolSort()
+                or node.arg(1).sort() != z3.BoolSort()
+                or node.arg(2).sort() != z3.BoolSort()
+            ):
+                return False
+
+        for i in range(node.num_args()):
+            stack.append(node.arg(i))
+
+    return True
+
+
+def _solve_exact_bitmap(
+    combined: "z3.BoolRef",
+    variables: list[str],
+) -> npt.NDArray[np.uint8]:
+    """Build an exact SAT bitmap by model enumeration in Z3."""
+    import z3
+
+    w = len(variables)
+    num_states = 1 << w
+    bitmap: npt.NDArray[np.uint8] = np.zeros((num_states + 7) // 8, dtype=np.uint8)
+
+    solver = z3.Solver()
+    solver.add(combined)
+
+    if w == 0:
+        if solver.check() == z3.sat:
+            bitmap[0] |= np.uint8(1)
+        return bitmap
+
+    bool_vars = [z3.Bool(name) for name in variables]
+
+    while solver.check() == z3.sat:
+        model = solver.model()
+        idx = 0
+        block_lits: list[z3.BoolRef] = []
+        for bit, var in enumerate(bool_vars):
+            val = z3.is_true(model.eval(var, model_completion=True))
+            if val:
+                idx |= 1 << bit
+                block_lits.append(var)
+            else:
+                block_lits.append(z3.Not(var))
+
+        bitmap[idx >> 3] |= np.uint8(1 << (idx & 7))
+        solver.add(z3.Not(z3.And(*block_lits)))
+
+    return bitmap
 
 
 def _extract_bool_var_names(expr: z3.ExprRef) -> set[str]:
@@ -132,22 +238,46 @@ class BagSolution:
 
 
 _GLOBAL_BITMAP_CACHE_MAXSIZE = 4096
-_GLOBAL_BITMAP_CACHE: OrderedDict[int, npt.NDArray[np.uint8]] = OrderedDict()
+_GLOBAL_BITMAP_CACHE: OrderedDict[
+    int,
+    list[tuple["z3.ExprRef", tuple[str, ...], npt.NDArray[np.uint8]]],
+] = OrderedDict()
 _GLOBAL_BITMAP_CACHE_LOCK = Lock()
 
 
-def _cache_get(cache_key: int) -> npt.NDArray[np.uint8] | None:
+def _cache_get(
+    cache_key: int,
+    expr: "z3.ExprRef",
+    variables: tuple[str, ...],
+) -> npt.NDArray[np.uint8] | None:
+    import z3
+
     with _GLOBAL_BITMAP_CACHE_LOCK:
-        bitmap = _GLOBAL_BITMAP_CACHE.get(cache_key)
-        if bitmap is None:
+        bucket = _GLOBAL_BITMAP_CACHE.get(cache_key)
+        if bucket is None:
             return None
         _GLOBAL_BITMAP_CACHE.move_to_end(cache_key)
-        return bitmap
+        for cached_expr, cached_variables, bitmap in bucket:
+            try:
+                if cached_variables == variables and z3.eq(expr, cached_expr):
+                    return bitmap
+            except z3.Z3Exception:
+                continue
+        return None
 
 
-def _cache_put(cache_key: int, bitmap: npt.NDArray[np.uint8]) -> None:
+def _cache_put(
+    cache_key: int,
+    expr: "z3.ExprRef",
+    variables: tuple[str, ...],
+    bitmap: npt.NDArray[np.uint8],
+) -> None:
     with _GLOBAL_BITMAP_CACHE_LOCK:
-        _GLOBAL_BITMAP_CACHE[cache_key] = bitmap
+        bucket = _GLOBAL_BITMAP_CACHE.get(cache_key)
+        if bucket is None:
+            _GLOBAL_BITMAP_CACHE[cache_key] = [(expr, variables, bitmap)]
+        else:
+            bucket.append((expr, variables, bitmap))
         _GLOBAL_BITMAP_CACHE.move_to_end(cache_key)
         while len(_GLOBAL_BITMAP_CACHE) > _GLOBAL_BITMAP_CACHE_MAXSIZE:
             _GLOBAL_BITMAP_CACHE.popitem(last=False)
@@ -177,9 +307,9 @@ class GPUBagSolver:
             warmup: Whether to warmup GPU JIT compilation
         """
         self._use_gpu = use_gpu
-        self._gpu_evaluator: GPUBagEvaluator | None = None
+        self._gpu_evaluator: "GPUBagEvaluator | None" = None
         self._cached_solutions: dict[int, BagSolution] = {}
-        self._message_inbox: dict[int, list[npt.NDArray[np.uint8]]] = {}
+        self._message_inbox: dict[int, list[tuple[npt.NDArray[np.uint8], list[str]]]] = {}
         self._message_inbox_lock = Lock()
 
         if use_gpu:
@@ -235,7 +365,7 @@ class GPUBagSolver:
         self,
         bag: frozenset[int],
         branch_info: dict[int, BranchInfo],
-        parent_messages: list[npt.NDArray[np.uint8]] | None = None,
+        parent_messages: list[tuple[npt.NDArray[np.uint8], list[str]]] | None = None,
         adhesion: frozenset[int] | None = None,
     ) -> BagSolution:
         """Solve a single CHTD bag using GPU acceleration.
@@ -277,8 +407,11 @@ class GPUBagSolver:
                 bag_id=hash(bag), variables=variables or ["_dummy"], bitmap=bitmap, count=num_states
             )
 
+        combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
+        bytecode_compatible = _is_bytecode_compatible(combined)
+
         projected_cache = {}
-        if self._should_use_gpu(w) and adhesion is not None:
+        if self._should_use_gpu(w) and adhesion is not None and bytecode_compatible:
             adhesion_vars: set[str] = set()
             for pc in adhesion:
                 info = branch_info.get(pc)
@@ -286,7 +419,6 @@ class GPUBagSolver:
                     adhesion_vars.update(info.base_vars)
 
             if adhesion_vars:
-                combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
                 from pysymex.accel.bytecode import compile_constraint
 
                 compiled = compile_constraint(combined, variables)
@@ -305,9 +437,39 @@ class GPUBagSolver:
             bitmap = self._solve_cpu(constraints, variables)
 
         if parent_messages:
-            for msg in parent_messages:
-                if len(msg) == len(bitmap):
-                    bitmap = bitmap & msg
+            for msg_bitmap, msg_vars in parent_messages:
+                msg_indices = [variables.index(v) for v in msg_vars if v in variables]
+                if not msg_indices:
+                    continue  # Message does not constrain any variables in this bag
+
+                # We must modify 'bitmap' in place to only keep states that are also SAT in msg.
+                # msg maps its domain variables (msg_vars) to a boolean validity.
+                # For each state in this bag (0 to 1<<w - 1), we map it onto msg_vars and check msg.
+                w_msg = len(msg_vars)
+                num_msg_states = 1 << w_msg
+
+                # Optimization: if msg_vars perfectly matches this bag's variables, just bitwise AND.
+                if w_msg == w and msg_indices == list(range(w)):
+                    if len(msg_bitmap) == len(bitmap):
+                        bitmap = bitmap & msg_bitmap
+                    continue
+
+                for i in range(1 << w):
+                    # Check if current state in bitmap is valid. If not, skip.
+                    if not (bitmap[i >> 3] & (1 << (i & 7))):
+                        continue
+
+                    # Construct index in the message projection space
+                    msg_idx = 0
+                    for j, pos in enumerate(msg_indices):
+                        if (i >> pos) & 1:
+                            msg_idx |= 1 << j
+
+                    # Check if the restricted state is valid in the child's message
+                    if msg_idx < num_msg_states:
+                        if not (msg_bitmap[msg_idx >> 3] & (1 << (msg_idx & 7))):
+                            # The child rejected this assignment; zero it out in the parent.
+                            bitmap[i >> 3] &= ~(1 << (i & 7))
 
         count = int(_unpackbits_little(bitmap)[: 1 << w].sum())
 
@@ -339,23 +501,27 @@ class GPUBagSolver:
 
         combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
 
-        cache_key = hash((structural_hash([combined]), tuple(variables)))
-        cached = _cache_get(cache_key)
+        if not _is_bytecode_compatible(combined):
+            return self._solve_cpu(constraints, variables)
+
+        variables_key = tuple(variables)
+        cache_key = combined.hash()
+        cached = _cache_get(cache_key, combined, variables_key)
         if cached is not None:
             return cached
 
         if self._gpu_evaluator is None:
             bitmap = self._solve_cpu(constraints, variables)
-            _cache_put(cache_key, bitmap)
+            _cache_put(cache_key, combined, variables_key, bitmap)
             return bitmap
 
         bitmap = self._gpu_evaluator.evaluate_bag([combined], variables)
         if bitmap is None:
             bitmap = self._solve_cpu(constraints, variables)
-            _cache_put(cache_key, bitmap)
+            _cache_put(cache_key, combined, variables_key, bitmap)
             return bitmap
 
-        _cache_put(cache_key, bitmap)
+        _cache_put(cache_key, combined, variables_key, bitmap)
         return bitmap
 
     def _solve_cpu(
@@ -380,8 +546,19 @@ class GPUBagSolver:
 
             combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
 
-            cache_key = hash((structural_hash([combined]), tuple(variables)))
-            cached = _cache_get(cache_key)
+            if not _is_bytecode_compatible(combined):
+                variables_key = tuple(variables)
+                cache_key = combined.hash()
+                cached = _cache_get(cache_key, combined, variables_key)
+                if cached is not None:
+                    return cached
+                bitmap = _solve_exact_bitmap(combined, variables)
+                _cache_put(cache_key, combined, variables_key, bitmap)
+                return bitmap
+
+            variables_key = tuple(variables)
+            cache_key = combined.hash()
+            cached = _cache_get(cache_key, combined, variables_key)
             if cached is not None:
                 return cached
 
@@ -389,7 +566,7 @@ class GPUBagSolver:
             result = dispatcher.evaluate_bag(compiled)
             bitmap = result.bitmap
 
-            _cache_put(cache_key, bitmap)
+            _cache_put(cache_key, combined, variables_key, bitmap)
             return bitmap
         except Exception:
             logger.debug("Falling back to conservative bitmap in _solve_cpu", exc_info=True)
@@ -431,12 +608,13 @@ class GPUBagSolver:
             with self._message_inbox_lock:
                 if parent_bag_id not in self._message_inbox:
                     self._message_inbox[parent_bag_id] = []
-                self._message_inbox[parent_bag_id].append(projected)
+                self._message_inbox[parent_bag_id].append((projected, sorted(adhesion_vars)))
             return
 
         var_positions = {name: idx for idx, name in enumerate(solution.variables)}
+        adhesion_list = sorted(adhesion_vars)
         adhesion_indices = [
-            var_positions[var] for var in sorted(adhesion_vars) if var in var_positions
+            var_positions[var] for var in adhesion_list if var in var_positions
         ]
 
         if not adhesion_indices:
@@ -453,15 +631,17 @@ class GPUBagSolver:
             for i, pos in enumerate(adhesion_indices):
                 if (idx >> pos) & 1:
                     adhesion_idx |= 1 << i
-
+            
             projected[adhesion_idx >> 3] |= np.uint8(1 << (adhesion_idx & 7))
 
         with self._message_inbox_lock:
             if parent_bag_id not in self._message_inbox:
                 self._message_inbox[parent_bag_id] = []
-            self._message_inbox[parent_bag_id].append(projected)
+            # We ONLY append variables that are actually present (which corresponds to adhesion_indices)
+            actual_adhesion_vars = [var for var in adhesion_list if var in var_positions]
+            self._message_inbox[parent_bag_id].append((projected, actual_adhesion_vars))
 
-    def get_messages_for_bag(self, bag_id: int) -> list[npt.NDArray[np.uint8]]:
+    def get_messages_for_bag(self, bag_id: int) -> list[tuple[npt.NDArray[np.uint8], list[str]]]:
         """Get accumulated messages for a bag from its children."""
         with self._message_inbox_lock:
             return list(self._message_inbox.get(bag_id, []))

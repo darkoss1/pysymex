@@ -14,6 +14,12 @@ class TestBranchInfo:
         assert info.pc == 1
 
 
+def test_base_var_name_only_strips_generated_discriminators() -> None:
+    assert pysymex.core.graph.treewidth._base_var_name("x_42_int") == "x_42"
+    assert pysymex.core.graph.treewidth._base_var_name("x_42_is_bool") == "x_42"
+    assert pysymex.core.graph.treewidth._base_var_name("result_is_int") == "result_is_int"
+
+
 class TestTreeDecomposition:
     """Test suite for pysymex.core.graph.treewidth.TreeDecomposition."""
     def test_get_parent(self) -> None:
@@ -77,6 +83,16 @@ class TestConstraintInteractionGraph:
         graph = _make_graph()
         graph.add_branch(1, z3.Int("x_int") > 0)
         assert graph.is_stabilized() is False
+
+    def test_is_stabilized_with_relaxed_defaults(self) -> None:
+        """Scenario: three stable branches should satisfy the new defaults."""
+        graph = _make_graph()
+        x = z3.Int("x_int")
+        graph.add_branch(1, x > 0)
+        graph.add_branch(2, x > 1)
+        graph.add_branch(3, x > 2)
+        graph._branches_since_last_tw_change = 4
+        assert graph.is_stabilized() is True
 
     def test_compute_tree_decomposition(self) -> None:
         """Scenario: decomposition on small graph; expected non-negative width."""

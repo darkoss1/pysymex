@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.type_inference.env import TypeEnvironment
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind
 

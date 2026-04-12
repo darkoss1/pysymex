@@ -159,7 +159,7 @@ def test_check_object_invariants() -> None:
     
     obj2 = Dummy(-5)
     state2 = InvariantState()
-    with patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.sat), \
-         patch("pysymex.analysis.specialized.invariants.InvariantChecker._extract_counterexample", return_value={}):
+    # Patch check_invariant to return False (meaning it failed)
+    with patch.object(InvariantChecker, "check_invariant", return_value=False):
         issues2 = check_object_invariants(obj2, state2, "init", "entry", [])
         assert len(issues2) == 1

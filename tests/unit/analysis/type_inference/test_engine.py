@@ -1,4 +1,3 @@
-import pytest
 from typing import Union
 from pysymex.analysis.type_inference.engine import TypeInferenceEngine
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind

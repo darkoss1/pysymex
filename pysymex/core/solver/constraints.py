@@ -24,6 +24,7 @@ AST-based hashing instead of expensive string conversion.
 
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -77,6 +78,17 @@ def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> 
         mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF
     h ^= len(constraints)
     return h & 0xFFFFFFFFFFFFFFFF
+
+
+def structural_digest(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
+    """Collision-resistant digest for correctness-critical cache keys."""
+    h = hashlib.blake2b(digest_size=16)
+    for constraint in constraints:
+        sexpr = constraint.sexpr().encode("utf-8")
+        h.update(len(sexpr).to_bytes(8, "little", signed=False))
+        h.update(sexpr)
+    h.update(len(constraints).to_bytes(8, "little", signed=False))
+    return int.from_bytes(h.digest(), "little", signed=False)
 
 # PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex

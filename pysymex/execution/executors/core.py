@@ -1,4 +1,4 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# PySyMex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 PySyMex Team
@@ -224,9 +224,11 @@ class SymbolicExecutor:
         self._chtd_unsat_mismatches: int = 0
         self._chtd_solver_unavailable: int = 0
         self._chtd_skipped_unstable: int = 0
+        self._chtd_skipped_no_fork: int = 0
         self._chtd_skipped_size: int = 0
         self._chtd_skipped_treewidth: int = 0
         self._chtd_total_time_seconds: float = 0.0
+        self._last_should_run_chtd: bool | None = None
         self._phase_timers_seconds: dict[str, float] = {
             "execute_step": 0.0,
             "process_execution_result": 0.0,
@@ -607,9 +609,11 @@ class SymbolicExecutor:
         self._chtd_unsat_mismatches = 0
         self._chtd_solver_unavailable = 0
         self._chtd_skipped_unstable = 0
+        self._chtd_skipped_no_fork = 0
         self._chtd_skipped_size = 0
         self._chtd_skipped_treewidth = 0
         self._chtd_total_time_seconds = 0.0
+        self._last_should_run_chtd = None
         self._phase_timers_seconds = {
             "execute_step": 0.0,
             "process_execution_result": 0.0,
@@ -856,25 +860,25 @@ class SymbolicExecutor:
         if name == "self" and type_hint == "any":
             type_hint = "object"
 
-        if type_hint in ("int", "integer"):
+        if type_hint.startswith(("int", "integer")):
             value_int, constraint_int = SymbolicValue.symbolic_int(name)
             return cast("SymbolicCreatedValue", value_int), constraint_int
-        elif type_hint in ("float", "real"):
+        elif type_hint.startswith(("float", "real")):
             sf = SymbolicFloat(name)
             return sf, z3.BoolVal(True)
-        elif type_hint in ("str", "string"):
+        elif type_hint.startswith(("str", "string")):
             value_str, constraint_str = SymbolicString.symbolic(name)
             return cast("SymbolicCreatedValue", value_str), constraint_str
-        elif type_hint in ("list", "array", "tuple"):
+        elif type_hint.startswith(("list", "array", "tuple")):
             value_list, constraint_list = SymbolicList.symbolic(name)
             return cast("SymbolicCreatedValue", value_list), constraint_list
-        elif type_hint in ("bool", "boolean"):
+        elif type_hint.startswith(("bool", "boolean")):
             value_bool, constraint_bool = SymbolicValue.symbolic_bool(name)
             return cast("SymbolicCreatedValue", value_bool), constraint_bool
-        elif type_hint in ("path", "pathlib.path"):
+        elif type_hint.startswith(("path", "pathlib.path")):
             value_path, constraint_path = SymbolicValue.symbolic_path(name)
             return cast("SymbolicCreatedValue", value_path), constraint_path
-        elif type_hint in ("dict", "mapping", "kwargs"):
+        elif type_hint.startswith(("dict", "mapping", "kwargs")):
             value_dict, constraint_dict = SymbolicDict.symbolic(name)
             return cast("SymbolicCreatedValue", value_dict), constraint_dict
         elif type_hint == "object":
@@ -1121,7 +1125,9 @@ class SymbolicExecutor:
 
             sat = True
 
-            if len(result.new_states) >= 2 and self.config.enable_chtd:
+            if result.new_states and self.config.enable_chtd:
+                if len(result.new_states) < 2:
+                    self._chtd_skipped_no_fork += 1
                 for ns in result.new_states:
                     if ns.path_constraints:
                         last_constraint = ns.path_constraints.newest()
@@ -1135,6 +1141,15 @@ class SymbolicExecutor:
                             traceback.print_exc()
 
                 should_run_chtd = self._should_run_chtd()
+                if (
+                    should_run_chtd
+                    and self._last_should_run_chtd is False
+                    and isinstance(self._worklist, AdaptivePathManager)
+                ):
+                    self._worklist.reheat_arm(AdaptivePathManager.ARM_STRUCTURAL, strength=0.35)
+                if not should_run_chtd and isinstance(self._worklist, AdaptivePathManager):
+                    self._worklist.record_reward(0.5)
+                self._last_should_run_chtd = should_run_chtd
                 if should_run_chtd:
                     start = time.perf_counter()
                     try:
@@ -1144,7 +1159,7 @@ class SymbolicExecutor:
                             time.perf_counter() - td_start
                         )
                         self._phase_counts["chtd_decomposition"] += 1
-                        if td.width > 0 and td.bags:
+                        if td.width >= 0 and td.bags:
                             branch_info = self._interaction_graph.branch_info
 
                             use_gpu_for_chtd = (
@@ -1182,22 +1197,24 @@ class SymbolicExecutor:
                         self._chtd_total_time_seconds += time.perf_counter() - start
                         self._reschedule_chtd_check()
 
+            states_to_process = list(result.new_states)
             if not sat and result.new_states:
-                if not self._validate_chtd_unsat(
-                    parent_state=state, forked_states=result.new_states
-                ):
-                    sat = True
+                unsat_states, sat_states = self._partition_chtd_unsat(
+                    parent_state=state,
+                    forked_states=result.new_states,
+                )
+                if unsat_states:
+                    self._paths_pruned += len(unsat_states)
+                states_to_process = sat_states
 
-            if not sat:
-                self._paths_pruned += len(result.new_states)
-            elif result.new_states:
-                first_state = result.new_states[0]
+            if states_to_process:
+                first_state = states_to_process[0]
                 if self._check_path_feasibility(first_state):
                     first_state.depth = state.depth + 1
                     if self._worklist:
                         self._worklist.add_state(first_state)
 
-                for new_state in result.new_states[1:]:
+                for new_state in states_to_process[1:]:
                     can_add = True
                     if self._resource_tracker is not None:
                         try:
@@ -1229,9 +1246,6 @@ class SymbolicExecutor:
             self._chtd_skipped_unstable += 1
             return False
 
-        if self._worklist is not None and self._worklist.size() < 50:
-            return False
-
         if getattr(self._interaction_graph, "estimated_treewidth", 0) > 25:
             self._chtd_skipped_treewidth += 1
             return False
@@ -1239,6 +1253,7 @@ class SymbolicExecutor:
         if len(self._interaction_graph.branch_info) > self.config.chtd_max_branch_infos:
             self._chtd_skipped_size += 1
             return False
+            
         return self._iterations >= self._next_chtd_check_iteration
 
     def _reschedule_chtd_check(self) -> None:
@@ -1264,6 +1279,7 @@ class SymbolicExecutor:
             "unsat_mismatches": self._chtd_unsat_mismatches,
             "solver_unavailable": self._chtd_solver_unavailable,
             "skipped_unstable": self._chtd_skipped_unstable,
+            "skipped_no_fork": self._chtd_skipped_no_fork,
             "skipped_size": self._chtd_skipped_size,
             "skipped_treewidth": self._chtd_skipped_treewidth,
             "total_time_seconds": self._chtd_total_time_seconds,
@@ -1273,13 +1289,21 @@ class SymbolicExecutor:
             "phase_counts": dict(self._phase_counts),
         }
 
-    def _validate_chtd_unsat(self, *, parent_state: VMState, forked_states: list[VMState]) -> bool:
-        """Confirm CHTD UNSAT decisions with incremental Z3 before pruning.
+    def _partition_chtd_unsat(
+        self,
+        *,
+        parent_state: VMState,
+        forked_states: list[VMState],
+    ) -> tuple[list[VMState], list[VMState]]:
+        """Validate CHTD UNSAT decisions per candidate path.
 
-        This guards soundness if a backend/integration bug reports false UNSAT.
+        Returns:
+            (unsat_states, sat_states)
         """
-        self._chtd_unsat_validations += 1
+        self._chtd_unsat_validations += len(forked_states)
         parent_prefix_len = len(parent_state.path_constraints)
+        unsat_states: list[VMState] = []
+        sat_states: list[VMState] = []
         for candidate in forked_states:
             constraints = candidate.path_constraints
             known_prefix_len = min(parent_prefix_len, len(candidate.path_constraints))
@@ -1288,11 +1312,17 @@ class SymbolicExecutor:
                 known_sat_prefix_len=known_prefix_len if known_prefix_len > 0 else None,
             ):
                 self._chtd_unsat_mismatches += 1
+                newest = constraints.newest()
                 logger.warning(
-                    "CHTD reported UNSAT but incremental solver found SAT; skipping CHTD prune"
+                    "CHTD reported UNSAT but incremental solver found SAT; skipping "
+                    "CHTD prune for candidate at pc=%s newest=%s",
+                    candidate.pc,
+                    newest,
                 )
-                return False
-        return True
+                sat_states.append(candidate)
+            else:
+                unsat_states.append(candidate)
+        return unsat_states, sat_states
 
     def _collect_state_merger_stats(self) -> dict[str, object]:
         if self._state_merger is None:

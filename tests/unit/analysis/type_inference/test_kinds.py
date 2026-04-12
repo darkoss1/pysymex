@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.type_inference.kinds import TypeKind, PyType
 
 class TestTypeKind:

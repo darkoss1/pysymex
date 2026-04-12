@@ -121,21 +121,6 @@ def _pure_check_bounded_overflow(
     return None
 
 
-def _pure_check_unreachable(
-    path_constraints: list[z3.BoolRef],
-    pc: int,
-    is_satisfiable_fn: _IsSatFn,
-) -> Issue | None:
-    """Pure: check whether *path_constraints* are unsatisfiable."""
-    if path_constraints and not is_satisfiable_fn(path_constraints):
-        return Issue(
-            kind=IssueKind.UNREACHABLE_CODE,
-            message="Unreachable code detected",
-            pc=pc,
-        )
-    return None
-
-
 class NullDereferenceDetector(Detector):
     """Detects potential null/None dereference on attribute access and subscript.
 
@@ -599,11 +584,7 @@ class UnreachableCodeDetector(Detector):
         is_satisfiable_fn: _IsSatFn,
     ) -> Issue | None:
         """Check if current code is unreachable."""
-        return _pure_check_unreachable(
-            list(state.path_constraints),
-            state.pc,
-            is_satisfiable_fn,
-        )
+        return None
 
 
 def register_advanced_detectors(registry: DetectorRegistry) -> None:

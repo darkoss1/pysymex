@@ -16,13 +16,13 @@ class TestLoopBound:
         """Test constant behavior."""
         b = LoopBound.constant(5)
         assert b.is_finite is True
-        assert z3.simplify(b.upper).eq(z3.IntVal(5)) # type: ignore[attr-defined]
+        assert z3.is_true(b.upper == z3.IntVal(5))
 
     def test_range(self) -> None:
         """Test range behavior."""
         b = LoopBound.range(1, 10)
-        assert z3.simplify(b.lower).eq(z3.IntVal(1)) # type: ignore[attr-defined]
-        assert z3.simplify(b.upper).eq(z3.IntVal(10)) # type: ignore[attr-defined]
+        assert z3.is_true(b.lower == z3.IntVal(1))
+        assert z3.is_true(b.upper == z3.IntVal(10))
 
     def test_unbounded(self) -> None:
         """Test unbounded behavior."""
@@ -63,13 +63,13 @@ class TestInductionVariable:
         """Test value_at_iteration behavior."""
         iv = InductionVariable("i", z3.IntVal(0), z3.IntVal(1))
         val = iv.value_at_iteration(z3.IntVal(5))
-        assert z3.simplify(val).eq(z3.IntVal(5)) # type: ignore[attr-defined]
+        assert z3.is_true(val == z3.IntVal(5))
 
     def test_final_value(self) -> None:
         """Test final_value behavior."""
         iv = InductionVariable("i", z3.IntVal(0), z3.IntVal(2))
         val = iv.final_value(z3.IntVal(3))
-        assert z3.simplify(val).eq(z3.IntVal(6)) # type: ignore[attr-defined]
+        assert z3.is_true(val == z3.IntVal(6))
 
 class TestLoopSummary:
     """Test suite for pysymex.analysis.loops.types.LoopSummary."""

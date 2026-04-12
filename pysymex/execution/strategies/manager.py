@@ -260,6 +260,7 @@ class AdaptivePathManager(PathManager["VMState"]):
         coverage_prior: tuple[float, float] = (2.0, 1.0),
         random_prior: tuple[float, float] = (1.0, 1.0),
         gamma: float = 0.95,
+        prior_mix: float = 0.05,
         deterministic: bool = False,
         random_seed: int = 42,
     ) -> None:
@@ -269,10 +270,14 @@ class AdaptivePathManager(PathManager["VMState"]):
         self._coverage_heap: list[PrioritizedState[int]] = []
         self._random_pool: list[int] = []
 
+        self._arm_priors: dict[str, tuple[float, float]] = {
+            self.ARM_STRUCTURAL: structural_prior,
+            self.ARM_COVERAGE: coverage_prior,
+            self.ARM_RANDOM: random_prior,
+        }
         self._arms: dict[str, list[float]] = {
-            self.ARM_STRUCTURAL: list(structural_prior),
-            self.ARM_COVERAGE: list(coverage_prior),
-            self.ARM_RANDOM: list(random_prior),
+            arm_name: [alpha, beta]
+            for arm_name, (alpha, beta) in self._arm_priors.items()
         }
 
         self._covered_pcs: set[int] = set()
@@ -282,6 +287,7 @@ class AdaptivePathManager(PathManager["VMState"]):
         self._total_rewards: float = 0.0
         self._arm_selections: dict[str, int] = dict.fromkeys(self._arms, 0)
         self._gamma = gamma
+        self._prior_mix = prior_mix
         self._deterministic = deterministic
         self._rng = _random_mod.Random(random_seed)
 
@@ -337,11 +343,27 @@ class AdaptivePathManager(PathManager["VMState"]):
         clamped = max(self._REWARD_MIN, min(self._REWARD_MAX, reward))
         r = (clamped - self._REWARD_MIN) / (self._REWARD_MAX - self._REWARD_MIN)
 
-        arm = self._arms[self._last_arm]
-        arm[0] = self._gamma * arm[0] + r
-        arm[1] = self._gamma * arm[1] + (1.0 - r)
+        arm_name = self._last_arm
+        arm = self._arms[arm_name]
+        prior_alpha, prior_beta = self._arm_priors[arm_name]
+        arm[0] = self._gamma * arm[0] + r + (1.0 - self._gamma) * self._prior_mix * prior_alpha
+        arm[1] = (
+            self._gamma * arm[1]
+            + (1.0 - r)
+            + (1.0 - self._gamma) * self._prior_mix * prior_beta
+        )
 
         self._total_rewards += reward
+
+    def reheat_arm(self, arm_name: str, strength: float = 0.5) -> None:
+        """Blend an arm back toward its prior to recover from stale posteriors."""
+        if arm_name not in self._arms:
+            return
+        strength = max(0.0, min(1.0, strength))
+        prior_alpha, prior_beta = self._arm_priors[arm_name]
+        arm = self._arms[arm_name]
+        arm[0] = ((1.0 - strength) * arm[0]) + (strength * prior_alpha)
+        arm[1] = ((1.0 - strength) * arm[1]) + (strength * prior_beta)
 
     def _thompson_sample(self) -> str:
         """Select an arm via Thompson Sampling (Beta-Bernoulli)."""

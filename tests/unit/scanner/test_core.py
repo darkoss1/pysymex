@@ -1,27 +1,27 @@
-﻿import pytest
-import pysymex.scanner.core
+from __future__ import annotations
 
-def test_get_code_objects_with_context() -> None:
-    """Test get_code_objects_with_context behavior."""
-    raise NotImplementedError("not implemented")
-def test_analyze_source() -> None:
-    """Test analyze_source behavior."""
-    raise NotImplementedError("not implemented")
-def test_analyze_file() -> None:
-    """Test analyze_file behavior."""
-    raise NotImplementedError("not implemented")
-def test_scan_file() -> None:
-    """Test scan_file behavior."""
-    raise NotImplementedError("not implemented")
-def test_scan_directory() -> None:
-    """Test scan_directory behavior."""
-    raise NotImplementedError("not implemented")
-def test_on_file_event() -> None:
-    """Test on_file_event behavior."""
-    raise NotImplementedError("not implemented")
-def test_print_final_summary() -> None:
-    """Test print_final_summary behavior."""
-    raise NotImplementedError("not implemented")
-def test_main() -> None:
-    """Test main behavior."""
-    raise NotImplementedError("not implemented")
+from pysymex.scanner.core import analyze_source, get_code_objects_with_context
+
+
+def test_get_code_objects_with_context_tracks_nested_paths() -> None:
+    src = """
+class Outer:
+    def method(self):
+        def inner():
+            return 1
+        return inner()
+"""
+    root = compile(src, "sample.py", "exec")
+    items = get_code_objects_with_context(root)
+    full_paths = {full for _, _, full in items if full is not None}
+
+    assert "Outer" in full_paths
+    assert "Outer.method" in full_paths
+    assert "Outer.method.inner" in full_paths
+
+
+def test_analyze_source_reports_syntax_error() -> None:
+    result = analyze_source("def broken(:\n    pass\n", "broken.py")
+    assert result.error is not None
+    assert "Syntax Error" in result.error
+

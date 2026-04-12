@@ -33,6 +33,7 @@ import z3
 logger = logging.getLogger(__name__)
 
 from pysymex.core.memory.addressing import next_address
+from pysymex.core.solver.engine import create_solver
 from pysymex.core.memory.types import (
     HeapObject,
     MemoryRegion,

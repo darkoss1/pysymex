@@ -155,7 +155,7 @@ def handle_compare_op(
                     )
                 )
 
-    if is_satisfiable([*path_constraints, z3.Not(mixed)]) or op_name in ("==", "!="):
+    if op_name in ("==", "!=") or is_satisfiable([*path_constraints, z3.Not(mixed)]):
         ok_state = state.fork()
         if op_name not in ("==", "!="):
             ok_state = ok_state.add_constraint(z3.Not(mixed))
@@ -171,31 +171,44 @@ def handle_compare_op(
         ) -> z3.BoolRef:
             rm = z3.RoundNearestTiesToEven()
             sort = z3.Float64()
-
-            l_val_fp = z3.If(l_is_int, z3.fpToFP(rm, z3.ToReal(l_int), sort), l_float)
-            r_val_fp = z3.If(r_is_int, z3.fpToFP(rm, z3.ToReal(r_int), sort), r_float)
+            l_is_fp = z3.Not(l_is_int)
+            r_is_fp = z3.Not(r_is_int)
 
             if op == "==":
-                fp_cmp = z3.fpEQ(l_val_fp, r_val_fp)
                 int_cmp = l_int == r_int
+                same_fp_cmp = z3.fpEQ(l_float, r_float)
+                left_cross_cmp = z3.fpEQ(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float)
+                right_cross_cmp = z3.fpEQ(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort))
             elif op == "!=":
-                fp_cmp = z3.Not(z3.fpEQ(l_val_fp, r_val_fp))
                 int_cmp = l_int != r_int
+                same_fp_cmp = z3.Not(z3.fpEQ(l_float, r_float))
+                left_cross_cmp = z3.Not(z3.fpEQ(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float))
+                right_cross_cmp = z3.Not(z3.fpEQ(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort)))
             elif op == "<":
-                fp_cmp = z3.fpLT(l_val_fp, r_val_fp)
                 int_cmp = l_int < r_int
+                same_fp_cmp = z3.fpLT(l_float, r_float)
+                left_cross_cmp = z3.fpLT(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float)
+                right_cross_cmp = z3.fpLT(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort))
             elif op == "<=":
-                fp_cmp = z3.fpLEQ(l_val_fp, r_val_fp)
                 int_cmp = l_int <= r_int
+                same_fp_cmp = z3.fpLEQ(l_float, r_float)
+                left_cross_cmp = z3.fpLEQ(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float)
+                right_cross_cmp = z3.fpLEQ(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort))
             elif op == ">":
-                fp_cmp = z3.fpGT(l_val_fp, r_val_fp)
                 int_cmp = l_int > r_int
+                same_fp_cmp = z3.fpGT(l_float, r_float)
+                left_cross_cmp = z3.fpGT(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float)
+                right_cross_cmp = z3.fpGT(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort))
             elif op == ">=":
-                fp_cmp = z3.fpGEQ(l_val_fp, r_val_fp)
                 int_cmp = l_int >= r_int
+                same_fp_cmp = z3.fpGEQ(l_float, r_float)
+                left_cross_cmp = z3.fpGEQ(z3.fpToFP(rm, z3.ToReal(l_int), sort), r_float)
+                right_cross_cmp = z3.fpGEQ(l_float, z3.fpToFP(rm, z3.ToReal(r_int), sort))
             else:
                 return Z3_FALSE
 
+            cross_cmp = _if_bool(l_is_int, left_cross_cmp, right_cross_cmp)
+            fp_cmp = _if_bool(z3.And(l_is_fp, r_is_fp), same_fp_cmp, cross_cmp)
             return _if_bool(z3.And(l_is_int, r_is_int), int_cmp, fp_cmp)
 
         l_int_like = z3.Or(left_is_int, left_is_bool)

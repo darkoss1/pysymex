@@ -137,9 +137,11 @@ class SymbolicList(SymbolicType):
         name = fresh_name("list")
         z3_array = z3.Array(f"{name}_arr", z3.IntSort(), z3.IntSort())
         for i, v in enumerate(values):
-            z3_array = z3.Store(z3_array, i, v)
+            z3_array = z3.Store(z3_array, i, getattr(v, 'z3_int', z3.IntVal(v)) if hasattr(v, 'z3_int') else z3.IntVal(v))
         z3_len = z3.IntVal(len(values))
-        return SymbolicList(str(values), z3_array, z3_len)
+        lst = SymbolicList(str(values), z3_array, z3_len)
+        lst._concrete_items = list(values)
+        return lst
 
     @staticmethod
     def empty(name: str = "empty_list") -> SymbolicList:
