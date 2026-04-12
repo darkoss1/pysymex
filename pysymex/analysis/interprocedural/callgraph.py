@@ -219,7 +219,7 @@ class CallGraph:
         """Get all transitive callers (functions that lead to this one)."""
         result: set[str] = set()
         queue: deque[str] = deque([name])
-        visited: set[str] = {name}
+        visited: set[str] = set()
         while queue:
             current = queue.popleft()
             callers = self.get_callers(current)
@@ -234,7 +234,7 @@ class CallGraph:
         """Get all transitive callees (functions reachable from this one)."""
         result: set[str] = set()
         queue: deque[str] = deque([name])
-        visited: set[str] = {name}
+        visited: set[str] = set()
         while queue:
             current = queue.popleft()
             callees = self.get_callees(current)

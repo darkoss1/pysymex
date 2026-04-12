@@ -1,71 +1,165 @@
-﻿import pytest
-import pysymex.analysis.specialized.invariants
+import pytest
+import z3
+from unittest.mock import Mock, patch
+from pysymex.analysis.specialized.invariants import (
+    ClassInvariant, InvariantViolation, invariant, get_invariants,
+    InvariantChecker, InvariantState, parse_invariant_condition, check_object_invariants
+)
 
 class TestClassInvariant:
     """Test suite for pysymex.analysis.specialized.invariants.ClassInvariant."""
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        raise NotImplementedError("not implemented")
+        inv = ClassInvariant("self.x > 0", "msg")
+        assert inv.condition == "self.x > 0"
+        assert inv.message == "msg"
+
 class TestInvariantViolation:
     """Test suite for pysymex.analysis.specialized.invariants.InvariantViolation."""
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        raise NotImplementedError("not implemented")
+        inv = ClassInvariant("x>0", "m", class_name="cls")
+        v = InvariantViolation(inv, "entry", "meth")
+        assert v.invariant.class_name == "cls"
+        assert v.method_name == "meth"
+
 def test_invariant() -> None:
     """Test invariant behavior."""
-    raise NotImplementedError("not implemented")
+    @invariant("self.x > 0")
+    class Dummy:
+        pass
+    
+    invs = get_invariants(Dummy)
+    assert len(invs) == 1
+    assert invs[0].condition == "self.x > 0"
+
 def test_get_invariants() -> None:
     """Test get_invariants behavior."""
-    raise NotImplementedError("not implemented")
+    class Dummy:
+        __invariants__ = [ClassInvariant("self.x > 0", class_name="Dummy")]
+    invs = get_invariants(Dummy)
+    assert len(invs) == 1
+
 class TestInvariantChecker:
     """Test suite for pysymex.analysis.specialized.invariants.InvariantChecker."""
     def test_violations(self) -> None:
         """Test violations behavior."""
-        raise NotImplementedError("not implemented")
+        checker = InvariantChecker()
+        assert len(checker.violations) == 0
+
     def test_clear_violations(self) -> None:
         """Test clear_violations behavior."""
-        raise NotImplementedError("not implemented")
-    def test_check_invariant(self) -> None:
+        checker = InvariantChecker()
+        checker.violations.append(Mock())
+        checker.clear_violations()
+        assert len(checker.violations) == 0
+
+    @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
+    def test_check_invariant(self, mock_check) -> None:
         """Test check_invariant behavior."""
-        raise NotImplementedError("not implemented")
-    def test_check_all_invariants(self) -> None:
+        checker = InvariantChecker()
+        inv = ClassInvariant("self.x > 0", class_name="cls")
+        assert checker.check_invariant(inv, z3.BoolVal(True), "entry", "meth", []) is True
+
+    @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
+    def test_check_all_invariants(self, mock_check) -> None:
         """Test check_all_invariants behavior."""
-        raise NotImplementedError("not implemented")
-    def test_check_init_exit(self) -> None:
+        checker = InvariantChecker()
+        invs = [ClassInvariant("self.x > 0", class_name="cls")]
+        res = checker.check_all_invariants(invs, [z3.BoolVal(True)], "entry", "meth", [])
+        assert len(res) == 0
+
+    @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
+    def test_check_init_exit(self, mock_check) -> None:
         """Test check_init_exit behavior."""
-        raise NotImplementedError("not implemented")
-    def test_check_method_entry(self) -> None:
+        checker = InvariantChecker()
+        checker.check_init_exit([ClassInvariant("self.x > 0", class_name="cls")], [z3.BoolVal(True)], [])
+        assert len(checker.violations) == 0
+
+    @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
+    def test_check_method_entry(self, mock_check) -> None:
         """Test check_method_entry behavior."""
-        raise NotImplementedError("not implemented")
-    def test_check_method_exit(self) -> None:
+        checker = InvariantChecker()
+        checker.check_method_entry([ClassInvariant("self.x > 0", class_name="cls")], [z3.BoolVal(True)], "m", [])
+        assert len(checker.violations) == 0
+
+    @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
+    def test_check_method_exit(self, mock_check) -> None:
         """Test check_method_exit behavior."""
-        raise NotImplementedError("not implemented")
+        checker = InvariantChecker()
+        checker.check_method_exit([ClassInvariant("self.x > 0", class_name="cls")], [z3.BoolVal(True)], "m", [])
+        assert len(checker.violations) == 0
+
 class TestInvariantState:
     """Test suite for pysymex.analysis.specialized.invariants.InvariantState."""
     def test_checker(self) -> None:
         """Test checker behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        assert isinstance(state.checker, InvariantChecker)
+
     def test_register_class(self) -> None:
         """Test register_class behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        state.register_class("cls", [ClassInvariant("self.x > 0")])
+        assert "cls" in state.class_invariants
+
     def test_get_invariants(self) -> None:
         """Test get_invariants behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        state.register_class("cls", [ClassInvariant("self.x > 0")])
+        assert len(state.get_invariants("cls")) == 1
+        assert len(state.get_invariants("other")) == 0
+
     def test_record_violation(self) -> None:
         """Test record_violation behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        state.record_violation(Mock())
+        assert state.has_violations() is True
+
     def test_has_violations(self) -> None:
         """Test has_violations behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        assert state.has_violations() is False
+
     def test_get_violations_for_class(self) -> None:
         """Test get_violations_for_class behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        v = InvariantViolation(ClassInvariant("x>0", class_name="cls"), "entry", "meth")
+        state.record_violation(v)
+        assert len(state.get_violations_for_class("cls")) == 1
+        assert len(state.get_violations_for_class("other")) == 0
+
     def test_clone(self) -> None:
         """Test clone behavior."""
-        raise NotImplementedError("not implemented")
+        state = InvariantState()
+        state.register_class("cls", [ClassInvariant("self.x > 0")])
+        c = state.clone()
+        assert "cls" in c.class_invariants
+
 def test_parse_invariant_condition() -> None:
     """Test parse_invariant_condition behavior."""
-    raise NotImplementedError("not implemented")
+    ast_expr = parse_invariant_condition("self.x > 0", {})
+    assert ast_expr is not None
+    
+    # ContractCompiler handles invalid syntax by returning a dummy
+    assert isinstance(parse_invariant_condition("self.x > > 0", {}), z3.ExprRef)
+
 def test_check_object_invariants() -> None:
     """Test check_object_invariants behavior."""
-    raise NotImplementedError("not implemented")
+    @invariant("self.x > 0")
+    class Dummy:
+        def __init__(self, x: int): self.x = x
+        
+    obj = Dummy(5)
+    state = InvariantState()
+    
+    with patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat):
+        issues = check_object_invariants(obj, state, "init", "entry", [])
+        assert len(issues) == 0
+    
+    obj2 = Dummy(-5)
+    state2 = InvariantState()
+    with patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.sat), \
+         patch("pysymex.analysis.specialized.invariants.InvariantChecker._extract_counterexample", return_value={}):
+        issues2 = check_object_invariants(obj2, state2, "init", "entry", [])
+        assert len(issues2) == 1

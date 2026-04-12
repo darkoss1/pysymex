@@ -1,46 +1,80 @@
-﻿import pytest
-import pysymex.analysis.loops.types
+import pytest
+import z3
+from pysymex.analysis.loops.types import (
+    LoopType, LoopBound, LoopInfo, InductionVariable, LoopSummary
+)
 
 class TestLoopType:
     """Test suite for pysymex.analysis.loops.types.LoopType."""
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        raise NotImplementedError("not implemented")
+        assert LoopType.FOR_RANGE.name == "FOR_RANGE"
+
 class TestLoopBound:
     """Test suite for pysymex.analysis.loops.types.LoopBound."""
     def test_constant(self) -> None:
         """Test constant behavior."""
-        raise NotImplementedError("not implemented")
+        b = LoopBound.constant(5)
+        assert b.is_finite is True
+        assert z3.simplify(b.upper).eq(z3.IntVal(5)) # type: ignore[attr-defined]
+
     def test_range(self) -> None:
         """Test range behavior."""
-        raise NotImplementedError("not implemented")
+        b = LoopBound.range(1, 10)
+        assert z3.simplify(b.lower).eq(z3.IntVal(1)) # type: ignore[attr-defined]
+        assert z3.simplify(b.upper).eq(z3.IntVal(10)) # type: ignore[attr-defined]
+
     def test_unbounded(self) -> None:
         """Test unbounded behavior."""
-        raise NotImplementedError("not implemented")
+        b = LoopBound.unbounded()
+        assert b.is_finite is False
+
     def test_symbolic(self) -> None:
         """Test symbolic behavior."""
-        raise NotImplementedError("not implemented")
+        x = z3.Int("x")
+        b = LoopBound.symbolic(x)
+        assert b.upper is x
+        assert b.exact is x
+
 class TestLoopInfo:
     """Test suite for pysymex.analysis.loops.types.LoopInfo."""
     def test_contains_pc(self) -> None:
         """Test contains_pc behavior."""
-        raise NotImplementedError("not implemented")
+        info = LoopInfo(header_pc=10, back_edge_pc=20, exit_pcs={30}, body_pcs={10, 15, 20})
+        assert info.contains_pc(10) is True
+        assert info.contains_pc(15) is True
+        assert info.contains_pc(99) is False
+
     def test_is_header(self) -> None:
         """Test is_header behavior."""
-        raise NotImplementedError("not implemented")
+        info = LoopInfo(header_pc=10, back_edge_pc=20, exit_pcs={30}, body_pcs={10, 15, 20})
+        assert info.is_header(10) is True
+        assert info.is_header(15) is False
+
     def test_is_exit(self) -> None:
         """Test is_exit behavior."""
-        raise NotImplementedError("not implemented")
+        info = LoopInfo(header_pc=10, back_edge_pc=20, exit_pcs={30}, body_pcs={10, 15, 20})
+        assert info.is_exit(30) is True
+        assert info.is_exit(20) is False
+
 class TestInductionVariable:
     """Test suite for pysymex.analysis.loops.types.InductionVariable."""
     def test_value_at_iteration(self) -> None:
         """Test value_at_iteration behavior."""
-        raise NotImplementedError("not implemented")
+        iv = InductionVariable("i", z3.IntVal(0), z3.IntVal(1))
+        val = iv.value_at_iteration(z3.IntVal(5))
+        assert z3.simplify(val).eq(z3.IntVal(5)) # type: ignore[attr-defined]
+
     def test_final_value(self) -> None:
         """Test final_value behavior."""
-        raise NotImplementedError("not implemented")
+        iv = InductionVariable("i", z3.IntVal(0), z3.IntVal(2))
+        val = iv.final_value(z3.IntVal(3))
+        assert z3.simplify(val).eq(z3.IntVal(6)) # type: ignore[attr-defined]
+
 class TestLoopSummary:
     """Test suite for pysymex.analysis.loops.types.LoopSummary."""
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        raise NotImplementedError("not implemented")
+        summary = LoopSummary(iterations=10, variable_effects={"x": z3.IntVal(5)}, memory_effects={})
+        assert summary.iterations == 10
+        assert "x" in summary.variable_effects
