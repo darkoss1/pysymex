@@ -69,6 +69,7 @@ class IssueKind(Enum):
     TAINT_ERROR = auto()
     INJECTION = auto()
     SYNTAX_ERROR = auto()
+    LOGICAL_CONTRADICTION = auto()
     UNKNOWN = auto()
 
 

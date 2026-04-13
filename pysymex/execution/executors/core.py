@@ -1304,21 +1304,17 @@ class SymbolicExecutor:
         Returns:
             (unsat_states, sat_states)
         """
+        _ = parent_state
         self._chtd_unsat_validations += len(forked_states)
-        parent_prefix_len = len(parent_state.path_constraints)
         unsat_states: list[VMState] = []
         sat_states: list[VMState] = []
         for candidate in forked_states:
             constraints = candidate.path_constraints
-            known_prefix_len = min(parent_prefix_len, len(candidate.path_constraints))
-            if self.solver.is_sat(
-                constraints,
-                known_sat_prefix_len=known_prefix_len if known_prefix_len > 0 else None,
-            ):
+            if self.solver.is_sat(constraints):
                 self._chtd_unsat_mismatches += 1
                 newest = constraints.newest()
                 logger.warning(
-                    "CHTD reported UNSAT but incremental solver found SAT; skipping "
+                    "CHTD reported UNSAT but full solver found SAT; skipping "
                     "CHTD prune for candidate at pc=%s newest=%s",
                     candidate.pc,
                     newest,

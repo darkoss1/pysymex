@@ -1504,6 +1504,11 @@ def _create_default_registry() -> DetectorRegistry:
     """Create and configure the default detector registry."""
     registry = DetectorRegistry()
     try:
+        from pysymex.analysis.detectors.logical import create_logic_detector
+        registry._detectors["logical-contradiction"] = create_logic_detector  # type: ignore
+    except Exception as e:
+        logger.error("Failed to load logic detector: %s", e)
+    try:
         from pysymex.analysis.detectors.specialized import register_advanced_detectors
 
         register_advanced_detectors(registry)
