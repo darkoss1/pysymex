@@ -132,7 +132,8 @@ def _solve_exact_bitmap(
     num_states = 1 << w
     bitmap: npt.NDArray[np.uint8] = np.zeros((num_states + 7) // 8, dtype=np.uint8)
 
-    solver = z3.Solver()
+    from pysymex.core.solver.engine import create_solver
+    solver = create_solver()
     solver.add(combined)
 
     if w == 0:

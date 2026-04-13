@@ -173,6 +173,14 @@ class IncrementalSolver:
 
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
+        try:
+            import os
+            threads = max(1, os.cpu_count() or 1)
+            z3.set_param("parallel.enable", True)
+            z3.set_param("sat.threads", threads)
+            self._solver.set("threads", threads)
+        except Exception:
+            pass
         z3.set_param("timeout", timeout_ms)
         self._timeout_ms = timeout_ms
         self._scope_depth = 0
@@ -958,7 +966,7 @@ class PortfolioSolver:
     Only triggered for queries that exceed the fast timeout threshold.
     """
 
-    TACTICS = ["smt", "qflia", "qfnra", "default"]
+    TACTICS = ["smt", "qflia", "qfnra", "default", "cube-and-conquer"]
 
     def __init__(
         self,

@@ -21,7 +21,7 @@ def run_pysymex(benchmark_file):
     
     # Start process
     process = subprocess.Popen(
-        ['python', '-m', 'pysymex_experimental', 'scan', benchmark_file, '--timeout', '10'],
+        ['python', '-m', 'pysymex', 'scan', benchmark_file, '--timeout', '10'],
         cwd=r'c:\Users\lahya\Desktop\PySymEx\pysymex-main\pysymex-main',
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
