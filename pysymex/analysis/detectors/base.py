@@ -449,28 +449,46 @@ def _pure_check_index_bounds(
     """Pure: check if *index* can be out-of-bounds for *container*."""
     if is_type_subscription(container):
         return None
-    if not isinstance(container, SymbolicList):
-        return None
     if not isinstance(index, SymbolicValue):
         return None
-    oob_constraint = [
-        *path_constraints,
-        index.is_int,
-        z3.Or(
-            index.z3_int < -container.z3_len,
-            index.z3_int >= container.z3_len,
-        ),
-    ]
-    if is_satisfiable_fn(oob_constraint):
-        confidence = 1.0
+
+    lower_bound: z3.ArithRef
+    upper_bound: z3.ArithRef
+    container_name: str
+    confidence = 1.0
+
+    if isinstance(container, SymbolicList):
+        lower_bound = -container.z3_len
+        upper_bound = container.z3_len
+        container_name = container.name
         if is_havoc(index) or is_havoc(container):
             confidence = 0.5
         elif hasattr(index, "affinity_type") and index.affinity_type == "int":
             confidence = 0.9
+    elif isinstance(container, (list, tuple)):
+        concrete_len = len(container)
+        lower_bound = z3.IntVal(-concrete_len)
+        upper_bound = z3.IntVal(concrete_len)
+        container_name = "list"
+        if is_havoc(index):
+            confidence = 0.5
+        elif hasattr(index, "affinity_type") and index.affinity_type == "int":
+            confidence = 0.9
+    else:
+        return None
 
+    oob_constraint = [
+        *path_constraints,
+        index.is_int,
+        z3.Or(
+            index.z3_int < lower_bound,
+            index.z3_int >= upper_bound,
+        ),
+    ]
+    if is_satisfiable_fn(oob_constraint):
         return Issue(
             kind=IssueKind.INDEX_ERROR,
-            message=f"Possible index out of bounds: {container.name}[{index.name}]",
+            message=f"Possible index out of bounds: {container_name}[{index.name}]",
             constraints=oob_constraint,
             model=get_model_fn(oob_constraint),
             pc=pc,

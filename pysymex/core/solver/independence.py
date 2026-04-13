@@ -247,6 +247,11 @@ class ConstraintIndependenceOptimizer:
         names: set[str] = set()
         worklist: list[_z3.ExprRef] = [expr]
         seen_ids: set[int] = {expr.get_id()}
+        
+        # KEEP ALIVE: Z3_dec_ref recursive C stack overflow happens when deep AST proxy objects 
+        # are destructed by Python's GC asynchronously. We keep all objects flatly referenced 
+        # here so they are destroyed iteratively as this list clears, preventing C segfaults.
+        keepalive: list[_z3.ExprRef] = []
 
         while worklist:
             node = worklist.pop()
@@ -259,6 +264,8 @@ class ConstraintIndependenceOptimizer:
                     continue
 
             children = node.children()
+            if children:
+                keepalive.extend(children)
             for child in children:
                 child_id = child.get_id()
                 if child_id not in seen_ids:

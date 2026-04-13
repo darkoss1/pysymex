@@ -198,6 +198,19 @@ Examples:
         default=42,
         help="Random seed for deterministic runs (default: 42)",
     )
+    scan_parser.add_argument(
+        "--no-chtd",
+        dest="use_chtd",
+        action="store_false",
+        help="Disable CHTD pruning for maximum stability on extreme path-explosion workloads",
+    )
+    scan_parser.add_argument(
+        "--no-h-acceleration",
+        dest="use_h_acceleration",
+        action="store_false",
+        help="Disable H-acceleration backend for symbolic scan",
+    )
+    scan_parser.set_defaults(use_chtd=True, use_h_acceleration=True)
 
     analyze_parser = subparsers.add_parser(
         "analyze",

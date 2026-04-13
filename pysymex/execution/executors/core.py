@@ -228,6 +228,8 @@ class SymbolicExecutor:
         self._chtd_skipped_size: int = 0
         self._chtd_skipped_treewidth: int = 0
         self._chtd_total_time_seconds: float = 0.0
+        self._chtd_runtime_failures: int = 0
+        self._chtd_runtime_disabled: bool = False
         self._last_should_run_chtd: bool | None = None
         self._phase_timers_seconds: dict[str, float] = {
             "execute_step": 0.0,
@@ -1136,9 +1138,7 @@ class SymbolicExecutor:
                         try:
                             self._interaction_graph.add_branch(ns.pc, last_constraint)
                         except Exception:
-                            import traceback
-
-                            traceback.print_exc()
+                            logger.debug("CHTD interaction-graph update failed", exc_info=True)
 
                 should_run_chtd = self._should_run_chtd()
                 if (
@@ -1189,9 +1189,8 @@ class SymbolicExecutor:
                                 if not sat:
                                     self._chtd_unsat_hits += 1
                     except Exception:
-                        import traceback
-
-                        traceback.print_exc()
+                        self._chtd_runtime_failures += 1
+                        self._chtd_runtime_disabled = True
                         logger.debug("CHTD DP block raised unexpectedly", exc_info=True)
                     finally:
                         self._chtd_total_time_seconds += time.perf_counter() - start
@@ -1242,6 +1241,9 @@ class SymbolicExecutor:
             )
 
     def _should_run_chtd(self) -> bool:
+        if self._chtd_runtime_disabled:
+            return False
+
         if not self._interaction_graph.is_stabilized():
             self._chtd_skipped_unstable += 1
             return False
@@ -1282,6 +1284,8 @@ class SymbolicExecutor:
             "skipped_no_fork": self._chtd_skipped_no_fork,
             "skipped_size": self._chtd_skipped_size,
             "skipped_treewidth": self._chtd_skipped_treewidth,
+            "runtime_failures": self._chtd_runtime_failures,
+            "runtime_disabled": self._chtd_runtime_disabled,
             "total_time_seconds": self._chtd_total_time_seconds,
             "current_interval": self._current_chtd_interval,
             "next_check_iteration": self._next_chtd_check_iteration,

@@ -35,6 +35,34 @@ if TYPE_CHECKING:
     from pysymex.execution.dispatcher import OpcodeDispatcher
 
 
+def _decode_fast_name_tuple(instr: dis.Instruction) -> tuple[str, ...]:
+    """Decode local variable names for fused fast-local opcodes (3.13+)."""
+    argval = instr.argval
+    if isinstance(argval, tuple):
+        return tuple(str(part).strip() for part in argval if str(part).strip())
+
+    argrepr = getattr(instr, "argrepr", "")
+    if isinstance(argrepr, str) and argrepr:
+        cleaned = argrepr.strip().strip("()")
+        if "," in cleaned:
+            parts = tuple(p.strip() for p in cleaned.split(",") if p.strip())
+            if parts:
+                return parts
+        if cleaned:
+            return (cleaned,)
+
+    if isinstance(argval, str):
+        cleaned = argval.strip().strip("()")
+        if "," in cleaned:
+            parts = tuple(p.strip() for p in cleaned.split(",") if p.strip())
+            if parts:
+                return parts
+        if cleaned:
+            return (cleaned,)
+
+    return (str(argval),)
+
+
 @opcode_handler("LOAD_CONST")
 def handle_load_const(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
@@ -76,12 +104,8 @@ def handle_load_fast_load_fast(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load two local variables onto the stack (Python 3.13+)."""
-    _argval: object = instr.argval
-    names: tuple[object, ...] = (
-        cast("tuple[object, ...]", _argval) if isinstance(_argval, tuple) else (str(_argval),)
-    )
+    names = _decode_fast_name_tuple(instr)
     for name in names:
-        name = str(name)
         raw_value = state.get_local(name)
         if is_bound(raw_value):
             value = raw_value
@@ -115,12 +139,8 @@ def handle_store_fast_store_fast(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store two values into local variables (Python 3.13+) with implicit flow taint tracking."""
-    _argval: object = instr.argval
-    names: tuple[object, ...] = (
-        cast("tuple[object, ...]", _argval) if isinstance(_argval, tuple) else (str(_argval),)
-    )
+    names = _decode_fast_name_tuple(instr)
     for name in names:
-        name = str(name)
         value: StackValue = state.pop()
         if state.control_taint:
             if is_taintable(value):
@@ -365,12 +385,9 @@ def handle_store_fast_load_fast(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store and immediately reload a local (Python 3.13+ optimization)."""
-    _argval: object = instr.argval
-    names: tuple[object, ...] = (
-        cast("tuple[object, ...]", _argval)
-        if isinstance(_argval, tuple)
-        else (str(_argval), str(_argval))
-    )
+    names = _decode_fast_name_tuple(instr)
+    if len(names) == 1:
+        names = (names[0], names[0])
     store_name = str(names[0])
     load_name = str(names[1]) if len(names) > 1 else store_name
     value = state.pop()

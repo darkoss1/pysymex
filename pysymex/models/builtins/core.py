@@ -224,13 +224,7 @@ class RangeModel(FunctionModel):
                         )
                 else:
                     constraints.append(
-                        z3.ForAll(
-                            [i],
-                            z3.Implies(
-                                z3.And(i >= 0, i < result.z3_len),
-                                z3.Select(result.z3_array, i) == start.z3_int + i * step.z3_int,
-                            ),
-                        )
+                        result.z3_array == z3.Lambda([i], start.z3_int + i * step.z3_int)
                     )
             else:
                 length = z3.If(stop.z3_int > start.z3_int, stop.z3_int - start.z3_int, 0)
@@ -245,13 +239,7 @@ class RangeModel(FunctionModel):
                         )
                 else:
                     constraints.append(
-                        z3.ForAll(
-                            [i],
-                            z3.Implies(
-                                z3.And(i >= 0, i < result.z3_len),
-                                z3.Select(result.z3_array, i) == start.z3_int + i,
-                            ),
-                        )
+                        result.z3_array == z3.Lambda([i], start.z3_int + i)
                     )
         if len(args) == 1 and isinstance(args[0], SymbolicValue):
             stop = args[0]
@@ -259,12 +247,7 @@ class RangeModel(FunctionModel):
             constraints.append(result.z3_len == length)
             i = z3.Int(f"range_idx_{state.pc}")
             constraints.append(
-                z3.ForAll(
-                    [i],
-                    z3.Implies(
-                        z3.And(i >= 0, i < result.z3_len), z3.Select(result.z3_array, i) == i
-                    ),
-                )
+                result.z3_array == z3.Lambda([i], i)
             )
         elif len(args) == 1:
             stop_val = _const_int(args[0])
@@ -279,13 +262,7 @@ class RangeModel(FunctionModel):
                 else:
                     i = z3.Int(f"range_idx_{state.pc}")
                     constraints.append(
-                        z3.ForAll(
-                            [i],
-                            z3.Implies(
-                                z3.And(i >= 0, i < result.z3_len),
-                                z3.Select(result.z3_array, i) == i,
-                            ),
-                        )
+                        result.z3_array == z3.Lambda([i], i)
                     )
         return ModelResult(value=result, constraints=constraints)
 

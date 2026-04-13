@@ -173,6 +173,7 @@ class IncrementalSolver:
 
         self._solver = z3.Solver()
         self._solver.set("timeout", timeout_ms)
+        z3.set_param("timeout", timeout_ms)
         self._timeout_ms = timeout_ms
         self._scope_depth = 0
         self._cache: OrderedDict[tuple[int, tuple[int, ...]], SolverResult] = OrderedDict()
@@ -313,8 +314,22 @@ class IncrementalSolver:
     def _slice_prefix_for_suffix(
         self, prefix: list[z3.BoolRef], query: Iterable[z3.BoolRef] | z3.BoolRef
     ) -> list[z3.BoolRef]:
-        """Skip slicing to prevent Z3 GC crash and reduce overhead."""
-        return prefix
+        """Perform robust Constraint Slicing (Independence) using the optimizer."""
+        import z3
+        q_list = [query] if isinstance(query, z3.ExprRef) else list(query)
+        if not q_list:
+            return prefix
+
+        # Ensure prefix constraints are registered dynamically without re-walking AST
+        # (var extracted ASTs are cached in independence.py, making this fast)
+        for c in prefix:
+            self._optimizer.register_constraint(c)
+        
+        # We query the optimizer against the combined query
+        combined_query = z3.And(*q_list) if len(q_list) > 1 else q_list[0]
+        
+        sliced = self._optimizer.slice_for_query(prefix, combined_query)
+        return sliced
 
     def _cache_lookup(self, primary: int, discriminator: tuple[int, ...]) -> SolverResult | None:
         """Lookup a cached result, verifying the secondary discriminator."""
