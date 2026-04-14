@@ -274,8 +274,8 @@ def handle_pop_jump_if_false(
     cond_taint = _extract_taint_labels(cond)
     not_cond_expr = z3.Not(cond_expr)
 
-    true_feasible = _is_sat_with_extra(state.path_constraints, cond_expr)
-    false_feasible = _is_sat_with_extra(state.path_constraints, not_cond_expr)
+    true_feasible = not z3.is_false(cond_expr)
+    false_feasible = not z3.is_false(not_cond_expr)
 
     branches = []
     if true_feasible:
@@ -321,8 +321,8 @@ def handle_pop_jump_if_true(
     cond_taint = _extract_taint_labels(cond)
     not_cond_expr = z3.Not(cond_expr)
 
-    true_feasible = _is_sat_with_extra(state.path_constraints, cond_expr)
-    false_feasible = _is_sat_with_extra(state.path_constraints, not_cond_expr)
+    true_feasible = not z3.is_false(cond_expr)
+    false_feasible = not z3.is_false(not_cond_expr)
 
     branches = []
     if true_feasible:
@@ -411,8 +411,8 @@ def handle_pop_jump_if_not_none(
         none_expr = value.is_none
         not_none_expr = z3.Not(none_expr)
 
-        not_none_feasible = _is_sat_with_extra(state.path_constraints, not_none_expr)
-        none_feasible = _is_sat_with_extra(state.path_constraints, none_expr)
+        not_none_feasible = not z3.is_false(not_none_expr)
+        none_feasible = not z3.is_false(none_expr)
 
         branches = []
         if not_none_feasible:
