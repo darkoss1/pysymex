@@ -1,3 +1,4 @@
+import pytest
 import z3
 
 import pysymex.core.types.floats as mod
@@ -135,6 +136,7 @@ class TestAccuracyAnalyzer:
         b = mod.SymbolicFloat("b")
         assert isinstance(analyzer.relative_error(a, b), mod.SymbolicFloat)
 
+    @pytest.mark.xdist_group("serial")
     def test_check_catastrophic_cancellation(self) -> None:
         analyzer = mod.AccuracyAnalyzer()
         a = mod.SymbolicFloat("a")
