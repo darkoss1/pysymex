@@ -359,6 +359,9 @@ class SymbolicListOps:
         """Get a slice of the list."""
         if isinstance(lst, list):
             concrete_lst = cast("list[object]", lst)
+            # Concrete lists can only be sliced with concrete indices
+            if isinstance(start, z3.ArithRef) or isinstance(stop, z3.ArithRef):
+                raise TypeError("Cannot slice concrete list with symbolic indices")
             result: list[object] = concrete_lst[start:stop:step]
             return OpResult(value=result)
         else:
