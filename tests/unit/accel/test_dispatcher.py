@@ -7,8 +7,8 @@ from pysymex.accel.backends import BackendType
 from pysymex.accel.bytecode import compile_constraint
 from pysymex.accel.dispatcher import (
     DispatchResult,
-    GPUDispatcher,
-    _mask_unused_tail_bits,
+    TieredDispatcher,
+    _mask_unused_tail_bits,  # type: ignore[reportPrivateUsage]  # testing private helper
     count_satisfying,
     evaluate_bag,
     get_backend_info,
@@ -31,25 +31,25 @@ class TestDispatchResult:
         assert result.count_satisfying() == 3
 
 
-class TestGPUDispatcher:
+class TestTieredDispatcher:
     def test_selected_backend_is_valid_backend_type(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         assert dispatcher.selected_backend in {
-            BackendType.GPU,
+            BackendType.SAT,
             BackendType.CPU,
             BackendType.REFERENCE,
         }
 
     def test_get_backend_info_matches_selected_backend(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         info = dispatcher.get_backend_info()
         assert info.backend_type is dispatcher.selected_backend
 
     def test_list_backends_and_backend_items_not_empty(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         infos = dispatcher.list_backends()
         items = dispatcher.backend_items()
         assert len(infos) >= 1
@@ -57,14 +57,14 @@ class TestGPUDispatcher:
 
     def test_evaluate_bag_returns_result_and_updates_routing_stats(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         x, y = z3.Bools("x y")
         constraint = compile_constraint(z3.And(x, y), ["x", "y"])
         result = dispatcher.evaluate_bag(constraint)
 
         assert isinstance(result, DispatchResult)
         assert result.backend_used in {
-            BackendType.GPU,
+            BackendType.SAT,
             BackendType.CPU,
             BackendType.REFERENCE,
         }
@@ -75,7 +75,7 @@ class TestGPUDispatcher:
 
     def test_get_routing_stats_contains_expected_keys(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         stats = dispatcher.get_routing_stats()
         assert "selected_backend" in stats
         assert "routing_decisions" in stats
@@ -84,7 +84,7 @@ class TestGPUDispatcher:
 
     def test_evaluate_bag_with_fallback_produces_dispatch_result(self) -> None:
         reset()
-        dispatcher = GPUDispatcher()
+        dispatcher = TieredDispatcher()
         x = z3.Bool("x")
         constraint = compile_constraint(x, ["x"])
         result = dispatcher.evaluate_bag_with_fallback(constraint)
@@ -111,7 +111,9 @@ def test_module_evaluate_bag_and_get_backend_info() -> None:
 
     assert info.backend_type is dispatcher.selected_backend
     assert result.backend_used in {
-        backend_info.backend_type for backend_info in dispatcher.list_backends() if backend_info.available
+        backend_info.backend_type
+        for backend_info in dispatcher.list_backends()
+        if backend_info.available
     }
 
 
@@ -138,5 +140,5 @@ def test_warmup_and_reset_are_safe_to_call() -> None:
 
 
 def test_mask_unused_tail_bits_zeroes_padding() -> None:
-    masked = _mask_unused_tail_bits(np.array([0xFF], dtype=np.uint8), 3)
+    masked = _mask_unused_tail_bits(np.frombuffer(b"\xff", dtype=np.uint8), 3)  # type: ignore[reportPrivateUsage]
     assert int(masked[0]) == 0b00000111

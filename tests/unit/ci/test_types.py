@@ -40,4 +40,3 @@ def test_failure_threshold_should_fail_and_exit_code() -> None:
     assert threshold.should_fail(passing) is False
     assert threshold.should_fail(failing) is True
     assert threshold.get_exit_code(failing) is ExitCode.HIGH_FOUND
-

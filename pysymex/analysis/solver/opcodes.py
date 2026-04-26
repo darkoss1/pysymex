@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -39,7 +39,6 @@ from pysymex.analysis.solver.types import (
     Severity,
     SymType,
     SymValue,
-    TaintInfo,
     z3,
 )
 
@@ -72,7 +71,6 @@ class OpcodeHandlersMixin:
             description: str,
             variables: dict[str, object],
             severity: Severity = ...,
-            taint_info: TaintInfo | None = ...,
         ) -> None: ...
         def _do_binary_op(
             self, left: SymValue, right: SymValue, op: str, state: SymbolicState
@@ -194,17 +192,11 @@ class OpcodeHandlersMixin:
             )
 
         obj_name = getattr(obj, "name", None)
-        obj_taint = getattr(obj, "taint", None)
 
         val = SymValue(
             z3.Int(state.fresh_name(f"attr_{arg}")),
             f"{obj_name or '?'}.{arg}",
             SymType.UNKNOWN,
-            taint=(
-                obj_taint.propagate(f"attr:{arg}")
-                if obj_taint and hasattr(obj_taint, "propagate")
-                else TaintInfo()
-            ),
         )
         state.push(val)
         return None
@@ -382,17 +374,11 @@ class OpcodeHandlersMixin:
 
         container_name = getattr(container, "name", None)
         index_name = getattr(index, "name", None)
-        container_taint = getattr(container, "taint", None)
 
         result = SymValue(
             z3.Int(state.fresh_name("item")),
             f"{container_name or '?'}[{index_name or '?'}]",
             SymType.UNKNOWN,
-            taint=(
-                container_taint.propagate("subscr")
-                if container_taint and hasattr(container_taint, "propagate")
-                else TaintInfo()
-            ),
         )
         state.push(result)
         return None
@@ -506,8 +492,7 @@ class OpcodeHandlersMixin:
                 state.push(val)
             elif val_expr is not None:
                 val_name: str = getattr(val, "name", None) or ""
-                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
-                result = SymValue(val_expr != 0, val_name, SymType.BOOL, taint=val_taint)
+                result = SymValue(val_expr != 0, val_name, SymType.BOOL)
                 state.push(result)
             else:
                 state.push(SymValue(z3.Bool(state.fresh_name("bool")), sym_type=SymType.BOOL))
@@ -653,9 +638,8 @@ class OpcodeHandlersMixin:
             try:
                 val_expr = getattr(val, "expr", None)
                 val_name = getattr(val, "name", "unknown")
-                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
                 if val_expr is not None:
-                    state.push(SymValue(-val_expr, f"-{val_name}", SymType.INT, taint=val_taint))
+                    state.push(SymValue(-val_expr, f"-{val_name}", SymType.INT))
                 else:
                     state.push(SymValue(z3.Int(state.fresh_name("neg")), sym_type=SymType.INT))
             except z3.Z3Exception:
@@ -703,9 +687,8 @@ class OpcodeHandlersMixin:
             try:
                 val_expr = getattr(val, "expr", None)
                 val_name = getattr(val, "name", "unknown")
-                val_taint: TaintInfo = getattr(val, "taint", TaintInfo())
                 if val_expr is not None:
-                    state.push(SymValue(~val_expr, f"~{val_name}", SymType.INT, taint=val_taint))
+                    state.push(SymValue(~val_expr, f"~{val_name}", SymType.INT))
                 else:
                     state.push(SymValue(z3.Int(state.fresh_name("inv")), sym_type=SymType.INT))
             except z3.Z3Exception:
@@ -746,21 +729,6 @@ class OpcodeHandlersMixin:
                     file_path=self.current_file,
                 )
             )
-            if func.name in self.DANGEROUS_SINKS:
-                for a in args:
-                    is_tainted = getattr(a, "is_tainted", False)
-                    taint_info = getattr(a, "taint", None)
-                    if is_tainted:
-                        self._add_crash(
-                            BugType.TAINTED_SINK,
-                            z3.BoolVal(True),
-                            state,
-                            crashes,
-                            f"Tainted data passed to dangerous function: {func.name}",
-                            {},
-                            Severity.CRITICAL,
-                            taint_info,
-                        )
 
         result = SymValue(
             z3.Int(state.fresh_name("call")),
@@ -806,19 +774,6 @@ class OpcodeHandlersMixin:
                     file_path=self.current_file,
                 )
             )
-            if func.name in self.DANGEROUS_SINKS:
-                for a in arg_values:
-                    if getattr(a, "is_tainted", False):
-                        self._add_crash(
-                            BugType.TAINTED_SINK,
-                            z3.BoolVal(True),
-                            state,
-                            crashes,
-                            f"Tainted data passed to dangerous function: {func.name}",
-                            {},
-                            Severity.CRITICAL,
-                            getattr(a, "taint", None),
-                        )
 
         state.push(
             SymValue(
@@ -1073,14 +1028,13 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op get iter."""
-        container = state.pop() if state.stack else None
-        container_taint = getattr(container, "taint", None)
+        if state.stack:
+            state.pop()
 
         state.push(
             SymValue(
                 z3.Int(state.fresh_name("iter")),
                 sym_type=SymType.UNKNOWN,
-                taint=container_taint or TaintInfo(),
             )
         )
         return None
@@ -1214,17 +1168,10 @@ class OpcodeHandlersMixin:
         if state.stack:
             val = state.pop()
             if val is not None:
-                val_taint = getattr(val, "taint", None)
-                if val_taint is not None and hasattr(val_taint, "propagate"):
-                    taint = val_taint.propagate("format")
-                else:
-                    taint = TaintInfo()
-
                 state.push(
                     SymValue(
                         z3.Int(state.fresh_name("fmt")),
                         sym_type=SymType.STRING,
-                        taint=taint,
                     )
                 )
         return None
@@ -1237,16 +1184,15 @@ class OpcodeHandlersMixin:
         call_sites: list[CallSite],
     ) -> SymValue | None:
         """Op unpack sequence."""
-        seq = state.pop() if state.stack else None
+        if state.stack:
+            state.pop()
         n = arg if isinstance(arg, int) else 1
-        seq_taint = getattr(seq, "taint", None)
 
         for _ in range(n):
             state.push(
                 SymValue(
                     z3.Int(state.fresh_name("unpack")),
                     sym_type=SymType.UNKNOWN,
-                    taint=seq_taint or TaintInfo(),
                 )
             )
         return None

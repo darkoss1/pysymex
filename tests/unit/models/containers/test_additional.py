@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -28,6 +28,7 @@ def test_frozenset_parametrized_baseline(values: frozenset[int]) -> None:
 
 
 @given(st.lists(st.integers(), max_size=20), st.integers())
+@settings(suppress_health_check=[HealthCheck.too_slow])
 def test_list_append_property(values: list[int], item: int) -> None:
     real_values = list(values)
     assert real_values.append(item) is None
@@ -37,7 +38,11 @@ def test_containers_auto_discovery_apply() -> None:
     modules = [lists, dicts, sets, tuples, strings, bytes_models, frozensets]
     for module in modules:
         for _, obj in inspect.getmembers(module, inspect.isclass):
-            if obj.__module__ == module.__name__ and issubclass(obj, FunctionModel) and obj is not FunctionModel:
+            if (
+                obj.__module__ == module.__name__
+                and issubclass(obj, FunctionModel)
+                and obj is not FunctionModel
+            ):
                 model = obj()
                 args: list[StackValue] = []
                 try:

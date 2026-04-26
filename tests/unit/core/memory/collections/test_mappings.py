@@ -1,7 +1,9 @@
-﻿import pysymex.core.memory.collections.mappings
+import pysymex.core.memory.collections.mappings
+
 
 class TestSymbolicDictOps:
     """Test suite for pysymex.core.memory.collections.mappings.SymbolicDictOps."""
+
     def test_length(self) -> None:
         """Scenario: concrete dict length; expected exact key count."""
         result = pysymex.core.memory.collections.mappings.SymbolicDictOps.length({"a": 1, "b": 2})
@@ -65,6 +67,7 @@ class TestSymbolicDictOps:
 
 class TestSymbolicSetOps:
     """Test suite for pysymex.core.memory.collections.mappings.SymbolicSetOps."""
+
     def test_length(self) -> None:
         """Scenario: concrete set cardinality; expected unique element count."""
         result = pysymex.core.memory.collections.mappings.SymbolicSetOps.length({1, 2, 2})
@@ -102,7 +105,9 @@ class TestSymbolicSetOps:
 
     def test_intersection(self) -> None:
         """Scenario: intersection on concrete sets; expected common elements only."""
-        result = pysymex.core.memory.collections.mappings.SymbolicSetOps.intersection({1, 2}, {2, 3})
+        result = pysymex.core.memory.collections.mappings.SymbolicSetOps.intersection(
+            {1, 2}, {2, 3}
+        )
         assert result.value == {2}
 
     def test_difference(self) -> None:
@@ -135,6 +140,7 @@ class TestSymbolicSetOps:
 
 class TestSymbolicTupleOps:
     """Test suite for pysymex.core.memory.collections.mappings.SymbolicTupleOps."""
+
     def test_length(self) -> None:
         """Scenario: concrete tuple length; expected exact element count."""
         result = pysymex.core.memory.collections.mappings.SymbolicTupleOps.length((1, 2, 3))

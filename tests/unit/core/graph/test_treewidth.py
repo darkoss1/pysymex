@@ -1,13 +1,17 @@
-﻿import pysymex.core.graph.treewidth
+import pysymex.core.graph.treewidth
 import z3
 from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
 
 
 def _make_graph() -> pysymex.core.graph.treewidth.ConstraintInteractionGraph:
-    return pysymex.core.graph.treewidth.ConstraintInteractionGraph(ConstraintIndependenceOptimizer())
+    return pysymex.core.graph.treewidth.ConstraintInteractionGraph(
+        ConstraintIndependenceOptimizer()
+    )
+
 
 class TestBranchInfo:
     """Test suite for pysymex.core.graph.treewidth.BranchInfo."""
+
     def test_initialization(self) -> None:
         """Scenario: branch info dataclass stores provided metadata."""
         info = pysymex.core.graph.treewidth.BranchInfo(1, frozenset({"x"}), frozenset({"x"}))
@@ -22,6 +26,7 @@ def test_base_var_name_only_strips_generated_discriminators() -> None:
 
 class TestTreeDecomposition:
     """Test suite for pysymex.core.graph.treewidth.TreeDecomposition."""
+
     def test_get_parent(self) -> None:
         """Scenario: explicit parent map has parent for child bag."""
         td = pysymex.core.graph.treewidth.TreeDecomposition(
@@ -36,6 +41,7 @@ class TestTreeDecomposition:
 
 class TestConstraintInteractionGraph:
     """Test suite for pysymex.core.graph.treewidth.ConstraintInteractionGraph."""
+
     def test_reset(self) -> None:
         """Scenario: reset after adding branch; expected branch map cleared."""
         graph = _make_graph()
@@ -106,17 +112,6 @@ class TestConstraintInteractionGraph:
         graph = _make_graph()
         graph.add_branch(1, z3.Int("x_int") > 0)
         assert graph.extract_skeleton() == frozenset()
-
-    def test_propagate_bag_constraints(self) -> None:
-        """Scenario: empty decomposition propagation; expected successful propagation."""
-        graph = _make_graph()
-        td = graph.compute_tree_decomposition()
-        result = graph.propagate_bag_constraints(
-            td,
-            solve_local_bag=lambda bag: True,
-            pass_messages=lambda _child, _parent, _adh: None,
-        )
-        assert result is True
 
     def test_get_independent_groups(self) -> None:
         """Scenario: two disconnected branches; expected two independent groups."""

@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -451,4 +451,3 @@ class AbstractAnalyzer:
                 func_name = const.co_name
                 results[func_name] = self.analyze_function(const, file_path)
         return results
-

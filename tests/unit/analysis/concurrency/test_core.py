@@ -1,10 +1,22 @@
 import pytest
 import z3
-from pysymex.analysis.concurrency.core import ConcurrencyAnalyzer, ThreadSafetyChecker, LockOrderChecker
-from pysymex.analysis.concurrency import ConcurrencyIssue, ConcurrencyIssueKind, ThreadState, OperationKind, MemoryOperation
+from pysymex.analysis.concurrency.core import (
+    ConcurrencyAnalyzer,
+    ThreadSafetyChecker,
+    LockOrderChecker,
+)
+from pysymex.analysis.concurrency import (
+    ConcurrencyIssue,
+    ConcurrencyIssueKind,
+    ThreadState,
+    OperationKind,
+    MemoryOperation,
+)
+
 
 class TestConcurrencyAnalyzer:
     """Test suite for pysymex.analysis.concurrency.core.ConcurrencyAnalyzer."""
+
     def test_reset(self) -> None:
         """Test reset behavior."""
         analyzer = ConcurrencyAnalyzer()
@@ -69,8 +81,7 @@ class TestConcurrencyAnalyzer:
         analyzer.create_thread("t1")
         issue = analyzer.acquire_lock("t1", "L1")
         assert issue is None
-        
-        # test acquire twice -> deadlock
+
         issue2 = analyzer.acquire_lock("t1", "L1")
         assert issue2 is not None
         assert issue2.kind == ConcurrencyIssueKind.DEADLOCK
@@ -82,8 +93,7 @@ class TestConcurrencyAnalyzer:
         analyzer.acquire_lock("t1", "L1")
         issue = analyzer.release_lock("t1", "L1")
         assert issue is None
-        
-        # test release unheld lock
+
         issue2 = analyzer.release_lock("t1", "L2")
         assert issue2 is not None
         assert issue2.kind == ConcurrencyIssueKind.LOCK_NOT_HELD
@@ -109,7 +119,6 @@ class TestConcurrencyAnalyzer:
         analyzer.acquire_lock("t2", "L2")
         analyzer.acquire_lock("t2", "L1")
         issues = analyzer.detect_deadlocks()
-        # Deadlock cycles found due to opposite order
         assert len(issues) >= 1
 
     def test_detect_await_cycles(self) -> None:
@@ -124,10 +133,10 @@ class TestConcurrencyAnalyzer:
         analyzer = ConcurrencyAnalyzer()
         analyzer.create_thread("t2")
         analyzer.record_write("t2", "x")
-        
+
         ops = [
             MemoryOperation("t1", OperationKind.READ, "x"),
-            MemoryOperation("t1", OperationKind.WRITE, "x")
+            MemoryOperation("t1", OperationKind.WRITE, "x"),
         ]
         violations = analyzer.detect_atomicity_violations([("t1", ops)])
         assert len(violations) > 0
@@ -136,7 +145,6 @@ class TestConcurrencyAnalyzer:
     def test_check_race_condition_z3(self) -> None:
         """Test check_race_condition_z3 behavior."""
         analyzer = ConcurrencyAnalyzer()
-        # Without any operations, check should pass
         ok, issue = analyzer.check_race_condition_z3("x", 42)
         assert ok is True
         assert issue is None
@@ -144,7 +152,6 @@ class TestConcurrencyAnalyzer:
     def test_find_problematic_schedule(self) -> None:
         """Test find_problematic_schedule behavior."""
         analyzer = ConcurrencyAnalyzer()
-        # If no operations, constraint solves nicely (no impossible condition)
         schedule = analyzer.find_problematic_schedule(z3.BoolVal(True))
         assert schedule is None
 
@@ -186,8 +193,10 @@ class TestConcurrencyAnalyzer:
         assert summary["threads"] == 0
         assert summary["total_operations"] == 0
 
+
 class TestThreadSafetyChecker:
     """Test suite for pysymex.analysis.concurrency.core.ThreadSafetyChecker."""
+
     def test_check_locked_access(self) -> None:
         """Test check_locked_access behavior."""
         checker = ThreadSafetyChecker()
@@ -203,8 +212,10 @@ class TestThreadSafetyChecker:
         assert issue is not None
         assert issue.kind == ConcurrencyIssueKind.MEMORY_ORDER_VIOLATION
 
+
 class TestLockOrderChecker:
     """Test suite for pysymex.analysis.concurrency.core.LockOrderChecker."""
+
     def test_set_lock_order(self) -> None:
         """Test set_lock_order behavior."""
         checker = LockOrderChecker()
@@ -217,8 +228,7 @@ class TestLockOrderChecker:
         checker.set_lock_order(["L1", "L2"])
         issue = checker.acquire("t1", "L2")
         assert issue is None
-        
-        # Wrong order
+
         checker.acquire("t2", "L2")
         issue_bad = checker.acquire("t2", "L1")
         assert issue_bad is not None
@@ -232,6 +242,5 @@ class TestLockOrderChecker:
         issue = checker.release("t1", "L1")
         assert issue is None
 
-        # Releasing unheld lock just ignores
         issue_bad = checker.release("t2", "L1")
         assert issue_bad is None

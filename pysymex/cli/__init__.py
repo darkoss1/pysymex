@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -18,8 +18,8 @@
 
 """Command-line interface for pysymex.
 Provides two modes:
-1. Single function analysis: PySyMex file.py -f function_name
-2. Full file/directory scan: PySyMex scan path/to/code
+1. Single function analysis: pysymex file.py -f function_name
+2. Full file/directory scan: pysymex scan path/to/code
 """
 
 from __future__ import annotations
@@ -32,10 +32,9 @@ import logging
 import sys
 import time
 from collections.abc import Callable
-from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from pathlib import Path
-from typing import Protocol, cast, runtime_checkable
+from typing import Protocol, TypeGuard, cast, runtime_checkable
 
 from pysymex._deps import ensure_z3_ready
 
@@ -43,8 +42,8 @@ logger = logging.getLogger(__name__)
 
 try:
     __version__ = pkg_version("pysymex")
-except PackageNotFoundError:
-    __version__ = "0.1.0a3"
+except Exception:
+    __version__ = "0.1.0a4"
 
 
 _EXPORTS: dict[str, tuple[str, str]] = {
@@ -76,20 +75,8 @@ def __getattr__(name: str) -> object:
 
 def __dir__() -> list[str]:
     """Dir."""
-    return [*__all__, *globals()]
+    return [*_EXPORTS.keys(), "main", "__version__", *globals()]
 
-
-__all__: list[str] = [
-    "cmd_analyze",
-    "cmd_benchmark",
-    "cmd_check",
-    "cmd_scan",
-    "cmd_scan_watch",
-    "cmd_verify",
-    "create_parser",
-    "generate_completion",
-    "main",
-]
 
 _Namespace = argparse.Namespace
 
@@ -104,6 +91,14 @@ class _SymbolicResultLike(Protocol):
     issues: list[_IssueLike]
 
     def to_dict(self) -> dict[str, object]: ...
+
+
+def _is_issue_like_list(value: object) -> TypeGuard[list[_IssueLike]]:
+    """Return whether value is a list of issue-like objects."""
+    if not isinstance(value, list):
+        return False
+    issue_items: list[object] = list(value)  # type: ignore[arg-type]  # value is list[Unknown] after isinstance check
+    return all(isinstance(item, _IssueLike) for item in issue_items)
 
 
 _SUBCOMMANDS = frozenset(
@@ -166,7 +161,7 @@ def cmd_scan_watch(args: _Namespace) -> int:
 
     path = Path(args.path)
     if not path.exists():
-        print(f"\u274c Error: Path not found: {path}", file=sys.stderr)
+        print(f"[X] Error: Path not found: {path}", file=sys.stderr)
         return 1
 
     print(f"[watch] Watching {path} for changes... (Press Ctrl+C to stop)")
@@ -199,11 +194,10 @@ def cmd_scan_watch(args: _Namespace) -> int:
         if cached is not None:
             if args.mode == "static":
                 cached_result = cached.result
-                if isinstance(cached_result, list) and all(
-                    isinstance(item, _IssueLike) for item in cached_result
-                ):
-                    static_results[file_key] = cached_result
-                    return len(cached_result)
+                if _is_issue_like_list(cached_result):
+                    issue_list: list[object] = [item for item in cached_result]
+                    static_results[file_key] = issue_list
+                    return len(issue_list)
                 return 0
             cached_result = cached.result
             if isinstance(cached_result, _SymbolicResultLike):

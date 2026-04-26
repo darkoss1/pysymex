@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -643,4 +643,3 @@ class ExceptionAnalyzer:
 try_body_calls_crashy_api = _try_body_calls_crashy_api
 classify_handler_intent = _classify_handler_intent
 infer_caught_at = _infer_caught_at
-

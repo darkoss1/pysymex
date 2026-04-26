@@ -1,4 +1,4 @@
-﻿import z3
+import z3
 import pytest
 
 from pysymex.accel.bytecode import Opcode, compile_constraint

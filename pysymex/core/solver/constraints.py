@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,42 +16,76 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Structural constraint hashing for pysymex.
+"""Constraint utilities for pysymex.
 
-Provides content-addressable hashing for Z3 constraints using native
-AST-based hashing instead of expensive string conversion.
+Provides:
+- Structural hashing for Z3 constraints using native AST-based hashing
+- Theory-aware constraint simplification and optimization
 """
 
 from __future__ import annotations
 
-import hashlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import z3
 
 
-def structural_hash(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
-    """Compute a structural hash of Z3 constraints using native AST hashing.
+class ConstraintHasher:
+    """Stateful hasher that safely uses id() for performance.
 
-    Uses Z3's built-in __hash__ combined with tuple-style hashing to avoid
-    XOR cancellation issues (where A ^ A = 0).
+    Create a new instance for each major solving phase or batch of constraints
+    to ensure garbage collection doesn't cause id() collisions. The local cache
+    dies with the instance, preventing stale id() lookups from memory reuse.
+    """
+
+    def __init__(self) -> None:
+        """Initialize a new constraint hasher with empty cache."""
+        self._cache: dict[int, int] = {}
+
+    def structural_hash(self, constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
+        """Compute a structural hash of Z3 constraints using scoped id() cache.
+
+        Uses id() for fast dict lookups, avoiding FFI overhead on cache hits.
+        Cache is scoped to this instance's lifetime, preventing memory reuse bugs.
+
+        Args:
+            constraints: List of Z3 boolean constraints.
+
+        Returns:
+            Integer hash suitable for use as a cache key.
+        """
+        if not constraints:
+            return 0
+
+        hashes: list[int] = []
+        for c in constraints:
+            c_id = id(c)
+            if c_id not in self._cache:
+                self._cache[c_id] = c.hash()
+            hashes.append(self._cache[c_id])
+
+        return hash(tuple(hashes))
+
+
+def structural_hash(
+    constraints: list[z3.BoolRef] | list[z3.ExprRef],
+    hasher: ConstraintHasher | None = None,
+) -> int:
+    """Compute a structural hash of Z3 constraints using scoped id() cache.
 
     Args:
         constraints: List of Z3 boolean constraints.
+        hasher: Optional ConstraintHasher instance. If None, creates a temporary
+            instance (slower, but safe for one-off calls).
 
     Returns:
         Integer hash suitable for use as a cache key.
     """
-
-    h = 0x3456789A
-    mult = 1000000007
-    for c in constraints:
-        ch = c.hash() & 0xFFFFFFFFFFFFFFFF
-        h = ((h ^ ch) * mult) & 0xFFFFFFFFFFFFFFFF
-        mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF
-    h ^= len(constraints)
-    return h & 0xFFFFFFFFFFFFFFFF
+    if hasher is None:
+        temp_hasher = ConstraintHasher()
+        return temp_hasher.structural_hash(constraints)
+    return hasher.structural_hash(constraints)
 
 
 def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
@@ -68,54 +102,19 @@ def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> 
     """
     if not constraints:
         return 0
-    hashes = sorted(c.hash() for c in constraints)
-
-    h = 0x3456789A
-    mult = 1000000007
-    for ch in hashes:
-        ch = ch & 0xFFFFFFFFFFFFFFFF
-        h = ((h ^ ch) * mult) & 0xFFFFFFFFFFFFFFFF
-        mult = (mult + 82520) & 0xFFFFFFFFFFFFFFFF
-    h ^= len(constraints)
-    return h & 0xFFFFFFFFFFFFFFFF
+    hashes: list[int] = sorted([c.hash() for c in constraints])
+    return hash(tuple(hashes))
 
 
 def structural_digest(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
-    """Collision-resistant digest for correctness-critical cache keys."""
-    h = hashlib.blake2b(digest_size=16)
-    for constraint in constraints:
-        sexpr = constraint.sexpr().encode("utf-8")
-        h.update(len(sexpr).to_bytes(8, "little", signed=False))
-        h.update(sexpr)
-    h.update(len(constraints).to_bytes(8, "little", signed=False))
-    return int.from_bytes(h.digest(), "little", signed=False)
+    """Collision-resistant digest for correctness-critical cache keys.
 
-# PySyMex: Python Symbolic Execution & Formal Verification
-# Upstream Repository: https://github.com/darkoss1/pysymex
-#
-# Copyright (C) 2026 PySyMex Team
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as
-# published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-"""Theory-aware constraint simplification for pysymex.
-
-Applies algebraic simplifications to Z3 constraints before solver calls:
-- Constant folding
-- Quick contradiction detection
-- Subsumption removal
-- Z3 tactic-based deep simplification for large constraint sets
-"""
+    Uses structural hashing instead of slow string conversion.
+    """
+    if not constraints:
+        return 0
+    digest_hashes: list[int] = [c.hash() for c in constraints]
+    return hash(tuple(digest_hashes))
 
 
 import z3
@@ -161,18 +160,18 @@ def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
 def _tactic_simplify(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     """Use Z3 tactics for deeper simplification of large constraint sets.
 
-    Applies: simplify → propagate-values → ctx-solver-simplify
+    Applies: simplify → propagate-values → ctx-solver-simplify with 200ms timeout.
 
     Args:
         constraints: List of Z3 boolean constraints.
 
     Returns:
-        Simplified constraints, or original if tactic fails.
+        Simplified constraints, or original if tactic fails or times out.
     """
     try:
         goal = z3.Goal()
         goal.add(*constraints)
-        tactic = z3.Then("simplify", "propagate-values", "ctx-solver-simplify")
+        tactic = z3.TryFor(z3.Then("simplify", "propagate-values", "ctx-solver-simplify"), 200)
         result = tactic(goal)
         if len(result) == 1:
             subgoal = result[0]
@@ -209,9 +208,12 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
         return False
 
     by_hash: dict[int, list[z3.BoolRef]] = {}
+    has_not = False
     for c in constraints:
         if z3.is_false(c):
             return True
+        if z3.is_not(c):
+            has_not = True
         h = c.hash()
         bucket = by_hash.get(h)
         if bucket is None:
@@ -219,15 +221,19 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
         else:
             bucket.append(c)
 
+    if not has_not:
+        return False
+
     for c in constraints:
-        neg = z3.Not(c)
-        neg_h = neg.hash()
-        candidates = by_hash.get(neg_h)
-        if candidates is None:
-            continue
-        for candidate in candidates:
-            if neg.eq(candidate):  # type: ignore[attr-defined]
-                return True
+        if z3.is_not(c):
+            arg = c.arg(0)
+            arg_h = arg.hash()
+            candidates = by_hash.get(arg_h)
+            if candidates is None:
+                continue
+            for candidate in candidates:
+                if z3.eq(arg, candidate):
+                    return True
 
     return False
 

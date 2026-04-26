@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -563,4 +563,3 @@ def compute_dominators(graph: CallGraph, entry: str) -> dict[str, set[str]]:
                 dom[node] = new_dom
                 changed = True
     return dom
-

@@ -34,4 +34,3 @@ def test_reproduction_generator_writes_script_for_function(tmp_path: Path) -> No
     out_path = Path(out)
     assert out_path.exists()
     assert "target" in out_path.read_text(encoding="utf-8")
-

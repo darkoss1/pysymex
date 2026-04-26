@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -134,7 +134,7 @@ class LogEntry:
 
 
 class PysymexLogger:
-    """Centralized logging coordinator for the PySyMex engine.
+    """Centralized logging coordinator for the pysymex engine.
 
     Handles structured log emission, progress tracking, and manages dual-bank
     logging to both the console and an optional trace file. This class is
@@ -380,15 +380,15 @@ def configure_logging(
 
 
 class PythonLoggingBridge(logging.Handler):
-    """Bridge that routes standard Python `logging` calls into the PySyMex logger.
+    """Bridge that routes standard Python `logging` calls into the pysymex logger.
 
     This allows external libraries or internal Z3 debug messages that use the
-    standard library's logging module to participate in the PySyMex
+    standard library's logging module to participate in the pysymex
     structured output stream.
     """
 
     def __init__(self, shadow_logger: PysymexLogger) -> None:
-        """Initialize the bridge with a target PySyMex logger instance."""
+        """Initialize the bridge with a target pysymex logger instance."""
         super().__init__()
         self.shadow_logger = shadow_logger
         self._level_map = {
@@ -412,7 +412,7 @@ class PythonLoggingBridge(logging.Handler):
 
 
 def setup_python_logging(level: int = logging.INFO) -> None:
-    """Setup Python's logging to use PySyMex logger."""
+    """Setup Python's logging to use pysymex logger."""
     logger = logging.getLogger("pysymex")
     logger.setLevel(level)
     logger.addHandler(PythonLoggingBridge(get_logger()))

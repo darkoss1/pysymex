@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -34,11 +34,22 @@ import re
 from dataclasses import dataclass
 from enum import Enum, auto
 from types import CodeType
+from typing import TypeGuard
 
 from pysymex._compat import get_starts_line
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
+
+
+def _is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
+    """Type guard to narrow a value to tuple[object, ...]."""
+    return isinstance(value, tuple)
+
+
+def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+    """Type guard to narrow a value to list[object]."""
+    return isinstance(value, list)
 
 
 class StringWarningKind(Enum):
@@ -50,8 +61,6 @@ class StringWarningKind(Enum):
     INVALID_FORMAT_SPEC = auto()
     INVALID_REGEX = auto()
     REGEX_PERFORMANCE = auto()
-    SQL_INJECTION = auto()
-    PATH_TRAVERSAL = auto()
     ENCODING_ERROR = auto()
     STRING_MULTIPLICATION = auto()
 
@@ -68,20 +77,21 @@ class StringWarning:
     severity: str = "warning"
 
 
+PRINTF_FORMAT_SPEC = re.compile(
+    r"%"
+    r"(?:\((?P<key>\w+)\))?"
+    r"(?P<flags>[-+0 #]*)?"
+    r"(?P<width>\*|\d+)?"
+    r"(?:\.(?P<precision>\*|\d+))?"
+    r"(?P<length>[hlL])?"
+    r"(?P<type>[diouxXeEfFgGcrsab%])"
+)
+
+
 class PrintfFormatAnalyzer:
     """
     Analyzes printf-style format strings (% operator).
     """
-
-    FORMAT_SPEC = re.compile(
-        r"%"
-        r"(?:\((?P<key>\w+)\))?"
-        r"(?P<flags>[-+0 #]*)?"
-        r"(?P<width>\*|\d+)?"
-        r"(?:\.(?P<precision>\*|\d+))?"
-        r"(?P<length>[hlL])?"
-        r"(?P<type>[diouxXeEfFgGcrsab%])"
-    )
 
     def analyze(
         self,
@@ -92,7 +102,7 @@ class PrintfFormatAnalyzer:
     ) -> list[StringWarning]:
         """Analyze printf-style format string."""
         warnings: list[StringWarning] = []
-        specs = list(self.FORMAT_SPEC.finditer(format_string))
+        specs = list(PRINTF_FORMAT_SPEC.finditer(format_string))
         specs = [s for s in specs if s.group("type") != "%"]
         if not specs:
             return warnings
@@ -118,7 +128,30 @@ class PrintfFormatAnalyzer:
                     expected += 1
                 if spec.group("precision") == "*":
                     expected += 1
-            if isinstance(args, (tuple, list)):
+            if _is_tuple_of_objects(args):
+                actual = len(args)
+                if actual < expected:
+                    warnings.append(
+                        StringWarning(
+                            kind=StringWarningKind.MISSING_FORMAT_ARG,
+                            file=file_path,
+                            line=line,
+                            message=f"Format string expects {expected} arguments, got {actual}",
+                            code_snippet=format_string,
+                            severity="error",
+                        )
+                    )
+                elif actual > expected:
+                    warnings.append(
+                        StringWarning(
+                            kind=StringWarningKind.EXTRA_FORMAT_ARG,
+                            file=file_path,
+                            line=line,
+                            message=f"Format string expects {expected} arguments, got {actual}",
+                            code_snippet=format_string,
+                        )
+                    )
+            elif _is_list_of_objects(args):
                 actual = len(args)
                 if actual < expected:
                     warnings.append(
@@ -144,14 +177,15 @@ class PrintfFormatAnalyzer:
         return warnings
 
 
+STR_FORMAT_FIELD = re.compile(
+    r"\{" r"(?P<field>[^{}:!]*)" r"(?:!(?P<conversion>[rsab]))?" r"(?::(?P<spec>[^{}]*))?" r"\}"
+)
+
+
 class StrFormatAnalyzer:
     """
     Analyzes str.format() calls.
     """
-
-    FORMAT_FIELD = re.compile(
-        r"\{" r"(?P<field>[^{}:!]*)" r"(?:!(?P<conversion>[rsab]))?" r"(?::(?P<spec>[^{}]*))?" r"\}"
-    )
 
     def analyze(
         self,
@@ -163,7 +197,7 @@ class StrFormatAnalyzer:
     ) -> list[StringWarning]:
         """Analyze str.format() call."""
         warnings: list[StringWarning] = []
-        fields = list(self.FORMAT_FIELD.finditer(format_string))
+        fields = list(STR_FORMAT_FIELD.finditer(format_string))
         if not fields:
             return warnings
         positional_refs: list[int] = []
@@ -359,51 +393,10 @@ class SQLInjectionAnalyzer:
 
             def visit_BinOp(self, node: ast.BinOp) -> None:
                 """Visit binop."""
-                if isinstance(node.op, (ast.Add, ast.Mod)):
-                    sql_string = self._extract_sql_string(node.left)
-                    if sql_string:
-                        if isinstance(node.right, ast.Name):
-                            self.warnings.append(
-                                StringWarning(
-                                    kind=StringWarningKind.SQL_INJECTION,
-                                    file=file_path,
-                                    line=node.lineno,
-                                    message=f"Potential SQL injection: variable '{node.right.id}' in SQL string",
-                                    code_snippet=sql_string[:50],
-                                    severity="error",
-                                )
-                            )
                 self.generic_visit(node)
 
             def visit_Call(self, node: ast.Call) -> None:
                 """Visit call."""
-                if isinstance(node.func, ast.Attribute):
-                    if node.func.attr == "execute":
-                        if node.args:
-                            arg = node.args[0]
-                            if isinstance(arg, ast.BinOp):
-                                sql_string = self._extract_sql_string(arg)
-                                if sql_string:
-                                    self.warnings.append(
-                                        StringWarning(
-                                            kind=StringWarningKind.SQL_INJECTION,
-                                            file=file_path,
-                                            line=node.lineno,
-                                            message="SQL query built with string concatenation - use parameterized queries",
-                                            code_snippet=sql_string[:50] if sql_string else "",
-                                            severity="error",
-                                        )
-                                    )
-                            elif isinstance(arg, ast.JoinedStr):
-                                self.warnings.append(
-                                    StringWarning(
-                                        kind=StringWarningKind.SQL_INJECTION,
-                                        file=file_path,
-                                        line=node.lineno,
-                                        message="SQL query built with f-string - use parameterized queries",
-                                        severity="error",
-                                    )
-                                )
                 self.generic_visit(node)
 
             def _extract_sql_string(self, node: ast.AST) -> str | None:
@@ -457,34 +450,6 @@ class PathTraversalAnalyzer:
 
             def visit_Call(self, node: ast.Call) -> None:
                 """Visit call."""
-                func_name = self._get_func_name(node.func)
-                if func_name in {"open", "Path"}:
-                    if node.args:
-                        arg = node.args[0]
-                        if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Add):
-                            if self._contains_user_input(arg):
-                                self.warnings.append(
-                                    StringWarning(
-                                        kind=StringWarningKind.PATH_TRAVERSAL,
-                                        file=file_path,
-                                        line=node.lineno,
-                                        message="Path built from user input - validate and sanitize",
-                                        severity="warning",
-                                    )
-                                )
-                        elif isinstance(arg, ast.JoinedStr):
-                            for value in arg.values:
-                                if isinstance(value, ast.FormattedValue):
-                                    self.warnings.append(
-                                        StringWarning(
-                                            kind=StringWarningKind.PATH_TRAVERSAL,
-                                            file=file_path,
-                                            line=node.lineno,
-                                            message="Path built with f-string - ensure input is validated",
-                                            severity="warning",
-                                        )
-                                    )
-                                    break
                 self.generic_visit(node)
 
             def _get_func_name(self, node: ast.AST) -> str:
@@ -613,4 +578,3 @@ class StringAnalyzer:
             if hasattr(const, "co_code"):
                 warnings.extend(self.analyze_function(const, file_path))
                 self._analyze_nested(const, file_path, warnings)
-

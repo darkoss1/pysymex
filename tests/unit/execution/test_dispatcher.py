@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import dis
 from dataclasses import dataclass
@@ -30,33 +30,27 @@ def _noop_handler(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher)
     _ = ctx
     return OpcodeResult.continue_with(state.advance_pc())
 
+
 class TestOpcodeResult:
     """Test suite for pysymex.execution.dispatcher.OpcodeResult."""
+
     def test_continue_with(self) -> None:
         """Test continue_with behavior."""
         state = VMState()
-        issue = Issue(kind=IssueKind.TYPE_ERROR, message="pending")
-        state.pending_taint_issues = [issue]
-
         result = OpcodeResult.continue_with(state)
 
         assert result.new_states == [state]
-        assert issue in result.issues
-        assert state.pending_taint_issues == []
 
     def test_branch(self) -> None:
         """Test branch behavior."""
         s1 = VMState()
         s2 = VMState()
-        pending = Issue(kind=IssueKind.KEY_ERROR, message="k")
         explicit = Issue(kind=IssueKind.VALUE_ERROR, message="v")
-        s2.pending_taint_issues = [pending]
 
         result = OpcodeResult.branch([s1, s2], [explicit])
 
         assert len(result.new_states) == 2
         assert explicit in result.issues
-        assert pending in result.issues
 
     def test_fork(self) -> None:
         """Test fork behavior."""
@@ -90,20 +84,18 @@ class TestOpcodeResult:
     def test_error(self) -> None:
         """Test error behavior."""
         state = VMState()
-        pending = Issue(kind=IssueKind.TYPE_ERROR, message="pending")
         fatal = Issue(kind=IssueKind.TYPE_ERROR, message="fatal")
-        state.pending_taint_issues = [pending]
 
         result = OpcodeResult.error(fatal, state)
 
         assert result.terminal is True
         assert result.new_states == []
         assert fatal in result.issues
-        assert pending in result.issues
 
 
 class TestOpcodeDispatcher:
     """Test suite for pysymex.execution.dispatcher.OpcodeDispatcher."""
+
     def test_register(self) -> None:
         """Test register behavior."""
         dispatcher = OpcodeDispatcher()
@@ -225,6 +217,7 @@ def test_get_global_dispatcher() -> None:
 
 def test_opcode_handler() -> None:
     """Test opcode_handler behavior."""
+
     @opcode_handler("DECORATOR_REGISTERED")
     def decorated(
         instr: dis.Instruction,

@@ -1,11 +1,14 @@
-﻿import pysymex.core.solver.constraints
+import pysymex.core.solver.constraints
 import z3
+
 
 def test_structural_hash() -> None:
     """Scenario: same ordered constraints hashed twice; expected stable hash value."""
     x = z3.Int("x")
     constraints = [x > 0, x < 10]
-    assert pysymex.core.solver.constraints.structural_hash(constraints) == pysymex.core.solver.constraints.structural_hash(constraints)
+    assert pysymex.core.solver.constraints.structural_hash(
+        constraints
+    ) == pysymex.core.solver.constraints.structural_hash(constraints)
 
 
 def test_structural_hash_sorted() -> None:
@@ -13,7 +16,9 @@ def test_structural_hash_sorted() -> None:
     x = z3.Int("x")
     a = [x > 0, x < 10]
     b = [x < 10, x > 0]
-    assert pysymex.core.solver.constraints.structural_hash_sorted(a) == pysymex.core.solver.constraints.structural_hash_sorted(b)
+    assert pysymex.core.solver.constraints.structural_hash_sorted(
+        a
+    ) == pysymex.core.solver.constraints.structural_hash_sorted(b)
 
 
 def test_simplify_constraints() -> None:

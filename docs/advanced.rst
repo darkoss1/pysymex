@@ -7,10 +7,10 @@ This section covers advanced features of pysymex.
 Hardware Acceleration
 ---------------------
 
-PySyMex includes a custom-built, high-performance GPU Virtual Machine for resolving Constraint Hypergraph Treewidth Decomposition (CHTD) queries at scale. 
+PySyMex includes a custom-built, high-performance Tiered CPU Dispatcher and local SAT solver for resolving Constraint Hypergraph Treewidth Decomposition (CHTD) queries at scale. 
 
-To learn more about the C++ CUDA integration, the branchless bytecode ISA, and how to evaluate trillions of states per second, see the dedicated architecture documentation:
-* `docs/arch/H_ACCELERATION.md`
+To learn more about the Tiered CPU Dispatcher, thread-local SAT integration, and how to manage state explosion efficiently without PCIe latency, see the dedicated architecture documentation:
+* `docs/arch/ACCELERATION.md`
 
 
 Sandbox Architecture and Hardening
@@ -55,43 +55,6 @@ Export the call graph for visualization:
        f.write(dot_output)
 
    # Then use Graphviz: dot -Tpng callgraph.dot -o callgraph.png
-
-
-Taint Analysis
---------------
-
-Track data flow from untrusted sources to sensitive sinks:
-
-.. code-block:: python
-
-   from pysymex.analysis.taint import TaintAnalyzer, TaintSource
-
-   analyzer = TaintAnalyzer()
-
-   flows = analyzer.analyze_function(
-       my_function,
-       tainted_params={"user_input": TaintSource.USER_INPUT}
-   )
-
-   for flow in flows:
-       print(flow.format())
-
-
-Custom Taint Policies
-~~~~~~~~~~~~~~~~~~~~~
-
-Define which source-sink combinations are dangerous:
-
-.. code-block:: python
-
-   from pysymex.analysis.taint import TaintPolicy, TaintSource, TaintSink
-
-   policy = TaintPolicy()
-
-   # Add custom dangerous flow
-   policy._dangerous_flows.add(
-       (TaintSource.DATABASE, TaintSink.LOG_OUTPUT)
-   )
 
 
 Concolic Execution

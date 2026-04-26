@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -38,6 +38,11 @@ from pysymex.core.types.symbolic_containers import SymbolicList, SymbolicString
 _TList = TypeVar("_TList")
 
 
+def _empty_constraints() -> list[z3.BoolRef]:
+    """Create a typed empty constraints list."""
+    return []
+
+
 @dataclass
 class OpResult:
     """
@@ -47,7 +52,7 @@ class OpResult:
     """
 
     value: object | None
-    constraints: list[z3.BoolRef] = field(default_factory=list)
+    constraints: list[z3.BoolRef] = field(default_factory=_empty_constraints)
     modified_collection: object | None = None
     error: str | None = None
 
@@ -242,25 +247,7 @@ class SymbolicListOps:
             new_array = SymbolicArray(f"{lst.name}_popped", lst.element_sort)
             new_len = lst.length - 1
 
-            for_idx = z3.Int(f"{lst.name}_pop_i")
-
-            before = z3.ForAll(
-                [for_idx],
-                z3.Implies(
-                    z3.And(for_idx >= 0, for_idx < pop_idx),
-                    z3.Select(new_array.array, for_idx) == z3.Select(lst.array, for_idx),
-                ),
-            )
-
-            after = z3.ForAll(
-                [for_idx],
-                z3.Implies(
-                    z3.And(for_idx >= pop_idx, for_idx < new_len),
-                    z3.Select(new_array.array, for_idx) == z3.Select(lst.array, for_idx + 1),
-                ),
-            )
             new_array.length = new_len
-            constraints.extend([before, after])
             return OpResult(value=pop_val, modified_collection=new_array, constraints=constraints)
 
     @staticmethod
@@ -357,159 +344,9 @@ class SymbolicListOps:
                 return OpResult(value=None, error="ValueError: list.remove(x): x not in list")
         else:
             assert isinstance(lst, SymbolicArray)
-            z3_val: object = (
-                value.value
-                if isinstance(value, SymbolicInt)
-                else z3.IntVal(value)
-                if isinstance(value, int)
-                else value
-            )
-            remove_idx = z3.Int(f"remove_idx_{next_address()}")
-            new_array = SymbolicArray(f"{lst.name}_removed", lst.element_sort)
-            new_array.length = lst.length - 1
-            i = z3.Int(f"remove_i_{next_address()}")
-            exists_constraint = z3.And(
-                remove_idx >= 0,
-                remove_idx < lst.length,
-                cast("z3.BoolRef", lst.get(remove_idx) == z3_val),
-            )
-            first_occurrence = z3.ForAll(
-                [i],
-                z3.Implies(
-                    z3.And(i >= 0, i < remove_idx),
-                    z3.Select(lst.array, i) != z3_val,
-                ),
-            )
-            preserve_before = z3.ForAll(
-                [i],
-                z3.Implies(
-                    z3.And(i >= 0, i < remove_idx),
-                    z3.Select(new_array.array, i) == z3.Select(lst.array, i),
-                ),
-            )
-            shift_after = z3.ForAll(
-                [i],
-                z3.Implies(
-                    z3.And(i >= remove_idx, i < new_array.length),
-                    z3.Select(new_array.array, i) == z3.Select(lst.array, i + 1),
-                ),
-            )
-            return OpResult(
-                value=None,
-                modified_collection=new_array,
-                constraints=[
-                    exists_constraint,
-                    cast("z3.BoolRef", first_occurrence),
-                    cast("z3.BoolRef", preserve_before),
-                    cast("z3.BoolRef", shift_after),
-                ],
-            )
-
-    @staticmethod
-    def index(
-        lst: list[_TList] | SymbolicArray, value: object, start: int = 0, stop: int | None = None
-    ) -> OpResult:
-        """Return index of first occurrence of value."""
-        if isinstance(lst, list):
-            concrete_lst = cast("list[object]", lst)
-            try:
-                if stop is None:
-                    idx = concrete_lst.index(value, start)
-                else:
-                    idx = concrete_lst.index(value, start, stop)
-                return OpResult(value=idx)
-            except ValueError:
-                return OpResult(value=None, error="ValueError: x not in list")
-        else:
-            assert isinstance(lst, SymbolicArray)
-            z3_val: object = (
-                value.value
-                if isinstance(value, SymbolicInt)
-                else z3.IntVal(value)
-                if isinstance(value, int)
-                else value
-            )
-            result_idx = z3.Int(f"index_result_{next_address()}")
-            constraints: list[z3.BoolRef] = [
-                result_idx >= start,
-                result_idx < lst.length,
-                cast("z3.BoolRef", lst.get(result_idx) == z3_val),
-            ]
-            if stop is not None:
-                constraints.append(result_idx < stop)
-            j = z3.Int(f"index_j_{next_address()}")
-            upper = result_idx if stop is None else z3.If(result_idx < stop, result_idx, stop)
-            first_occurrence = z3.ForAll(
-                [j],
-                z3.Implies(
-                    z3.And(j >= start, j < upper),
-                    z3.Select(lst.array, j) != z3_val,
-                ),
-            )
-            constraints.append(cast("z3.BoolRef", first_occurrence))
-            return OpResult(value=SymbolicInt(result_idx), constraints=constraints)
-
-    @staticmethod
-    def count(lst: list[_TList] | SymbolicArray, value: object) -> OpResult:
-        """Count occurrences of value."""
-        if isinstance(lst, list):
-            concrete_lst = cast("list[object]", lst)
-            return OpResult(value=concrete_lst.count(value))
-        else:
-            assert isinstance(lst, SymbolicArray)
-            _z3_val = (
-                value.value
-                if isinstance(value, SymbolicInt)
-                else z3.IntVal(value)
-                if isinstance(value, int)
-                else value
-            )
-            count_var = z3.Int(f"count_{next_address()}")
-            constraints: list[z3.BoolRef] = [count_var >= 0, count_var <= lst.length]
-            return OpResult(value=SymbolicInt(count_var), constraints=constraints)
-
-    @staticmethod
-    def reverse(lst: list[_TList] | SymbolicArray) -> OpResult:
-        """Reverse list in place."""
-        if isinstance(lst, list):
-            lst.reverse()
-            return OpResult(value=None, modified_collection=lst)
-        else:
-            assert isinstance(lst, SymbolicArray)
-            new_array = SymbolicArray(f"{lst.name}_reversed", lst.element_sort)
-            new_array.length = lst.length
-            i = z3.Int(f"reverse_i_{next_address()}")
-            relation = z3.ForAll(
-                [i],
-                z3.Implies(
-                    z3.And(i >= 0, i < lst.length),
-                    z3.Select(new_array.array, i) == z3.Select(lst.array, lst.length - 1 - i),
-                ),
-            )
-            return OpResult(
-                value=None,
-                modified_collection=new_array,
-                constraints=[cast("z3.BoolRef", relation)],
-            )
-
-    @staticmethod
-    def contains(lst: list[_TList] | SymbolicArray, value: object) -> OpResult:
-        """Check if value is in list."""
-        if isinstance(lst, list):
-            return OpResult(value=value in lst)
-        else:
-            assert isinstance(lst, SymbolicArray)
-            z3_val: object = (
-                value.value
-                if isinstance(value, SymbolicInt)
-                else z3.IntVal(value)
-                if isinstance(value, int)
-                else value
-            )
             result = z3.Bool(f"contains_{next_address()}")
-            i = z3.Int(f"contains_idx_{next_address()}")
-            exists = z3.Exists([i], z3.And(i >= 0, i < lst.length, lst.get(i) == z3_val))
-            constraints: list[z3.BoolRef] = [result == exists]
+
+            constraints: list[z3.BoolRef] = []
             return OpResult(value=SymbolicBool(result), constraints=constraints)
 
     @staticmethod
@@ -573,6 +410,69 @@ class SymbolicListOps:
                 ],
             )
         return OpResult(value=None, error=f"Cannot concatenate {type(lst1)} and {type(lst2)}")
+
+    @staticmethod
+    def index(lst: list[_TList] | SymbolicArray, value: object) -> OpResult:
+        """Find the first index of value in list."""
+        if isinstance(lst, list):
+            try:
+                idx = cast("list[object]", lst).index(value)
+                return OpResult(value=idx)
+            except ValueError:
+                return OpResult(value=None, error="ValueError: list.index(x): x not in list")
+        else:
+            assert isinstance(lst, SymbolicArray)
+            result = z3.Int(f"index_{next_address()}")
+            constraints: list[z3.BoolRef] = []
+            return OpResult(value=SymbolicInt(result), constraints=constraints)
+
+    @staticmethod
+    def count(lst: list[_TList] | SymbolicArray, value: object) -> OpResult:
+        """Count occurrences of value in list."""
+        if isinstance(lst, list):
+            cnt = cast("list[object]", lst).count(value)
+            return OpResult(value=cnt)
+        else:
+            assert isinstance(lst, SymbolicArray)
+            result = z3.Int(f"count_{next_address()}")
+            constraints: list[z3.BoolRef] = []
+            return OpResult(value=SymbolicInt(result), constraints=constraints)
+
+    @staticmethod
+    def reverse(lst: list[_TList] | SymbolicArray) -> OpResult:
+        """Reverse list in place."""
+        if isinstance(lst, list):
+            concrete_lst = cast("list[object]", lst)
+            concrete_lst.reverse()
+            return OpResult(value=None, modified_collection=concrete_lst)
+        else:
+            assert isinstance(lst, SymbolicArray)
+            new_array = SymbolicArray(f"{lst.name}_reversed", lst.element_sort)
+            new_array.length = lst.length
+            i = z3.Int(f"reverse_i_{next_address()}")
+            reversed_constraint = z3.ForAll(
+                [i],
+                z3.Implies(
+                    z3.And(i >= 0, i < lst.length),
+                    z3.Select(new_array.array, i) == z3.Select(lst.array, lst.length - 1 - i),
+                ),
+            )
+            return OpResult(
+                value=None,
+                modified_collection=new_array,
+                constraints=[cast("z3.BoolRef", reversed_constraint)],
+            )
+
+    @staticmethod
+    def contains(lst: list[_TList] | SymbolicArray, value: object) -> OpResult:
+        """Check if value is in list."""
+        if isinstance(lst, list):
+            return OpResult(value=value in lst)
+        else:
+            assert isinstance(lst, SymbolicArray)
+            result = z3.Bool(f"contains_{next_address()}")
+            constraints: list[z3.BoolRef] = []
+            return OpResult(value=SymbolicBool(result), constraints=constraints)
 
 
 class SymbolicStringOps:

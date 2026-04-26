@@ -5,8 +5,10 @@ from pysymex.analysis.control.cfg import BasicBlock, ControlFlowGraph
 from pysymex.analysis.dataflow.types import Definition, NullInfo, NullState
 from types import CodeType
 
+
 def dummy_code() -> CodeType:
     return compile("pass", "<string>", "exec")
+
 
 class MockCFG(ControlFlowGraph):
     def __init__(self) -> None:
@@ -15,30 +17,32 @@ class MockCFG(ControlFlowGraph):
         self.exit_block_ids = {1}
         self.reverse_postorder = [0, 1]
         self.natural_loops = {}
-    
+
     def iter_blocks_forward(self) -> list[BasicBlock]:
         return [self.blocks[k] for k in sorted(self.blocks.keys())]
-        
+
     def iter_blocks_reverse(self) -> list[BasicBlock]:
         return [self.blocks[k] for k in sorted(self.blocks.keys(), reverse=True)]
-        
+
     def get_block_at_pc(self, pc: int) -> BasicBlock | None:
         for b in self.blocks.values():
-            if any(getattr(i, 'offset', -1) == pc for i in b.instructions):
+            if any(getattr(i, "offset", -1) == pc for i in b.instructions):
                 return b
         if self.blocks:
             return next(iter(self.blocks.values()))
         return None
 
+
 class TestFlowSensitiveAnalyzer:
     """Test suite for pysymex.analysis.specialized.flow.FlowSensitiveAnalyzer."""
+
     @patch("pysymex.analysis.specialized.flow.CFGBuilder")
     def test_get_definitions_reaching(self, mock_cfg_builder: Mock) -> None:
         """Test get_definitions_reaching behavior."""
         cfg_mock = MockCFG()
         cfg_mock.blocks = {1: BasicBlock(1, 0, 10)}
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         analyzer.reaching_defs = Mock()
         analyzer.reaching_defs.get_reaching_defs_at.return_value = [Definition("x", 1, 10)]
@@ -52,7 +56,7 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock = MockCFG()
         cfg_mock.blocks = {1: BasicBlock(1, 0, 10)}
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         analyzer.live_vars = Mock()
         analyzer.live_vars.is_live_at.return_value = True
@@ -64,13 +68,13 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock = MockCFG()
         cfg_mock.blocks = {1: BasicBlock(1, 0, 10)}
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         analyzer.def_use = Mock()
         mock_chain = Mock()
         mock_chain.is_dead.return_value = True
         analyzer.def_use.get_chain.return_value = mock_chain
-        
+
         assert analyzer.is_dead_store(Definition("x", 1, 10)) is True
 
     @patch("pysymex.analysis.specialized.flow.CFGBuilder")
@@ -79,7 +83,7 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock = MockCFG()
         cfg_mock.blocks = {1: BasicBlock(1, 0, 10)}
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         analyzer.null_analysis = Mock()
         analyzer.null_analysis.may_be_null.return_value = True
@@ -93,7 +97,7 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock.natural_loops = {1: {1}}
         cfg_mock.get_block_at_pc = Mock(return_value=BasicBlock(1, 0, 10))
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         assert analyzer.is_in_loop(10) is True
 
@@ -105,7 +109,7 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock.natural_loops = {2: {1, 2}}
         cfg_mock.get_block_at_pc = Mock(return_value=BasicBlock(1, 0, 10))
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         assert analyzer.get_loop_header(10) == 2
 
@@ -118,7 +122,7 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock.blocks = {1: b}
         cfg_mock.get_block_at_pc = Mock(return_value=b)
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         assert analyzer.get_dominator(10) == 0
 
@@ -131,12 +135,14 @@ class TestFlowSensitiveAnalyzer:
         cfg_mock.get_block_at_pc = Mock(return_value=b)
         cfg_mock.is_reachable = Mock(return_value=True)
         mock_cfg_builder.return_value.build.return_value = cfg_mock
-        
+
         analyzer = FlowSensitiveAnalyzer(dummy_code())
         assert analyzer.is_reachable(10) is True
 
+
 class TestFlowContext:
     """Test suite for pysymex.analysis.specialized.flow.FlowContext."""
+
     def setup_analyzer(self) -> FlowSensitiveAnalyzer:
         analyzer = Mock(spec=FlowSensitiveAnalyzer)
         analyzer.cfg = MockCFG()

@@ -1,4 +1,4 @@
-﻿from dataclasses import FrozenInstanceError, asdict
+from dataclasses import FrozenInstanceError, asdict
 
 import pytest
 
@@ -10,6 +10,7 @@ from pysymex.sandbox.types import (
     SandboxResult,
     SecurityCapabilities,
 )
+
 
 class TestSandboxBackend:
     """Test suite for pysymex.sandbox.types.SandboxBackend."""

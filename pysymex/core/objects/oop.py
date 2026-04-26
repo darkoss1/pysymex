@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Enhanced OOP Support for PySyMex v1.2.
+Enhanced OOP Support for pysymex v1.2.
 Provides improved class and object handling:
 - Better __init__ parameter tracking
 - Enhanced method dispatch with proper self binding
@@ -51,6 +51,11 @@ from pysymex.core.objects import (
 )
 from pysymex.core.types.scalars import SymbolicValue
 from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicString
+
+
+def _empty_dataclass_fields() -> dict[str, tuple[str, object]]:
+    """Create a typed empty dataclass-fields mapping."""
+    return {}
 
 
 class MethodType(Enum):
@@ -180,7 +185,7 @@ class EnhancedClass:
     class_vars: dict[str, object] = field(default_factory=dict[str, object])
     slots: tuple[str, ...] | None = None
     is_dataclass: bool = False
-    dataclass_fields: dict[str, tuple[str, object]] = field(default_factory=dict)
+    dataclass_fields: dict[str, tuple[str, object]] = field(default_factory=_empty_dataclass_fields)
     abstract_methods: set[str] = field(default_factory=set[str])
 
     @property
@@ -472,9 +477,11 @@ def extract_init_params(code_obj: object) -> list[InitParameter]:
     arg_count_obj = getattr(code_any, "co_argcount", 0)
     arg_count = arg_count_obj if isinstance(arg_count_obj, int) else 0
     varnames_obj = getattr(code_any, "co_varnames", ())
-    varnames: tuple[object, ...] = varnames_obj if isinstance(varnames_obj, tuple) else ()
+    varnames: tuple[str, ...] = (
+        tuple(str(item) for item in varnames_obj) if isinstance(varnames_obj, tuple) else ()  # type: ignore[misc]  # varnames_obj element type unknown
+    )
     defaults_obj = getattr(code_any, "co_defaults", ())
-    defaults: tuple[object, ...] = defaults_obj if isinstance(defaults_obj, tuple) else ()
+    defaults: tuple[object, ...] = tuple(defaults_obj) if isinstance(defaults_obj, tuple) else ()  # type: ignore[misc]  # defaults_obj element type unknown
     default_offset = arg_count - len(defaults)
     for i, name in enumerate(varnames):
         is_self = i == 0 and name in ("self", "cls")
@@ -561,4 +568,3 @@ def register_enhanced_class(
 ) -> EnhancedClass:
     """Register a new enhanced class."""
     return enhanced_class_registry.register_class(name, bases)
-

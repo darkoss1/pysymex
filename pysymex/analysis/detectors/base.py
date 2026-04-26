@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,28 +31,35 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 import z3
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
-from pysymex.core.types.havoc import is_havoc
-from pysymex.core.solver.engine import get_model, is_satisfiable
-from pysymex.core.types.checks import is_overloaded_arithmetic, is_type_subscription
-from pysymex.core.types.scalars import (
-    SymbolicDict,
-    SymbolicList,
-    SymbolicNone,
-    SymbolicString,
-    SymbolicValue,
-)
 
-_IsSatFn = Callable[[list[z3.BoolRef]], bool]
-_GetModelFn = Callable[[list[z3.BoolRef]], z3.ModelRef | None]
+DisInstruction = dis.Instruction
+IsSatFn = Callable[[list[z3.BoolRef]], bool]
+GetModelFn = Callable[[list[z3.BoolRef]], z3.ModelRef | None]
+
+
+def _empty_constraints() -> list[z3.BoolRef]:
+    """Create a typed empty constraint list for Issue defaults."""
+    return []
+
+
+def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+    """Type guard to narrow a value to list[object]."""
+    return isinstance(value, list)
+
+
+def is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
+    """Type guard to narrow a value to tuple[object, ...]."""
+    return isinstance(value, tuple)
+
 
 if TYPE_CHECKING:
-    DetectorFn = Callable[["VMState", dis.Instruction, _IsSatFn], "Issue | None"]
+    DetectorFn = Callable[["VMState", dis.Instruction, IsSatFn], "Issue | None"]
 else:
     DetectorFn = Callable[..., object]
 """Signature for a pure detector function.
@@ -63,28 +70,16 @@ when a bug is found (or ``None``).
 """
 
 __all__ = [
-    "AssertionErrorDetector",
-    "AttributeErrorDetector",
     "Detector",
     "DetectorFn",
     "DetectorInfo",
     "DetectorRegistry",
-    "DivisionByZeroDetector",
-    "EnhancedIndexErrorDetector",
-    "EnhancedTypeErrorDetector",
-    "FormatStringDetector",
-    "IndexErrorDetector",
+    "GetModelFn",
+    "IsSatFn",
     "Issue",
     "IssueKind",
-    "KeyErrorDetector",
-    "NoneDereferenceDetector",
-    "OverflowDetector",
-    "ResourceLeakDetector",
-    "TaintFlowDetector",
-    "TypeErrorDetector",
-    "UnboundVariableDetector",
-    "ValueErrorDetector",
-    "default_registry",
+    "is_list_of_objects",
+    "is_tuple_of_objects",
 ]
 
 
@@ -105,17 +100,15 @@ class IssueKind(Enum):
     INFINITE_LOOP = auto()
     UNREACHABLE_CODE = auto()
     UNHANDLED_EXCEPTION = auto()
+    CONTRACT_VIOLATION = auto()
     RECURSION_LIMIT = auto()
     NEGATIVE_SQRT = auto()
     INVALID_ARGUMENT = auto()
     FORMAT_STRING_INJECTION = auto()
     RESOURCE_LEAK = auto()
     VALUE_ERROR = auto()
-    SQL_INJECTION = auto()
-    PATH_TRAVERSAL = auto()
     UNBOUND_VARIABLE = auto()
-    COMMAND_INJECTION = auto()
-    CODE_INJECTION = auto()
+    LOGICAL_CONTRADICTION = auto()
     RUNTIME_ERROR = auto()
     EXCEPTION = auto()
     SYNTAX_ERROR = auto()
@@ -145,7 +138,7 @@ class Issue:
 
     kind: IssueKind
     message: str
-    constraints: list[z3.BoolRef] = field(default_factory=list)
+    constraints: list[z3.BoolRef] = field(default_factory=_empty_constraints)
     model: z3.ModelRef | None = None
     pc: int = 0
     line_number: int | None = None
@@ -281,7 +274,7 @@ class Detector(ABC):
         self,
         state: VMState,
         instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
+        _solver_check: IsSatFn,
     ) -> Issue | None:
         """
         Check for issues at the current state.
@@ -307,903 +300,6 @@ class Detector(ABC):
         return self.check
 
 
-def _pure_check_division_by_zero(
-    divisor: object,
-    dividend: object,
-    path_constraints: list[z3.BoolRef],
-    pc: int,
-    is_satisfiable_fn: _IsSatFn = is_satisfiable,
-    get_model_fn: _GetModelFn = get_model,
-) -> Issue | None:
-    """Pure: decide whether *divisor* can be zero.
-
-    No I/O, no global state access – all inputs are passed explicitly.
-    """
-    if (
-        isinstance(dividend, SymbolicValue)
-        and isinstance(divisor, SymbolicValue)
-        and is_overloaded_arithmetic(dividend, divisor)
-    ):
-        return None
-
-    if not isinstance(divisor, SymbolicValue):
-        try:
-            if isinstance(divisor, (int, float, str)) and float(divisor) == 0:
-                return Issue(
-                    kind=IssueKind.DIVISION_BY_ZERO,
-                    message="Division by concrete zero",
-                    pc=pc,
-                )
-        except (ValueError, TypeError):
-            pass
-        return None
-
-    zero_constraint = [
-        *path_constraints,
-        z3.Or(
-            z3.And(divisor.is_int, divisor.z3_int == 0),
-            z3.And(divisor.is_float, z3.fpIsZero(divisor.z3_float)),
-        ),
-    ]
-    if is_satisfiable_fn(zero_constraint):
-        return Issue(
-            kind=IssueKind.DIVISION_BY_ZERO,
-            message=f"Possible division by zero: {divisor.name} can be 0",
-            constraints=zero_constraint,
-            model=get_model_fn(zero_constraint),
-            pc=pc,
-        )
-    return None
-
-
-class DivisionByZeroDetector(Detector):
-    """Detects potential division by zero and modulo-by-zero errors.
-
-    Checks ``BINARY_OP`` and legacy ``BINARY_TRUE_DIVIDE`` /
-    ``BINARY_FLOOR_DIVIDE`` / ``BINARY_MODULO`` opcodes.
-    """
-
-    name = "division-by-zero"
-    description = "Detects division by zero"
-    issue_kind = IssueKind.DIVISION_BY_ZERO
-    relevant_opcodes = frozenset(
-        {"BINARY_OP", "BINARY_TRUE_DIVIDE", "BINARY_FLOOR_DIVIDE", "BINARY_MODULO"}
-    )
-    DIVISION_OPS = {"BINARY_TRUE_DIVIDE", "BINARY_FLOOR_DIVIDE", "BINARY_MODULO"}
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check for division by zero or modulo zero."""
-        if instruction.opname == "BINARY_OP":
-            op_name = instruction.argrepr or ""
-            if "/" not in op_name and "%" not in op_name:
-                return None
-        elif instruction.opname not in self.DIVISION_OPS:
-            return None
-        if len(state.stack) < 2:
-            return None
-
-        dividend = state.stack[-2]
-        if isinstance(dividend, str) or type(dividend).__name__ == "SymbolicString":
-            return None
-
-        return _pure_check_division_by_zero(
-            state.stack[-1],
-            state.stack[-2],
-            list(state.path_constraints),
-            state.pc,
-        )
-
-
-class AssertionErrorDetector(Detector):
-    """Detects failing assertions."""
-
-    name = "assertion-error"
-    description = "Detects failing assertions"
-    issue_kind = IssueKind.ASSERTION_ERROR
-    relevant_opcodes = frozenset({"RAISE_VARARGS"})
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check for assertion failures."""
-        if instruction.opname != "RAISE_VARARGS":
-            return None
-
-        is_assertion = False
-        if state.stack:
-            top = state.peek()
-            name = getattr(top, "name", "") or getattr(top, "_name", "") or ""
-            if "AssertionError" in str(name):
-                is_assertion = True
-        if not is_assertion:
-            return None
-
-        constraints = list(state.path_constraints)
-        if not is_satisfiable(constraints):
-            return None
-        return Issue(
-            kind=IssueKind.ASSERTION_ERROR,
-            message="Possible assertion failure",
-            constraints=constraints,
-            model=get_model(constraints),
-            pc=state.pc,
-        )
-
-
-def _pure_check_index_bounds(
-    container: object,
-    index: object,
-    path_constraints: list[z3.BoolRef],
-    pc: int,
-    is_satisfiable_fn: _IsSatFn = is_satisfiable,
-    get_model_fn: _GetModelFn = get_model,
-) -> Issue | None:
-    """Pure: check if *index* can be out-of-bounds for *container*."""
-    if is_type_subscription(container):
-        return None
-    if not isinstance(index, SymbolicValue):
-        return None
-
-    lower_bound: z3.ArithRef
-    upper_bound: z3.ArithRef
-    container_name: str
-    confidence = 1.0
-
-    if isinstance(container, SymbolicList):
-        lower_bound = -container.z3_len
-        upper_bound = container.z3_len
-        container_name = container.name
-        if is_havoc(index) or is_havoc(container):
-            confidence = 0.5
-        elif hasattr(index, "affinity_type") and index.affinity_type == "int":
-            confidence = 0.9
-    elif isinstance(container, (list, tuple)):
-        concrete_len = len(container)
-        lower_bound = z3.IntVal(-concrete_len)
-        upper_bound = z3.IntVal(concrete_len)
-        container_name = "list"
-        if is_havoc(index):
-            confidence = 0.5
-        elif hasattr(index, "affinity_type") and index.affinity_type == "int":
-            confidence = 0.9
-    else:
-        return None
-
-    oob_constraint = [
-        *path_constraints,
-        index.is_int,
-        z3.Or(
-            index.z3_int < lower_bound,
-            index.z3_int >= upper_bound,
-        ),
-    ]
-    if is_satisfiable_fn(oob_constraint):
-        return Issue(
-            kind=IssueKind.INDEX_ERROR,
-            message=f"Possible index out of bounds: {container_name}[{index.name}]",
-            constraints=oob_constraint,
-            model=get_model_fn(oob_constraint),
-            pc=pc,
-            confidence=confidence,
-        )
-    return None
-
-
-class IndexErrorDetector(Detector):
-    """Detects out-of-bounds array/list access."""
-
-    name = "index-error"
-    description = "Detects out-of-bounds indexing"
-    issue_kind = IssueKind.INDEX_ERROR
-    relevant_opcodes = frozenset({"BINARY_SUBSCR"})
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check for index out of bounds errors in lists."""
-        if instruction.opname != "BINARY_SUBSCR":
-            return None
-        if len(state.stack) < 2:
-            return None
-        return _pure_check_index_bounds(
-            state.stack[-2],
-            state.stack[-1],
-            list(state.path_constraints),
-            state.pc,
-        )
-
-
-class KeyErrorDetector(Detector):
-    """Detects subscript access on a ``SymbolicDict`` with a possibly-missing key."""
-
-    name = "key-error"
-    description = "Detects missing dictionary keys"
-    issue_kind = IssueKind.KEY_ERROR
-    relevant_opcodes = frozenset({"BINARY_SUBSCR"})
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check for missing-key access on symbolic dicts."""
-        if instruction.opname != "BINARY_SUBSCR":
-            return None
-        if len(state.stack) < 2:
-            return None
-        key = state.stack[-1]
-        container = state.stack[-2]
-
-        if is_type_subscription(container):
-            return None
-        if not isinstance(container, SymbolicDict):
-            return None
-
-        normalized_key: SymbolicString | None = None
-        if isinstance(key, SymbolicString):
-            normalized_key = key
-        elif isinstance(key, str):
-            normalized_key = SymbolicString.from_const(key)
-
-        if normalized_key is None:
-            return None
-
-        missing_key: list[z3.BoolRef] = [
-            *state.path_constraints,
-            z3.Not(container.contains_key(normalized_key).z3_bool),
-        ]
-        if is_satisfiable(missing_key):
-            return Issue(
-                kind=IssueKind.KEY_ERROR,
-                message=f"Possible KeyError: {container.name} may not contain key",
-                constraints=missing_key,
-                model=get_model(missing_key),
-                pc=state.pc,
-            )
-        return None
-
-
-class TypeErrorDetector(Detector):
-    """Detects type errors in binary operations (e.g. string + int)."""
-
-    name = "type-error"
-    description = "Detects type mismatches"
-    issue_kind = IssueKind.TYPE_ERROR
-    relevant_opcodes = frozenset({"BINARY_OP"})
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname == "BINARY_OP":
-            if len(state.stack) < 2:
-                return None
-            op = instruction.argrepr
-            left = state.stack[-2]
-            right = state.stack[-1]
-            if op == "+":
-                if isinstance(left, SymbolicString) and isinstance(right, SymbolicValue):
-                    type_error: list[z3.BoolRef] = [
-                        *state.path_constraints,
-                        right.is_int,
-                    ]
-                    if is_satisfiable(type_error):
-                        confidence = 1.0
-                        if is_havoc(right):
-                            confidence = 0.5
-                        elif hasattr(right, "affinity_type") and right.affinity_type == "int":
-                            confidence = 0.9
-
-                        return Issue(
-                            kind=IssueKind.TYPE_ERROR,
-                            message=f"Cannot {op} string and int",
-                            constraints=type_error,
-                            model=get_model(type_error),
-                            pc=state.pc,
-                            confidence=confidence,
-                        )
-        return None
-
-
-class AttributeErrorDetector(Detector):
-    """Detects attribute access errors."""
-
-    name = "attribute-error"
-    description = "Detects missing attributes"
-    issue_kind = IssueKind.ATTRIBUTE_ERROR
-    relevant_opcodes = frozenset()
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        return None
-
-
-def _pure_check_overflow(
-    left: SymbolicValue,
-    right: SymbolicValue,
-    op: str,
-    path_constraints: list[z3.BoolRef],
-    pc: int,
-    min_val: int,
-    max_val: int,
-    is_satisfiable_fn: _IsSatFn = is_satisfiable,
-    get_model_fn: _GetModelFn = get_model,
-) -> Issue | None:
-    """Pure: check if arithmetic *op* on *left*/*right* can overflow."""
-    if op == "<<":
-        shift_overflow = [
-            *path_constraints,
-            left.is_int,
-            right.is_int,
-            right.z3_int > 63,
-        ]
-        if is_satisfiable_fn(shift_overflow):
-            return Issue(
-                kind=IssueKind.OVERFLOW,
-                message=f"Excessive bit shift: {right.name} could be > 63",
-                constraints=shift_overflow,
-                model=get_model_fn(shift_overflow),
-                pc=pc,
-            )
-        return None
-    if op == "**":
-        power_overflow = [
-            *path_constraints,
-            left.is_int,
-            right.is_int,
-            left.z3_int > 2,
-            right.z3_int > 62,
-        ]
-        if is_satisfiable_fn(power_overflow):
-            return Issue(
-                kind=IssueKind.OVERFLOW,
-                message="Potential overflow in exponentiation",
-                constraints=power_overflow,
-                model=get_model_fn(power_overflow),
-                pc=pc,
-            )
-        return None
-    result: z3.ArithRef
-    if op == "*":
-        result = left.z3_int * right.z3_int
-    elif op == "+":
-        result = left.z3_int + right.z3_int
-    elif op == "-":
-        result = left.z3_int - right.z3_int
-    else:
-        return None
-    overflow_constraint = [
-        *path_constraints,
-        left.is_int,
-        right.is_int,
-        z3.Or(result > max_val, result < min_val),
-    ]
-    if is_satisfiable_fn(overflow_constraint):
-        return Issue(
-            kind=IssueKind.OVERFLOW,
-            message=f"Possible integer overflow in {op} operation",
-            constraints=overflow_constraint,
-            model=get_model_fn(overflow_constraint),
-            pc=pc,
-        )
-    return None
-
-
-class OverflowDetector(Detector):
-    """Detects integer overflow conditions."""
-
-    name = "overflow"
-    description = "Detects integer overflow"
-    issue_kind = IssueKind.OVERFLOW
-    relevant_opcodes = frozenset({"BINARY_OP"})
-    BOUNDS = {
-        "32bit": (-(2**31), 2**31 - 1),
-        "64bit": (-(2**63), 2**63 - 1),
-        "size_t": (0, 2**64 - 1),
-    }
-
-    def __init__(self, bound_type: str = "64bit") -> None:
-        self.min_val, self.max_val = self.BOUNDS.get(bound_type, self.BOUNDS["64bit"])
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname != "BINARY_OP":
-            return None
-        op = instruction.argrepr
-        if op not in {"*", "+", "-", "**", "<<"}:
-            return None
-        if len(state.stack) < 2:
-            return None
-        left = state.stack[-2]
-        right = state.stack[-1]
-        if not isinstance(left, SymbolicValue) or not isinstance(right, SymbolicValue):
-            return None
-        return _pure_check_overflow(
-            left,
-            right,
-            op,
-            list(state.path_constraints),
-            state.pc,
-            self.min_val,
-            self.max_val,
-        )
-
-
-class ResourceLeakDetector(Detector):
-    """Detects potential resource leaks (unclosed files, connections).
-    Note: This detector is currently stubbed. Full resource leak detection
-    requires tracking resource lifetimes across the execution, which is
-    not yet fully implemented. This detector serves as a placeholder
-    for future enhancement.
-    """
-
-    name = "resource-leak"
-    description = "Detects unclosed resources (files, connections)"
-    issue_kind = IssueKind.RESOURCE_LEAK
-    relevant_opcodes = frozenset()
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        return None
-
-
-class ValueErrorDetector(Detector):
-    """Detects potential ValueError exceptions.
-
-    Checks for:
-    - str.index() when substring may not be found
-    - list.remove() when element may not exist
-    - int() with non-numeric strings
-    """
-
-    name = "value-error"
-    description = "Detects potential ValueError exceptions"
-    issue_kind = IssueKind.VALUE_ERROR
-    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "CALL_METHOD"})
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname not in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
-            return None
-        if len(state.stack) < 2:
-            return None
-        for var_name, var_val in state.local_vars.items():
-            if hasattr(var_val, "_potential_exception"):
-                exc = getattr(var_val, "_potential_exception", None)
-                if exc == "ValueError":
-                    return Issue(
-                        kind=IssueKind.VALUE_ERROR,
-                        message=f"Potential ValueError from {var_name}",
-                        constraints=list(state.path_constraints),
-                        model=get_model(list(state.path_constraints)),
-                        pc=state.pc,
-                    )
-        return None
-
-
-class EnhancedIndexErrorDetector(Detector):
-    """
-    Enhanced detector for out-of-bounds array/list access.
-    Improvements over base:
-    - Works with symbolic integer indexes
-    - Tracks list length constraints
-    - Handles negative indexing properly
-    - Detects when index could exceed any reasonable bound
-    - Skips likely dict access patterns to reduce false positives
-    """
-
-    name = "enhanced-index-error"
-    description = "Enhanced out-of-bounds index detection"
-    issue_kind = IssueKind.INDEX_ERROR
-    relevant_opcodes = frozenset({"BINARY_SUBSCR"})
-    MAX_REASONABLE_SIZE = 10000
-    DICT_KEY_SUFFIXES = {
-        "_id",
-        "id",
-        "key",
-        "name",
-        "feature",
-        "tier",
-        "type",
-        "kind",
-        "code",
-        "mode",
-        "command",
-    }
-    DICT_CONTAINER_PATTERNS = {
-        "dict",
-        "map",
-        "cache",
-        "tracker",
-        "store",
-        "registry",
-        "config",
-        "settings",
-        "_recent",
-        "_usage",
-        "_count",
-        "_limits",
-        "_LIMITS",
-        "_SIZE",
-        "_join",
-        "_command",
-        "_confusion",
-        "_requests",
-    }
-    SKIP_INDEX_PATTERNS = (
-        "depth",
-        "level",
-        "count",
-        "i",
-        "j",
-        "k",
-        "n",
-        "idx",
-        "pos",
-        "offset",
-        "size",
-        "length",
-        "width",
-        "height",
-        "x",
-        "y",
-        "z",
-    )
-    INSTANCE_CONTAINER_PATTERNS = (
-        "self.",
-        "cls.",
-        ".stack",
-        ".elements",
-        ".items",
-        ".values",
-        ".keys",
-        ".methods",
-        ".fields",
-        ".attributes",
-        ".properties",
-        "._hooks",
-        "._pending",
-        "._alias",
-        "._references",
-        ".locals",
-        ".globals",
-        ".block_stack",
-        "frame_copy",
-        "closure_parent",
-        "states",
-    )
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname != "BINARY_SUBSCR":
-            return None
-        if len(state.stack) < 2:
-            return None
-        index = state.stack[-1]
-        container = state.stack[-2]
-
-        if is_type_subscription(container):
-            return None
-        if isinstance(container, SymbolicList):
-            return self._check_symbolic_list(state, container, index)
-        if isinstance(index, SymbolicValue):
-            if self._is_likely_dict_access(container, index):
-                return None
-            return self._check_unbounded_index(state, index)
-        return None
-
-    def _is_likely_dict_access(self, container: object, index: object) -> bool:
-        """Check if this subscript is likely dict[key] rather than list[index]."""
-        container_name = getattr(container, "name", "") or ""
-        index_name = getattr(index, "name", "") or ""
-        container_looks_like_dict = any(
-            pattern in container_name.lower() for pattern in self.DICT_CONTAINER_PATTERNS
-        )
-        index_looks_like_key = any(
-            index_name.lower().endswith(suffix) or suffix in index_name.lower()
-            for suffix in self.DICT_KEY_SUFFIXES
-        )
-        container_is_instance_attr = any(
-            pattern in container_name for pattern in self.INSTANCE_CONTAINER_PATTERNS
-        )
-        index_is_common_var = any(
-            index_name == pattern or index_name.endswith(f"_{pattern}")
-            for pattern in self.SKIP_INDEX_PATTERNS
-        )
-        return (
-            container_looks_like_dict
-            or index_looks_like_key
-            or container_is_instance_attr
-            or index_is_common_var
-        )
-
-    def _check_symbolic_list(
-        self, state: VMState, container: SymbolicList, index: object
-    ) -> Issue | None:
-        """Check symbolic list."""
-        if isinstance(index, SymbolicValue):
-            oob_constraint = [
-                *state.path_constraints,
-                z3.Or(
-                    index.z3_int >= container.z3_len,
-                    index.z3_int < -container.z3_len,
-                ),
-            ]
-            if is_satisfiable(oob_constraint):
-                return Issue(
-                    kind=IssueKind.INDEX_ERROR,
-                    message=f"Index {index.name} may be out of bounds for {container.name}",
-                    constraints=oob_constraint,
-                    model=get_model(oob_constraint),
-                    pc=state.pc,
-                )
-        elif isinstance(index, (int, float)):
-            try:
-                idx_val = int(index)
-                oob_constraint = [
-                    *state.path_constraints,
-                    z3.Or(
-                        idx_val >= container.z3_len,
-                        idx_val < -container.z3_len,
-                    ),
-                ]
-                if is_satisfiable(oob_constraint):
-                    return Issue(
-                        kind=IssueKind.INDEX_ERROR,
-                        message=f"Index {idx_val} may be out of bounds for {container.name}",
-                        constraints=oob_constraint,
-                        model=get_model(oob_constraint),
-                        pc=state.pc,
-                    )
-            except (ValueError, TypeError):
-                pass
-        return None
-
-    def _check_unbounded_index(self, state: VMState, index: SymbolicValue) -> Issue | None:
-        """Check unbounded index."""
-        large_constraint = [
-            *state.path_constraints,
-            index.is_int,
-            index.z3_int >= self.MAX_REASONABLE_SIZE,
-        ]
-        if is_satisfiable(large_constraint):
-            return Issue(
-                kind=IssueKind.INDEX_ERROR,
-                message=f"Index {index.name} could be unreasonably large (>= {self.MAX_REASONABLE_SIZE})",
-                constraints=large_constraint,
-                model=get_model(large_constraint),
-                pc=state.pc,
-                confidence=0.8,
-            )
-        return None
-
-
-def _pure_check_none_deref(
-    obj: object,
-    attr_name: str,
-    path_constraints: list[z3.BoolRef],
-    pc: int,
-    skip_names: frozenset[str] | set[str] = frozenset(),
-    skip_prefixes: tuple[str, ...] = (),
-    is_satisfiable_fn: _IsSatFn = is_satisfiable,
-    get_model_fn: _GetModelFn = get_model,
-) -> Issue | None:
-    """Pure: check if *obj* could be None when attribute *attr_name* is accessed."""
-
-    if is_havoc(obj):
-        return None
-    if isinstance(obj, SymbolicNone):
-        return Issue(
-            kind=IssueKind.NULL_DEREFERENCE,
-            message=f"Attribute access '{attr_name}' on None",
-            constraints=path_constraints,
-            pc=pc,
-        )
-    if isinstance(obj, SymbolicValue):
-        if obj.name in skip_names:
-            return None
-        if any(obj.name.startswith(prefix) for prefix in skip_prefixes):
-            return None
-        if hasattr(obj, "is_none"):
-            none_constraint = [*path_constraints, obj.is_none]
-            if is_satisfiable_fn(none_constraint):
-                confidence = 1.0
-                if is_havoc(obj):
-                    confidence = 0.5
-                elif hasattr(obj, "affinity_type") and obj.affinity_type == "NoneType":
-                    confidence = 1.0
-                elif hasattr(obj, "affinity_type"):
-                    confidence = 0.7
-
-                return Issue(
-                    kind=IssueKind.NULL_DEREFERENCE,
-                    message=f"'{attr_name}' access on {obj.name} which could be None",
-                    constraints=none_constraint,
-                    model=get_model_fn(none_constraint),
-                    pc=pc,
-                    confidence=confidence,
-                )
-    return None
-
-
-class NoneDereferenceDetector(Detector):
-    """
-    Detects attribute access or method calls on potentially None values.
-    NOTE: This detector may produce false positives for class instance
-    attributes accessed via 'self', as symbolic execution doesn't fully
-    model Python's object initialization guarantees.
-    """
-
-    name = "none-dereference"
-    description = "Detects attribute access on potentially None values"
-    issue_kind = IssueKind.NULL_DEREFERENCE
-    relevant_opcodes = frozenset({"LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR"})
-    SKIP_NAMES = {"self", "cls", "module", "builtins", "__builtins__"}
-    INTERNAL_PREFIXES = ("_", "self.", "cls.", "tpl_", "args_", "kwargs_")
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname not in ("LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR"):
-            return None
-        if len(state.stack) < 1:
-            return None
-        return _pure_check_none_deref(
-            state.stack[-1],
-            instruction.argval,
-            list(state.path_constraints),
-            state.pc,
-            self.SKIP_NAMES,
-            self.INTERNAL_PREFIXES,
-        )
-
-
-class EnhancedTypeErrorDetector(Detector):
-    """Enhanced type confusion detector.
-    Includes pattern recognition to avoid false positives on dict access.
-    """
-
-    name = "enhanced-type-error"
-    description = "Enhanced type confusion detection"
-    issue_kind = IssueKind.TYPE_ERROR
-    relevant_opcodes = frozenset({"BINARY_SUBSCR", "BINARY_OP"})
-    DICT_CONTAINER_PATTERNS = {
-        "dict",
-        "map",
-        "cache",
-        "tracker",
-        "store",
-        "registry",
-        "config",
-        "settings",
-        "_recent",
-        "_usage",
-        "_count",
-        "_limits",
-        "_LIMITS",
-        "_SIZE",
-        "_join",
-        "_command",
-        "_confusion",
-        "_requests",
-        "global_",
-        "list",
-        "tuple",
-        "array",
-        "args",
-        "kwargs",
-        "instructions",
-        "states",
-        "facts",
-        "operands",
-        "elements",
-        "ops",
-        "comparators",
-        "varnames",
-        "blocks",
-        "indices",
-        "t",
-        "x",
-        "d",
-        "s",
-        "node",
-    }
-    SKIP_PREFIXES = ("subscr_", "call_result_", "call_kw_result_", "iter_")
-    INSTANCE_ATTR_PATTERNS = (
-        "self.",
-        "cls.",
-        ".stack",
-        ".elements",
-        ".items",
-        ".values",
-        ".keys",
-        ".methods",
-        ".fields",
-        ".attributes",
-        ".properties",
-        "._hooks",
-        "._pending",
-        "._alias",
-        "._references",
-        ".locals",
-        ".globals",
-        ".block_stack",
-        ".path_constraints",
-        "frame_copy",
-        "closure_parent",
-    )
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname == "BINARY_SUBSCR":
-            return self._check_subscript_type(state, instruction)
-        if instruction.opname == "BINARY_OP":
-            return self._check_binary_op(state, instruction)
-        return None
-
-    def _check_subscript_type(self, state: VMState, _instruction: dis.Instruction) -> Issue | None:
-        """Check subscript type."""
-        if len(state.stack) < 2:
-            return None
-        container = state.stack[-2]
-        if isinstance(container, SymbolicValue):
-            pass
-        return None
-
-    def _check_binary_op(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
-        """Check binary op."""
-        if len(state.stack) < 2:
-            return None
-        return None
-
-
 class FormatStringDetector(Detector):
     """Detects potential format string vulnerabilities."""
 
@@ -1217,7 +313,7 @@ class FormatStringDetector(Detector):
         self,
         state: VMState,
         instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
+        _solver_check: IsSatFn,
     ) -> Issue | None:
         """Check."""
         if instruction.opname in ("CALL", "CALL_FUNCTION"):
@@ -1228,184 +324,10 @@ class FormatStringDetector(Detector):
 
     def _check_dangerous_call(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
         """Check dangerous call."""
-        if not hasattr(state, "taint_tracker") or state.taint_tracker is None:
-            return None
-        taint_tracker: object = state.taint_tracker
-        argc = int(instruction.argval) if instruction.argval else 0
-        if argc > 0 and len(state.stack) >= argc:
-            for i in range(argc):
-                arg = state.stack[-(i + 1)]
-                if taint_tracker.is_tainted(arg):  # type: ignore[attr-defined]
-                    return Issue(
-                        kind=IssueKind.FORMAT_STRING_INJECTION,
-                        message="Potentially tainted string passed to function call",
-                        constraints=list(state.path_constraints),
-                        pc=state.pc,
-                    )
         return None
 
     def _check_format_value(self, state: VMState, _instruction: dis.Instruction) -> Issue | None:
         """Check format value."""
-        if not hasattr(state, "taint_tracker") or state.taint_tracker is None:
-            return None
-        taint_tracker: object = state.taint_tracker
-        if len(state.stack) < 1:
-            return None
-        val = state.stack[-1]
-        if taint_tracker.is_tainted(val):  # type: ignore[attr-defined]
-            return Issue(
-                kind=IssueKind.FORMAT_STRING_INJECTION,
-                message="Tainted value used in format string",
-                constraints=list(state.path_constraints),
-                pc=state.pc,
-            )
-        return None
-
-
-class UnboundVariableDetector(Detector):
-    """Detects potential use of unbound/uninitialized variables.
-    Checks for LOAD_NAME/LOAD_FAST operations on variables that may not
-    have been assigned on all code paths.
-    """
-
-    name = "unbound-variable"
-    description = "Detects potential NameError from unbound variables"
-    issue_kind = IssueKind.UNBOUND_VARIABLE
-    relevant_opcodes = frozenset({"LOAD_FAST", "LOAD_FAST_CHECK"})
-    BUILTIN_NAMES = frozenset(
-        {
-            "True",
-            "False",
-            "None",
-            "print",
-            "len",
-            "range",
-            "str",
-            "int",
-            "float",
-            "list",
-            "dict",
-            "set",
-            "tuple",
-            "bool",
-            "type",
-            "isinstance",
-            "hasattr",
-            "getattr",
-            "setattr",
-            "callable",
-            "iter",
-            "next",
-            "zip",
-            "map",
-            "filter",
-            "sum",
-            "min",
-            "max",
-            "abs",
-            "round",
-            "sorted",
-            "reversed",
-            "enumerate",
-            "open",
-            "input",
-            "Exception",
-            "ValueError",
-            "TypeError",
-            "KeyError",
-            "IndexError",
-            "AttributeError",
-            "RuntimeError",
-            "id",
-            "slice",
-            "property",
-            "classmethod",
-            "staticmethod",
-            "super",
-            "vars",
-            "dir",
-            "help",
-            "repr",
-            "ascii",
-            "intern",
-        }
-    )
-
-    INTERNAL_PREFIXES = ("_", "self.", "cls.", "tpl_", "args_", "kwargs_")
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
-            var_name = instruction.argval
-
-            if var_name in self.BUILTIN_NAMES:
-                return None
-
-            if any(var_name.startswith(p) for p in self.INTERNAL_PREFIXES):
-                return None
-
-            if len(var_name) <= 2 and var_name[0].isupper():
-                return None
-            from pysymex.core.state import UNBOUND
-
-            if state.get_local(var_name) is UNBOUND:
-                return Issue(
-                    kind=IssueKind.UNBOUND_VARIABLE,
-                    message=f"Variable '{var_name}' may be unbound (NameError)",
-                    constraints=list(state.path_constraints),
-                    pc=state.pc,
-                )
-        return None
-
-
-class TaintFlowDetector(Detector):
-    """Detects tainted data flows to sensitive sinks."""
-
-    name = "taint-flow"
-    description = "Detects tainted data flows to security-sensitive sinks"
-    issue_kind = IssueKind.SQL_INJECTION
-    relevant_opcodes = frozenset()
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: _IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if not hasattr(state, "taint_tracker"):
-            return None
-        taint_tracker: object = state.taint_tracker
-        if taint_tracker is None:
-            return None
-        from pysymex.analysis.taint import TaintSink
-        from pysymex.analysis.taint.core import TaintFlow, TaintTracker
-
-        if not isinstance(taint_tracker, TaintTracker):
-            return None
-        flows: list[TaintFlow] = taint_tracker.get_all_flows()
-        if not flows:
-            return None
-        for flow in flows:
-            if flow.sink == TaintSink.SQL_QUERY:
-                return Issue(
-                    kind=IssueKind.SQL_INJECTION,
-                    message="Potential SQL injection: tainted data flows to SQL query",
-                    constraints=list(state.path_constraints),
-                    pc=state.pc,
-                )
-            elif flow.sink == TaintSink.FILE_PATH:
-                return Issue(
-                    kind=IssueKind.PATH_TRAVERSAL,
-                    message="Potential path traversal: tainted data flows to file path",
-                    constraints=list(state.path_constraints),
-                    pc=state.pc,
-                )
         return None
 
 
@@ -1424,21 +346,7 @@ class DetectorRegistry:
         self._detectors: dict[str, type[Detector]] = {}
         self._instances: dict[str, Detector] = {}
         self._fn_detectors: dict[str, tuple[DetectorFn, DetectorInfo]] = {}
-        self.register(DivisionByZeroDetector)
-        self.register(AssertionErrorDetector)
-        self.register(IndexErrorDetector)
-        self.register(KeyErrorDetector)
-        self.register(TypeErrorDetector)
-        self.register(AttributeErrorDetector)
-        self.register(OverflowDetector)
-        self.register(EnhancedIndexErrorDetector)
-        self.register(NoneDereferenceDetector)
-        self.register(EnhancedTypeErrorDetector)
         self.register(FormatStringDetector)
-        self.register(ResourceLeakDetector)
-        self.register(ValueErrorDetector)
-        self.register(TaintFlowDetector)
-        self.register(UnboundVariableDetector)
 
     def register(self, detector_class: type[Detector]) -> None:
         """Register a detector class by its ``name`` attribute.
@@ -1498,23 +406,3 @@ class DetectorRegistry:
     def list_available(self) -> list[str]:
         """List available detector names."""
         return list(self._detectors.keys()) + list(self._fn_detectors.keys())
-
-
-def _create_default_registry() -> DetectorRegistry:
-    """Create and configure the default detector registry."""
-    registry = DetectorRegistry()
-    try:
-        from pysymex.analysis.detectors.logical import create_logic_detector
-        registry._detectors["logical-contradiction"] = create_logic_detector  # type: ignore
-    except Exception as e:
-        logger.error("Failed to load logic detector: %s", e)
-    try:
-        from pysymex.analysis.detectors.specialized import register_advanced_detectors
-
-        register_advanced_detectors(registry)
-    except (ImportError, AttributeError):
-        pass
-    return registry
-
-
-default_registry = _create_default_registry()

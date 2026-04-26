@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -84,8 +84,8 @@ class PluginMetadata:
 
 
 class Plugin(ABC):
-    """Base class for all PySyMex plugins.
-    Plugins extend PySyMex functionality by providing custom
+    """Base class for all pysymex plugins.
+    Plugins extend pysymex functionality by providing custom
     detectors, handlers, reporters, or analysis passes.
     """
 
@@ -468,5 +468,3 @@ __all__ = [
     "PluginRegistry",
     "PluginType",
 ]
-
-

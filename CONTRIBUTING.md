@@ -1,6 +1,6 @@
-# Contributing to PySyMex
+# Contributing to pysymex
 
-Thanks for your interest in contributing to PySyMex.
+Thanks for your interest in contributing to pysymex.
 
 ## Development Setup
 
@@ -71,7 +71,7 @@ Before opening a pull request, try to make sure these pass locally:
 When filing a bug report, include:
 
 - Python version
-- PySyMex version or commit
+- pysymex version or commit
 - operating system
 - a minimal reproduction
 - the full traceback or failing command output

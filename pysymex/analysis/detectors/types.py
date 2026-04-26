@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -34,6 +34,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import Enum, auto
+from typing import TypeGuard
 
 from pysymex.analysis.specialized.flow import FlowContext
 from pysymex.analysis.patterns import (
@@ -45,6 +46,22 @@ from pysymex.analysis.type_inference import (
     TypeEnvironment,
     TypeKind,
 )
+
+
+def _is_set_of_objects(value: object) -> TypeGuard[set[object]]:
+    """Type guard to narrow a value to set[object]."""
+    return isinstance(value, set)
+
+
+def _to_string_set(value: object) -> set[str]:
+    """Normalize a dynamic value to a set of strings."""
+    result: set[str] = set()
+    if _is_set_of_objects(value):
+        raw_values: set[object] = value
+        for item in raw_values:
+            if isinstance(item, str):
+                result.add(item)
+    return result
 
 
 class IssueKind(Enum):
@@ -66,10 +83,10 @@ class IssueKind(Enum):
     DEAD_CODE = auto()
     UNREACHABLE_CODE = auto()
     INFINITE_LOOP = auto()
-    TAINT_ERROR = auto()
     INJECTION = auto()
     SYNTAX_ERROR = auto()
     LOGICAL_CONTRADICTION = auto()
+    CONTRACT_VIOLATION = auto()
     UNKNOWN = auto()
 
 
@@ -164,8 +181,8 @@ class DetectionContext:
         patterns = self.pattern_info.matcher.get_patterns_at(self.pc)
         for pattern in patterns:
             if pattern.kind == PatternKind.TRY_EXCEPT_PATTERN:
-                raw_caught = pattern.variables.get("caught_exceptions", set())
-                caught = raw_caught if isinstance(raw_caught, set) else set()
+                raw_caught = pattern.variables.get("caught_exceptions", set[str]())
+                caught = _to_string_set(raw_caught)
                 if exception_type in caught or "Exception" in caught:
                     return True
         return False

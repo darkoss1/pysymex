@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,24 +16,33 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Path exploration strategies for symbolic execution.
-
-Provides pluggable managers (CHTD-native, coverage-guided, directed,
-adaptive) that determine the order in which states are explored.
-"""
+"""Path exploration strategies for symbolic execution."""
 
 from __future__ import annotations
 
 import heapq
 import itertools
-import random as _random_mod
+import math
+import random
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Dict, Generic, List, Optional, TypeVar
+
+from pysymex.core.graph.cig import ConstraintInteractionGraph
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
+
+DEFAULT_RHO = 0.1
+DEFAULT_LAM = 1.0
+DEFAULT_TAU = 1.5
+DEFAULT_GAMMA = 0.95
+RANDOM_SEED = 42
+TOPOLOGICAL_MULTIPLIER = 10.0
+UNIFORM_PRIOR_ALPHA = 1.0
+UNIFORM_PRIOR_BETA = 1.0
+INFORMED_PRIOR_ALPHA = 2.0
+INFORMED_PRIOR_BETA = 1.0
 
 
 class ExplorationStrategy(Enum):
@@ -50,10 +59,7 @@ T = TypeVar("T")
 
 
 class PathManager(ABC, Generic[T]):
-    """Abstract base class for path-exploration managers.
-
-    Implementations define how states are queued, dequeued, and prioritised.
-    """
+    """Abstract base class for path-exploration managers."""
 
     @abstractmethod
     def add_state(self, state: T, priority: float = 0.0) -> None:
@@ -72,428 +78,246 @@ class PathManager(ABC, Generic[T]):
         """Get number of pending states."""
 
 
-@dataclass(frozen=True, order=True)
 class PrioritizedState(Generic[T]):
-    """Priority-wrapped item for heap-based scheduling."""
+    __slots__ = ("priority", "counter", "state")
 
-    priority: float
-    state: T = field(compare=False)
+    def __init__(self, priority: float, counter: int, state: T):
+        self.priority = priority
+        self.counter = counter
+        self.state = state
 
-
-class PriorityPathManager(PathManager[T]):
-    """Priority-based path exploration (for coverage/directed)."""
-
-    def __init__(self) -> None:
-        self._heap: list[PrioritizedState[T]] = []
-
-    def add_state(self, state: T, priority: float = 0.0) -> None:
-        heapq.heappush(self._heap, PrioritizedState(priority, state))
-
-    def get_next_state(self) -> T | None:
-        """Get next state."""
-        if self._heap:
-            return heapq.heappop(self._heap).state
-        return None
-
-    def is_empty(self) -> bool:
-        return len(self._heap) == 0
-
-    def size(self) -> int:
-        return len(self._heap)
+    def __lt__(self, other: "PrioritizedState[T]") -> bool:
+        if self.priority == other.priority:
+            return self.counter < other.counter
+        return self.priority > other.priority
 
 
-class CoverageGuidedPathManager(PathManager["VMState"]):
-    """Coverage-guided exploration prioritising states that cover new PCs.
-
-    Attributes:
-        _covered_pcs: Set of already-covered program counters.
-        _covered_branches: Set of already-covered branch outcomes.
+class TopologicalThompsonSampling:
+    """
+    Beta-Bernoulli multi-armed bandit with Topological Information Yield.
+    Adaptive exploration strategy based on the Constraint Interaction Graph (CIG).
     """
 
-    def __init__(self) -> None:
-        self._heap: list[PrioritizedState[VMState]] = []
-        self._covered_pcs: set[int] = set()
-        self._covered_branches: set[tuple[int, bool]] = set()
-
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        """Add state."""
-        new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
-        adjusted_priority = -new_pcs
-        heapq.heappush(self._heap, PrioritizedState(adjusted_priority, state))
-
-    def get_next_state(self) -> VMState | None:
-        """Get next state."""
-        if self._heap:
-            state = heapq.heappop(self._heap).state
-            self._covered_pcs.update(state.visited_pcs)
-            return state
-        return None
-
-    def is_empty(self) -> bool:
-        return len(self._heap) == 0
-
-    def size(self) -> int:
-        return len(self._heap)
-
-    def get_coverage(self) -> tuple[int, set[int]]:
-        """Get coverage statistics."""
-        return len(self._covered_pcs), self._covered_pcs
-
-
-class CHTDNativePathManager(PathManager["VMState"]):
-    """CHTD-first scheduler prioritizing states that enrich structural pruning.
-
-    Score favors states that quickly expand/stabilize the interaction graph:
-    - more pending constraints
-    - longer path constraints
-    - deeper branch histories
-    - discovery of uncovered PCs
-    """
-
-    def __init__(self) -> None:
-        self._heap: list[PrioritizedState[VMState]] = []
-        self._covered_pcs: set[int] = set()
-
-    def _priority(self, state: VMState) -> float:
-        new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
-        structural = (
-            (new_pcs * 100)
-            + (state.pending_constraint_count * 12)
-            + min(len(state.path_constraints), 128)
-            + min(state.depth, 256)
-        )
-
-        return float(-structural)
-
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        heapq.heappush(self._heap, PrioritizedState(self._priority(state), state))
-
-    def get_next_state(self) -> VMState | None:
-        if self._heap:
-            state = heapq.heappop(self._heap).state
-            self._covered_pcs.update(state.visited_pcs)
-            return state
-        return None
-
-    def is_empty(self) -> bool:
-        return len(self._heap) == 0
-
-    def size(self) -> int:
-        return len(self._heap)
-
-
-class DirectedPathManager(PathManager["VMState"]):
-    """Target-directed path exploration prioritising states near target PCs.
-
-    Args:
-        targets: Set of target program counters to aim for.
-    """
-
-    def __init__(self, targets: set[int]) -> None:
-        self._heap: list[PrioritizedState[VMState]] = []
-        self._targets = targets
-
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        """Add state."""
-        distance = self._estimate_distance(state)
-        heapq.heappush(self._heap, PrioritizedState(distance, state))
-
-    def _estimate_distance(self, state: VMState) -> float:
-        """Estimate distance to nearest target."""
-        if not self._targets:
-            return 0.0
-        min_dist = min(abs(state.pc - target) for target in self._targets)
-        return float(min_dist)
-
-    def get_next_state(self) -> VMState | None:
-        """Get next state."""
-        if self._heap:
-            return heapq.heappop(self._heap).state
-        return None
-
-    def is_empty(self) -> bool:
-        return len(self._heap) == 0
-
-    def size(self) -> int:
-        return len(self._heap)
-
-
-class AdaptivePathManager(PathManager["VMState"]):
-    """Multi-armed bandit path manager using Discounted Thompson Sampling.
-
-    Maintains three sub-strategies (CHTD-structural, coverage-guided, random) and
-    uses a conjugate Beta-Bernoulli model per arm to balance
-    exploration vs. exploitation.  The reward signal is based on
-    whether following a strategy leads to new coverage or issue
-    discovery.
-
-    To handle the highly non-stationary environment of symbolic execution
-    (where "coverage" rewards naturally dry up over time), a discount
-    factor γ ∈ (0, 1) is applied to gradually forget outdated successes.
-    Rewards are normalized to [0, 1] to maintain strict Bayesian conjugate
-    prior validity.
-
-    Thompson Sampling has O(sqrt(T log T)) regret and naturally
-    adapts to the project's bug-distribution: projects with many
-    arithmetic bugs reward structural prioritization differently than web frameworks with
-    taint-flow vulnerabilities. The discounted variant achieves robust
-    bounds under non-stationary bandit theory.
-
-    Attributes:
-        _arms: Per-strategy Beta priors (alpha, beta).
-        _gamma: Discount factor for non-stationarity (default 0.95).
-        _covered_pcs: Global set of covered program counters.
-        _last_arm: Which arm was selected for the most recent state.
-        _total_rewards: Cumulative reward signal for diagnostics.
-    """
-
-    ARM_STRUCTURAL = "structural"
-    ARM_COVERAGE = "coverage"
-    ARM_RANDOM = "random"
-
-    _REWARD_MIN = -5.0
-    _REWARD_MAX = 10.0
+    __slots__ = ("rho", "lam", "tau", "gamma", "arms", "last_arm", "_rng", "_total_rewards")
 
     def __init__(
         self,
-        structural_prior: tuple[float, float] = (2.0, 1.0),
-        coverage_prior: tuple[float, float] = (2.0, 1.0),
-        random_prior: tuple[float, float] = (1.0, 1.0),
-        gamma: float = 0.95,
-        prior_mix: float = 0.05,
-        deterministic: bool = False,
-        random_seed: int = 42,
-    ) -> None:
-        self._entry_counter = itertools.count()
-        self.store: dict[int, VMState] = {}
-        self._structural_heap: list[PrioritizedState[int]] = []
-        self._coverage_heap: list[PrioritizedState[int]] = []
-        self._random_pool: list[int] = []
+        rho: float = DEFAULT_RHO,
+        lam: float = DEFAULT_LAM,
+        tau: float = DEFAULT_TAU,
+        gamma: float = DEFAULT_GAMMA,
+    ):
+        self.rho = rho
+        self.lam = lam
+        self.tau = tau
+        self.gamma = gamma
+        self._total_rewards = 0.0
 
-        self._arm_priors: dict[str, tuple[float, float]] = {
-            self.ARM_STRUCTURAL: structural_prior,
-            self.ARM_COVERAGE: coverage_prior,
-            self.ARM_RANDOM: random_prior,
+        self.arms = {
+            "topological": [INFORMED_PRIOR_ALPHA, INFORMED_PRIOR_BETA],
+            "coverage": [INFORMED_PRIOR_ALPHA, INFORMED_PRIOR_BETA],
+            "random": [UNIFORM_PRIOR_ALPHA, UNIFORM_PRIOR_BETA],
         }
-        self._arms: dict[str, list[float]] = {
-            arm_name: [alpha, beta]
-            for arm_name, (alpha, beta) in self._arm_priors.items()
-        }
+        self.last_arm: Optional[str] = None
+        self._rng = random.Random(RANDOM_SEED)
 
-        self._covered_pcs: set[int] = set()
-        self._returned_ids: set[int] = set()
-        self._total_entries = 0
-        self._last_arm: str | None = None
-        self._total_rewards: float = 0.0
-        self._arm_selections: dict[str, int] = dict.fromkeys(self._arms, 0)
-        self._gamma = gamma
-        self._prior_mix = prior_mix
-        self._deterministic = deterministic
-        self._rng = _random_mod.Random(random_seed)
+    def calculate_y_topo(self, core_pcs: List[int], cig: ConstraintInteractionGraph) -> float:
+        if not core_pcs:
+            return 0.0
 
-    def _structural_priority(self, state: VMState) -> float:
-        new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
-        structural = (
-            (new_pcs * 100)
-            + (state.pending_constraint_count * 12)
-            + min(len(state.path_constraints), 128)
-            + min(state.depth, 256)
-        )
-        return float(-structural)
+        sum_deg = sum(cig.get_degree(v) for v in core_pcs)
+        core_size = len(core_pcs)
 
-    def add_state(self, state: VMState, priority: float = 0.0) -> None:
-        eid = next(self._entry_counter)
-        self.store[eid] = state
-        heapq.heappush(
-            self._structural_heap, PrioritizedState(self._structural_priority(state), eid)
-        )
+        x = self.lam * (sum_deg / (core_size**self.tau)) - self.rho
+        try:
+            return 1.0 / (1.0 + math.exp(-x))
+        except OverflowError:
+            return 0.0 if x < 0 else 1.0
 
-        new_pcs = len(set(state.visited_pcs) - self._covered_pcs)
-        heapq.heappush(self._coverage_heap, PrioritizedState(-new_pcs, eid))
+    def select_arm(self) -> str:
+        best_score = -1.0
+        best_arm = "random"
 
-        self._random_pool.append(eid)
-        self._total_entries += 1
+        for arm, (alpha, beta) in self.arms.items():
+            sample = self._rng.betavariate(alpha, beta)
+            if sample > best_score:
+                best_score = sample
+                best_arm = arm
 
-    def record_reward(self, reward: float) -> None:
-        """Feed a reward signal back to update the last-selected arm.
-
-        Uses Discounted Thompson Sampling: rewards are normalized to [0, 1]
-        to maintain strict Bayesian conjugate prior validity, and a discount
-        factor γ is applied to gradually forget outdated successes for
-        non-stationary environments.
-
-        Update rule:
-            α_k ← γ·α_k + r
-            β_k ← γ·β_k + (1 - r)
-
-        Call this after the executor processes the state returned by
-        ``get_next_state()``.  Typical reward signals:
-
-        - +10.0 for discovering a new issue (HIGH severity)
-        - +3.0  for covering a new basic block
-        - +1.0  for covering a new branch
-        - -1.0  for hitting a resource limit
-        - -5.0  for immediate UNSAT (infeasible path)
-        """
-        if self._last_arm is None:
-            return
-        if self._deterministic:
-            return
-
-        clamped = max(self._REWARD_MIN, min(self._REWARD_MAX, reward))
-        r = (clamped - self._REWARD_MIN) / (self._REWARD_MAX - self._REWARD_MIN)
-
-        arm_name = self._last_arm
-        arm = self._arms[arm_name]
-        prior_alpha, prior_beta = self._arm_priors[arm_name]
-        arm[0] = self._gamma * arm[0] + r + (1.0 - self._gamma) * self._prior_mix * prior_alpha
-        arm[1] = (
-            self._gamma * arm[1]
-            + (1.0 - r)
-            + (1.0 - self._gamma) * self._prior_mix * prior_beta
-        )
-
-        self._total_rewards += reward
-
-    def reheat_arm(self, arm_name: str, strength: float = 0.5) -> None:
-        """Blend an arm back toward its prior to recover from stale posteriors."""
-        if arm_name not in self._arms:
-            return
-        strength = max(0.0, min(1.0, strength))
-        prior_alpha, prior_beta = self._arm_priors[arm_name]
-        arm = self._arms[arm_name]
-        arm[0] = ((1.0 - strength) * arm[0]) + (strength * prior_alpha)
-        arm[1] = ((1.0 - strength) * arm[1]) + (strength * prior_beta)
-
-    def _thompson_sample(self) -> str:
-        """Select an arm via Thompson Sampling (Beta-Bernoulli)."""
-        if self._deterministic:
-            arm_order = [self.ARM_STRUCTURAL, self.ARM_COVERAGE, self.ARM_RANDOM]
-            best_arm = self.ARM_STRUCTURAL
-            best_score = -1.0
-            for arm_name in arm_order:
-                alpha, beta = self._arms[arm_name]
-                score = alpha / max(alpha + beta, 1e-10)
-                if score > best_score:
-                    best_score = score
-                    best_arm = arm_name
-            return best_arm
-
-        best_arm = self.ARM_STRUCTURAL
-        best_sample = -1.0
-        for arm_name, (alpha, beta) in self._arms.items():
-            sample = _random_mod.betavariate(max(alpha, 1e-10), max(beta, 1e-10))
-            if sample > best_sample:
-                best_sample = sample
-                best_arm = arm_name
+        self.last_arm = best_arm
         return best_arm
 
-    def _pop_unique_from_stack(self, stack: list[int]) -> VMState | None:
-        while stack:
-            eid = stack.pop()
-            if eid not in self._returned_ids:
-                self._returned_ids.add(eid)
-                state = self.store.pop(eid)
+    def update_reward(self, arm: str, reward: float) -> None:
+        self._total_rewards += reward
+        normalized_reward = max(0.0, min(1.0, reward))
+        alpha, beta = self.arms[arm]
+
+        self.arms[arm][0] = (
+            UNIFORM_PRIOR_ALPHA + self.gamma * (alpha - UNIFORM_PRIOR_ALPHA) + normalized_reward
+        )
+        self.arms[arm][1] = (
+            UNIFORM_PRIOR_BETA
+            + self.gamma * (beta - UNIFORM_PRIOR_BETA)
+            + (1.0 - normalized_reward)
+        )
+
+    def reseed(self, seed: int) -> None:
+        """Reseed the internal RNG for deterministic test runs."""
+        self._rng.seed(seed)
+
+    def randint(self, low: int, high: int) -> int:
+        """Draw a random integer in ``[low, high]`` from the internal RNG."""
+        return self._rng.randint(low, high)
+
+    @property
+    def total_rewards(self) -> float:
+        """Cumulative reward mass observed across all arms."""
+        return self._total_rewards
+
+
+class AdaptivePathManager(PathManager["VMState"]):
+    """
+    Adaptive Path Manager utilizing Topological Thompson Sampling (TTS).
+    """
+
+    ARM_STRUCTURAL = "topological"
+    ARM_COVERAGE = "coverage"
+    ARM_RANDOM = "random"
+
+    def __init__(
+        self, cig: ConstraintInteractionGraph, deterministic: bool = False, random_seed: int = 42
+    ):
+        self.cig = cig
+        self.tts = TopologicalThompsonSampling()
+        if deterministic:
+            self.tts.reseed(random_seed)
+        self._states: Dict[int, "VMState"] = {}
+        self._counter = itertools.count()
+        self._heap_topological: List[PrioritizedState[int]] = []
+        self._heap_coverage: List[PrioritizedState[int]] = []
+        self._random_pool: List[int] = []
+        self._covered_pcs: set[int] = set()
+
+    def add_state(self, state: VMState, priority: float = 0.0) -> None:
+        _ = priority
+        count = next(self._counter)
+        state_id = count
+        pc = state.pc
+        depth = state.depth
+        self._states[state_id] = state
+
+        topo_score = self.cig.get_degree(pc) * TOPOLOGICAL_MULTIPLIER - depth
+        heapq.heappush(self._heap_topological, PrioritizedState(topo_score, count, state_id))
+
+        cov_score = float(depth)
+        heapq.heappush(self._heap_coverage, PrioritizedState(cov_score, count, state_id))
+
+        self._random_pool.append(state_id)
+
+    def _pop_topological(self) -> Optional["VMState"]:
+        while self._heap_topological:
+            state_id = heapq.heappop(self._heap_topological).state
+            if state_id in self._states:
+                state = self._states.pop(state_id)
                 self._covered_pcs.update(state.visited_pcs)
                 return state
         return None
 
-    def _pop_unique_from_structural_heap(self) -> VMState | None:
-        while self._structural_heap:
-            ps = heapq.heappop(self._structural_heap)
-            eid = ps.state
-            if eid not in self._returned_ids:
-                self._returned_ids.add(eid)
-                state = self.store.pop(eid)
+    def _pop_coverage(self) -> Optional["VMState"]:
+        while self._heap_coverage:
+            state_id = heapq.heappop(self._heap_coverage).state
+            if state_id in self._states:
+                state = self._states.pop(state_id)
                 self._covered_pcs.update(state.visited_pcs)
                 return state
         return None
 
-    def _pop_unique_from_heap(self) -> VMState | None:
-        while self._coverage_heap:
-            ps = heapq.heappop(self._coverage_heap)
-            eid = ps.state
-            if eid not in self._returned_ids:
-                self._returned_ids.add(eid)
-                state = self.store.pop(eid)
-                self._covered_pcs.update(state.visited_pcs)
-                return state
-        return None
-
-    def _pop_unique_random(self) -> VMState | None:
+    def _pop_random(self) -> Optional["VMState"]:
         while self._random_pool:
-            idx = self._rng.randint(0, len(self._random_pool) - 1)
-            eid = self._random_pool[idx]
-            last_idx = len(self._random_pool) - 1
-            self._random_pool[idx] = self._random_pool[last_idx]
-            self._random_pool.pop()
-            if eid not in self._returned_ids:
-                self._returned_ids.add(eid)
-                state = self.store.pop(eid)
+            idx = self.tts.randint(0, len(self._random_pool) - 1)
+            self._random_pool[idx], self._random_pool[-1] = (
+                self._random_pool[-1],
+                self._random_pool[idx],
+            )
+            state_id = self._random_pool.pop()
+
+            if state_id in self._states:
+                state = self._states.pop(state_id)
                 self._covered_pcs.update(state.visited_pcs)
                 return state
         return None
 
-    def get_next_state(self) -> VMState | None:
-        if self.is_empty():
+    def get_next_state(self) -> Optional["VMState"]:
+        if not self._states:
             return None
 
-        arm = self._thompson_sample()
-        self._last_arm = arm
-        self._arm_selections[arm] += 1
+        arm = self.tts.select_arm()
 
         dispatch = {
-            self.ARM_STRUCTURAL: self._pop_unique_from_structural_heap,
-            self.ARM_COVERAGE: self._pop_unique_from_heap,
-            self.ARM_RANDOM: self._pop_unique_random,
+            "topological": self._pop_topological,
+            "coverage": self._pop_coverage,
+            "random": self._pop_random,
         }
 
         state = dispatch[arm]()
         if state is not None:
             return state
 
-        for fallback_arm in [self.ARM_STRUCTURAL, self.ARM_COVERAGE, self.ARM_RANDOM]:
+        for fallback_arm, pop_func in dispatch.items():
             if fallback_arm != arm:
-                state = dispatch[fallback_arm]()
+                state = pop_func()
                 if state is not None:
-                    self._last_arm = fallback_arm
+                    self.tts.last_arm = fallback_arm
                     return state
+
         return None
 
     def is_empty(self) -> bool:
-        return len(self._returned_ids) >= self._total_entries
+        return len(self._states) == 0
 
     def size(self) -> int:
-        return self._total_entries - len(self._returned_ids)
+        return len(self._states)
+
+    def feedback_mus(self, core_pcs: List[int]) -> None:
+        if self.tts.last_arm == "topological":
+            y_topo = self.tts.calculate_y_topo(core_pcs, self.cig)
+            self.tts.update_reward("topological", y_topo)
+        elif self.tts.last_arm == "coverage":
+            self.tts.update_reward("coverage", 1.0)
+        elif self.tts.last_arm == "random":
+            self.tts.update_reward("random", 1.0)
+
+    def record_reward(self, reward: float) -> None:
+        if self.tts.last_arm:
+            self.tts.update_reward(self.tts.last_arm, reward)
+
+    def reheat_arm(self, arm_name: str, strength: float = 0.5) -> None:
+        if arm_name in self.tts.arms:
+            strength = max(0.0, min(1.0, strength))
+            alpha, beta = self.tts.arms[arm_name]
+            self.tts.arms[arm_name][0] = ((1.0 - strength) * alpha) + (
+                strength * UNIFORM_PRIOR_ALPHA
+            )
+            self.tts.arms[arm_name][1] = ((1.0 - strength) * beta) + (strength * UNIFORM_PRIOR_BETA)
 
     def get_stats(self) -> dict[str, object]:
-        """Diagnostic statistics for the bandit."""
         return {
-            "arms": {k: {"alpha": v[0], "beta": v[1]} for k, v in self._arms.items()},
-            "selections": dict(self._arm_selections),
-            "total_rewards": self._total_rewards,
+            "arms": {k: {"alpha": v[0], "beta": v[1]} for k, v in self.tts.arms.items()},
+            "total_rewards": self.tts.total_rewards,
             "covered_pcs": len(self._covered_pcs),
         }
 
 
-def create_path_manager(  # type: ignore[return]
+def create_path_manager(
     strategy: ExplorationStrategy,
+    cig: Optional[ConstraintInteractionGraph] = None,
     **kwargs: object,
 ) -> PathManager[VMState]:
-    """Create the runtime path manager.
-
-    Args:
-        strategy: Requested strategy (retained for API compatibility).
-        **kwargs: Extra arguments forwarded to the adaptive manager.
-
-    Returns:
-        A concrete ``PathManager`` instance.
-
-    Notes:
-        Runtime execution now standardizes on discounted Thompson Sampling
-        for codebase-wide CHTD-TS behavior. The ``strategy`` argument is
-        accepted for backward compatibility but no longer changes runtime
-        scheduler selection.
-    """
     _ = strategy
-    return AdaptivePathManager(**kwargs)  # type: ignore[arg-type]
+    if cig is None:
+        cig = ConstraintInteractionGraph()
+    deterministic_raw = kwargs.get("deterministic", False)
+    random_seed_raw = kwargs.get("random_seed", RANDOM_SEED)
+    deterministic = bool(deterministic_raw)
+    random_seed = random_seed_raw if isinstance(random_seed_raw, int) else RANDOM_SEED
+    return AdaptivePathManager(cig, deterministic=deterministic, random_seed=random_seed)

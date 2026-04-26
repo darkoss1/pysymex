@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,6 +36,46 @@ from typing import Union, cast, get_type_hints
 
 from pysymex.analysis.type_inference.env import TypeEnvironment
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind
+from pysymex.analysis.type_stubs.types import FunctionStub
+
+
+def convert_stub_to_pytype(stub: object) -> PyType:
+    """Convert a StubType to PyType.
+
+    This function is defined here to avoid circular imports between
+    type_stubs and type_inference modules.
+    """
+    from pysymex.analysis.type_stubs.types import StubType
+
+    if not isinstance(stub, StubType):
+        return PyType.any_()
+
+    kind_map = {
+        "int": TypeKind.INT,
+        "float": TypeKind.FLOAT,
+        "str": TypeKind.STR,
+        "bytes": TypeKind.BYTES,
+        "bool": TypeKind.BOOL,
+        "None": TypeKind.NONE,
+        "list": TypeKind.LIST,
+        "dict": TypeKind.DICT,
+        "set": TypeKind.SET,
+        "frozenset": TypeKind.FROZENSET,
+        "tuple": TypeKind.TUPLE,
+        "object": TypeKind.OBJECT,
+        "type": TypeKind.TYPE,
+        "Callable": TypeKind.CALLABLE,
+        "Iterator": TypeKind.ITERATOR,
+        "Generator": TypeKind.GENERATOR,
+        "Coroutine": TypeKind.COROUTINE,
+        "Any": TypeKind.ANY,
+    }
+    if stub.is_union:
+        return PyType(kind=TypeKind.UNION)
+    if stub.is_optional:
+        return PyType(kind=TypeKind.OPTIONAL)
+    kind = kind_map.get(stub.name, TypeKind.OBJECT)
+    return PyType(kind=kind, name=stub.name)
 
 
 class TypeInferenceEngine:
@@ -187,14 +227,9 @@ class TypeInferenceEngine:
                 param_types.append(self.infer_from_annotation(hints[param_name]))
             elif param.default is not inspect.Parameter.empty:
                 param_types.append(self.infer_from_value(param.default))
-            elif stub_func:
-                params_obj = getattr(stub_func, "params", None)
-                if isinstance(params_obj, dict) and param_name in params_obj:
-                    stub_type = params_obj[param_name]
-                    to_pytype = getattr(stub_type, "to_pytype", None)
-                    param_types.append(
-                        cast("PyType", to_pytype()) if callable(to_pytype) else PyType.any_()
-                    )
+            elif isinstance(stub_func, FunctionStub):
+                if param_name in stub_func.params:
+                    param_types.append(convert_stub_to_pytype(stub_func.params[param_name]))
                 else:
                     param_types.append(PyType.any_())
             else:
@@ -202,14 +237,10 @@ class TypeInferenceEngine:
         return_type = self.infer_from_annotation(hints.get("return"))
         if (
             return_type.kind == TypeKind.ANY
-            and stub_func
-            and getattr(stub_func, "return_type", None)
+            and isinstance(stub_func, FunctionStub)
+            and stub_func.return_type is not None
         ):
-            return_type_obj = getattr(stub_func, "return_type", None)
-            to_pytype = getattr(return_type_obj, "to_pytype", None)
-            converted = cast("PyType", to_pytype()) if callable(to_pytype) else None
-            if converted:
-                return_type = converted
+            return_type = convert_stub_to_pytype(stub_func.return_type)
         self.function_signatures[func_name] = (param_types, return_type)
         return param_types, return_type
 

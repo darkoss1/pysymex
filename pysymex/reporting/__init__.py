@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -60,24 +60,3 @@ def __getattr__(name: str) -> object:
 def __dir__() -> list[str]:
     """Dir."""
     return list(_EXPORTS.keys())
-
-
-__all__: list[str] = [
-    "SECURITY_RULES",
-    "AnalysisReport",
-    "Formatter",
-    "HTMLFormatter",
-    "IssueReport",
-    "JSONFormatter",
-    "MarkdownFormatter",
-    "SARIFGenerator",
-    "SARIFLog",
-    "SARIFResult",
-    "TextFormatter",
-    "create_report_from_result",
-    "format_result",
-    "generate_html_report",
-    "generate_sarif",
-    "save_html_report",
-]
-

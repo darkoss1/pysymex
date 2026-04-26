@@ -4,13 +4,13 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.types.containers import SymbolicList
 
 
 def _load_functools_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "functools.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "functools.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_functools", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib functools models module")
@@ -83,8 +83,7 @@ def test_model_partial() -> None:
 
 def test_model_reduce() -> None:
     lst = SymbolicList.empty("x")
-    with pytest.raises(NameError):
-        functools_models.model_reduce(_reduce_pick_first, lst)
+    functools_models.model_reduce(_reduce_pick_first, lst)
 
 
 class TestLRUCacheModel:

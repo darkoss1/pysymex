@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from pysymex.sandbox.errors import SandboxSetupError
 from pysymex.sandbox.isolation.subprocess import SubprocessBackend
 from pysymex.sandbox.types import ExecutionStatus, ResourceLimits, SandboxConfig
@@ -78,11 +78,7 @@ class TestSubprocessBackend:
         backend = SubprocessBackend(SandboxConfig())
         try:
             backend.setup()
-            code = (
-                b"import socket\n"
-                b"s = socket.socket()\n"
-                b"s.connect(('example.com', 80))\n"
-            )
+            code = b"import socket\ns = socket.socket()\ns.connect(('example.com', 80))\n"
             result = backend.execute(code, "net_block.py", b"", {})
             assert result.status is ExecutionStatus.FAILED
             assert result.exit_code is not None and result.exit_code != 0
@@ -122,8 +118,7 @@ class TestSubprocessBackend:
             assert result.exit_code is not None and result.exit_code != 0
             stderr_text = result.get_stderr_text()
             assert (
-                "sandbox-harness: rejected" in stderr_text
-                or "blocked runtime event" in stderr_text
+                "sandbox-harness: rejected" in stderr_text or "blocked runtime event" in stderr_text
             )
         finally:
             backend.cleanup()

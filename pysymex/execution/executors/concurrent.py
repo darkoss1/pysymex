@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -156,11 +156,8 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
     ) -> ExecutionResult:
         """Execute with concurrency analysis."""
         result = super().execute_function(func, symbolic_args, initial_values)
-
         if self.config.enable_concurrency_analysis:
-            concurrency_issues = self._finalize_concurrency_analysis()
-            result.issues.extend(concurrency_issues)
-
+            result.issues.extend(self._finalize_concurrency_analysis())
         return result
 
     def _execute_step(self, state: VMState) -> None:
@@ -217,11 +214,9 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
         try:
             result = self.dispatcher.dispatch(instr, state)
             self._process_execution_result(result, state, active_instructions)
-        except (RuntimeError, TypeError, ValueError, KeyError, AttributeError, IndexError) as e:
-            if self.config.verbose:
-                logger.warning("Execution error at PC %d: %s", state.pc, e)
-            self._paths_pruned += 1
-            return
+        except Exception as e:
+            logger.error("Engine failure at PC %d: %s", state.pc, e, exc_info=True)
+            raise e
 
     def _intercept_concurrency(self, instr: dis.Instruction, state: VMState) -> None:
         """Intercept opcodes for concurrency analysis."""
@@ -410,5 +405,3 @@ def analyze_concurrent(
     config = config_ctor(**config_kwargs)
     executor = ConcurrentSymbolicExecutor(config)
     return executor.execute_function(func, symbolic_args)
-
-

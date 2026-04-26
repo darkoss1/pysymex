@@ -1,5 +1,6 @@
-﻿from pysymex.analysis.type_inference import TypeKind
+from pysymex.analysis.type_inference import TypeKind
 import pysymex.models.builtins.analysis as analysis
+
 
 class TestBuiltinModels:
     """Test suite for pysymex.models.builtins.analysis.BuiltinModels."""

@@ -1,16 +1,22 @@
 import pytest
 from unittest.mock import Mock, patch
-import z3
 from pysymex.analysis.specialized.ranges import (
-    Range, RangeState, RangeWarning, RangeAnalyzer, ValueRangeChecker
+    Range,
+    RangeState,
+    RangeWarning,
+    RangeAnalyzer,
+    ValueRangeChecker,
 )
 from pysymex.analysis.control.cfg import CFGBuilder
+
 
 def make_dummy_code() -> object:
     return compile("pass", "<string>", "exec")
 
+
 class TestRange:
     """Test suite for pysymex.analysis.specialized.ranges.Range."""
+
     def test_empty(self) -> None:
         """Test empty behavior."""
         r = Range.empty()
@@ -104,7 +110,7 @@ class TestRange:
         r2 = Range.between(4, 10)
         i = r1.intersect(r2)
         assert i.low == 4 and i.high == 5
-        
+
         r3 = Range.between(10, 20)
         assert r1.intersect(r3).is_empty is True
 
@@ -153,8 +159,10 @@ class TestRange:
         res, may_raise = Range.exact(7).mod(Range.exact(2))
         assert res.low == 0 and res.high == 1
 
+
 class TestRangeState:
     """Test suite for pysymex.analysis.specialized.ranges.RangeState."""
+
     def test_bottom(self) -> None:
         """Test bottom behavior."""
         assert RangeState.bottom().is_bottom is True
@@ -226,34 +234,56 @@ class TestRangeState:
         s2 = RangeState.top()
         assert s1.subset_of(s2) is True
 
+
 class TestRangeWarning:
     """Test suite for pysymex.analysis.specialized.ranges.RangeWarning."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         w = RangeWarning(10, 5, "OOB", "msg")
         assert w.kind == "OOB"
 
+
 class TestRangeAnalyzer:
     """Test suite for pysymex.analysis.specialized.ranges.RangeAnalyzer."""
+
     @patch("pysymex.analysis.specialized.ranges.CFGBuilder")
     def test_analyze(self, mock_cfg_builder) -> None:
         """Test analyze behavior."""
+        # Create a proper mock CFG with blocks containing instructions
+        mock_instruction = Mock()
+        mock_instruction.offset = 0
+        mock_block = Mock()
+        mock_block.instructions = [mock_instruction]  # List with instruction having offset
         mock_cfg = Mock()
-        mock_cfg.blocks = {}
+        mock_cfg.blocks = {0: mock_block}  # Dict with block
+        mock_cfg.entry = mock_block
+        mock_block.block_id = 0
+        mock_block.successors = []
         mock_cfg_builder.return_value.build.return_value = mock_cfg
         analyzer = RangeAnalyzer()
-        import types
+
         code = compile("pass", "<string>", "exec")
         warnings = analyzer.analyze(code)
         assert isinstance(warnings, tuple)
 
+
 class TestValueRangeChecker:
     """Test suite for pysymex.analysis.specialized.ranges.ValueRangeChecker."""
+
     @patch("pysymex.analysis.specialized.ranges.CFGBuilder")
     def test_check_function(self, mock_cfg_builder) -> None:
         """Test check_function behavior."""
+        # Create a proper mock CFG with blocks containing instructions
+        mock_instruction = Mock()
+        mock_instruction.offset = 0
+        mock_block = Mock()
+        mock_block.instructions = [mock_instruction]  # List with instruction having offset
         mock_cfg = Mock()
-        mock_cfg.blocks = {}
+        mock_cfg.blocks = {0: mock_block}  # Dict with block
+        mock_cfg.entry = mock_block
+        mock_block.block_id = 0
+        mock_block.successors = []
         mock_cfg_builder.return_value.build.return_value = mock_cfg
         c = ValueRangeChecker()
         code = compile("pass", "<string>", "exec")

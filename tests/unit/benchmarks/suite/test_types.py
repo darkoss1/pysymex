@@ -24,4 +24,3 @@ def test_regression_result_description_direction() -> None:
     faster = RegressionResult("b1", 1.0, 0.7, -30.0, False, 10.0)
     assert slower.change_description == "30.0% slower"
     assert faster.change_description == "30.0% faster"
-

@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -41,14 +39,10 @@ def test_mutating_set_models_concrete_none_result() -> None:
 
 def test_set_symbolic_and_error_paths() -> None:
     """Symbolic and error path behavior for pop/contains-like operations."""
-    with pytest.raises(NameError):
-        sets.SetPopModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        sets.SetContainsModel().apply([], {}, _state())
+    sets.SetPopModel().apply([], {}, _state())
+    sets.SetContainsModel().apply([], {}, _state())
 
 
 def test_set_edge_case_empty_input() -> None:
     """Edge case: empty set constructor args path."""
-    with pytest.raises(NameError):
-        sets.SetModel().apply([], {}, _state())
+    sets.SetModel().apply([], {}, _state())

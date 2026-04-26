@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 
@@ -78,13 +78,36 @@ def test_hasattr_getattr_faithfulness() -> None:
 
 def test_extended_error_and_edge_paths() -> None:
     """Error and edge paths for representative models."""
-    # Edge: empty args on models that accept no input path.
     assert extended.AllModel().apply([], {}, _state()).value is not None
     assert extended.AnyModel().apply([], {}, _state()).value is not None
 
-    # Error: chr with invalid range falls back to symbolic path or raises current runtime NameError.
     with pytest.raises(Exception):
         invalid: list[StackValue] = [0x110000]
         result = extended.ChrModel().apply(invalid, {}, _state())
-        # If no exception, force failure to keep behavior explicit for this branch.
         assert str(result.value) == chr(0x110000)
+
+
+def test_delattr_apply() -> None:
+    """Test delattr model apply behavior."""
+    from pysymex.core.types.scalars import SymbolicNone
+
+    target: object = "test"
+    args: list[StackValue] = [target, "attr"]
+    result = extended.DelattrModel().apply(args, {}, _state())
+    assert isinstance(result.value, SymbolicNone)
+    assert result.side_effects is not None
+    assert "mutates_arg" in result.side_effects
+
+
+def test_aiter_apply() -> None:
+    """Test aiter model apply behavior."""
+    result = extended.AiterModel().apply([], {}, _state())
+    assert isinstance(result.value, SymbolicValue)
+    assert result.value.name.startswith("aiter_")
+
+
+def test_anext_apply() -> None:
+    """Test anext model apply behavior."""
+    result = extended.AnextModel().apply([], {}, _state())
+    assert isinstance(result.value, SymbolicValue)
+    assert result.value.name.startswith("anext_")

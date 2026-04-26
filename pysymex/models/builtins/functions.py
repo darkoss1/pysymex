@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -138,25 +138,11 @@ class FunctionSummarizer:
         flags = code.co_flags
         has_varargs = bool(flags & 0x04)
         has_kwargs = bool(flags & 0x08)
-        pos = 0
-        for i in range(arg_count):
-            param_name = varnames[i]
-            summary.parameters.append(
-                ParameterInfo(
-                    name=param_name,
-                    position=pos,
-                )
+        total_args = arg_count + kwonly_count
+        if total_args > 0:
+            summary.parameters.extend(
+                ParameterInfo(name=varnames[i], position=i) for i in range(total_args)
             )
-            pos += 1
-        for i in range(arg_count, arg_count + kwonly_count):
-            param_name = varnames[i]
-            summary.parameters.append(
-                ParameterInfo(
-                    name=param_name,
-                    position=pos,
-                )
-            )
-            pos += 1
         if has_varargs:
             summary.var_positional = varnames[arg_count + kwonly_count]
         if has_kwargs:
@@ -228,4 +214,3 @@ __all__: list[str] = [
     "MethodModels",
     "ParameterInfo",
 ]
-

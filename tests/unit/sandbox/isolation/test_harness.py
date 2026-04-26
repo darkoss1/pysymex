@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from pysymex.sandbox.isolation.harness import HARNESS_FILENAME, generate_harness_script
 
 

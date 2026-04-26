@@ -4,6 +4,8 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+
 from pysymex.ci.core import (
     CIRunner,
     GitHubActionsReporter,
@@ -58,8 +60,8 @@ def test_precommit_templates_include_expected_entries() -> None:
     config = generate_precommit_config()
     hook = generate_precommit_hook_script()
     assert "repo: local" in config
-    assert "PySyMex check" in config
-    assert "git diff --cached" in hook
+    assert "pysymex check" in config
+    assert '"git", "diff", "--cached"' in hook
 
 
 def test_ci_runner_counts_issues_and_sets_failure() -> None:
@@ -75,4 +77,3 @@ def test_ci_runner_counts_issues_and_sets_failure() -> None:
     assert result.exit_code is ExitCode.CRITICAL_FOUND
     assert result.issues_count == 3
     assert result.message.startswith("Failed")
-

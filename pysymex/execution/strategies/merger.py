@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,22 +31,25 @@ Features:
 
 from __future__ import annotations
 
+import logging
 import types
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeGuard, runtime_checkable
 
 import z3
 
 from pysymex._typing import StackValue
-from pysymex.core.memory.cow import ConstraintChain, CowDict
+from pysymex.core.memory.cow import CowDict
 
 if TYPE_CHECKING:
     import dis
 
-    from pysymex.core.state import VMState
+    from pysymex.core.state import CallFrame, VMState
     from pysymex.core.types.scalars import SymbolicValue
+
+logger = logging.getLogger(__name__)
 
 
 class MergePolicy(Enum):
@@ -90,14 +93,12 @@ class AbstractVarInfo:
         interval_hi: Upper bound of the integer interval.
         may_be_none: Whether the variable may be ``None``.
         must_be_type: Inferred concrete type, if known.
-        is_tainted: Whether the variable carries taint.
     """
 
     interval_lo: int | None = None
     interval_hi: int | None = None
     may_be_none: bool = False
     must_be_type: str | None = None
-    is_tainted: bool = False
 
 
 class StateMerger:
@@ -128,9 +129,9 @@ class StateMerger:
     def detect_join_points(
         self, instructions: list[dis.Instruction], code: types.CodeType | None = None
     ) -> set[int]:
-        """Detect join points using bytecode predecessor counts.
+        """Detect join points using instruction indices.
 
-        A join point is any instruction offset reached by more than one
+        A join point is any instruction index reached by more than one
         predecessor edge in the control-flow graph.
         """
         _ = code
@@ -142,33 +143,40 @@ class StateMerger:
         import dis as _dis
 
         predecessor_counts: dict[int, int] = {}
+        offset_to_index: dict[int, int] = {
+            instr.offset: idx for idx, instr in enumerate(instructions)
+        }
 
         for idx, instr in enumerate(instructions):
             successors: set[int] = set()
             opname = instr.opname
 
-            # Explicit jump target edge.
             if instr.opcode in _dis.hasjabs or instr.opcode in _dis.hasjrel:
                 jump_target = instr.argval
-                if isinstance(jump_target, int):
-                    successors.add(jump_target)
+                if isinstance(jump_target, int) and jump_target in offset_to_index:
+                    successors.add(offset_to_index[jump_target])
 
             has_fallthrough = True
             if opname.startswith("RETURN") or opname in {"RAISE_VARARGS", "RERAISE"}:
                 has_fallthrough = False
-            if opname.startswith("JUMP") and "IF" not in opname and opname not in {
-                "JUMP_IF_TRUE_OR_POP",
-                "JUMP_IF_FALSE_OR_POP",
-            }:
+            if (
+                opname.startswith("JUMP")
+                and "IF" not in opname
+                and opname
+                not in {
+                    "JUMP_IF_TRUE_OR_POP",
+                    "JUMP_IF_FALSE_OR_POP",
+                }
+            ):
                 has_fallthrough = False
 
             if has_fallthrough and idx + 1 < len(instructions):
-                successors.add(instructions[idx + 1].offset)
+                successors.add(idx + 1)
 
             for succ in successors:
                 predecessor_counts[succ] = predecessor_counts.get(succ, 0) + 1
 
-        self._join_points = {offset for offset, count in predecessor_counts.items() if count > 1}
+        self._join_points = {idx for idx, count in predecessor_counts.items() if count > 1}
         return self._join_points
 
     def is_join_point(self, pc: int) -> bool:
@@ -273,15 +281,13 @@ class StateMerger:
         for frame1, frame2 in zip(state1.call_stack, state2.call_stack, strict=False):
             if frame1.function_name != frame2.function_name or frame1.return_pc != frame2.return_pc:
                 return False
-            if self._mapping_hash_mismatch(
-                cast("Mapping[str, object]", frame1.local_vars),
-                cast("Mapping[str, object]", frame2.local_vars),
-            ):
+            frame1_locals = _as_string_object_mapping(frame1.local_vars)
+            frame2_locals = _as_string_object_mapping(frame2.local_vars)
+            if frame1_locals is None or frame2_locals is None:
                 return False
-            if not self._mapping_equal(
-                cast("Mapping[str, object]", frame1.local_vars),
-                cast("Mapping[str, object]", frame2.local_vars),
-            ):
+            if self._mapping_hash_mismatch(frame1_locals, frame2_locals):
+                return False
+            if not self._mapping_equal(frame1_locals, frame2_locals):
                 return False
 
         if len(state1.block_stack) != len(state2.block_stack):
@@ -290,15 +296,17 @@ class StateMerger:
             if block1.block_type != block2.block_type or block1.handler_pc != block2.handler_pc:
                 return False
 
-        if not self._mapping_equal(
-            cast("Mapping[str, object]", state1.local_vars),
-            cast("Mapping[str, object]", state2.local_vars),
-        ):
+        state1_locals = _as_string_object_mapping(state1.local_vars)
+        state2_locals = _as_string_object_mapping(state2.local_vars)
+        if state1_locals is None or state2_locals is None:
             return False
-        if not self._mapping_equal(
-            cast("Mapping[str, object]", state1.global_vars),
-            cast("Mapping[str, object]", state2.global_vars),
-        ):
+        if not self._mapping_equal(state1_locals, state2_locals):
+            return False
+        state1_globals = _as_string_object_mapping(state1.global_vars)
+        state2_globals = _as_string_object_mapping(state2.global_vars)
+        if state1_globals is None or state2_globals is None:
+            return False
+        if not self._mapping_equal(state1_globals, state2_globals):
             return False
 
         for addr in state1.memory.keys():
@@ -323,7 +331,10 @@ class StateMerger:
         left_hash_getter = getattr(left, "hash_value", None)
         right_hash_getter = getattr(right, "hash_value", None)
         if callable(left_hash_getter) and callable(right_hash_getter):
-            return cast("int", left_hash_getter()) != cast("int", right_hash_getter())
+            left_hash = left_hash_getter()
+            right_hash = right_hash_getter()
+            if isinstance(left_hash, int) and isinstance(right_hash, int):
+                return left_hash != right_hash
         return False
 
     def _mapping_equal(self, left: Mapping[str, object], right: Mapping[str, object]) -> bool:
@@ -349,7 +360,8 @@ class StateMerger:
         2. Same stack depth (structure of execution must match)
         3. Same call stack depth
         4. Same set of local variables (roughly)
-        5. Same block stack structure (block_type + handler_pc per entry)
+        5. Same block stack structure
+        6. Prevent path explosion: Path constraints must be structurally identical.
         """
         if len(state1.stack) != len(state2.stack):
             return False
@@ -364,51 +376,28 @@ class StateMerger:
         for b1, b2 in zip(state1.block_stack, state2.block_stack, strict=False):
             if b1.block_type != b2.block_type or b1.handler_pc != b2.handler_pc:
                 return False
-        return True
 
-    def _extract_branch_condition(
-        self, state1: VMState, state2: VMState
-    ) -> tuple[z3.BoolRef | None, int]:
-        """Find the condition that distinguishes state1 from state2.
-        Returns (condition, common_len).
-        """
         cons1 = state1.path_constraints.to_list()
         cons2 = state2.path_constraints.to_list()
-        common_len = 0
-        min_len = min(len(cons1), len(cons2))
-        while common_len < min_len:
-            if not self._constraints_equal(cons1[common_len], cons2[common_len]):
-                break
-            common_len += 1
+        if len(cons1) != len(cons2):
+            return False
 
-        if common_len >= len(cons1) or common_len >= len(cons2):
-            return None, common_len
+        for c1, c2 in zip(cons1, cons2):
+            if not self._constraints_equal(c1, c2):
+                return False
 
-        c1 = cons1[common_len]
-        c2 = cons2[common_len]
-
-        s1 = z3.simplify(c1)
-        s2 = z3.simplify(c2)
-
-        if z3.eq(s1, z3.simplify(z3.Not(s2))):
-            return s1, common_len
-        if z3.eq(s2, z3.simplify(z3.Not(s1))):
-            return s1, common_len
-
-        return c1, common_len
+        return True
 
     def _merge_states_symbolically(self, state1: VMState, state2: VMState) -> VMState | None:
-        """Merge states by creating conditional symbolic values."""
-        condition, common_len = self._extract_branch_condition(state1, state2)
-        if condition is None:
-            return None
+        """Merge states using strict Phi-nodes without Implies AST bloat."""
+
+        condition = z3.Bool(f"phi_merge_p{state1.path_id}_p{state2.path_id}")
 
         def _merge_pair(
             left: StackValue,
             right: StackValue,
             merge_condition: z3.BoolRef,
         ) -> StackValue | None:
-            """Merge pair."""
             from pysymex.core.types.scalars import SymbolicValue
 
             from pysymex.core.types.containers import (
@@ -433,44 +422,39 @@ class StateMerger:
                 right if _is_any_symbolic(right) else SymbolicValue.from_const(right)
             )
             try:
-                merged_obj = cast("_ConditionalMergeable", left_symbolic).conditional_merge(
-                    right_symbolic,
-                    merge_condition,
-                )
-                return cast("StackValue", merged_obj)
+                if not _is_conditional_mergeable(left_symbolic):
+                    return None
+                merged_obj = left_symbolic.conditional_merge(right_symbolic, merge_condition)
+                if not _is_stack_value(merged_obj):
+                    return None
+                return merged_obj
             except TypeError:
                 return None
 
         merged = state1.fork()
 
-        new_chain = ConstraintChain.empty()
+        merged.path_constraints = state1.path_constraints
 
-        base_constraints = state1.path_constraints.to_list()
-        common_cons = base_constraints[:common_len]
-        for c in common_cons:
-            new_chain = new_chain.append(c)
-
-        extra1 = base_constraints[common_len:]
-        extra2 = state2.path_constraints.to_list()[common_len:]
-
-        for c in extra1:
-            new_chain = new_chain.append(z3.Implies(condition, c))
-        for c in extra2:
-            new_chain = new_chain.append(z3.Implies(z3.Not(condition), c))
-
-        merged.path_constraints = new_chain
         for name in state1.local_vars:
             val1 = state1.local_vars[name]
             val2 = state2.local_vars[name]
+            if self._values_structurally_equal(val1, val2):
+                merged.local_vars[name] = val1
+                continue
+
             merged_value = _merge_pair(val1, val2, condition)
             if merged_value is None:
                 return None
             merged.local_vars[name] = merged_value
+
         all_global_keys = set(state1.global_vars.keys()) | set(state2.global_vars.keys())
         for name in all_global_keys:
             val1 = state1.global_vars.get(name)
             val2 = state2.global_vars.get(name)
             if val1 is not None and val2 is not None:
+                if self._values_structurally_equal(val1, val2):
+                    merged.global_vars[name] = val1
+                    continue
                 merged_value = _merge_pair(val1, val2, condition)
                 if merged_value is None:
                     return None
@@ -479,10 +463,12 @@ class StateMerger:
                 merged.global_vars[name] = val1
             elif val2 is not None:
                 merged.global_vars[name] = val2
+
         merged_stack: list[StackValue] = []
-        for i in range(len(state1.stack)):
-            val1 = state1.stack[i]
-            val2 = state2.stack[i]
+        for val1, val2 in zip(state1.stack, state2.stack):
+            if self._values_structurally_equal(val1, val2):
+                merged_stack.append(val1)
+                continue
             merged_value = _merge_pair(val1, val2, condition)
             if merged_value is None:
                 return None
@@ -492,17 +478,21 @@ class StateMerger:
         if len(state1.call_stack) == len(state2.call_stack):
             from pysymex.core.state import wrap_cow_dict
 
-            merged_call_stack = []
+            merged_call_stack: list[CallFrame] = []
             for f1, f2 in zip(state1.call_stack, state2.call_stack, strict=False):
                 if f1.function_name != f2.function_name or f1.return_pc != f2.return_pc:
                     return None
 
-                merged_frame_locals = wrap_cow_dict({})
+                frame_locals_seed: dict[str, StackValue] = {}
+                merged_frame_locals = wrap_cow_dict(frame_locals_seed)
                 all_keys = set(f1.local_vars.keys()) | set(f2.local_vars.keys())
                 for k in all_keys:
                     v1 = f1.local_vars.get(k)
                     v2 = f2.local_vars.get(k)
                     if v1 is not None and v2 is not None:
+                        if self._values_structurally_equal(v1, v2):
+                            merged_frame_locals[k] = v1
+                            continue
                         mv = _merge_pair(v1, v2, condition)
                         if mv is None:
                             return None
@@ -517,8 +507,9 @@ class StateMerger:
             merged.call_stack = merged_call_stack
         elif state1.call_stack or state2.call_stack:
             return None
+
         all_addrs = set(state1.memory.keys()) | set(state2.memory.keys())
-        merged.memory = CowDict()
+        merged.memory = CowDict[int, StackValue]()
         for addr in all_addrs:
             cell1 = state1.memory.get(addr)
             cell2 = state2.memory.get(addr)
@@ -526,6 +517,9 @@ class StateMerger:
             dict2 = _as_string_object_mapping(cell2)
             if dict1 is None or dict2 is None:
                 if cell1 is not None and cell2 is not None:
+                    if self._values_structurally_equal(cell1, cell2):
+                        merged.memory[addr] = cell1
+                        continue
                     merged_cell = _merge_pair(cell1, cell2, condition)
                     if merged_cell is None:
                         return None
@@ -536,7 +530,7 @@ class StateMerger:
                     merged.memory[addr] = cell2
                 continue
 
-            merged_dict: dict[str, object] = {}
+            merged_dict: dict[str, StackValue] = {}
             all_attrs = set(dict1.keys()) | set(dict2.keys())
             for attr in all_attrs:
                 v1 = dict1.get(attr)
@@ -548,9 +542,7 @@ class StateMerger:
                     if self._values_structurally_equal(v1, v2):
                         merged_dict[attr] = v1
                         continue
-                    merged_val = _merge_pair(
-                        cast("StackValue", v1), cast("StackValue", v2), condition
-                    )
+                    merged_val = _merge_pair(v1, v2, condition)
                     if merged_val is None:
                         return None
                     merged_dict[attr] = merged_val
@@ -558,15 +550,11 @@ class StateMerger:
                     merged_dict[attr] = v1
                 elif v2 is not None:
                     merged_dict[attr] = v2
-            from pysymex.core.state import wrap_cow_dict
-
-            merged.memory[addr] = wrap_cow_dict(merged_dict)
+            merged.memory[addr] = dict(merged_dict)
         return merged
 
     def _symbolic_values_equal(self, left: SymbolicValue, right: SymbolicValue) -> bool:
         """Check structural equality of SymbolicValue instances."""
-        if left.taint_labels != right.taint_labels:
-            return False
         if bool(getattr(left, "_h_active", False)) != bool(getattr(right, "_h_active", False)):
             return False
         if left.affinity_type != right.affinity_type:
@@ -632,7 +620,8 @@ class StateMerger:
 
         try:
             eq_result = left == right
-        except Exception:
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            logger.debug("Symbolic value equality check failed: %s", exc)
             return False
         return eq_result
 
@@ -670,6 +659,19 @@ class _HashableValue(Protocol):
     def hash_value(self) -> int: ...
 
 
+@runtime_checkable
+class _StringStackMappingLike(Protocol):
+    """Protocol for string-keyed mappings containing stack values."""
+
+    def keys(self) -> Iterable[str]:
+        """Return iterable of string keys."""
+        ...
+
+    def __getitem__(self, key: str) -> StackValue:
+        """Return the value associated with key."""
+        ...
+
+
 def _is_any_symbolic(value: object) -> bool:
     from pysymex.core.types.scalars import (
         SymbolicDict,
@@ -686,20 +688,40 @@ def _is_any_symbolic(value: object) -> bool:
     )
 
 
-def _as_string_object_mapping(value: object | None) -> Mapping[str, object] | None:
+def _is_conditional_mergeable(value: object) -> TypeGuard[_ConditionalMergeable]:
+    """Return whether value exposes a callable ``conditional_merge`` method."""
+    merge_fn = getattr(value, "conditional_merge", None)
+    return callable(merge_fn)
+
+
+def _is_stack_value(value: object) -> TypeGuard[StackValue]:
+    """Validate values against the ``StackValue`` recursive union."""
+    if value is None:
+        return True
+    if isinstance(value, (z3.ExprRef, int, bool, str, float, bytes, type)):
+        return True
+    if _is_any_symbolic(value):
+        return True
+    if isinstance(value, list):
+        return True
+    if isinstance(value, tuple):
+        return True
+    if isinstance(value, dict):
+        return True
+    if isinstance(value, Callable):
+        return True
+    return False
+
+
+def _as_string_object_mapping(value: object | None) -> Mapping[str, StackValue] | None:
     if value is None:
         return {}
-    if isinstance(value, dict):
-        return (
-            cast("Mapping[str, object]", value)
-            if all(isinstance(key, str) for key in value)
-            else None
-        )
-    if isinstance(value, CowDict):
-        keys = list(value.keys())
-        if all(isinstance(key, str) for key in keys):
-            return cast("Mapping[str, object]", value)
-    return None
+    if not isinstance(value, _StringStackMappingLike):
+        return None
+    normalized: dict[str, StackValue] = {}
+    for key_obj in value.keys():
+        normalized[key_obj] = value[key_obj]
+    return normalized
 
 
 def create_state_merger(

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -23,6 +23,7 @@ exception catalog.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Protocol, TypeGuard
 
 import z3
 
@@ -33,6 +34,56 @@ from pysymex.core.exceptions.types import (
     SymbolicException,
 )
 from pysymex.core.solver.engine import create_solver
+
+
+class _ToZ3Protocol(Protocol):
+    """Protocol for symbolic values that can expose a Z3 expression."""
+
+    def to_z3(self) -> z3.ExprRef: ...
+
+
+class _HasLengthProtocol(Protocol):
+    """Protocol for sequence-like objects exposing a ``length`` field."""
+
+    length: object
+
+
+class _ContainsKeyProtocol(Protocol):
+    """Protocol for mapping-like symbolic containers."""
+
+    def contains_key(self, key: object) -> object: ...
+
+
+class _HasAttributeProtocol(Protocol):
+    """Protocol for objects exposing symbolic attribute membership checks."""
+
+    def has_attribute(self, attr: str) -> object: ...
+
+
+class _CouldBeFalsyProtocol(Protocol):
+    """Protocol for symbolic truthiness checks."""
+
+    def could_be_falsy(self) -> z3.BoolRef: ...
+
+
+def _has_to_z3(value: object) -> TypeGuard[_ToZ3Protocol]:
+    return hasattr(value, "to_z3") and callable(getattr(value, "to_z3", None))
+
+
+def _has_length(value: object) -> TypeGuard[_HasLengthProtocol]:
+    return hasattr(value, "length")
+
+
+def _has_contains_key(value: object) -> TypeGuard[_ContainsKeyProtocol]:
+    return hasattr(value, "contains_key") and callable(getattr(value, "contains_key", None))
+
+
+def _has_attribute_checker(value: object) -> TypeGuard[_HasAttributeProtocol]:
+    return hasattr(value, "has_attribute") and callable(getattr(value, "has_attribute", None))
+
+
+def _has_could_be_falsy(value: object) -> TypeGuard[_CouldBeFalsyProtocol]:
+    return hasattr(value, "could_be_falsy") and callable(getattr(value, "could_be_falsy", None))
 
 
 class ExceptionAnalyzer:
@@ -151,8 +202,8 @@ class ExceptionAnalyzer:
                     raised_at=pc,
                 )
             return None
-        if hasattr(divisor, "to_z3"):
-            z3_val: z3.ExprRef = divisor.to_z3()  # type: ignore[union-attr]
+        if _has_to_z3(divisor):
+            z3_val: z3.ExprRef = divisor.to_z3()
             condition: z3.BoolRef = z3_val == 0
             return SymbolicException.symbolic(
                 f"div_zero_{pc}",
@@ -174,11 +225,11 @@ class ExceptionAnalyzer:
         pc: int,
     ) -> SymbolicException | None:
         """Analyze index access for potential IndexError."""
-        if hasattr(container, "length"):
-            length: object = container.length  # type: ignore[union-attr]
+        if _has_length(container):
+            length = container.length
             if isinstance(index, int):
-                if hasattr(length, "to_z3"):
-                    z3_len: z3.ExprRef = length.to_z3()  # type: ignore[union-attr]
+                if _has_to_z3(length):
+                    z3_len = length.to_z3()
                     condition_i: z3.BoolRef = z3.Or(
                         z3.IntVal(index) >= z3_len,
                         z3.IntVal(index) < -z3_len,
@@ -189,7 +240,7 @@ class ExceptionAnalyzer:
                         condition_i,
                         pc,
                     )
-                elif isinstance(length, int):
+                if isinstance(length, int):
                     if index >= length or index < -length:
                         return SymbolicException.concrete(
                             IndexError,
@@ -197,10 +248,10 @@ class ExceptionAnalyzer:
                             raised_at=pc,
                         )
                     return None
-            if hasattr(index, "to_z3"):
-                z3_idx: z3.ExprRef = index.to_z3()  # type: ignore[union-attr]
-                if hasattr(length, "to_z3"):
-                    z3_len2: z3.ExprRef = length.to_z3()  # type: ignore[union-attr]
+            if _has_to_z3(index):
+                z3_idx: z3.ExprRef = index.to_z3()
+                if _has_to_z3(length):
+                    z3_len2 = length.to_z3()
                     condition_s: z3.BoolRef = z3.Or(z3_idx >= z3_len2, z3_idx < -z3_len2)
                 else:
                     if not isinstance(length, int):
@@ -224,17 +275,16 @@ class ExceptionAnalyzer:
         pc: int,
     ) -> SymbolicException | None:
         """Analyze key access for potential KeyError."""
-        if hasattr(container, "contains"):
-            if hasattr(container, "contains_key"):
-                contains_result: object = container.contains_key(key)  # type: ignore[union-attr]
-                if isinstance(contains_result, bool):
-                    if not contains_result:
-                        return SymbolicException.concrete(
-                            KeyError,
-                            str(key),
-                            raised_at=pc,
-                        )
-                    return None
+        if _has_contains_key(container):
+            contains_result = container.contains_key(key)
+            if isinstance(contains_result, bool):
+                if not contains_result:
+                    return SymbolicException.concrete(
+                        KeyError,
+                        str(key),
+                        raised_at=pc,
+                    )
+                return None
         return SymbolicException.symbolic(
             f"key_error_{pc}",
             KeyError,
@@ -255,8 +305,8 @@ class ExceptionAnalyzer:
                 f"'NoneType' object has no attribute '{attr}'",
                 raised_at=pc,
             )
-        if hasattr(obj, "has_attribute"):
-            has_attr: bool = obj.has_attribute(attr)  # type: ignore[union-attr]
+        if _has_attribute_checker(obj):
+            has_attr = obj.has_attribute(attr)
             if isinstance(has_attr, bool):
                 if not has_attr:
                     type_name = type(obj).__name__
@@ -283,8 +333,8 @@ class ExceptionAnalyzer:
                     raised_at=pc,
                 )
             return None
-        if hasattr(condition, "could_be_falsy"):
-            falsy_cond: z3.BoolRef = condition.could_be_falsy()  # type: ignore[union-attr]
+        if _has_could_be_falsy(condition):
+            falsy_cond = condition.could_be_falsy()
             return SymbolicException.symbolic(
                 f"assertion_{pc}",
                 AssertionError,
@@ -354,18 +404,27 @@ def merge_exception_states(
     return result
 
 
+def _create_contract_violation(
+    kind: str,
+    condition_expr: z3.BoolRef,
+    pc: int,
+) -> SymbolicException | None:
+    """Helper to create exception for contract violations."""
+    return SymbolicException.symbolic(
+        f"{kind}_{pc}",
+        AssertionError,
+        z3.Not(condition_expr),
+        pc,
+    )
+
+
 def check_precondition_violation(
     condition_expr: z3.BoolRef,
     message: str,
     pc: int,
 ) -> SymbolicException | None:
     """Create exception for precondition violation."""
-    return SymbolicException.symbolic(
-        f"precondition_{pc}",
-        AssertionError,
-        z3.Not(condition_expr),
-        pc,
-    )
+    return _create_contract_violation("precondition", condition_expr, pc)
 
 
 def check_postcondition_violation(
@@ -374,12 +433,7 @@ def check_postcondition_violation(
     pc: int,
 ) -> SymbolicException | None:
     """Create exception for postcondition violation."""
-    return SymbolicException.symbolic(
-        f"postcondition_{pc}",
-        AssertionError,
-        z3.Not(condition_expr),
-        pc,
-    )
+    return _create_contract_violation("postcondition", condition_expr, pc)
 
 
 def check_invariant_violation(
@@ -388,12 +442,7 @@ def check_invariant_violation(
     pc: int,
 ) -> SymbolicException | None:
     """Create exception for invariant violation."""
-    return SymbolicException.symbolic(
-        f"invariant_{pc}",
-        AssertionError,
-        z3.Not(condition_expr),
-        pc,
-    )
+    return _create_contract_violation("invariant", condition_expr, pc)
 
 
 BUILTIN_EXCEPTIONS: frozenset[type[BaseException]] = frozenset(

@@ -1,11 +1,18 @@
+import pytest
 import z3
 from pysymex.analysis.summaries.types import (
-    ParameterInfo, ModifiedVariable, ReadVariable, CallSite,
-    ExceptionInfo, FunctionSummary
+    ParameterInfo,
+    ModifiedVariable,
+    ReadVariable,
+    CallSite,
+    ExceptionInfo,
+    FunctionSummary,
 )
+
 
 class TestParameterInfo:
     """Test suite for pysymex.analysis.summaries.types.ParameterInfo."""
+
     def test_to_z3(self) -> None:
         """Test to_z3 behavior."""
         p1 = ParameterInfo("x", 0, "int")
@@ -16,39 +23,49 @@ class TestParameterInfo:
         z2 = p2.to_z3("pref_")
         assert "pref_b" in str(z2)
 
+
 class TestModifiedVariable:
     """Test suite for pysymex.analysis.summaries.types.ModifiedVariable."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         v = ModifiedVariable("x", "global")
         assert v.name == "x"
         assert v.scope == "global"
 
+
 class TestReadVariable:
     """Test suite for pysymex.analysis.summaries.types.ReadVariable."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         v = ReadVariable("y", "local")
         assert v.name == "y"
         assert v.scope == "local"
 
+
 class TestCallSite:
     """Test suite for pysymex.analysis.summaries.types.CallSite."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         c = CallSite("foo", [1], {"b": 2}, 10, True, "self")
         assert c.callee == "foo"
         assert c.args == [1]
 
+
 class TestExceptionInfo:
     """Test suite for pysymex.analysis.summaries.types.ExceptionInfo."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         e = ExceptionInfo("ValueError", z3.BoolVal(True))
         assert e.exc_type == "ValueError"
 
+
 class TestFunctionSummary:
     """Test suite for pysymex.analysis.summaries.types.FunctionSummary."""
+
     def test_get_parameter(self) -> None:
         """Test get_parameter behavior."""
         s = FunctionSummary("f")
@@ -118,14 +135,14 @@ class TestFunctionSummary:
         s = FunctionSummary("f")
         assert s.get_all_preconditions() is not None
         s.add_precondition(z3.BoolVal(True))
-        assert z3.is_true(s.get_all_preconditions())
+        assert z3.is_true(z3.simplify(s.get_all_preconditions()))
 
     def test_get_all_postconditions(self) -> None:
         """Test get_all_postconditions behavior."""
         s = FunctionSummary("f")
         assert s.get_all_postconditions() is not None
         s.add_postcondition(z3.BoolVal(False))
-        assert z3.is_false(s.get_all_postconditions())
+        assert z3.is_false(z3.simplify(s.get_all_postconditions()))
 
     def test_clone(self) -> None:
         """Test clone behavior."""

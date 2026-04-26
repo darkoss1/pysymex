@@ -1,8 +1,10 @@
-﻿import pysymex.core.solver.unsat
+import pysymex.core.solver.unsat
 import z3
+
 
 class TestUnsatCoreResult:
     """Test suite for pysymex.core.solver.unsat.UnsatCoreResult."""
+
     def test_reduction_ratio(self) -> None:
         """Scenario: one core constraint out of two total; expected 0.5 reduction ratio."""
         result = pysymex.core.solver.unsat.UnsatCoreResult([z3.BoolVal(False)], [0], 2)

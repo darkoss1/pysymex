@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -34,18 +34,17 @@ from dataclasses import asdict, dataclass
 
 import z3
 
-import pysymex.analysis.detectors.base as detectors_base
-from pysymex.analysis.detectors.base import (
-    KeyErrorDetector,
-)
+from pysymex.analysis.utils.math import wilson_upper_95
+
+from pysymex.analysis.detectors.runtime import KeyErrorDetector
 from pysymex.core.solver.engine import is_satisfiable
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicString, SymbolicValue
 from pysymex.core.types.containers import SymbolicDict, SymbolicList
 
-_PURE_CHECK_DIVISION_BY_ZERO = getattr(detectors_base, "_pure_check_division_by_zero")
-_PURE_CHECK_INDEX_BOUNDS = getattr(detectors_base, "_pure_check_index_bounds")
-_PURE_CHECK_NONE_DEREF = getattr(detectors_base, "_pure_check_none_deref")
+from pysymex.analysis.detectors.runtime.division_by_zero import pure_check_division_by_zero
+from pysymex.analysis.detectors.runtime.index_error import pure_check_index_bounds
+from pysymex.analysis.detectors.runtime.none_dereference import pure_check_none_deref
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,17 +224,6 @@ def prove_smt_obligations() -> list[ProofObligationResult]:
     return results
 
 
-def _wilson_upper_95(k: int, n: int) -> float:
-    if n <= 0:
-        return 0.0
-    z = 1.96
-    p = k / n
-    denom = 1.0 + (z * z / n)
-    center = p + (z * z) / (2 * n)
-    spread = z * ((p * (1 - p) + (z * z) / (4 * n)) / n) ** 0.5
-    return min(1.0, (center + spread) / denom)
-
-
 def _division_case(rng: random.Random) -> tuple[bool, bool]:
     d, _ = SymbolicValue.symbolic("d")
     constraints: list[z3.BoolRef] = []
@@ -260,7 +248,7 @@ def _division_case(rng: random.Random) -> tuple[bool, bool]:
         ]
     )
     detected = (
-        _PURE_CHECK_DIVISION_BY_ZERO(d, SymbolicValue.from_const(1), constraints, pc=0) is not None
+        pure_check_division_by_zero(d, SymbolicValue.from_const(1), constraints, pc=0) is not None
     )
     return detected, risk
 
@@ -289,7 +277,7 @@ def _index_case(rng: random.Random) -> tuple[bool, bool]:
             z3.Or(idx.z3_int >= lst.z3_len, idx.z3_int < -lst.z3_len),
         ]
     )
-    detected = _PURE_CHECK_INDEX_BOUNDS(lst, idx, constraints, pc=0) is not None
+    detected = pure_check_index_bounds(lst, idx, constraints, pc=0) is not None
     return detected, risk
 
 
@@ -309,7 +297,7 @@ def _none_case(rng: random.Random) -> tuple[bool, bool]:
     )
 
     detected = (
-        _PURE_CHECK_NONE_DEREF(
+        pure_check_none_deref(
             obj,
             "attr",
             constraints,
@@ -383,8 +371,8 @@ def run_property_validation(samples: int = 400, seed: int = 7) -> list[Statistic
                 false_negatives=fn,
                 fp_rate=fp / samples,
                 fn_rate=fn / samples,
-                fp_upper_95=_wilson_upper_95(fp, samples),
-                fn_upper_95=_wilson_upper_95(fn, samples),
+                fp_upper_95=wilson_upper_95(fp, samples),
+                fn_upper_95=wilson_upper_95(fn, samples),
             )
         )
 
@@ -535,7 +523,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
         if isinstance(value, int) and not isinstance(value, bool):
             constraints.extend([d.is_int, z3.Not(d.is_float), d.z3_int == value])
             detected = (
-                _PURE_CHECK_DIVISION_BY_ZERO(d, SymbolicValue.from_const(1), constraints, pc=0)
+                pure_check_division_by_zero(d, SymbolicValue.from_const(1), constraints, pc=0)
                 is not None
             )
         elif isinstance(value, float):
@@ -543,7 +531,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
                 [z3.Not(d.is_int), d.is_float, d.z3_float == z3.FPVal(value, z3.Float64())]
             )
             detected = (
-                _PURE_CHECK_DIVISION_BY_ZERO(d, SymbolicValue.from_const(1), constraints, pc=0)
+                pure_check_division_by_zero(d, SymbolicValue.from_const(1), constraints, pc=0)
                 is not None
             )
         else:
@@ -557,7 +545,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
             samples=samples,
             mismatches=div_mismatch,
             mismatch_rate=div_mismatch / samples,
-            mismatch_upper_95=_wilson_upper_95(div_mismatch, samples),
+            mismatch_upper_95=wilson_upper_95(div_mismatch, samples),
         )
     )
 
@@ -575,7 +563,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
         else:
             constraints.append(z3.Not(idx.is_int))
 
-        detected = _PURE_CHECK_INDEX_BOUNDS(lst, idx, constraints, pc=0) is not None
+        detected = pure_check_index_bounds(lst, idx, constraints, pc=0) is not None
         oracle = _oracle_index_risk(seq, idx_value)
         if detected != oracle:
             idx_mismatch += 1
@@ -585,7 +573,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
             samples=samples,
             mismatches=idx_mismatch,
             mismatch_rate=idx_mismatch / samples,
-            mismatch_upper_95=_wilson_upper_95(idx_mismatch, samples),
+            mismatch_upper_95=wilson_upper_95(idx_mismatch, samples),
         )
     )
 
@@ -599,7 +587,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
         obj, obj_tc = SymbolicValue.symbolic(name)
         constraints = [obj_tc, obj.is_none if is_none else z3.Not(obj.is_none)]
         detected = (
-            _PURE_CHECK_NONE_DEREF(
+            pure_check_none_deref(
                 obj,
                 "attr",
                 constraints,
@@ -618,7 +606,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
             samples=samples,
             mismatches=none_mismatch,
             mismatch_rate=none_mismatch / samples,
-            mismatch_upper_95=_wilson_upper_95(none_mismatch, samples),
+            mismatch_upper_95=wilson_upper_95(none_mismatch, samples),
         )
     )
 
@@ -662,7 +650,7 @@ def run_oracle_differential_validation(samples: int = 300, seed: int = 11) -> li
             samples=samples,
             mismatches=key_mismatch,
             mismatch_rate=key_mismatch / samples,
-            mismatch_upper_95=_wilson_upper_95(key_mismatch, samples),
+            mismatch_upper_95=wilson_upper_95(key_mismatch, samples),
         )
     )
 

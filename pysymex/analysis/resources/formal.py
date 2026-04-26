@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,6 +33,8 @@ from dataclasses import asdict, dataclass
 from types import ModuleType
 
 import z3
+
+from pysymex.analysis.utils.math import wilson_upper_95
 
 from pysymex.analysis.resources.analysis import LockSafetyAnalyzer, ResourceLeakDetector
 from pysymex.analysis.resources.lifecycle import (
@@ -93,17 +95,6 @@ STRICT_TARGETS = {
     "LockResourceChecker.acquire_lock",
     "LockResourceChecker.release_lock",
 }
-
-
-def _wilson_upper_95(k: int, n: int) -> float:
-    if n <= 0:
-        return 0.0
-    z = 1.96
-    p = k / n
-    denom = 1.0 + (z * z / n)
-    center = p + (z * z) / (2 * n)
-    spread = z * ((p * (1 - p) + (z * z) / (4 * n)) / n) ** 0.5
-    return min(1.0, (center + spread) / denom)
 
 
 def _resource_modules() -> list[ModuleType]:
@@ -213,7 +204,7 @@ def run_differential_validation() -> list[DifferentialResult]:
             samples=n,
             mismatches=mismatches,
             mismatch_rate=mismatches / n,
-            mismatch_upper_95=_wilson_upper_95(mismatches, n),
+            mismatch_upper_95=wilson_upper_95(mismatches, n),
         )
     )
 
@@ -257,7 +248,7 @@ def run_differential_validation() -> list[DifferentialResult]:
             samples=lifecycle_cases,
             mismatches=lifecycle_mismatches,
             mismatch_rate=lifecycle_mismatches / lifecycle_cases,
-            mismatch_upper_95=_wilson_upper_95(lifecycle_mismatches, lifecycle_cases),
+            mismatch_upper_95=wilson_upper_95(lifecycle_mismatches, lifecycle_cases),
         )
     )
 
@@ -293,7 +284,7 @@ def run_differential_validation() -> list[DifferentialResult]:
             samples=ln,
             mismatches=lock_mismatches,
             mismatch_rate=lock_mismatches / ln,
-            mismatch_upper_95=_wilson_upper_95(lock_mismatches, ln),
+            mismatch_upper_95=wilson_upper_95(lock_mismatches, ln),
         )
     )
 

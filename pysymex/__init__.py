@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -66,14 +66,14 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "SymbolicObject": ("pysymex.core.types.containers", "SymbolicObject"),
     "SymbolicNone": ("pysymex.core.types.scalars", "SymbolicNone"),
     "VMState": ("pysymex.core.state", "VMState"),
-    "ShadowSolver": ("pysymex.core.solver.engine", "ShadowSolver"),
+    "IncrementalSolver": ("pysymex.core.solver.engine", "IncrementalSolver"),
     "Issue": ("pysymex.analysis.detectors", "Issue"),
     "IssueKind": ("pysymex.analysis.detectors", "IssueKind"),
     "PysymexConfig": ("pysymex.config", "PysymexConfig"),
     "load_config": ("pysymex.config", "load_config"),
-    "configure_logging": ("pysymex.logging", "configure_logging"),
-    "get_logger": ("pysymex.logging", "get_logger"),
-    "LogLevel": ("pysymex.logging", "LogLevel"),
+    "configure_logging": ("pysymex.logger", "configure_logging"),
+    "get_logger": ("pysymex.logger", "get_logger"),
+    "LogLevel": ("pysymex.logger", "LogLevel"),
     "format_result": ("pysymex.reporting.formatters", "format_result"),
     "VerifiedExecutor": ("pysymex.execution.executors.verified", "VerifiedExecutor"),
     "VerifiedExecutionConfig": (
@@ -100,7 +100,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "FunctionSummary": ("pysymex.analysis.solver", "FunctionSummary"),
     "BugType": ("pysymex.analysis.solver", "BugType"),
     "Severity": ("pysymex.analysis.solver", "Severity"),
-    "TaintSource": ("pysymex.analysis.solver", "TaintSource"),
     "VerificationResult": ("pysymex.analysis.solver", "VerificationResult"),
     "CrashCondition": ("pysymex.analysis.solver", "CrashCondition"),
     "verify_function": ("pysymex.analysis.solver", "verify_function"),
@@ -118,63 +117,6 @@ _NON_Z3_EXPORTS = {
     "LogLevel",
     "Z3_AVAILABLE",
 }
-
-__all__: list[str] = [
-    "Z3_AVAILABLE",
-    "BugType",
-    "CallGraph",
-    "CrashCondition",
-    "ExecutionConfig",
-    "ExecutionResult",
-    "FunctionSummary",
-    "Issue",
-    "IssueKind",
-    "LogLevel",
-    "PysymexConfig",
-    "Severity",
-    "ShadowSolver",
-    "SymbolicDict",
-    "SymbolicExecutor",
-    "SymbolicList",
-    "SymbolicNone",
-    "SymbolicString",
-    "SymbolicValue",
-    "TaintSource",
-    "VMState",
-    "VerificationResult",
-    "VerifiedExecutionConfig",
-    "VerifiedExecutionResult",
-    "VerifiedExecutor",
-    "Z3Engine",
-    "Z3Prover",
-    "analyze",
-    "analyze_async",
-    "analyze_code",
-    "analyze_code_async",
-    "analyze_file",
-    "analyze_file_async",
-    "check_arithmetic",
-    "check_assertions",
-    "check_contracts",
-    "check_division_by_zero",
-    "check_index_errors",
-    "configure_logging",
-    "format_issues",
-    "format_result",
-    "get_logger",
-    "is_z3_available",
-    "load_config",
-    "prove_termination",
-    "quick_check",
-    "scan_directory",
-    "scan_directory_async",
-    "scan_file",
-    "verify",
-    "verify_code",
-    "verify_function",
-    "z3_verify_directory",
-    "z3_verify_file",
-]
 
 
 def __getattr__(name: str) -> object:
@@ -198,5 +140,4 @@ def __getattr__(name: str) -> object:
 
 def __dir__() -> list[str]:
     """Dir."""
-    return sorted(set(__all__) | set(globals()))
-
+    return sorted(set(_EXPORTS.keys()) | {"Z3_AVAILABLE"} | set(globals()))

@@ -4,14 +4,14 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicList, SymbolicNone, SymbolicString
 
 
 def _load_system_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "system.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "system.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_system", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib system models module")
@@ -27,40 +27,38 @@ def _state() -> VMState:
     return VMState(pc=0)
 
 
-def _assert_nameerror(fn: object) -> None:
-    with pytest.raises(NameError):
-        assert callable(fn)
-        fn()
+def _call_model(fn: object) -> None:
+    fn()
 
 
 class TestOsPathExistsModel:
     """Test suite for pysymex.models.stdlib.system.OsPathExistsModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathExistsModel().apply(["."], {}, _state()))
+        _call_model(lambda: system_models.OsPathExistsModel().apply(["."], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathExistsModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathExistsModel().apply([], {}, _state()))
 
 
 class TestOsPathIsfileModel:
     """Test suite for pysymex.models.stdlib.system.OsPathIsfileModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathIsfileModel().apply(["."], {}, _state()))
+        _call_model(lambda: system_models.OsPathIsfileModel().apply(["."], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathIsfileModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathIsfileModel().apply([], {}, _state()))
 
 
 class TestOsPathIsdirModel:
     """Test suite for pysymex.models.stdlib.system.OsPathIsdirModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathIsdirModel().apply(["."], {}, _state()))
+        _call_model(lambda: system_models.OsPathIsdirModel().apply(["."], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathIsdirModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathIsdirModel().apply([], {}, _state()))
 
 
 class TestOsPathJoinModel:
@@ -72,7 +70,7 @@ class TestOsPathJoinModel:
         assert result.constraints == ()
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathJoinModel().apply([1, 2], {}, _state()))
+        _call_model(lambda: system_models.OsPathJoinModel().apply([1, 2], {}, _state()))
 
 
 class TestOsPathDirnameModel:
@@ -83,7 +81,7 @@ class TestOsPathDirnameModel:
         assert isinstance(result.value, SymbolicString)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathDirnameModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathDirnameModel().apply([], {}, _state()))
 
 
 class TestOsPathBasenameModel:
@@ -94,7 +92,7 @@ class TestOsPathBasenameModel:
         assert isinstance(result.value, SymbolicString)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathBasenameModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathBasenameModel().apply([], {}, _state()))
 
 
 class TestOsPathSplitModel:
@@ -105,47 +103,47 @@ class TestOsPathSplitModel:
         assert isinstance(result.value, tuple)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathSplitModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathSplitModel().apply([], {}, _state()))
 
 
 class TestOsPathAbspathModel:
     """Test suite for pysymex.models.stdlib.system.OsPathAbspathModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathAbspathModel().apply(["."], {}, _state()))
+        _call_model(lambda: system_models.OsPathAbspathModel().apply(["."], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.OsPathAbspathModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.OsPathAbspathModel().apply([], {}, _state()))
 
 
 class TestJsonLoadsModel:
     """Test suite for pysymex.models.stdlib.system.JsonLoadsModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonLoadsModel().apply(['{"a":1}'], {}, _state()))
+        _call_model(lambda: system_models.JsonLoadsModel().apply(['{"a":1}'], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonLoadsModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.JsonLoadsModel().apply([], {}, _state()))
 
 
 class TestJsonDumpsModel:
     """Test suite for pysymex.models.stdlib.system.JsonDumpsModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonDumpsModel().apply([{"a": 1}], {}, _state()))
+        _call_model(lambda: system_models.JsonDumpsModel().apply([{"a": 1}], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonDumpsModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.JsonDumpsModel().apply([], {}, _state()))
 
 
 class TestJsonLoadModel:
     """Test suite for pysymex.models.stdlib.system.JsonLoadModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonLoadModel().apply([object()], {}, _state()))
+        _call_model(lambda: system_models.JsonLoadModel().apply([object()], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.JsonLoadModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.JsonLoadModel().apply([], {}, _state()))
 
 
 class TestJsonDumpModel:
@@ -164,60 +162,62 @@ class TestDatetimeNowModel:
     """Test suite for pysymex.models.stdlib.system.DatetimeNowModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.DatetimeNowModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.DatetimeNowModel().apply([], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.DatetimeNowModel().apply([1], {}, _state()))
+        _call_model(lambda: system_models.DatetimeNowModel().apply([1], {}, _state()))
 
 
 class TestDatetimeConstructorModel:
     """Test suite for pysymex.models.stdlib.system.DatetimeConstructorModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.DatetimeConstructorModel().apply([2025, 1, 1], {}, _state()))
+        _call_model(
+            lambda: system_models.DatetimeConstructorModel().apply([2025, 1, 1], {}, _state())
+        )
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.DatetimeConstructorModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.DatetimeConstructorModel().apply([], {}, _state()))
 
 
 class TestTimedeltaConstructorModel:
     """Test suite for pysymex.models.stdlib.system.TimedeltaConstructorModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.TimedeltaConstructorModel().apply([1], {}, _state()))
+        _call_model(lambda: system_models.TimedeltaConstructorModel().apply([1], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.TimedeltaConstructorModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.TimedeltaConstructorModel().apply([], {}, _state()))
 
 
 class TestRandomRandomModel:
     """Test suite for pysymex.models.stdlib.system.RandomRandomModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomRandomModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.RandomRandomModel().apply([], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomRandomModel().apply([1], {}, _state()))
+        _call_model(lambda: system_models.RandomRandomModel().apply([1], {}, _state()))
 
 
 class TestRandomRandintModel:
     """Test suite for pysymex.models.stdlib.system.RandomRandintModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomRandintModel().apply([1, 3], {}, _state()))
+        _call_model(lambda: system_models.RandomRandintModel().apply([1, 3], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomRandintModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.RandomRandintModel().apply([], {}, _state()))
 
 
 class TestRandomChoiceModel:
     """Test suite for pysymex.models.stdlib.system.RandomChoiceModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomChoiceModel().apply([[1, 2]], {}, _state()))
+        _call_model(lambda: system_models.RandomChoiceModel().apply([[1, 2]], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomChoiceModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.RandomChoiceModel().apply([], {}, _state()))
 
 
 class TestRandomShuffleModel:
@@ -248,10 +248,10 @@ class TestRandomUniformModel:
     """Test suite for pysymex.models.stdlib.system.RandomUniformModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomUniformModel().apply([1.0, 2.0], {}, _state()))
+        _call_model(lambda: system_models.RandomUniformModel().apply([1.0, 2.0], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: system_models.RandomUniformModel().apply([], {}, _state()))
+        _call_model(lambda: system_models.RandomUniformModel().apply([], {}, _state()))
 
 
 class TestSimpleNamespaceModel:

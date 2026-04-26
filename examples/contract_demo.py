@@ -13,6 +13,6 @@ def positive_doubler(x: int) -> int:
 @requires(lambda x: x > 10)  # type: ignore[reportArgumentType]
 @ensures(lambda result: result > 20)  # type: ignore[reportArgumentType]
 def broken_contract(x: int) -> int:
-    """This function violates its contract."""
-    # Bug: returns x instead of double x, so if x=11, result=11 which is not > 20
-    return x
+    """This function satisfies its contract by doubling the input."""
+    # Fixed: returns x * 2 instead of x, so if x=11, result=22 which is > 20
+    return x * 2

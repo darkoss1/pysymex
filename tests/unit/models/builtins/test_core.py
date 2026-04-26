@@ -1,6 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import pytest
 import z3
 
 from pysymex._typing import StackValue
@@ -16,14 +15,15 @@ def _state() -> VMState:
 
 class TestLenModel:
     """Test suite for pysymex.models.builtins.core.LenModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
-        with pytest.raises(NameError):
-            core.LenModel().apply([], {}, _state())
+        core.LenModel().apply([], {}, _state())
 
 
 class TestRangeModel:
     """Test suite for pysymex.models.builtins.core.RangeModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         args: list[StackValue] = [3]
@@ -39,6 +39,7 @@ class TestRangeModel:
 
 class TestAbsModel:
     """Test suite for pysymex.models.builtins.core.AbsModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         value = -5
@@ -47,6 +48,7 @@ class TestAbsModel:
 
 class TestMinModel:
     """Test suite for pysymex.models.builtins.core.MinModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         values: list[StackValue] = [4, 1, 6]
@@ -55,6 +57,7 @@ class TestMinModel:
 
 class TestMaxModel:
     """Test suite for pysymex.models.builtins.core.MaxModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         values: list[StackValue] = [4, 1, 6]
@@ -63,6 +66,7 @@ class TestMaxModel:
 
 class TestIntModel:
     """Test suite for pysymex.models.builtins.core.IntModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         value = "12"
@@ -71,6 +75,7 @@ class TestIntModel:
 
 class TestStrModel:
     """Test suite for pysymex.models.builtins.core.StrModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         value = 12
@@ -79,6 +84,7 @@ class TestStrModel:
 
 class TestBoolModel:
     """Test suite for pysymex.models.builtins.core.BoolModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         value = 0
@@ -87,6 +93,7 @@ class TestBoolModel:
 
 class TestPrintModel:
     """Test suite for pysymex.models.builtins.core.PrintModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         result = core.PrintModel().apply(["x"], {}, _state())
@@ -95,6 +102,7 @@ class TestPrintModel:
 
 class TestTypeModel:
     """Test suite for pysymex.models.builtins.core.TypeModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         assert core.TypeModel().apply([], {}, _state()).value is type
@@ -102,6 +110,7 @@ class TestTypeModel:
 
 class TestIsinstanceModel:
     """Test suite for pysymex.models.builtins.core.IsinstanceModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         result = core.IsinstanceModel().apply([], {}, _state())
@@ -110,6 +119,7 @@ class TestIsinstanceModel:
 
 class TestSortedModel:
     """Test suite for pysymex.models.builtins.core.SortedModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         result = core.SortedModel().apply([], {}, _state())
@@ -118,6 +128,7 @@ class TestSortedModel:
 
 class TestSumModel:
     """Test suite for pysymex.models.builtins.core.SumModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         values: list[StackValue] = [1, 2, 3]
@@ -127,6 +138,7 @@ class TestSumModel:
 
 class TestEnumerateModel:
     """Test suite for pysymex.models.builtins.core.EnumerateModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         iterable: list[StackValue] = [1, 2]
@@ -137,6 +149,7 @@ class TestEnumerateModel:
 
 class TestZipModel:
     """Test suite for pysymex.models.builtins.core.ZipModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         first: list[StackValue] = [1]
@@ -148,6 +161,7 @@ class TestZipModel:
 
 class TestMapModel:
     """Test suite for pysymex.models.builtins.core.MapModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         iterable: list[StackValue] = [1]
@@ -158,6 +172,7 @@ class TestMapModel:
 
 class TestFilterModel:
     """Test suite for pysymex.models.builtins.core.FilterModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         iterable: list[StackValue] = [0, 1]
@@ -168,6 +183,7 @@ class TestFilterModel:
 
 class TestFloatModel:
     """Test suite for pysymex.models.builtins.core.FloatModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         result = core.FloatModel().apply([], {}, _state())
@@ -176,16 +192,17 @@ class TestFloatModel:
 
 class TestListModel:
     """Test suite for pysymex.models.builtins.core.ListModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         values: list[StackValue] = [1, 2]
         args: list[StackValue] = [values]
-        with pytest.raises(NameError):
-            core.ListModel().apply(args, {}, _state())
+        core.ListModel().apply(args, {}, _state())
 
 
 class TestTupleModel:
     """Test suite for pysymex.models.builtins.core.TupleModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         value: list[StackValue] = [1, 2]
@@ -195,10 +212,41 @@ class TestTupleModel:
 
 class TestNoneModel:
     """Test suite for pysymex.models.builtins.core.NoneModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         result = core.NoneModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)
+
+
+class TestComplexModel:
+    """Test suite for pysymex.models.builtins.core.ComplexModel."""
+
+    def test_apply_no_args(self) -> None:
+        """Test apply behavior with no args."""
+        result = core.ComplexModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+    def test_apply_with_args(self) -> None:
+        """Test apply behavior with args."""
+        args: list[StackValue] = [1, 2]
+        result = core.ComplexModel().apply(args, {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+
+class TestSliceModel:
+    """Test suite for pysymex.models.builtins.core.SliceModel."""
+
+    def test_apply_no_args(self) -> None:
+        """Test apply behavior with no args."""
+        result = core.SliceModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+    def test_apply_with_args(self) -> None:
+        """Test apply behavior with args."""
+        args: list[StackValue] = [0, 10, 2]
+        result = core.SliceModel().apply(args, {}, _state())
+        assert isinstance(result.value, SymbolicValue)
 
 
 def test_core_model_edge_paths() -> None:

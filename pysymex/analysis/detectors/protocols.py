@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,8 +31,11 @@ from typing import TYPE_CHECKING, Protocol as TypingProtocol, runtime_checkable
 if TYPE_CHECKING:
     from pysymex.analysis.type_constraints.types import SymbolicType, TypeIssue
     from pysymex.analysis.type_constraints import TypeConstraintChecker
-else:
-    SymbolicType = object
+
+
+def _new_symbolic_type_map() -> dict[str, SymbolicType]:
+    """Create an empty ``str -> SymbolicType`` mapping."""
+    return {}
 
 
 @dataclass
@@ -40,8 +43,8 @@ class Protocol:
     """Represents a structural protocol (like typing.Protocol)."""
 
     name: str
-    required_methods: dict[str, SymbolicType] = field(default_factory=dict)
-    required_attributes: dict[str, SymbolicType] = field(default_factory=dict)
+    required_methods: dict[str, SymbolicType] = field(default_factory=_new_symbolic_type_map)
+    required_attributes: dict[str, SymbolicType] = field(default_factory=_new_symbolic_type_map)
 
 
 class ProtocolChecker:

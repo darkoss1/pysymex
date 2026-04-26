@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -46,9 +46,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-from typing import Any
-
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     """Getattr."""
     target = _EXPORTS.get(name)
     if target is None:
@@ -63,21 +61,3 @@ def __getattr__(name: str) -> Any:
 def __dir__() -> list[str]:
     """Dir."""
     return list(_EXPORTS.keys())
-
-
-__all__: list[str] = [
-    "HOOKS",
-    "DetectorPlugin",
-    "HandlerPlugin",
-    "HookPlugin",
-    "HookPoint",
-    "Plugin",
-    "PluginConfig",
-    "PluginLoader",
-    "PluginManager",
-    "PluginManagerConfig",
-    "PluginMetadata",
-    "PluginPriority",
-    "PluginRegistry",
-    "PluginType",
-]

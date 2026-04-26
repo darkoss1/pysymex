@@ -2,13 +2,18 @@ import pytest
 import z3
 from unittest.mock import Mock, patch
 from pysymex.analysis.resources.lifecycle import (
-    ResourceStateMachine, TrackedResource, ResourceLifecycleChecker,
-    FileResourceChecker, LockResourceChecker
+    ResourceStateMachine,
+    TrackedResource,
+    ResourceLifecycleChecker,
+    FileResourceChecker,
+    LockResourceChecker,
 )
 from pysymex.analysis.resources.types import ResourceState, ResourceKind
 
+
 class TestResourceStateMachine:
     """Test suite for pysymex.analysis.resources.lifecycle.ResourceStateMachine."""
+
     def test_can_transition(self) -> None:
         """Test can_transition behavior."""
         sm = ResourceStateMachine(ResourceKind.FILE)
@@ -33,8 +38,10 @@ class TestResourceStateMachine:
         sm = ResourceStateMachine(ResourceKind.FILE)
         assert sm.initial_state == ResourceState.UNINITIALIZED
 
+
 class TestTrackedResource:
     """Test suite for pysymex.analysis.resources.lifecycle.TrackedResource."""
+
     def test_record_action(self) -> None:
         """Test record_action behavior."""
         sm = ResourceStateMachine(ResourceKind.FILE)
@@ -44,8 +51,10 @@ class TestTrackedResource:
         assert tr.last_action_at == 10
         assert len(tr.history) == 1
 
+
 class TestResourceLifecycleChecker:
     """Test suite for pysymex.analysis.resources.lifecycle.ResourceLifecycleChecker."""
+
     def test_reset(self) -> None:
         """Test reset behavior."""
         c = ResourceLifecycleChecker()
@@ -69,8 +78,8 @@ class TestResourceLifecycleChecker:
         """Test check_action behavior."""
         c = ResourceLifecycleChecker()
         c.create_resource("f", ResourceKind.FILE)
-        assert c.check_action("f", "read") is not None # invalid from UNINITIALIZED
-        assert c.check_action("f", "open_read") is None # valid
+        assert c.check_action("f", "read") is not None
+        assert c.check_action("f", "open_read") is None
 
     def test_perform_action(self) -> None:
         """Test perform_action behavior."""
@@ -87,7 +96,7 @@ class TestResourceLifecycleChecker:
         c.perform_action("f", "open_read")
         issues = c.check_leaks()
         assert len(issues) == 1
-        
+
         c.perform_action("f", "close")
         assert len(c.check_leaks()) == 0
 
@@ -122,7 +131,6 @@ class TestResourceLifecycleChecker:
         c.create_resource("L2", ResourceKind.LOCK)
         c.perform_action("L2", "acquire")
         c.perform_action("L1", "acquire")
-        # In the implementation, actual_order is built by iterating over `locks`
         issue = c.check_lock_ordering(["L2", "L1"], ["L1", "L2"])
         assert issue is not None
 
@@ -170,8 +178,10 @@ class TestResourceLifecycleChecker:
         s = c.get_resource_summary()
         assert "f" in s
 
+
 class TestFileResourceChecker:
     """Test suite for pysymex.analysis.resources.lifecycle.FileResourceChecker."""
+
     def test_open_file(self) -> None:
         """Test open_file behavior."""
         c = FileResourceChecker()
@@ -196,8 +206,10 @@ class TestFileResourceChecker:
         c.open_file("f", "r")
         assert c.close_file("f") is None
 
+
 class TestLockResourceChecker:
     """Test suite for pysymex.analysis.resources.lifecycle.LockResourceChecker."""
+
     def test_create_lock(self) -> None:
         """Test create_lock behavior."""
         c = LockResourceChecker()
@@ -231,6 +243,5 @@ class TestLockResourceChecker:
         c.set_lock_order(["l1", "l2"])
         c.acquire_lock("l2")
         c.acquire_lock("l1")
-        c._held_locks = {"l1", "l2"} # type: ignore[assignment]
-        # For the test to pass, we manually call check_lock_ordering directly because sets are unordered
+        c._held_locks = {"l1", "l2"}
         assert c.check_lock_ordering(["l2", "l1"], ["l1", "l2"]) is not None

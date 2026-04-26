@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -54,8 +54,6 @@ from pysymex.core.memory.cow import BranchChain, BranchRecord, ConstraintChain, 
 
 _path_id_counter = itertools.count()
 
-_EMPTY_TAINT: frozenset[str] = frozenset()
-
 
 class _UnboundType:
     """Sentinel type to indicate an unbound local variable.
@@ -90,14 +88,6 @@ class HashableValue(Protocol):
 
 def _is_hashable_value(value: object) -> TypeGuard[HashableValue]:
     return hasattr(value, "hash_value") and callable(getattr(value, "hash_value", None))
-
-
-class _ForkableTaintTracker(Protocol):
-    def fork(self) -> object: ...
-
-
-def _supports_taint_fork(value: object) -> TypeGuard[_ForkableTaintTracker]:
-    return hasattr(value, "fork") and callable(getattr(value, "fork", None))
 
 
 K = TypeVar("K")
@@ -204,7 +194,7 @@ class CallFrame:
 
 
 class VMState:
-    """Symbolic Virtual Machine execution state for PySyMex.
+    """Symbolic Virtual Machine execution state for pysymex.
 
     Coordinates the complete architectural state of a single execution path,
     providing a fluent interface for bytecode emulation and an optimized
@@ -236,11 +226,10 @@ class VMState:
         "_building_class",
         "_class_registry",
         "_object_state",
-        "_pending_taint_issues",
         "block_stack",
         "branch_trace",
         "call_stack",
-        "control_taint",
+        "contract_frames",
         "current_instructions",
         "depth",
         "global_vars",
@@ -254,7 +243,6 @@ class VMState:
         "pending_kw_names",
         "prev_loop_states",
         "stack",
-        "taint_tracker",
         "visited_pcs",
     )
 
@@ -267,14 +255,13 @@ class VMState:
         pc: int = 0,
         block_stack: list[BlockInfo] | None = None,
         call_stack: list[CallFrame] | None = None,
+        contract_frames: list[object] | None = None,
         visited_pcs: set[int] | CowSet | None = None,
         memory: dict[int, StackValue] | CowDict[int, StackValue] | None = None,
         object_state: ObjectState | None = None,
         path_id: int = 0,
         depth: int = 0,
-        taint_tracker: object | None = None,
         current_instructions: list[object] | None = None,
-        control_taint: frozenset[str] | None = None,
         pending_constraint_count: int = 0,
         loop_iterations: dict[int, int] | None = None,
         prev_loop_states: dict[int, VMState] | None = None,
@@ -295,9 +282,7 @@ class VMState:
             memory: Symbolic memory store.
             path_id: Unique identifier for this execution path.
             depth: Number of symbolic steps taken from the root.
-            taint_tracker: Optional engine for tracking data-dependent vulnerabilities.
             current_instructions: List of bytecode instructions for the current scope.
-            control_taint: Set of labels affecting current control flow.
             pending_constraint_count: Count of constraints added since the last Z3 check.
             loop_iterations: Tracks iteration counts for loop-bounding.
             prev_loop_states: Snapshots of prior loop entry points for state merging.
@@ -315,6 +300,7 @@ class VMState:
         self.pc = pc
         self.block_stack = block_stack if block_stack is not None else []
         self.call_stack = call_stack if call_stack is not None else []
+        self.contract_frames = contract_frames if contract_frames is not None else []
         self.visited_pcs = wrap_cow_set(visited_pcs)
         self.memory = wrap_cow_dict(memory)
 
@@ -322,25 +308,14 @@ class VMState:
 
         self.path_id = path_id
         self.depth = depth
-        self.taint_tracker = taint_tracker
         self.current_instructions = current_instructions
-        self.control_taint = control_taint if control_taint is not None else _EMPTY_TAINT
         self.pending_constraint_count = pending_constraint_count
         self.loop_iterations = dict(loop_iterations) if loop_iterations is not None else {}
         self.prev_loop_states = dict(prev_loop_states) if prev_loop_states is not None else {}
         self.branch_trace = branch_trace if branch_trace is not None else BranchChain.empty()
         self.pending_kw_names: tuple[str, ...] | None = None
-        self._pending_taint_issues: list[object] = []
         self._building_class: bool = False
         self._class_registry: dict[str, object] | EnhancedClassRegistry = {}
-
-    @property
-    def pending_taint_issues(self) -> list[object]:
-        return self._pending_taint_issues
-
-    @pending_taint_issues.setter
-    def pending_taint_issues(self, issues: list[object]) -> None:
-        self._pending_taint_issues = issues
 
     @property
     def building_class(self) -> bool:
@@ -414,7 +389,11 @@ class VMState:
 
         Setting to UNBOUND marks the variable as unbound/cleared.
         """
-        self.local_vars[name] = value  # type: ignore[assignment]
+        if value is UNBOUND:
+            if name in self.local_vars:
+                del self.local_vars[name]
+            return self
+        self.local_vars[name] = value  # type: ignore[index]  # StackValue is the expected type
         return self
 
     def set_global(self, name: str, value: StackValue) -> VMState:
@@ -425,7 +404,10 @@ class VMState:
     def add_constraint(self, constraint: z3.BoolRef) -> VMState:
         """Append *constraint* to path constraints.  Returns ``self``."""
         self.path_constraints = self.path_constraints.append(constraint)
-        self.pending_constraint_count += 1
+        import z3
+
+        if not (z3.is_true(constraint) or z3.is_false(constraint)):
+            self.pending_constraint_count += 1
         return self
 
     def record_branch(self, condition: z3.BoolRef, taken: bool, pc: int) -> VMState:
@@ -579,6 +561,7 @@ class VMState:
             pc=self.pc,
             block_stack=list(self.block_stack),
             call_stack=new_call_stack,
+            contract_frames=list(self.contract_frames),
             visited_pcs=self.visited_pcs.cow_fork(),
             memory=self.memory.cow_fork(),
             object_state=(
@@ -592,20 +575,13 @@ class VMState:
             ),
             path_id=new_path_id,
             depth=self.depth,
-            taint_tracker=(
-                self.taint_tracker.fork()
-                if self.taint_tracker is not None and _supports_taint_fork(self.taint_tracker)
-                else self.taint_tracker
-            ),
             current_instructions=self.current_instructions,
-            control_taint=self.control_taint,
             pending_constraint_count=self.pending_constraint_count,
             loop_iterations=dict(self.loop_iterations),
             prev_loop_states=dict(self.prev_loop_states),
             branch_trace=self.branch_trace,
         )
 
-        child.pending_taint_issues = list(self.pending_taint_issues)
         child.building_class = self.building_class
         child.class_registry = (
             dict(self.class_registry)
@@ -665,4 +641,3 @@ def create_initial_state(
         path_constraints=constraints or [],
         pc=0,
     )
-

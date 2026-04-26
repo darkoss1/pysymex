@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -28,10 +28,9 @@ import time
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from pysymex.analysis.detectors import Issue
     from pysymex.scanner.types import ScanResult
 
 _Namespace = argparse.Namespace
@@ -43,6 +42,19 @@ def _typed_scan_results(results: Sequence[object]) -> list[ScanResult]:
     from pysymex.scanner.types import ScanResult as _ScanResult
 
     return [result for result in results if isinstance(result, _ScanResult)]
+
+
+@runtime_checkable
+class _IndexableObjectSequence(Protocol):
+    """Protocol for indexable sequences of opaque objects."""
+
+    def __len__(self) -> int:
+        """Return sequence length."""
+        ...
+
+    def __getitem__(self, index: int) -> object:
+        """Return sequence item by index."""
+        ...
 
 
 def _call_with_supported_kwargs(
@@ -73,20 +85,31 @@ def cmd_scan(args: _Namespace) -> int:
 
     path = Path(str(args.path))
     if not path.exists():
-        print(f"\u274c Error: Path not found: {path}", file=sys.stderr)
+        print(f"[X] Error: Path not found: {path}", file=sys.stderr)
         return 1
 
     if args.verbose:
-        print(f"\U0001f50d Scanning: {path} (mode: {args.mode})")
+        print(f"[SCAN] Scanning: {path} (mode: {args.mode})")
+
+    stop_stats: Callable[[], None] | None = None
+    if getattr(args, "stats", False):
+        from pysymex.stats import start, stop
+
+        stop_stats = stop
+        start()
 
     start_time = time.time()
 
-    if args.mode == "static":
-        return _handle_static_scan(args, start_time)
-    elif args.mode == "pipeline":
-        return _handle_pipeline_scan(args, start_time)
+    try:
+        if args.mode == "static":
+            return _handle_static_scan(args, start_time)
+        elif args.mode == "pipeline":
+            return _handle_pipeline_scan(args, start_time)
 
-    return _handle_symbolic_scan(args, path, start_time)
+        return _handle_symbolic_scan(args, path, start_time)
+    finally:
+        if stop_stats is not None:
+            stop_stats()
 
 
 async def cmd_scan_async(args: _Namespace) -> int:
@@ -100,11 +123,11 @@ async def cmd_scan_async(args: _Namespace) -> int:
 
     path = Path(str(args.path))
     if not path.exists():
-        print(f"\u274c Error: Path not found: {path}", file=sys.stderr)
+        print(f"[X] Error: Path not found: {path}", file=sys.stderr)
         return 1
 
     if args.verbose:
-        print(f"\U0001f50d Async scanning: {path} (mode: {args.mode})")
+        print(f"[SCAN] Async scanning: {path} (mode: {args.mode})")
 
     import asyncio
 
@@ -185,12 +208,15 @@ async def _handle_symbolic_scan_async(
     elif args.format == "sarif":
         output = get_symbolic_sarif(results)
     else:
-        output = format_symbolic_text_report(results, total_issues, args.reproduce)
+        show_stats = getattr(args, "stats", False)
+        output = format_symbolic_text_report(
+            results, total_issues, args.reproduce, show_stats=show_stats
+        )
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
         if args.verbose:
-            print(f"\U0001f4c4 Report saved to: {args.output}")
+            print(f"[REPORT] Report saved to: {args.output}")
     else:
         print(output)
 
@@ -245,7 +271,7 @@ def _handle_static_scan(args: _Namespace, start_time: float) -> int:
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
         if args.verbose:
-            print(f"\U0001f4c4 Report saved to: {args.output}")
+            print(f"[REPORT] Report saved to: {args.output}")
     else:
         print(output)
     return 1 if total_issues > 0 else 0
@@ -289,7 +315,6 @@ def _handle_pipeline_scan(args: _Namespace, start_time: float) -> int:
             "results": {
                 fp: {
                     "issues": len(r.issues),
-                    "taint_violations": len(r.taint_violations),
                     "analysis_time": r.analysis_time,
                     "functions_analyzed": r.functions_analyzed,
                     "lines_of_code": r.lines_of_code,
@@ -303,7 +328,7 @@ def _handle_pipeline_scan(args: _Namespace, start_time: float) -> int:
         lines = [
             "",
             "+" + "=" * 58 + "+",
-            "|" + "  PySyMex Pipeline Scan".center(58) + "|",
+            "|" + "  pysymex Pipeline Scan".center(58) + "|",
             "+" + "=" * 58 + "+",
             "",
             f"  Files: {len(results)}",
@@ -357,55 +382,60 @@ def _handle_symbolic_scan(args: _Namespace, path: Path, start_time: float) -> in
         from pysymex.cli.reporter import ConsoleScanReporter
         from pysymex.scanner.core import scan_directory, scan_file
 
-        reporter = ConsoleScanReporter() if args.verbose else None
+        show_stats = getattr(args, "stats", False)
+        reporter = ConsoleScanReporter(show_stats=show_stats) if args.verbose else None
 
+        results: list["ScanResult"]
         if path.is_file():
-            results = [
-                cast(
-                    "ScanResult",
-                    _call_with_supported_kwargs(
-                        scan_file,
-                        path,
-                        verbose=args.verbose,
-                        max_paths=args.max_paths,
-                        timeout=args.timeout,
-                        auto_tune=args.auto,
-                        reporter=reporter,
-                        use_sandbox=args.sandbox,
-                        use_chtd=args.use_chtd,
-                        use_h_acceleration=args.use_h_acceleration,
-                        deterministic_mode=args.deterministic,
-                        random_seed=args.seed,
-                        trace_enabled=args.trace,
-                        trace_output_dir=args.trace_output_dir,
-                        trace_verbosity=args.trace_verbosity,
-                    ),
-                )
-            ]
-        else:
-            pattern = "**/*.py" if args.recursive else "*.py"
-            results = cast(
-                "list[ScanResult]",
-                _call_with_supported_kwargs(
-                    scan_directory,
-                    args.path,
-                    pattern=pattern,
-                    verbose=args.verbose,
-                    max_paths=args.max_paths,
-                    timeout=args.timeout,
-                    workers=args.workers,
-                    auto_tune=args.auto,
-                    reporter=reporter,
-                    use_sandbox=args.sandbox,
-                    use_chtd=args.use_chtd,
-                    use_h_acceleration=args.use_h_acceleration,
-                    deterministic_mode=args.deterministic,
-                    random_seed=args.seed,
-                    trace_enabled=args.trace,
-                    trace_output_dir=args.trace_output_dir,
-                    trace_verbosity=args.trace_verbosity,
-                ),
+            raw_result = _call_with_supported_kwargs(
+                scan_file,
+                path,
+                verbose=args.verbose,
+                max_paths=args.max_paths,
+                timeout=args.timeout,
+                auto_tune=args.auto,
+                reporter=reporter,
+                use_sandbox=args.sandbox,
+                use_chtd=args.use_chtd,
+                use_h_acceleration=args.use_h_acceleration,
+                deterministic_mode=args.deterministic,
+                random_seed=args.seed,
+                trace_enabled=args.trace,
+                trace_output_dir=args.trace_output_dir,
+                trace_verbosity=args.trace_verbosity,
             )
+            results = _typed_scan_results([raw_result])
+        else:
+            from pysymex.scanner.types import ScanResult as _ScanResult
+
+            pattern = "**/*.py" if args.recursive else "*.py"
+            raw_results = _call_with_supported_kwargs(
+                scan_directory,
+                args.path,
+                pattern=pattern,
+                verbose=args.verbose,
+                max_paths=args.max_paths,
+                timeout=args.timeout,
+                workers=args.workers,
+                auto_tune=args.auto,
+                reporter=reporter,
+                use_sandbox=args.sandbox,
+                use_chtd=args.use_chtd,
+                use_h_acceleration=args.use_h_acceleration,
+                deterministic_mode=args.deterministic,
+                random_seed=args.seed,
+                trace_enabled=args.trace,
+                trace_output_dir=args.trace_output_dir,
+                trace_verbosity=args.trace_verbosity,
+            )
+            if isinstance(raw_results, _IndexableObjectSequence):
+                results = []
+                for index in range(len(raw_results)):
+                    item = raw_results[index]
+                    if isinstance(item, _ScanResult):
+                        results.append(item)
+            else:
+                results = []
 
     total_issues = sum(len(r.issues) for r in results)
     duration = time.time() - start_time
@@ -423,12 +453,15 @@ def _handle_symbolic_scan(args: _Namespace, path: Path, start_time: float) -> in
     elif args.format == "sarif":
         output = get_symbolic_sarif(results)
     else:
-        output = format_symbolic_text_report(results, total_issues, args.reproduce)
+        show_stats = getattr(args, "stats", False)
+        output = format_symbolic_text_report(
+            results, total_issues, args.reproduce, show_stats=show_stats
+        )
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
         if args.verbose:
-            print(f"\U0001f4c4 Report saved to: {args.output}")
+            print(f"[REPORT] Report saved to: {args.output}")
     else:
         print(output)
     return 1 if total_issues > 0 else 0
@@ -453,28 +486,28 @@ def format_static_text_report(issues: Sequence[object], total: int, suppressed: 
     """
     lines = [
         "",
-        "\u2554" + "\u2550" * 58 + "\u2557",
-        "\u2551" + "  \U0001f52e PySyMex Static Scan".center(58) + "\u2551",
-        "\u255a" + "\u2550" * 58 + "\u255d",
+        "+" + "-" * 58 + "+",
+        "|" + "  \U0001f52e pysymex Static Scan".center(58) + "|",
+        "+" + "-" * 58 + "+",
         "",
     ]
-    lines.append(f"  \U0001f41b Issues:  {total}")
+    lines.append(f"  [BUGS] Issues:  {total}")
     if suppressed > 0:
-        lines.append(f"  \U0001f507 Suppressed:  {suppressed} (likely false positives)")
+        lines.append(f"  [SUPPRESSED] Suppressed:  {suppressed} (likely false positives)")
     lines.append("")
 
     if total == 0:
-        lines.append("  \u2705 No issues found!")
+        lines.append("  [OK] No issues found!")
     else:
         by_file: defaultdict[str, list[object]] = defaultdict(list)
         for issue in issues:
             by_file[getattr(issue, "file", "unknown")].append(issue)
 
         for fpath, file_issues in by_file.items():
-            lines.append(f"  \u2500\u2500\u2500 {fpath} \u2500\u2500\u2500")
+            lines.append(f"  --------- {fpath} ---------")
             for issue in sorted(file_issues, key=_issue_line_for_sort):
-                icon = {"error": "\U0001f534", "warning": "\U0001f7e0"}.get(
-                    getattr(issue, "severity", "warning"), "\U0001f7e1"
+                icon = {"error": "[!]", "warning": "[!]"}.get(
+                    getattr(issue, "severity", "warning"), "[INFO]"
                 )
                 kind = getattr(issue, "kind", "UNKNOWN")
                 line = getattr(issue, "line", "?")
@@ -482,61 +515,217 @@ def format_static_text_report(issues: Sequence[object], total: int, suppressed: 
                 lines.append(f"    {icon} [{kind}] Line {line}: {message}")
                 suggestion = getattr(issue, "suggestion", None)
                 if isinstance(suggestion, str) and suggestion:
-                    lines.append(f"       \U0001f4a1 {suggestion}")
-    lines.extend(["", "\u2500" * 60])
+                    lines.append(f"       [SUGGESTION] {suggestion}")
+    lines.extend(["", "---" * 60])
     return "\n".join(lines)
 
 
-def format_symbolic_text_report(results: Sequence[object], total: int, reproduce: bool) -> str:
-    """Format a human-readable text report for a symbolic scan.
+def format_symbolic_text_report(
+    results: Sequence[object], total: int, reproduce: bool, show_stats: bool = False
+) -> str:
+    """Format a human-readable text report for a symbolic scan using Rich.
 
     Args:
         results: List of :class:`~pysymex.scanner.types.ScanResult` objects.
         total: Total number of issues across all results.
         reproduce: Whether to append reproduction-script information.
+        show_stats: Whether to include performance statistics.
 
     Returns:
-        Multi-line string suitable for terminal output.
+        Multi-line string suitable for terminal output with Rich formatting.
     """
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich import box
+        from io import StringIO
+
+        console = Console(file=StringIO(), force_terminal=True, width=80)
+
+        # Main header
+        header = Panel(
+            "pysymex - Formal Verification Report",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+        console.print(header)
+        console.print()
+
+        # Summary section
+        console.print(f"[bold blue]SUMMARY[/bold blue]")
+        console.print("[dim]" + "─" * 60 + "[/dim]")
+
+        summary_grid = Table.grid(padding=(0, 3))
+        summary_grid.add_column(style="bold white", justify="left")
+        summary_grid.add_column(style="cyan", justify="right")
+
+        summary_grid.add_row("Files scanned:", str(len(results)))
+        summary_grid.add_row(
+            "Issues found:", f"[bold red]{total}[/bold red]" if total > 0 else "[green]0[/green]"
+        )
+
+        if show_stats:
+            typed_results = _typed_scan_results(results)
+            if typed_results:
+                total_duration = sum(r.elapsed_time for r in typed_results)
+                mems = [r.avg_memory_mb for r in typed_results if r.avg_memory_mb > 0]
+                avg_mem = sum(mems) / len(mems) if mems else 0.0
+                summary_grid.add_row("Execution time:", f"{total_duration:.2f}s")
+                summary_grid.add_row("Memory (avg):", f"{avg_mem:.2f} MB")
+
+        console.print(summary_grid)
+        console.print()
+
+        # Issues section
+        if total > 0:
+            console.print(f"[bold red]ISSUES FOUND ({total})[/bold red]")
+            console.print("[dim]" + "─" * 60 + "[/dim]")
+
+            for scan_result in _typed_scan_results(results):
+                if not scan_result.issues:
+                    continue
+
+                console.print(f"[bold cyan]{scan_result.file_path}[/bold cyan]")
+
+                for issue in scan_result.issues:
+                    kind = issue.get("kind", "UNKNOWN")
+                    line = issue.get("line", "?")
+                    message = issue.get("message", "")
+
+                    issue_details = (
+                        f"[bold red]Location:[/bold red] {scan_result.file_path}:{line}\n"
+                        f"[bold red]Type:[/bold red]    {kind}\n"
+                        f"[bold red]Error:[/bold red]    {message}"
+                    )
+
+                    ce = issue.get("counterexample")
+                    if isinstance(ce, dict):
+                        issue_details += f"\n[bold red]Trigger:[/bold red]  [bold yellow]"
+                        for name, value in sorted(ce.items()):  # type: ignore[reportUnknownVariableType, reportUnknownArgumentType]  # will be fixed later
+                            issue_details += f"{name} = {value}, "
+                        issue_details = issue_details.rstrip(", ")
+                        issue_details += "[/bold yellow]"
+
+                    issue_panel = Panel(
+                        issue_details,
+                        title=f"[bold red][ {kind} ][/bold red]",
+                        title_align="left",
+                        border_style="red",
+                        box=box.ROUNDED,
+                        padding=(0, 2),
+                    )
+                    console.print(issue_panel)
+
+                console.print()
+
+            if reproduce:
+                _add_reproduction_info_rich(console, results)
+
+        else:
+            console.print("[green]No issues found![/green]")
+            console.print()
+
+        console.print(f"pysymex v0.1.0a4 | https://github.com/darkoss1/pysymex")
+
+        output = console.file.getvalue()  # type: ignore[attr-access]  # will be fixed later
+        return output  # type: ignore[return-value]  # will be fixed later
+
+    except ImportError:
+        # Fallback to simple ASCII if rich is not available
+        return _format_symbolic_text_report_fallback(results, total, reproduce, show_stats)
+
+
+def _format_symbolic_text_report_fallback(
+    results: Sequence[object], total: int, reproduce: bool, show_stats: bool = False
+) -> str:
+    """Fallback ASCII formatting when Rich is not available."""
     lines = [
         "",
-        "\u2554" + "\u2550" * 58 + "\u2557",
-        "\u2551" + "  \U0001f52e PySyMex Symbolic Scan".center(58) + "\u2551",
-        "\u255a" + "\u2550" * 58 + "\u255d",
+        "+" + "-" * 58 + "+",
+        "|" + "  \U0001f52e pysymex - Formal Verification Report".center(58) + "|",
+        "+" + "-" * 58 + "+",
         "",
     ]
-    lines.append(f"  \U0001f4c1 Scanned: {len(results)} file(s)")
-    lines.append(f"  \U0001f41b Issues:  {total}")
+    lines.append(f"  [FILES] Scanned: {len(results)} file(s)")
+    lines.append(f"  [BUGS] Issues:  {total}")
+
+    if show_stats:
+        typed_results = _typed_scan_results(results)
+        if typed_results:
+            total_duration = sum(r.elapsed_time for r in typed_results)
+            mems = [r.avg_memory_mb for r in typed_results if r.avg_memory_mb > 0]
+            avg_mem = sum(mems) / len(mems) if mems else 0.0
+            lines.append(f"  [TIME] Time:     {total_duration:.2f}s")
+            lines.append(f"  [STATS] Memory:   {avg_mem:.2f} MB (avg)")
+
     lines.append("")
 
     if total == 0:
-        lines.append("  \u2705 No issues found!")
+        lines.append("  [OK] No issues found!")
     else:
         for scan_result in _typed_scan_results(results):
             if not scan_result.issues:
                 continue
-            lines.append(f"  \u2500\u2500\u2500 {scan_result.file_path} \u2500\u2500\u2500")
+            lines.append(f"  --------- {scan_result.file_path} ---------")
             for issue in scan_result.issues:
                 kind = issue.get("kind", "UNKNOWN")
                 icon = (
-                    "\U0001f534"
+                    "[!]"
                     if kind in ("DIVISION_BY_ZERO", "ASSERTION_ERROR")
-                    else "\U0001f7e0"
+                    else "[!]"
                     if kind in ("INDEX_ERROR", "KEY_ERROR")
-                    else "\U0001f7e1"
+                    else "[INFO]"
                 )
                 lines.append(
                     f"    {icon} [{kind}] Line {issue.get('line', '?')}: {issue.get('message', '')}"
                 )
                 ce = issue.get("counterexample")
                 if isinstance(ce, dict):
-                    lines.append(
-                        f"       \u21b3 Trigger: {', '.join(f'{k}={v}' for k, v in ce.items())}"
-                    )
+                    lines.append(f"       -> Trigger: {ce}")
             if reproduce:
                 _add_reproduction_info(lines, scan_result.issues, scan_result.file_path)
-    lines.append("\u2500" * 60)
+    lines.append("---" * 60)
     return "\n".join(lines)
+
+
+def _add_reproduction_info_rich(console: object, results: Sequence[object]) -> None:
+    """Add reproduction info using Rich formatting."""
+    from pysymex.analysis.detectors import Issue, IssueKind
+    from pysymex.reporting.reproduction import ReproductionGenerator
+
+    console.print("[bold yellow]Reproduction Scripts:[/bold yellow]")  # type: ignore[attr-access]  # will be fixed later
+
+    for scan_result in _typed_scan_results(results):
+        for issue in scan_result.issues:
+            if issue.get("counterexample"):
+                kind_obj = issue.get("kind", "UNKNOWN")
+                kind_name = kind_obj if isinstance(kind_obj, str) else "UNKNOWN"
+                message_obj = issue.get("message", "")
+                issue_message = message_obj if isinstance(message_obj, str) else str(message_obj)
+                class_name_obj = issue.get("class_name")
+                class_name = class_name_obj if isinstance(class_name_obj, str) else None
+                issue_kind = IssueKind.__members__.get(kind_name, IssueKind.UNKNOWN)
+
+                function_name_obj = issue.get("function_name", "unknown")
+                function_name = (
+                    function_name_obj if isinstance(function_name_obj, str) else "unknown"
+                )
+                issue_obj = Issue(
+                    kind=issue_kind,
+                    message=issue_message,
+                    function_name=function_name,
+                    class_name=class_name,
+                    counterexample=None,
+                    filename=str(scan_result.file_path),
+                    line_number=int(issue.get("line", 0)),  # type: ignore[arg-type]  # will be fixed later
+                    pc=0,
+                    constraints=[],
+                )
+
+                gen = ReproductionGenerator()
+                script_path = gen.generate_script(issue_obj)  # type: ignore[attr-access]  # will be fixed later
+                console.print(f"  • {script_path}")  # type: ignore[attr-access]  # will be fixed later
 
 
 def _add_reproduction_info(
@@ -549,6 +738,7 @@ def _add_reproduction_info(
         issues: Issue dicts that may contain ``counterexample`` data.
         file_path: Source file the issues belong to.
     """
+    from pysymex.analysis.detectors import Issue, IssueKind
     from pysymex.reporting.reproduction import ReproductionGenerator
 
     gen = ReproductionGenerator()
@@ -561,27 +751,20 @@ def _add_reproduction_info(
             issue_message = message_obj if isinstance(message_obj, str) else str(message_obj)
             class_name_obj = issue.get("class_name")
             class_name = class_name_obj if isinstance(class_name_obj, str) else None
-            counterexample_obj = issue.get("counterexample")
-            counterexample = counterexample_obj if isinstance(counterexample_obj, dict) else None
-
-            class _IssueKind:
-                def __init__(self, name: str) -> None:
-                    self.name = name
-
-            class IssueObj:
-                """Data object representing a detected issue for reproduction."""
-
-                def __init__(self, data: dict[str, object]) -> None:
-                    _ = data
-                    self.counterexample = counterexample
-                    self.kind = _IssueKind(kind_name)
-                    self.message = issue_message
-                    self.class_name = class_name
+            issue_kind = IssueKind.__members__.get(kind_name, IssueKind.UNKNOWN)
 
             function_name_obj = issue.get("function_name", "unknown")
             function_name = function_name_obj if isinstance(function_name_obj, str) else "unknown"
+            issue_obj = Issue(
+                kind=issue_kind,
+                message=issue_message,
+                function_name=function_name,
+                class_name=class_name,
+                counterexample=None,
+                filename=str(file_path),
+            )
             script = gen.generate(
-                cast("Issue", IssueObj(issue)),
+                issue_obj,
                 function_name,
                 str(file_path),
                 class_name=class_name,
@@ -628,7 +811,6 @@ def _print_static_sarif(issues: Sequence[object]) -> None:
         if callable(to_dict):
             result = to_dict()
             if isinstance(result, dict):
-                issue_dicts.append(result)
+                issue_dicts.append({"raw": "<dict>"})
     sarif_log = generate_sarif(issues=issue_dicts)
     print(sarif_log.to_json())
-

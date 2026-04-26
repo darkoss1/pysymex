@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -17,9 +17,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-GPU Acceleration Benchmark CLI.
+SAT Acceleration Benchmark CLI.
 
-Comprehensive benchmarking tool for PySyMex GPU acceleration.
+Comprehensive benchmarking tool for pysymex SAT acceleration.
 Measures and compares performance across all available backends.
 
 Usage:
@@ -36,7 +36,7 @@ import platform
 import sys
 import time
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -65,11 +65,31 @@ class BackendModule(Protocol):
 class Z3ModuleLike(Protocol):
     def Bool(self, name: str) -> z3.BoolRef: ...
 
-    def Not(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+    def Not(self, arg: z3.BoolRef) -> z3.BoolRef: ...
 
-    def Or(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+    def Or(self, *args: z3.BoolRef) -> z3.BoolRef: ...
 
-    def And(self, *args: object, **kwargs: object) -> z3.BoolRef: ...
+    def And(self, *args: z3.BoolRef) -> z3.BoolRef: ...
+
+
+class _RuntimeZ3Module:
+    """Runtime adapter that exposes a typed Z3 API surface."""
+
+    def Bool(self, name: str) -> z3.BoolRef:
+        """Create a named Z3 boolean variable."""
+        return z3.Bool(name)
+
+    def Not(self, arg: z3.BoolRef) -> z3.BoolRef:
+        """Build Z3 boolean negation."""
+        return z3.Not(arg)
+
+    def Or(self, *args: z3.BoolRef) -> z3.BoolRef:
+        """Build Z3 boolean disjunction."""
+        return z3.Or(*args)
+
+    def And(self, *args: z3.BoolRef) -> z3.BoolRef:
+        """Build Z3 boolean conjunction."""
+        return z3.And(*args)
 
 
 @dataclass
@@ -107,7 +127,7 @@ class SystemInfo:
     platform: str
     processor: str
     numba_version: str | None
-    cuda_device: str | None
+    sat_device: str | None
     backends_available: list[str]
 
 
@@ -122,18 +142,18 @@ def get_system_info() -> SystemInfo:
     except ImportError:
         pass
 
-    cuda_device = None
+    sat_device = None
     try:
-        cuda = importlib.import_module("numba.cuda")
+        sat = importlib.import_module("pysymex.accel.backends.sat")
 
-        if cuda.is_available():
-            device = cuda.get_current_device()
+        if sat.is_available():
+            device = sat.get_current_device()
             name = device.name
-            cuda_device = name.decode() if isinstance(name, bytes) else str(name)
+            sat_device = name.decode() if isinstance(name, bytes) else str(name)
     except Exception:
         pass
 
-    backends = []
+    backends: list[str] = []
     try:
         from pysymex.accel.dispatcher import get_dispatcher
 
@@ -149,7 +169,7 @@ def get_system_info() -> SystemInfo:
         platform=platform.platform(),
         processor=platform.processor() or "Unknown",
         numba_version=numba_version,
-        cuda_device=cuda_device,
+        sat_device=sat_device,
         backends_available=backends,
     )
 
@@ -169,11 +189,11 @@ def create_random_3sat(
     vars_list = [z3_module.Bool(f"x{i}") for i in range(num_vars)]
     var_names = [f"x{i}" for i in range(num_vars)]
 
-    clauses = []
+    clauses: list[z3.BoolRef] = []
     for _ in range(num_clauses):
         k = min(3, num_vars)
         indices = random.sample(range(num_vars), k)
-        literals = [
+        literals: list[z3.BoolRef] = [
             vars_list[i] if random.random() > 0.5 else z3_module.Not(vars_list[i]) for i in indices
         ]
         clauses.append(z3_module.Or(*literals))
@@ -207,7 +227,7 @@ def run_single_benchmark(
         for _ in range(config.warmup_iterations):
             backend_module.evaluate_bag(compiled)
 
-        times = []
+        times: list[float] = []
         result_bitmap = None
         for _ in range(config.iterations):
             t0 = time.perf_counter()
@@ -245,11 +265,7 @@ def run_single_benchmark(
 
 def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
     """Run all benchmarks and return results."""
-    try:
-        import z3
-    except ImportError:
-        print("Error: z3-solver not installed", file=sys.stderr)
-        sys.exit(1)
+    z3_module: Z3ModuleLike = _RuntimeZ3Module()
 
     results: list[BenchmarkResult] = []
     system_info = get_system_info()
@@ -257,10 +273,10 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
     backends: dict[str, BackendModule] = {}
 
     try:
-        from pysymex.accel.backends import gpu as cuda
+        from pysymex.accel.backends import sat
 
-        if cuda.is_available():
-            backends["CUDA"] = cuda
+        if sat.is_available():
+            backends["SAT"] = sat
     except ImportError:
         pass
 
@@ -283,11 +299,11 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
         print("Error: No backends available", file=sys.stderr)
         sys.exit(1)
 
-    print("\nPySyMex GPU Benchmark")
+    print("\npysymex SAT Benchmark")
     print("=" * 60)
     print(f"Python {system_info.python_version} on {system_info.platform}")
-    if system_info.cuda_device:
-        print(f"CUDA Device: {system_info.cuda_device}")
+    if system_info.sat_device:
+        print(f"SAT Device: {system_info.sat_device}")
     print(f"Available backends: {', '.join(system_info.backends_available)}")
     print(f"Treewidths: {config.treewidths}")
     print(f"Iterations: {config.iterations}")
@@ -297,9 +313,7 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
         print(f"\nTreewidth {w} ({1 << w:,} states):")
 
         for backend_name, backend_module in backends.items():
-            result = run_single_benchmark(
-                backend_module, backend_name, w, config, cast("Z3ModuleLike", z3)
-            )
+            result = run_single_benchmark(backend_module, backend_name, w, config, z3_module)
             if result:
                 results.append(result)
                 print(
@@ -337,7 +351,7 @@ def run_benchmarks(config: BenchmarkConfig) -> dict[str, object]:
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="PySyMex GPU Acceleration Benchmark",
+        description="pysymex SAT Acceleration Benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -417,4 +431,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

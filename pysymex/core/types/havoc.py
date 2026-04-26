@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -29,8 +29,6 @@ This means:
   ``HavocValue / 0`` still triggers ``DivisionByZeroDetector``.
 * **Branching** forks correctly — ``if havoc_val: ...`` creates two feasible
   paths because ``could_be_truthy()`` is a real Z3 expression.
-* **Taint labels** propagate — if the unmodeled function received tainted
-  arguments, the returned ``HavocValue`` carries their union.
 * **Structural operations** (attribute access, calls, subscripts) produce
   *new* ``HavocValue`` instances so downstream code doesn't crash.
 
@@ -43,7 +41,6 @@ blindly suppressed).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TypeGuard
 
@@ -65,15 +62,13 @@ class HavocValue(SymbolicValue):
     """
 
     _is_havoc: bool = field(default=True, init=False, repr=False, compare=False)
-    _attributes: dict[str, tuple[HavocValue, z3.BoolRef]] = field(
+    _attributes: dict[str, tuple[HavocValue, z3.BoolRef]] = field(  # type: ignore[assignment]  # default_factory=dict returns dict, not dict[str, tuple[...]]
         default_factory=dict, init=False, repr=False, compare=False
     )
 
     @staticmethod
     def havoc(
         name: str,
-        *,
-        taint_labels: frozenset[str] | set[str] | None = None,
     ) -> tuple[HavocValue, z3.BoolRef]:
         """Create a fresh havoc value with its own Z3 variables.
 
@@ -81,9 +76,6 @@ class HavocValue(SymbolicValue):
         ----------
         name:
             Debugging / variable-naming prefix (e.g. ``"havoc_call@42"``).
-        taint_labels:
-            Taint labels to attach (typically the union of all argument taints
-            passed to the unmodeled function).
 
         Returns
         -------
@@ -109,7 +101,7 @@ class HavocValue(SymbolicValue):
 
         type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
         at_least_one = z3.Or(*type_vars)
-        at_most_one = []
+        at_most_one: list[z3.BoolRef] = []
         for i in range(len(type_vars)):
             for j in range(i + 1, len(type_vars)):
                 at_most_one.append(z3.Not(z3.And(type_vars[i], type_vars[j])))
@@ -132,29 +124,32 @@ class HavocValue(SymbolicValue):
             is_list=is_list,
             is_dict=is_dict,
             _name=name,
-            taint_labels=frozenset(taint_labels) if taint_labels is not None else None,
         )
         return val, type_constraint
 
     def __getitem__(self, key: object) -> tuple[HavocValue, z3.BoolRef]:
         """Subscripting a HavocValue produces a new HavocValue."""
         name = f"{self._name}[{getattr(key, 'name', str(key))}]"
-        return HavocValue.havoc(name, taint_labels=self.taint_labels)
+        return HavocValue.havoc(name)
 
     def __getattr__(self, name: str) -> tuple[HavocValue, z3.BoolRef]:
         """Accessing attribute on a HavocValue produces a new HavocValue."""
         if name.startswith("_"):
             raise AttributeError(name)
         full_name = f"{self._name}.{name}"
-        return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
+        return HavocValue.havoc(full_name)
 
     def __call__(self, *args: object, **kwargs: object) -> tuple[HavocValue, z3.BoolRef]:
         """Calling a HavocValue produces a new HavocValue."""
         full_name = f"{self._name}()"
-        return HavocValue.havoc(full_name, taint_labels=self.taint_labels)
+        return HavocValue.havoc(full_name)
 
     def __repr__(self) -> str:
         return f"HavocValue({self._name})"
+
+    def get_cached_attributes(self) -> dict[str, tuple[HavocValue, z3.BoolRef]]:
+        """Return the attribute cache used for lazy havoc attribute materialization."""
+        return self._attributes
 
 
 def is_havoc(value: object) -> TypeGuard[HavocValue]:
@@ -165,19 +160,3 @@ def is_havoc(value: object) -> TypeGuard[HavocValue]:
 def has_havoc(*values: object) -> bool:
     """Return ``True`` if **any** of *values* is a :class:`HavocValue`."""
     return any(isinstance(v, HavocValue) for v in values)
-
-
-def union_taint(values: Sequence[object]) -> frozenset[str] | None:
-    """Compute the union of ``taint_labels`` across *values*.
-
-    Returns ``None`` when no value carries taint (the common case).
-    """
-    merged: set[str] | None = None
-    for v in values:
-        labels = getattr(v, "taint_labels", None)
-        if labels:
-            if merged is None:
-                merged = set(labels)
-            else:
-                merged.update(labels)
-    return frozenset(merged) if merged is not None else None

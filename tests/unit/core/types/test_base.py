@@ -1,7 +1,12 @@
-
 import z3
 
-from pysymex.core.types.base import SYMBOLIC_NONE, SymbolicNoneType, TypeTag, fresh_name, reset_counters
+from pysymex.core.types.base import (
+    SYMBOLIC_NONE,
+    SymbolicNoneType,
+    TypeTag,
+    fresh_name,
+    reset_counters,
+)
 
 
 class TestTypeTag:
@@ -51,10 +56,6 @@ class TestSymbolicType:
     def test_symbolic_eq(self) -> None:
         """Test symbolic_eq behavior."""
         assert z3.is_true(SYMBOLIC_NONE.symbolic_eq(SymbolicNoneType()))
-
-    def test_as_unified(self) -> None:
-        """Test as_unified behavior."""
-        assert z3.is_true(SYMBOLIC_NONE.as_unified().is_none)
 
     def test_is_int(self) -> None:
         """Test is_int behavior."""
@@ -119,8 +120,3 @@ class TestSymbolicNoneType:
     def test_symbolic_eq(self) -> None:
         """Test symbolic_eq behavior."""
         assert z3.is_true(SymbolicNoneType().symbolic_eq(SymbolicNoneType()))
-
-    def test_as_unified(self) -> None:
-        """Test as_unified behavior."""
-        assert z3.is_true(SymbolicNoneType().as_unified().is_none)
-

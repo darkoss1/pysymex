@@ -1,9 +1,12 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pysymex.models.builtins.functions as functions
 from pysymex.analysis.type_inference import PyType, TypeKind
+
+
 def _sample_raises() -> None:
     raise RuntimeError("boom")
+
 
 class TestParameterInfo:
     """Test suite for pysymex.models.builtins.functions.ParameterInfo."""

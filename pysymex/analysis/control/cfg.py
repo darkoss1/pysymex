@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,9 +33,8 @@ import types
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
-import icontract
 
 from pysymex._compat import get_starts_line
 from pysymex.core.cache import get_instructions as _cached_get_instructions
@@ -53,6 +52,13 @@ class ExceptionEntryProtocol(Protocol):
 
     @property
     def end(self) -> int: ...
+
+
+@runtime_checkable
+class _BytecodeWithExceptionEntries(Protocol):
+    """Protocol for bytecode objects exposing parsed exception entries."""
+
+    exception_entries: Sequence[ExceptionEntryProtocol]
 
 
 _get_line_number = get_starts_line
@@ -153,21 +159,6 @@ class BasicBlock:
         return f"BasicBlock({self.id}, pc={self.start_pc}-{self.end_pc})"
 
 
-def _post_add_block(self: ControlFlowGraph, block: BasicBlock) -> bool:
-    return self.blocks[block.id] == block
-
-
-def _post_dominates(
-    self: ControlFlowGraph, dominator_id: int, dominated_id: int, result: bool
-) -> bool:
-    return not result or dominator_id in self.blocks
-
-
-def _post_build_cfg(result: ControlFlowGraph) -> bool:
-    _ = result
-    return True
-
-
 @dataclass
 class ControlFlowGraph:
     """
@@ -195,7 +186,6 @@ class ControlFlowGraph:
         """Get the entry basic block."""
         return self.blocks.get(self.entry_block_id)
 
-    @icontract.ensure(_post_add_block)
     def add_block(self, block: BasicBlock) -> None:
         """Add a basic block."""
         self.blocks[block.id] = block
@@ -231,7 +221,6 @@ class ControlFlowGraph:
         """Check if a block is reachable from entry."""
         return block_id in self.dominators
 
-    @icontract.ensure(_post_dominates)
     def dominates(self, dominator_id: int, dominated_id: int) -> bool:
         """Check if dominator dominates dominated."""
         dom_set = self.dominators.get(dominated_id, set())
@@ -333,7 +322,6 @@ class CFGBuilder:
         "CLEANUP_THROW",
     }
 
-    @icontract.ensure(_post_build_cfg)
     def build(self, code: types.CodeType) -> ControlFlowGraph:
         """Build CFG from a code object."""
         instructions = _cached_get_instructions(code)
@@ -343,7 +331,9 @@ class CFGBuilder:
         exception_entries: list[ExceptionEntryProtocol] = []
         if hasattr(code, "co_exceptiontable"):
             try:
-                exception_entries = list(dis.Bytecode(code).exception_entries)  # type: ignore[attr-defined]
+                bytecode_obj = dis.Bytecode(code)
+                if isinstance(bytecode_obj, _BytecodeWithExceptionEntries):
+                    exception_entries = list(bytecode_obj.exception_entries)
             except Exception:
                 pass
 
@@ -613,4 +603,3 @@ class CFGBuilder:
                     loop_body.add(pred_id)
                     worklist.append(pred_id)
         return loop_body
-

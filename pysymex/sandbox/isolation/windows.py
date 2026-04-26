@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -384,7 +384,7 @@ class WindowsJobBackend(IsolationBackend):
             raise SandboxSetupError("Job Object handle or process is unavailable")
 
         kernel32 = ctypes.windll.kernel32
-        handle = int(self._process._handle)  # type: ignore[union-attr]
+        handle = int(self._process._handle)  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]  # Popen._handle is private but exists
         ok: int = kernel32.AssignProcessToJobObject(self._job_handle, handle)
         if not ok:
             raise SandboxSetupError("Failed to assign process to Job Object")

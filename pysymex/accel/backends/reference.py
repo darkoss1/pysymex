@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -72,7 +72,7 @@ def evaluate_bag(constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
     """Evaluate constraint using pure Python.
 
     This implementation prioritizes correctness and clarity over performance.
-    It serves as the reference for validating GPU backends.
+    It serves as the reference for validating SAT backends.
 
     Algorithm:
         For each possible assignment (0 to 2^w - 1):
@@ -96,7 +96,7 @@ def evaluate_bag(constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
     if w > MAX_TREEWIDTH:
         raise ValueError(
             f"Treewidth {w} exceeds reference backend maximum ({MAX_TREEWIDTH}). "
-            "Use CUDA or CPU backend for larger problems."
+            "Use SAT or CPU backend for larger problems."
         )
 
     bitmap_size = (num_states + 7) // 8
@@ -217,4 +217,3 @@ def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
 def warmup() -> None:
     """No-op warmup for reference backend."""
     pass
-

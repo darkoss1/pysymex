@@ -1,4 +1,4 @@
-﻿# SMT Slicing and Incremental Execution Architecture
+# SMT Slicing and Incremental Execution Architecture
 
 This document describes the current SMT-performance architecture in PySymEx, with explicit status labels for what is implemented today versus what remains future work.
 
@@ -18,7 +18,7 @@ PySymEx currently prioritizes soundness over peak speed when there is any confli
 |---|---|---|
 | True incremental prefix synchronization | Implemented | `IncrementalSolver._active_path`, `_sync_path`, `is_sat(..., known_sat_prefix_len=...)` |
 | Chronological constraint chain iteration | Implemented | `ConstraintChain.__iter__`, `ConstraintChain.newest`, `ConstraintChain.__reversed__` |
-| CHTD hardware acceleration (GPU/CPU backend selection) | Implemented | `executor_core._get_chtd_solver`, `h_acceleration.chtd_solver` |
+| CHTD hardware acceleration (Tiered CPU Dispatcher/CaDiCaL fast-paths) | Implemented | `executor_core._get_chtd_solver`, `accel.chtd_solver` |
 | Hardware-acceleration integrity guard on UNSAT prune | Implemented | `SymbolicExecutor._validate_chtd_unsat` |
 | Constraint hash shortcut directly from `ConstraintChain.hash_value()` in solver cache discriminator | Implemented | `IncrementalSolver` cache key/discriminator now use `hash_value()` fast-path when available |
 | Backward AST data-flow slicing of ambient constraints | Implemented | `IncrementalSolver.is_sat(..., known_sat_prefix_len=...)` slices ambient prefix constraints against suffix query variables |
@@ -56,7 +56,7 @@ This keeps persistent structural sharing while enabling correct prefix synchroni
 ## 3. CHTD and Hardware Acceleration
 
 ### Problem
-CHTD pruning can reduce search work, but backend complexity (GPU/CPU/reference) must never compromise correctness.
+CHTD pruning can reduce search work, but backend complexity (Tiered CPU/Z3/reference) must never compromise correctness.
 
 ### Current Architecture
 The executor:
@@ -64,8 +64,8 @@ The executor:
 - Builds a constraint interaction graph.
 - Runs CHTD message propagation at adaptive intervals.
 - Chooses backend dynamically:
-  - GPU-preferred when enabled and branch set is large enough.
-  - CPU/reference fallback when GPU is unavailable.
+  - Thread-local SAT solver (e.g., CaDiCaL) preferred for pure boolean bags.
+  - CDCL SMT (Z3) fallback for mixed arithmetic.
 - Tracks detailed CHTD telemetry in solver stats.
 
 ## 4. UNSAT Integrity Guard for Accelerator Paths
@@ -109,4 +109,3 @@ For best speed with integrity:
 - `tests/unit/core/solver/test_engine.py`
 - `tests/unit/core/solver/test_constraints.py`
 - `tests/unit/accel/test_chtd.py`
-

@@ -4,9 +4,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
+from pysymex.core.types.scalars import SymbolicValue, SymbolicString
 from pysymex.core.types.scalars import SymbolicList
 
 
@@ -27,30 +26,28 @@ def _state() -> VMState:
     return VMState(pc=0)
 
 
-def _assert_nameerror(fn: object) -> None:
-    with pytest.raises(NameError):
-        assert callable(fn)
-        fn()
-
-
 class TestIntBitLengthModel:
     """Test suite for pysymex.models.numeric.IntBitLengthModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.IntBitLengthModel().apply([], {}, _state()))
+        result = numeric.IntBitLengthModel().apply([], {}, _state())
+        assert result.value == 0
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.IntBitLengthModel().apply([1], {}, _state()))
+        result = numeric.IntBitLengthModel().apply([1], {}, _state())
+        assert result.value == 1
 
 
 class TestIntBitCountModel:
     """Test suite for pysymex.models.numeric.IntBitCountModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.IntBitCountModel().apply([], {}, _state()))
+        result = numeric.IntBitCountModel().apply([], {}, _state())
+        assert result.value == 0
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.IntBitCountModel().apply([1], {}, _state()))
+        result = numeric.IntBitCountModel().apply([1], {}, _state())
+        assert result.value == 1
 
 
 class TestIntToBytesModel:
@@ -69,10 +66,12 @@ class TestIntFromBytesModel:
     """Test suite for pysymex.models.numeric.IntFromBytesModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.IntFromBytesModel().apply([b"a", "big"], {}, _state()))
+        result = numeric.IntFromBytesModel().apply([b"a", "big"], {}, _state())
+        assert result.value == 0
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.IntFromBytesModel().apply([], {}, _state()))
+        result = numeric.IntFromBytesModel().apply([], {}, _state())
+        assert result.value == 0
 
 
 class TestIntAsIntegerRatioModel:
@@ -95,17 +94,20 @@ class TestIntConjugateModel:
         assert result.value == 7
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.IntConjugateModel().apply([], {}, _state()))
+        result = numeric.IntConjugateModel().apply([], {}, _state())
+        assert result.value == 0
 
 
 class TestFloatIsIntegerModel:
     """Test suite for pysymex.models.numeric.FloatIsIntegerModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatIsIntegerModel().apply([], {}, _state()))
+        result = numeric.FloatIsIntegerModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatIsIntegerModel().apply([1.0], {}, _state()))
+        result = numeric.FloatIsIntegerModel().apply([1.0], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
 
 
 class TestFloatAsIntegerRatioModel:
@@ -124,20 +126,24 @@ class TestFloatHexModel:
     """Test suite for pysymex.models.numeric.FloatHexModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatHexModel().apply([1.0], {}, _state()))
+        result = numeric.FloatHexModel().apply([1.0], {}, _state())
+        assert isinstance(result.value, SymbolicString)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatHexModel().apply([], {}, _state()))
+        result = numeric.FloatHexModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicString)
 
 
 class TestFloatFromhexModel:
     """Test suite for pysymex.models.numeric.FloatFromhexModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatFromhexModel().apply(["0x1.0p+0"], {}, _state()))
+        result = numeric.FloatFromhexModel().apply(["0x1.0p+0"], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatFromhexModel().apply([], {}, _state()))
+        result = numeric.FloatFromhexModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
 
 
 class TestFloatConjugateModel:
@@ -148,7 +154,8 @@ class TestFloatConjugateModel:
         assert result.value == 3.5
 
     def test_error_path(self) -> None:
-        _assert_nameerror(lambda: numeric.FloatConjugateModel().apply([], {}, _state()))
+        result = numeric.FloatConjugateModel().apply([], {}, _state())
+        assert result.value == 0.0
 
 
 class TestIntNumeratorModel:

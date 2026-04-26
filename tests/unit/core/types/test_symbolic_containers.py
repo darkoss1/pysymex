@@ -26,7 +26,9 @@ class TestSymbolicString:
         assert z3.is_bool(s.is_falsy())
 
     def test_symbolic_eq(self) -> None:
-        assert z3.is_bool(mod.SymbolicString.symbolic("a").symbolic_eq(mod.SymbolicString.symbolic("b")))
+        assert z3.is_bool(
+            mod.SymbolicString.symbolic("a").symbolic_eq(mod.SymbolicString.symbolic("b"))
+        )
 
     def test_length(self) -> None:
         s = mod.SymbolicString.symbolic("s")
@@ -65,9 +67,6 @@ class TestSymbolicString:
     def test_concrete(self) -> None:
         assert isinstance(mod.SymbolicString.concrete("x"), mod.SymbolicString)
 
-    def test_as_unified(self) -> None:
-        assert z3.is_bool(mod.SymbolicString.symbolic("s").as_unified().is_str)
-
 
 class TestSymbolicBytes:
     def test_type_tag(self) -> None:
@@ -105,9 +104,6 @@ class TestSymbolicBytes:
     def test_concrete(self) -> None:
         assert isinstance(mod.SymbolicBytes.concrete(b"x"), mod.SymbolicBytes)
 
-    def test_as_unified(self) -> None:
-        assert z3.is_expr(mod.SymbolicBytes.symbolic("b").as_unified().z3_int)
-
 
 class TestSymbolicTuple:
     def test_type_tag(self) -> None:
@@ -144,9 +140,6 @@ class TestSymbolicTuple:
 
     def test_empty(self) -> None:
         assert len(mod.SymbolicTuple.empty().elements) == 0
-
-    def test_as_unified(self) -> None:
-        assert z3.is_expr(mod.SymbolicTuple.empty().as_unified().z3_int)
 
 
 class TestSymbolicList:
@@ -197,9 +190,6 @@ class TestSymbolicList:
     def test_concrete_int_list(self) -> None:
         assert isinstance(mod.SymbolicList.concrete_int_list([1, 2]), mod.SymbolicList)
 
-    def test_as_unified(self) -> None:
-        assert z3.is_bool(mod.SymbolicList.symbolic_int_list("l").as_unified().is_list)
-
 
 class TestSymbolicDict:
     def test_type_tag(self) -> None:
@@ -241,9 +231,6 @@ class TestSymbolicDict:
 
     def test_symbolic_int_dict(self) -> None:
         assert isinstance(mod.SymbolicDict.symbolic_int_dict("x"), mod.SymbolicDict)
-
-    def test_as_unified(self) -> None:
-        assert z3.is_bool(mod.SymbolicDict.symbolic_int_dict("d").as_unified().is_dict)
 
 
 class TestSymbolicSet:
@@ -312,6 +299,3 @@ class TestSymbolicSet:
 
     def test_empty_int_set(self) -> None:
         assert isinstance(mod.SymbolicSet.empty_int_set(), mod.SymbolicSet)
-
-    def test_as_unified(self) -> None:
-        assert z3.is_expr(mod.SymbolicSet.symbolic_int_set("s").as_unified().z3_int)

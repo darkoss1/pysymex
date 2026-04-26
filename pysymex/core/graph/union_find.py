@@ -1,13 +1,33 @@
+# pysymex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from typing import Dict, Generic, Hashable, List, TypeVar
 
 T = TypeVar("T", bound=Hashable)
+
 
 class UnionFind(Generic[T]):
     """
     Highly optimized Union-Find (Disjoint Set) data structure.
     Implements path compression and union by rank for amortized O(alpha(n)) time complexity.
-    Designed for constraint independence optimization and dynamic clustering in PySyMex v2.
+    Designed for constraint independence optimization and dynamic clustering in pysymex v2.
     """
+
     __slots__ = ("_parent", "_rank")
 
     def __init__(self) -> None:

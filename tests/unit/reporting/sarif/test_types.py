@@ -41,7 +41,7 @@ def test_sarif_log_json_and_save(tmp_path: Path) -> None:
     out = tmp_path / "report.sarif"
     log.save(out)
 
-    assert "\"runs\"" in payload
+    assert '"runs"' in payload
     assert out.exists()
 
 
@@ -50,4 +50,3 @@ def test_logical_location_to_dict() -> None:
     data = ll.to_dict()
     assert data["name"] == "f"
     assert data["fullyQualifiedName"] == "pkg.f"
-

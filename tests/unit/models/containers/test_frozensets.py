@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex.core.state import VMState
 from pysymex.models.containers import frozensets
@@ -20,11 +18,8 @@ def test_frozenset_faithfulness_baseline() -> None:
 
 def test_frozenset_symbolic_error_paths() -> None:
     """Representative symbolic/error path checks."""
-    with pytest.raises(NameError):
-        frozensets.FrozensetHashModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        frozensets.FrozensetContainsModel().apply([], {}, _state())
+    frozensets.FrozensetHashModel().apply([], {}, _state())
+    frozensets.FrozensetContainsModel().apply([], {}, _state())
 
 
 def test_frozenset_edge_case_empty() -> None:

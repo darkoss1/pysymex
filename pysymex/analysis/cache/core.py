@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -400,8 +400,6 @@ class PersistentCache:
             if cls._is_writable_directory(directory):
                 return directory / "cache.db"
 
-        # Fall back to the final candidate and surface any real filesystem
-        # error from the standard initialization path.
         return candidate_dirs[-1] / "cache.db"
 
     def __init__(
@@ -418,6 +416,7 @@ class PersistentCache:
         )
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
+        self._pending_access_updates: dict[str, tuple[float, int]] = {}
         self._ensure_directory()
         self._init_database()
         threading.Thread(target=self._run_cleanup_safe, daemon=True).start()
@@ -456,9 +455,32 @@ class PersistentCache:
         """Return the persistent connection (backward-compat alias)."""
         return self._get_connection()
 
+    def _flush_access_updates_locked(self) -> None:
+        """Flush batched access updates to the database."""
+        if not self._pending_access_updates:
+            return
+
+        updates: list[tuple[float, int, str]] = []
+        for key_str, stats in self._pending_access_updates.items():
+            updates.append((stats[0], stats[1], key_str))
+
+        self._pending_access_updates.clear()
+
+        conn = self._get_connection()
+        conn.executemany(
+            """
+            UPDATE cache
+            SET accessed_at = max(accessed_at, ?), access_count = access_count + ?
+            WHERE key = ?
+            """,
+            updates,
+        )
+        conn.commit()
+
     def close(self) -> None:
         """Close the persistent SQLite connection if it is open."""
         with self._lock:
+            self._flush_access_updates_locked()
             if self._conn is not None:
                 try:
                     self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -484,6 +506,7 @@ class PersistentCache:
         self.__dict__.update(state)
         self._lock = threading.RLock()
         self._conn = None
+        self._pending_access_updates = {}
 
     def get(self, key: CacheKey) -> object | None:
         """Get value from cache, verifying HMAC integrity before deserialization."""
@@ -493,15 +516,15 @@ class PersistentCache:
             cursor = conn.execute("SELECT * FROM cache WHERE key = ?", (key_str,))
             row = cursor.fetchone()
             if row:
-                conn.execute(
-                    """
-                    UPDATE cache
-                    SET accessed_at = ?, access_count = access_count + 1
-                    WHERE key = ?
-                    """,
-                    (time.time(), key_str),
-                )
-                conn.commit()
+                if key_str not in self._pending_access_updates:
+                    self._pending_access_updates[key_str] = (time.time(), 1)
+                else:
+                    _, count = self._pending_access_updates[key_str]
+                    self._pending_access_updates[key_str] = (time.time(), count + 1)
+
+                if len(self._pending_access_updates) >= 100:
+                    self._flush_access_updates_locked()
+
                 try:
                     raw_blob = self._integrity.verify_and_extract(
                         key_str,
@@ -509,7 +532,7 @@ class PersistentCache:
                     )
                     if raw_blob is None:
                         logger.warning(
-                            "HMAC verification failed for cache key %s — removing tainted entry",
+                            "HMAC verification failed for cache key %s — removing entry",
                             key_str,
                         )
                         conn.execute(
@@ -544,6 +567,7 @@ class PersistentCache:
             dep_json = json.dumps([d.to_string() for d in dep_list])
             now = time.time()
             with self._lock:
+                self._flush_access_updates_locked()
                 conn = self._get_connection()
                 conn.execute(
                     """
@@ -577,6 +601,7 @@ class PersistentCache:
         """Remove entry from cache."""
         key_str = key.to_string()
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute("DELETE FROM cache WHERE key = ?", (key_str,))
             conn.commit()
@@ -585,6 +610,7 @@ class PersistentCache:
     def invalidate_by_type(self, key_type: CacheKeyType) -> int:
         """Invalidate all entries of a type."""
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute("DELETE FROM cache WHERE key_type = ?", (key_type.name,))
             conn.commit()
@@ -598,32 +624,31 @@ class PersistentCache:
         """
         key_str = key.to_string()
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute(
                 """
-                WITH RECURSIVE transitive_deps(cache_key) AS (
-                    SELECT cache_key FROM cache_deps WHERE dependency = ?
-                    UNION
-                    SELECT d.cache_key FROM cache_deps d
-                    JOIN transitive_deps t ON d.dependency = t.cache_key
+                DELETE FROM cache WHERE key IN (
+                    WITH RECURSIVE transitive_deps(cache_key) AS (
+                        SELECT cache_key FROM cache_deps WHERE dependency = ?
+                        UNION
+                        SELECT d.cache_key FROM cache_deps d
+                        JOIN transitive_deps t ON d.dependency = t.cache_key
+                    )
+                    SELECT cache_key FROM transitive_deps
                 )
-                SELECT cache_key FROM transitive_deps
+                RETURNING key
                 """,
                 (key_str,),
             )
-            invalidated = {row["cache_key"] for row in cursor}
-            if invalidated:
-                placeholders = ",".join("?" * len(invalidated))
-                conn.execute(
-                    f"DELETE FROM cache WHERE key IN ({placeholders})",
-                    tuple(invalidated),
-                )
+            invalidated = {row["key"] for row in cursor}
             conn.commit()
         return invalidated
 
     def clear(self) -> int:
         """Clear all entries."""
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute("DELETE FROM cache")
             conn.commit()
@@ -635,6 +660,7 @@ class PersistentCache:
         now = time.time()
         max_age_seconds = self.max_age_days * 24 * 60 * 60
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute(
                 "DELETE FROM cache WHERE created_at < ?", (now - max_age_seconds,)
@@ -661,6 +687,7 @@ class PersistentCache:
     def stats(self) -> dict[str, object]:
         """Get cache statistics."""
         with self._lock:
+            self._flush_access_updates_locked()
             conn = self._get_connection()
             cursor = conn.execute("SELECT COUNT(*) FROM cache")
             count = cursor.fetchone()[0]

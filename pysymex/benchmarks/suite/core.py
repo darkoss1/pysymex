@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -30,7 +30,7 @@ import tracemalloc
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
 
 from pysymex.benchmarks.suite.types import (
     BenchmarkCategory,
@@ -40,6 +40,15 @@ from pysymex.benchmarks.suite.types import (
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
+
+
+@runtime_checkable
+class _BenchmarkMetricsResult(Protocol):
+    """Protocol for benchmark function return payloads with metric keys."""
+
+    def get(self, key: str, default: object = 0) -> object:
+        """Return value associated with key when present."""
+        ...
 
 
 def _bench_list_factory() -> list[Benchmark]:
@@ -64,6 +73,7 @@ class BenchmarkSuite:
     def run_all(
         self,
         iterations: int = 5,
+        case_name: str | None = None,
         warmup: int = 1,
     ) -> list[BenchmarkResult]:
         """Run all benchmarks in the suite."""
@@ -72,6 +82,8 @@ class BenchmarkSuite:
             self.setup()
         try:
             for bench in self.benchmarks:
+                if case_name and bench.name != case_name:
+                    continue
                 result = bench.run(iterations=iterations, warmup=warmup)
                 results.append(result)
         finally:
@@ -104,6 +116,7 @@ class Benchmark:
     def run(
         self,
         iterations: int = 5,
+        case_name: str | None = None,
         warmup: int = 1,
     ) -> BenchmarkResult:
         """Run the benchmark and collect metrics."""
@@ -135,7 +148,7 @@ class Benchmark:
         paths = 0
         instructions = 0
         solver_calls = 0
-        if isinstance(result, dict):
+        if isinstance(result, _BenchmarkMetricsResult):
             paths_val = result.get("paths", 0)
             instructions_val = result.get("instructions", 0)
             solver_calls_val = result.get("solver_calls", 0)
@@ -324,7 +337,7 @@ def create_builtin_benchmarks() -> BenchmarkSuite:
     """
     suite = BenchmarkSuite(
         name="pysymex_builtin",
-        description="Built-in PySyMex benchmarks (real solver workloads)",
+        description="Built-in pysymex benchmarks (real solver workloads)",
     )
     suite.add(
         Benchmark(
@@ -512,7 +525,7 @@ def bench_state_forking() -> dict[str, int]:
 def bench_constraint_hashing() -> dict[str, int]:
     """Benchmark: structural constraint hashing vs string-based."""
     try:
-        from pysymex.core.solver.constraints import structural_hash
+        from pysymex.core.solver.constraints import ConstraintHasher, structural_hash
     except ImportError:
         return {"instructions": 0, "paths": 0, "solver_calls": 0}
 
@@ -529,9 +542,11 @@ def bench_constraint_hashing() -> dict[str, int]:
         x + y + z_var < 100,
     ]
 
+    hasher = ConstraintHasher()
+
     hashes = 0
     for _ in range(10000):
-        structural_hash(constraints)
+        structural_hash(constraints, hasher)
         hashes += 1
 
     return {"instructions": 10000, "paths": 0, "solver_calls": 0}
@@ -565,6 +580,7 @@ def run_benchmarks(
     baseline_path: Path | None = None,
     format: str = "console",
     iterations: int = 5,
+    case_name: str | None = None,
 ) -> int:
     """Run the built-in benchmarks from the CLI.
 
@@ -578,7 +594,7 @@ def run_benchmarks(
         ``0`` on success, ``1`` if regressions are detected.
     """
     suite = create_builtin_benchmarks()
-    results = suite.run_all(iterations=iterations)
+    results = suite.run_all(iterations=iterations, case_name=case_name)
     if format == "json" and output_path:
         BenchmarkReporter.to_json_file(results, output_path)
     elif format == "markdown":
@@ -616,4 +632,3 @@ __all__ = [
     "create_builtin_benchmarks",
     "run_benchmarks",
 ]
-

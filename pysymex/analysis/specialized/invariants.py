@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,7 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
     Protocol,
-    cast,
+    TypeGuard,
 )
 
 import z3
@@ -70,6 +70,29 @@ class ClassInvariant:
 
 class _InvariantOwner(Protocol):
     __invariants__: list[ClassInvariant]
+
+
+def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+    """Type guard to narrow a value to list[object]."""
+    return isinstance(value, list)
+
+
+def _is_invariant_owner(value: object) -> TypeGuard[_InvariantOwner]:
+    """Return whether the object carries a well-typed invariant list."""
+    raw = getattr(value, "__invariants__", None)
+    if not _is_list_of_objects(raw):
+        return False
+    raw_items: list[object] = list(raw)
+    return all(isinstance(item, ClassInvariant) for item in raw_items)
+
+
+def _ensure_invariant_list(cls: type) -> list[ClassInvariant]:
+    """Get or initialize a class invariant list."""
+    if _is_invariant_owner(cls):
+        return cls.__invariants__
+    invariants: list[ClassInvariant] = []
+    setattr(cls, "__invariants__", invariants)
+    return invariants
 
 
 @dataclass
@@ -113,9 +136,8 @@ def invariant(
 
     def decorator(cls: type) -> type:
         """Decorator."""
-        if not hasattr(cls, "__invariants__"):
-            cls.__invariants__ = []
-        cls.__invariants__.append(
+        invariant_list = _ensure_invariant_list(cls)
+        invariant_list.append(
             ClassInvariant(
                 condition=condition,
                 message=message,
@@ -131,9 +153,8 @@ def get_invariants(cls: type) -> list[ClassInvariant]:
     """Get all invariants for a class, including inherited ones."""
     invariants: list[ClassInvariant] = []
     for base in reversed(cls.__mro__):
-        if hasattr(base, "__invariants__"):
-            raw_invariants = cast("list[ClassInvariant]", base.__invariants__)
-            for inv in raw_invariants:
+        if _is_invariant_owner(base):
+            for inv in base.__invariants__:
                 invariants.append(
                     ClassInvariant(
                         condition=inv.condition,
@@ -373,8 +394,8 @@ def check_object_invariants(
     class_name = cls.__name__
     invariants = invariant_state.get_invariants(class_name)
     if not invariants:
-        if hasattr(cls, "__invariants__"):
-            invariants = cast("_InvariantOwner", cls).__invariants__
+        if _is_invariant_owner(cls):
+            invariants = cls.__invariants__
             invariant_state.register_class(class_name, invariants)
     if not invariants:
         return []

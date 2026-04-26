@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -227,9 +227,7 @@ class SymbolicDictOps:
             return OpResult(value=pop_val, modified_collection=new_map)
 
     @staticmethod
-    def setdefault(
-        d: dict[_K, _V] | SymbolicMap, key: object, default: object = None
-    ) -> OpResult:
+    def setdefault(d: dict[_K, _V] | SymbolicMap, key: object, default: object = None) -> OpResult:
         """Get value for key, setting default if not present."""
         if isinstance(d, dict):
             concrete_d = cast("dict[object, object]", d)
@@ -259,9 +257,7 @@ class SymbolicDictOps:
             return OpResult(value=result, modified_collection=final_map)
 
     @staticmethod
-    def update(
-        d: dict[_K, _V] | SymbolicMap, other: dict[_K, _V] | SymbolicMap
-    ) -> OpResult:
+    def update(d: dict[_K, _V] | SymbolicMap, other: dict[_K, _V] | SymbolicMap) -> OpResult:
         """Update dict with key-value pairs from other."""
         if isinstance(d, dict) and isinstance(other, dict):
             d.update(other)

@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -43,15 +41,11 @@ def test_mutating_models_concrete_none_result() -> None:
 
 def test_symbolic_and_error_paths() -> None:
     """Symbolic and error path coverage for indexing/pop style methods."""
-    with pytest.raises(NameError):
-        lists.ListPopModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        lists.ListIndexModel().apply([], {}, _state())
+    lists.ListPopModel().apply([], {}, _state())
+    lists.ListIndexModel().apply([], {}, _state())
 
 
 def test_list_edge_case_empty_input() -> None:
     """Edge case: empty list input on contains model."""
     args: list[StackValue] = [[], 1]
-    with pytest.raises(NameError):
-        lists.ListContainsModel().apply(args, {}, _state())
+    lists.ListContainsModel().apply(args, {}, _state())

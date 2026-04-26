@@ -1,12 +1,19 @@
 import pytest
 from unittest.mock import Mock, patch
 from pysymex.analysis.interprocedural.callgraph import (
-    CallGraphNode, CallGraphEdge, CallGraph, CallGraphBuilder,
-    get_analysis_order, find_mutual_recursion, compute_dominators
+    CallGraphNode,
+    CallGraphEdge,
+    CallGraph,
+    CallGraphBuilder,
+    get_analysis_order,
+    find_mutual_recursion,
+    compute_dominators,
 )
+
 
 class TestCallGraphNode:
     """Test suite for pysymex.analysis.interprocedural.callgraph.CallGraphNode."""
+
     def test_full_name(self) -> None:
         """Test full_name behavior."""
         node = CallGraphNode(name="func", module="mod")
@@ -38,13 +45,15 @@ class TestCallGraphNode:
         node.add_callee("c2")
         assert "c2" in node._callees
 
+
 class TestCallGraphEdge:
     """Test suite for pysymex.analysis.interprocedural.callgraph.CallGraphEdge."""
+
     def test_add_call_site(self) -> None:
         """Test add_call_site behavior."""
         edge = CallGraphEdge("a", "b")
         edge.add_call_site(10)
-        edge.add_call_site(10) # duplicate
+        edge.add_call_site(10)
         assert edge.call_sites == [10]
 
     def test_call_count(self) -> None:
@@ -52,8 +61,10 @@ class TestCallGraphEdge:
         edge = CallGraphEdge("a", "b", call_sites=[10, 20])
         assert edge.call_count == 2
 
+
 class TestCallGraph:
     """Test suite for pysymex.analysis.interprocedural.callgraph.CallGraph."""
+
     def test_add_node(self) -> None:
         """Test add_node behavior."""
         cg = CallGraph()
@@ -135,7 +146,8 @@ class TestCallGraph:
     def test_get_transitive_callers(self) -> None:
         """Test get_transitive_callers behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         callers = cg.get_transitive_callers("c")
@@ -144,7 +156,8 @@ class TestCallGraph:
     def test_get_transitive_callees(self) -> None:
         """Test get_transitive_callees behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         callees = cg.get_transitive_callees("a")
@@ -153,7 +166,8 @@ class TestCallGraph:
     def test_is_reachable(self) -> None:
         """Test is_reachable behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         assert cg.is_reachable("a", "b") is True
         assert cg.is_reachable("a", "c") is False
@@ -161,7 +175,8 @@ class TestCallGraph:
     def test_find_cycles(self) -> None:
         """Test find_cycles behavior."""
         cg = CallGraph()
-        for x in ["a", "b"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "a")
         cycles = cg.find_cycles()
@@ -170,7 +185,8 @@ class TestCallGraph:
     def test_is_recursive(self) -> None:
         """Test is_recursive behavior."""
         cg = CallGraph()
-        for x in ["a", "b"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "a")
         assert cg.is_recursive("a") is True
@@ -192,7 +208,8 @@ class TestCallGraph:
     def test_topological_order(self) -> None:
         """Test topological_order behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         order = cg.topological_order()
@@ -201,7 +218,8 @@ class TestCallGraph:
     def test_reverse_topological_order(self) -> None:
         """Test reverse_topological_order behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         order = cg.reverse_topological_order()
@@ -210,7 +228,8 @@ class TestCallGraph:
     def test_strongly_connected_components(self) -> None:
         """Test strongly_connected_components behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "a")
         cg.add_edge("c", "a")
@@ -221,21 +240,24 @@ class TestCallGraph:
     def test_entry_points(self) -> None:
         """Test entry_points behavior."""
         cg = CallGraph()
-        for x in ["a", "b"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         assert "a" in cg.entry_points()
 
     def test_leaf_functions(self) -> None:
         """Test leaf_functions behavior."""
         cg = CallGraph()
-        for x in ["a", "b"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         assert "b" in cg.leaf_functions()
 
     def test_call_depth(self) -> None:
         """Test call_depth behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         assert cg.call_depth("a") == 2
@@ -256,7 +278,8 @@ class TestCallGraph:
     def test_subgraph(self) -> None:
         """Test subgraph behavior."""
         cg = CallGraph()
-        for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+        for x in ["a", "b", "c"]:
+            cg.add_node(CallGraphNode(name=x))
         cg.add_edge("a", "b")
         cg.add_edge("b", "c")
         sub = cg.subgraph({"a", "b"})
@@ -265,11 +288,16 @@ class TestCallGraph:
         assert sub.has_edge("a", "b") is True
         assert sub.has_edge("b", "c") is False
 
+
 class TestCallGraphBuilder:
     """Test suite for pysymex.analysis.interprocedural.callgraph.CallGraphBuilder."""
+
     def test_add_function(self) -> None:
         """Test add_function behavior."""
-        def my_func() -> None: pass
+
+        def my_func() -> None:
+            pass
+
         b = CallGraphBuilder()
         b.add_function(my_func)
         assert len(b.graph.node_names()) > 0
@@ -278,12 +306,15 @@ class TestCallGraphBuilder:
     def test_analyze_function(self, mock_instrs) -> None:
         """Test analyze_function behavior."""
         from unittest.mock import Mock
+
         instr = Mock()
         instr.opname = "CALL_FUNCTION"
         instr.argval = "print"
         mock_instrs.return_value = [instr]
-        
-        def my_func() -> None: print()
+
+        def my_func() -> None:
+            print()
+
         b = CallGraphBuilder()
         callees = b.analyze_function(my_func)
         assert "print" in callees
@@ -292,25 +323,29 @@ class TestCallGraphBuilder:
     def test_build_from_functions(self, mock_instrs) -> None:
         """Test build_from_functions behavior."""
         from unittest.mock import Mock
+
         instr = Mock()
         instr.opname = "CALL_FUNCTION"
         instr.argval = "f2"
-        # Return f2 as called for f1, and nothing for f2
+
         def side_effect(code):
-            if "f1" in str(code): return [instr]
+            if "f1" in str(code):
+                return [instr]
             return []
+
         mock_instrs.side_effect = side_effect
-        
-        def f1() -> None: f2()
-        def f2() -> None: pass
+
+        def f1() -> None:
+            f2()
+
+        def f2() -> None:
+            pass
+
         b = CallGraphBuilder()
         cg = b.build_from_functions([f1, f2])
-        # f1 calls f2 in the mocked instructions. But its name in graph will be the qualname.
         qualnames = list(cg.node_names())
         f1_name = next((n for n in qualnames if "f1" in n), "f1")
         f2_name = next((n for n in qualnames if "f2" in n), "f2")
-        # In build_from_functions, caller is func.__qualname__. The callee string added is "f2".
-        # So there will be an edge from f1_qualname to "f2".
         assert cg.has_edge(f1_name, "f2") is True
 
     def test_build(self) -> None:
@@ -318,29 +353,35 @@ class TestCallGraphBuilder:
         b = CallGraphBuilder()
         assert isinstance(b.build(), CallGraph)
 
+
 def test_get_analysis_order() -> None:
     """Test get_analysis_order behavior."""
     cg = CallGraph()
-    for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+    for x in ["a", "b", "c"]:
+        cg.add_node(CallGraphNode(name=x))
     cg.add_edge("a", "b")
     cg.add_edge("b", "c")
     order = get_analysis_order(cg)
-    assert "c" in order # topological order depends on SCC processing, but c must be analyzed early
+    assert "c" in order
+
 
 def test_find_mutual_recursion() -> None:
     """Test find_mutual_recursion behavior."""
     cg = CallGraph()
-    for x in ["a", "b"]: cg.add_node(CallGraphNode(name=x))
+    for x in ["a", "b"]:
+        cg.add_node(CallGraphNode(name=x))
     cg.add_edge("a", "b")
     cg.add_edge("b", "a")
     m = find_mutual_recursion(cg)
     assert len(m) == 1
     assert "a" in m[0] and "b" in m[0]
 
+
 def test_compute_dominators() -> None:
     """Test compute_dominators behavior."""
     cg = CallGraph()
-    for x in ["a", "b", "c"]: cg.add_node(CallGraphNode(name=x))
+    for x in ["a", "b", "c"]:
+        cg.add_node(CallGraphNode(name=x))
     cg.add_edge("a", "b")
     cg.add_edge("a", "c")
     doms = compute_dominators(cg, "a")

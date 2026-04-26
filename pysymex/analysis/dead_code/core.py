@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,7 +36,7 @@ import inspect
 from collections import defaultdict
 from collections.abc import Sequence
 from types import CodeType
-from typing import cast
+from typing import TypeGuard, cast
 
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
@@ -44,6 +44,18 @@ from ..cross_function import CallGraph
 from ..control.cfg import CFGBuilder
 from ..dataflow.core import LiveVariables
 from .types import DeadCode, DeadCodeKind
+
+
+def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
+    """Type guard to narrow a value to tuple[object, ...]."""
+    return isinstance(value, tuple)
+
+
+def _as_object_tuple(value: object) -> tuple[object, ...]:
+    """Return a value as tuple[object, ...] when it is a tuple."""
+    if _is_object_tuple(value):
+        return tuple(value)
+    return ()
 
 
 class UnreachableCodeDetector:
@@ -334,9 +346,8 @@ class UnusedVariableDetector:
                         "LOAD_FAST_LOAD_FAST",
                         "STORE_FAST_LOAD_FAST",
                     }:
-                        if isinstance(instr.argval, tuple):
-                            for n in cast("tuple[object, ...]", instr.argval):
-                                uses.add(str(n))
+                        for n in _as_object_tuple(instr.argval):
+                            uses.add(str(n))
 
                 uses.update(UnusedVariableDetector._collect_nested_uses(const))
 
@@ -454,8 +465,8 @@ class DeadStoreDetector:
                 last_store.pop(name, None)
 
             elif opname == "STORE_FAST_LOAD_FAST":
-                if isinstance(arg, tuple) and len(arg) >= 2:
-                    _arg = cast("tuple[object, ...]", arg)
+                _arg = _as_object_tuple(arg)
+                if len(_arg) >= 2:
                     sname, lname = str(_arg[0]), str(_arg[1])
 
                     last_store.pop(lname, None)
@@ -632,9 +643,8 @@ class UnusedParameterDetector:
             }:
                 used.add(str(instr.argval))
             elif instr.opname in {"LOAD_FAST_LOAD_FAST", "STORE_FAST_LOAD_FAST"}:
-                if isinstance(instr.argval, tuple):
-                    for n in cast("tuple[object, ...]", instr.argval):
-                        used.add(str(n))
+                for n in _as_object_tuple(instr.argval):
+                    used.add(str(n))
 
         nested_uses = UnusedVariableDetector.collect_nested_uses(code)
         for param in params:
@@ -796,4 +806,3 @@ class RedundantConditionDetector:
                     stack.pop()
                 stack.append(None)
         return dead_code
-

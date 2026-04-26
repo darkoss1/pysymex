@@ -74,4 +74,3 @@ def test_reporter_and_comparator_outputs(tmp_path: Path) -> None:
     assert json.loads(as_json)[0]["name"] == "b1"
     assert "| Benchmark |" in as_md
     assert out.exists()
-

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -30,20 +30,10 @@ from typing import (
     TypeVar,
 )
 
-import icontract
+
 import z3
 
 T = TypeVar("T")
-
-
-def _post_join(self: Interval, other: Interval, result: Interval) -> bool:
-    return (self.is_bottom() or result.contains(self.lo) if self.lo is not None else True) and (
-        other.is_bottom() or result.contains(other.lo) if other.lo is not None else True
-    )
-
-
-def _post_meet(self: Interval, other: Interval, result: Interval) -> bool:
-    return result.is_bottom() or (self.contains(result.lo) if result.lo is not None else True)
 
 
 class AbstractValue(ABC, Generic[T]):
@@ -146,7 +136,6 @@ class Interval(AbstractValue["Interval"]):
             return False
         return True
 
-    @icontract.ensure(_post_join)
     def join(self, other: Interval) -> Interval:
         """Least upper bound: [min(lo), max(hi)]"""
         if self.is_bottom():
@@ -161,7 +150,6 @@ class Interval(AbstractValue["Interval"]):
             new_hi = max(self.hi, other.hi)
         return Interval(new_lo, new_hi)
 
-    @icontract.ensure(_post_meet)
     def meet(self, other: Interval) -> Interval:
         """Greatest lower bound: [max(lo), min(hi)]"""
         if self.is_bottom() or other.is_bottom():

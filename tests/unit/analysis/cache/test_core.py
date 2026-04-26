@@ -4,18 +4,30 @@ import time
 import os
 import tempfile
 from pysymex.analysis.cache.core import (
-    CacheKeyType, CacheKey, hash_bytecode, hash_function, hash_file, hash_dict,
-    LRUCache, CacheEntry, PersistentCache, TieredCache
+    CacheKeyType,
+    CacheKey,
+    hash_bytecode,
+    hash_function,
+    hash_file,
+    hash_dict,
+    LRUCache,
+    CacheEntry,
+    PersistentCache,
+    TieredCache,
 )
+
 
 class TestCacheKeyType:
     """Test suite for pysymex.analysis.cache.core.CacheKeyType."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert CacheKeyType.FUNCTION.name == "FUNCTION"
 
+
 class TestCacheKey:
     """Test suite for pysymex.analysis.cache.core.CacheKey."""
+
     def test_to_string(self) -> None:
         """Test to_string behavior."""
         key = CacheKey(CacheKeyType.FUNCTION, "my_func", "1.5")
@@ -36,6 +48,7 @@ class TestCacheKey:
         with pytest.raises(ValueError):
             CacheKey.from_string("invalid_format")
 
+
 def test_hash_bytecode() -> None:
     """Test hash_bytecode behavior."""
     b1 = b"abc"
@@ -43,9 +56,13 @@ def test_hash_bytecode() -> None:
     assert hash_bytecode(b1) == hash_bytecode(b2)
     assert hash_bytecode(b1) != hash_bytecode(b"def")
 
+
 def test_hash_function() -> None:
     """Test hash_function behavior."""
-    def my_func() -> None: pass
+
+    def my_func() -> None:
+        pass
+
     h1 = hash_function("my_func", my_func.__code__, "sig1")
     h2 = hash_function("my_func", my_func.__code__, "sig1")
     h3 = hash_function("my_func2", my_func.__code__, "sig1")
@@ -55,6 +72,7 @@ def test_hash_function() -> None:
     h4 = hash_function("my_func", b"code_bytes", "sig2")
     h5 = hash_function("my_func", b"code_bytes", "sig2")
     assert h4 == h5
+
 
 def test_hash_file(tmp_path: Path) -> None:
     """Test hash_file behavior."""
@@ -68,6 +86,7 @@ def test_hash_file(tmp_path: Path) -> None:
     assert h1 == h2
     assert h1 != h3
 
+
 def test_hash_dict() -> None:
     """Test hash_dict behavior."""
     d1 = {"a": 1, "b": 2}
@@ -75,8 +94,10 @@ def test_hash_dict() -> None:
     assert hash_dict(d1) == hash_dict(d2)
     assert hash_dict(d1) != hash_dict({"a": 1})
 
+
 class TestLRUCache:
     """Test suite for pysymex.analysis.cache.core.LRUCache."""
+
     def test_get(self) -> None:
         """Test get behavior."""
         cache = LRUCache[str, int]()
@@ -90,11 +111,11 @@ class TestLRUCache:
         cache = LRUCache[str, int](maxsize=2)
         cache.put("a", 1)
         cache.put("b", 2)
-        cache.put("c", 3) # evicts 'a'
+        cache.put("c", 3)
         assert cache.get("a") is None
         assert cache.get("b") == 2
         assert cache.get("c") == 3
-        cache.put("b", 4) # update 'b'
+        cache.put("b", 4)
         assert cache.get("b") == 4
 
     def test_remove(self) -> None:
@@ -117,8 +138,8 @@ class TestLRUCache:
         cache = LRUCache[str, int]()
         assert cache.hit_rate == 0.0
         cache.put("a", 1)
-        cache.get("a") # hit
-        cache.get("b") # miss
+        cache.get("a")
+        cache.get("b")
         assert cache.hit_rate == 0.5
 
     def test_stats(self) -> None:
@@ -132,16 +153,20 @@ class TestLRUCache:
         assert stats["hits"] == 1
         assert stats["misses"] == 0
 
+
 class TestCacheEntry:
     """Test suite for pysymex.analysis.cache.core.CacheEntry."""
+
     def test_age(self) -> None:
         """Test age behavior."""
         now = time.time()
         entry = CacheEntry("k", "t", "h", b"v", now - 10, now, 1, "[]")
         assert entry.age >= 10
 
+
 class TestPersistentCache:
     """Test suite for pysymex.analysis.cache.core.PersistentCache."""
+
     def test_close(self, tmp_path: Path) -> None:
         """Test close behavior."""
         cache = PersistentCache(db_path=tmp_path / "cache.db")
@@ -195,12 +220,11 @@ class TestPersistentCache:
         cache.put(parent, 1)
         cache.put(child1, 2, dependencies=[parent])
         cache.put(child2, 3, dependencies=[child1])
-        
+
         invalidated = cache.invalidate_dependencies(parent)
         assert child1.to_string() in invalidated
         assert child2.to_string() in invalidated
-        
-        # parent itself shouldn't be deleted by invalidate_dependencies
+
         assert cache.get(parent) == 1
         assert cache.get(child1) is None
         assert cache.get(child2) is None
@@ -220,7 +244,7 @@ class TestPersistentCache:
         k1 = CacheKey(CacheKeyType.FUNCTION, "f1")
         k2 = CacheKey(CacheKeyType.FUNCTION, "f2")
         cache.put(k1, 1)
-        time.sleep(0.01) # ensure different access times if possible
+        time.sleep(0.01)
         cache.put(k2, 2)
         assert cache.cleanup() == 1
         assert len(cache) == 1
@@ -235,17 +259,17 @@ class TestPersistentCache:
         assert stats["by_type"] == {"FUNCTION": 1}
         cache.close()
 
+
 class TestTieredCache:
     """Test suite for pysymex.analysis.cache.core.TieredCache."""
+
     def test_get(self, tmp_path: Path) -> None:
         """Test get behavior."""
         cache = TieredCache(db_path=tmp_path / "cache.db")
         key = CacheKey(CacheKeyType.FUNCTION, "f1")
         cache.put(key, 42)
-        # Clear memory to force read from persistent
         cache.memory.clear()
         assert cache.get(key) == 42
-        # Now it should be in memory
         assert cache.memory.get(key.to_string()) == 42
         cache.close()
 
@@ -256,7 +280,7 @@ class TestTieredCache:
         cache.put(key, 42, persist=False)
         assert cache.memory.get(key.to_string()) == 42
         assert cache.persistent.get(key) is None
-        
+
         cache.put(key, 43, persist=True)
         assert cache.persistent.get(key) == 43
         cache.close()

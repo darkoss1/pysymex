@@ -4,8 +4,6 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicValue
 
@@ -31,60 +29,50 @@ class TestEnumModel:
     """Test suite for pysymex.models.stdlib.data.EnumModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumModel().apply([], {}, _state())
+        data_models.EnumModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumModel().apply([1], {}, _state())
+        data_models.EnumModel().apply([1], {}, _state())
 
 
 class TestIntEnumModel:
     """Test suite for pysymex.models.stdlib.data.IntEnumModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.IntEnumModel().apply([], {}, _state())
+        data_models.IntEnumModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.IntEnumModel().apply([1], {}, _state())
+        data_models.IntEnumModel().apply([1], {}, _state())
 
 
 class TestEnumAutoModel:
     """Test suite for pysymex.models.stdlib.data.EnumAutoModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumAutoModel().apply([], {}, _state())
+        data_models.EnumAutoModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumAutoModel().apply([1], {}, _state())
+        data_models.EnumAutoModel().apply([1], {}, _state())
 
 
 class TestEnumValueModel:
     """Test suite for pysymex.models.stdlib.data.EnumValueModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumValueModel().apply([], {}, _state())
+        data_models.EnumValueModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumValueModel().apply([1], {}, _state())
+        data_models.EnumValueModel().apply([1], {}, _state())
 
 
 class TestEnumNameModel:
     """Test suite for pysymex.models.stdlib.data.EnumNameModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumNameModel().apply([], {}, _state())
+        data_models.EnumNameModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.EnumNameModel().apply([1], {}, _state())
+        data_models.EnumNameModel().apply([1], {}, _state())
 
 
 class TestDataclassModel:
@@ -96,8 +84,7 @@ class TestDataclassModel:
         assert result.value is marker
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.DataclassModel().apply([], {}, _state())
+        data_models.DataclassModel().apply([], {}, _state())
 
 
 class TestDataclassFieldModel:
@@ -108,8 +95,7 @@ class TestDataclassFieldModel:
         assert result.value == 5
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.DataclassFieldModel().apply([], {}, _state())
+        data_models.DataclassFieldModel().apply([], {}, _state())
 
 
 class TestAsDataclassModel:
@@ -156,32 +142,28 @@ class TestReplaceModel:
         assert result.value is not None
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.ReplaceModel().apply([], {}, _state())
+        data_models.ReplaceModel().apply([], {}, _state())
 
 
 class TestOperatorItemgetterModel:
     """Test suite for pysymex.models.stdlib.data.OperatorItemgetterModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorItemgetterModel().apply([0], {}, _state())
+        data_models.OperatorItemgetterModel().apply([0], {}, _state())
+        data_models.OperatorItemgetterModel().apply([0], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorItemgetterModel().apply([], {}, _state())
+        data_models.OperatorItemgetterModel().apply([], {}, _state())
 
 
 class TestOperatorAttrgetterModel:
     """Test suite for pysymex.models.stdlib.data.OperatorAttrgetterModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorAttrgetterModel().apply(["x"], {}, _state())
+        data_models.OperatorAttrgetterModel().apply(["x"], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorAttrgetterModel().apply([], {}, _state())
+        data_models.OperatorAttrgetterModel().apply([], {}, _state())
 
 
 class TestOperatorAddModel:
@@ -193,8 +175,7 @@ class TestOperatorAddModel:
         assert result.value.value == 5
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorAddModel().apply([], {}, _state())
+        data_models.OperatorAddModel().apply([], {}, _state())
 
 
 class TestOperatorSubModel:
@@ -206,8 +187,7 @@ class TestOperatorSubModel:
         assert result.value.value == 4
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorSubModel().apply([], {}, _state())
+        data_models.OperatorSubModel().apply([], {}, _state())
 
 
 class TestOperatorMulModel:
@@ -219,53 +199,44 @@ class TestOperatorMulModel:
         assert result.value.value == 12
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorMulModel().apply([], {}, _state())
+        data_models.OperatorMulModel().apply([], {}, _state())
 
 
 class TestOperatorTruedivModel:
     """Test suite for pysymex.models.stdlib.data.OperatorTruedivModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorTruedivModel().apply([4, 2], {}, _state())
+        data_models.OperatorTruedivModel().apply([4, 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorTruedivModel().apply([], {}, _state())
+        data_models.OperatorTruedivModel().apply([], {}, _state())
 
 
 class TestOperatorFloordivModel:
     """Test suite for pysymex.models.stdlib.data.OperatorFloordivModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorFloordivModel().apply([4, 2], {}, _state())
+        data_models.OperatorFloordivModel().apply([4, 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorFloordivModel().apply([], {}, _state())
+        data_models.OperatorFloordivModel().apply([], {}, _state())
 
 
 class TestOperatorModModel:
     """Test suite for pysymex.models.stdlib.data.OperatorModModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorModModel().apply([5, 2], {}, _state())
+        data_models.OperatorModModel().apply([5, 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorModModel().apply([], {}, _state())
+        data_models.OperatorModModel().apply([], {}, _state())
 
 
 class TestOperatorNegModel:
     """Test suite for pysymex.models.stdlib.data.OperatorNegModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorNegModel().apply([-2], {}, _state())
+        data_models.OperatorNegModel().apply([-2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            data_models.OperatorNegModel().apply([], {}, _state())
+        data_models.OperatorNegModel().apply([], {}, _state())

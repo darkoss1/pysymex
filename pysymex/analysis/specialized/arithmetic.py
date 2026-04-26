@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,7 +33,6 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import icontract
 
 if TYPE_CHECKING:
     import z3
@@ -46,6 +45,16 @@ from enum import Enum, auto
 import z3
 
 from pysymex.core.solver.engine import get_model, is_satisfiable
+
+
+def _empty_constraints() -> list[z3.BoolRef]:
+    """Create a typed empty constraints list."""
+    return []
+
+
+def _empty_counterexample() -> dict[str, object]:
+    """Create a typed empty counterexample map."""
+    return {}
 
 
 class ArithmeticMode(Enum):
@@ -77,12 +86,7 @@ class IntegerBounds:
     min_val: int
     max_val: int
 
-    @staticmethod
-    def _post_for_width(result: IntegerBounds) -> bool:
-        return result.min_val <= result.max_val
-
     @classmethod
-    @icontract.ensure(_post_for_width)
     def for_width(cls, width: IntegerWidth, signed: bool = True) -> IntegerBounds:
         """Create bounds for a specific bit width."""
         if width == IntegerWidth.ARBITRARY:
@@ -132,8 +136,8 @@ class ArithmeticIssue:
     message: str
     location: str | None = None
     line_number: int | None = None
-    constraints: Sequence[z3.BoolRef] = field(default_factory=list)
-    counterexample: dict[str, object] = field(default_factory=dict)
+    constraints: Sequence[z3.BoolRef] = field(default_factory=_empty_constraints)
+    counterexample: dict[str, object] = field(default_factory=_empty_counterexample)
     severity: str = "error"
 
     def format(self) -> str:
@@ -175,7 +179,6 @@ class ArithmeticSafetyAnalyzer:
         self._solver.reset()
         self._issues.clear()
 
-    @icontract.ensure(lambda result: result is None or isinstance(result, ArithmeticIssue))
     def check_addition_overflow(
         self,
         a: z3.ExprRef,
@@ -325,7 +328,6 @@ class ArithmeticSafetyAnalyzer:
                 )
         return issues
 
-    @icontract.ensure(lambda result: result is None or isinstance(result, ArithmeticIssue))
     def check_modulo_safety(
         self,
         a: z3.ExprRef,

@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -78,38 +78,3 @@ def __getattr__(name: str) -> object:
 def __dir__() -> list[str]:
     """Dir."""
     return list(_EXPORTS.keys())
-
-
-__all__: list[str] = [
-    "ArithmeticIssue",
-    "AsyncSymbolicExecutor",
-    "ConcurrentSymbolicExecutor",
-    "ContractIssue",
-    "ExecutionConfig",
-    "ExecutionResult",
-    "InferredProperty",
-    "OpcodeDispatcher",
-    "OpcodeResult",
-    "RankingFunction",
-    "SymbolicEventLoop",
-    "SymbolicExecutor",
-    "TerminationAnalyzer",
-    "TerminationProof",
-    "TerminationStatus",
-    "VerifiedExecutionConfig",
-    "VerifiedExecutionResult",
-    "VerifiedExecutor",
-    "analyze",
-    "analyze_async",
-    "analyze_code",
-    "analyze_concurrent",
-    "check_arithmetic",
-    "check_contracts",
-    "execute_code",
-    "execute_function",
-    "opcode_handler",
-    "prove_termination",
-    "quick_check",
-    "verify",
-]
-

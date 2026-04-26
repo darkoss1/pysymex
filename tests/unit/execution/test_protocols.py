@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import dis
 
 from pysymex.analysis.detectors.base import Issue
-from pysymex.core.solver.engine import ShadowSolver
+from pysymex.core.solver.engine import IncrementalSolver
 
 
 class TestExecutionContext:
@@ -11,10 +11,11 @@ class TestExecutionContext:
 
     def test_register_hook(self) -> None:
         """Scenario: register a hook by name; expected handler stored at that key."""
+
         class ContextLike:
             def __init__(self) -> None:
                 self._instructions: list[dis.Instruction] = []
-                self.solver: ShadowSolver = ShadowSolver()
+                self.solver: IncrementalSolver = IncrementalSolver()
                 self._paths_explored: int = 0
                 self._coverage: set[int] = set()
                 self._issues: list[Issue] = []

@@ -1,4 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+import sys
+import pytest
 
 from pysymex.execution.executors.concurrent import (
     ConcurrentSymbolicExecutor,
@@ -7,8 +10,10 @@ from pysymex.execution.executors.concurrent import (
 )
 from pysymex.execution.types import ExecutionConfig
 
+
 class TestSharedVariableTracker:
     """Test suite for pysymex.execution.executors.concurrent.SharedVariableTracker."""
+
     def test_record_access(self) -> None:
         """Test record_access behavior."""
         tracker = SharedVariableTracker()
@@ -41,10 +46,14 @@ class TestSharedVariableTracker:
 
 class TestConcurrentSymbolicExecutor:
     """Test suite for pysymex.execution.executors.concurrent.ConcurrentSymbolicExecutor."""
+
     def test_execute_function(self) -> None:
         """Test execute_function behavior."""
+
         def sample(x: int) -> int:
             return x + 1
+
+        import pysymex.execution.opcodes  # Ensure opcodes are registered
 
         executor = ConcurrentSymbolicExecutor(
             ExecutionConfig(max_paths=4, max_iterations=40, enable_concurrency_analysis=True)
@@ -55,6 +64,7 @@ class TestConcurrentSymbolicExecutor:
 
 def test_analyze_concurrent() -> None:
     """Test analyze_concurrent behavior."""
+
     def sample(x: int) -> int:
         return x * 2
 

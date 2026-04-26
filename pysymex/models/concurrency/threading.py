@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import itertools
 import types
-from typing import Self
+from typing import Self, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pysymex.core.state import VMState
 
 _thread_id_counter = itertools.count()
 _lock_id_counter = itertools.count()
@@ -93,6 +96,28 @@ class LockModel:
         self._name = f"lock_{next(_lock_id_counter)}"
         self._locked = False
         self._owner: str | None = None
+
+    @staticmethod
+    def apply(
+        args: list[object],
+        kwargs: dict[str, object],
+        state: "VMState",
+    ) -> object:
+        """Model method calls on Lock instances.
+
+        Args:
+            args: Positional arguments (self + method args)
+            kwargs: Keyword arguments
+            state: Current VM state
+
+        Returns:
+            ModelResult with symbolic result and constraints
+        """
+        from pysymex.models.numeric import ModelResult
+        from pysymex.core.types.scalars import SymbolicValue
+
+        result, constraint = SymbolicValue.symbolic(f"lock_call_{state.pc}_{state.path_id}")
+        return ModelResult(value=result, constraints=[constraint])
 
     @property
     def name(self) -> str:

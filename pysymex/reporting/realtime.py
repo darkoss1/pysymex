@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -83,7 +83,7 @@ HTML_TEMPLATE = """
 <body>
     <div id="graph"></div>
     <div id="info">
-        <h1>ðŸ”® PySyMex Live Map</h1>
+        <h1>ðŸ”® pysymex Live Map</h1>
         <div id="details">Waiting for engine connection...</div>
 
         <div class="legend">
@@ -462,7 +462,7 @@ def run_realtime_scan(
 
     webbrowser.open("http://127.0.0.1:8080")
     print("\n" + "=" * 70)
-    print("ðŸ”® PySyMex Live Directory Map Server Running!")
+    print("ðŸ”® pysymex Live Directory Map Server Running!")
     print("ðŸ”— http://127.0.0.1:8080")
     print("=" * 70 + "\n")
     print("Analyzing target directory paths and broadcasting dots data...")
@@ -598,5 +598,3 @@ def run_realtime_scan(
     server.shutdown()
 
     return results
-
-

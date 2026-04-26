@@ -4,14 +4,15 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
 import z3
 
 from pysymex.core.types.containers import SymbolicList
 
 
 def _load_itertools_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "itertools.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "itertools.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_itertools", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib itertools models module")
@@ -74,8 +75,7 @@ def test_model_combinations_with_replacement() -> None:
 
 
 def test_model_count() -> None:
-    with pytest.raises(NameError):
-        itertools_models.model_count(1, 2)
+    itertools_models.model_count(1, 2)
 
 
 def test_model_cycle() -> None:

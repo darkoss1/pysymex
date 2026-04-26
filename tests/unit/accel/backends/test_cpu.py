@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 import z3
 
 from pysymex.accel.backends import BackendType
@@ -27,7 +27,7 @@ def test_evaluate_bag_matches_reference_for_partial_64_chunk_width() -> None:
     if not is_available():
         pytest.skip("Numba CPU backend unavailable")
 
-    vars_ = [f"v{i}" for i in range(5)]  # 32 states (partial 64-bit chunk)
+    vars_ = [f"v{i}" for i in range(5)]
     bools = [z3.Bool(name) for name in vars_]
     expr = z3.And(bools[0], z3.Or(bools[1], bools[2]), z3.Not(bools[4]))
     constraint = compile_constraint(expr, vars_)
@@ -43,7 +43,7 @@ def test_evaluate_bag_matches_reference_for_exact_64_chunk_width() -> None:
     if not is_available():
         pytest.skip("Numba CPU backend unavailable")
 
-    vars_ = [f"v{i}" for i in range(6)]  # 64 states (exact chunk boundary)
+    vars_ = [f"v{i}" for i in range(6)]
     bools = [z3.Bool(name) for name in vars_]
     expr = z3.Xor(
         z3.Xor(z3.Xor(bools[0], bools[1]), z3.Xor(bools[2], bools[3])),

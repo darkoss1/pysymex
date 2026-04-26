@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -26,6 +26,16 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import z3
+
+
+def _empty_induction_vars() -> dict[str, InductionVariable]:
+    """Create a typed empty induction-variable mapping."""
+    return {}
+
+
+def _empty_children() -> list[LoopInfo]:
+    """Create a typed empty child-loop list."""
+    return []
 
 
 class LoopType(Enum):
@@ -109,10 +119,10 @@ class LoopInfo:
     body_pcs: set[int]
     loop_type: LoopType = LoopType.UNKNOWN
     bound: LoopBound | None = None
-    induction_vars: dict[str, InductionVariable] = field(default_factory=dict)
+    induction_vars: dict[str, InductionVariable] = field(default_factory=_empty_induction_vars)
     invariants: list[z3.BoolRef] = field(default_factory=list[z3.BoolRef])
     parent: LoopInfo | None = None
-    children: list[LoopInfo] = field(default_factory=list)
+    children: list[LoopInfo] = field(default_factory=_empty_children)
     nesting_depth: int = 0
 
     def contains_pc(self, pc: int) -> bool:

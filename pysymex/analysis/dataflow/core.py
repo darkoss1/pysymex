@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,7 +33,6 @@ from typing import (
     Generic,
 )
 
-import icontract
 
 from pysymex._compat import get_starts_line
 
@@ -241,7 +240,6 @@ class ReachingDefinitions(DataFlowAnalysis[frozenset[Definition]]):
             result |= f
         return frozenset(result)
 
-    @icontract.ensure(lambda result: isinstance(result, frozenset))
     def get_reaching_defs_at(self, pc: int) -> frozenset[Definition]:
         """Get definitions reaching a specific PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -327,7 +325,6 @@ class LiveVariables(DataFlowAnalysis[frozenset[str]]):
             result |= f
         return frozenset(result)
 
-    @icontract.ensure(lambda result: isinstance(result, bool))
     def is_live_at(self, var_name: str, pc: int) -> bool:
         """Check if a variable is live at a specific PC."""
         block = self.cfg.get_block_at_pc(pc)

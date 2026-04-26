@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -139,8 +139,8 @@ class LRUCacheModel:
             result, _ = SymbolicValue.symbolic(f"lru_cached_{func.__name__}")
             return result
 
-        wrapper.cache_info = lambda: (self.cache_info_hits, self.cache_info_misses, self.maxsize, 0)  # type: ignore[attr-defined]
-        wrapper.cache_clear = lambda: None  # type: ignore[attr-defined]
+        wrapper.cache_info = lambda: (self.cache_info_hits, self.cache_info_misses, self.maxsize, 0)  # type: ignore[reportFunctionMemberAccess]  # lru_cache adds cache_info attribute
+        wrapper.cache_clear = lambda: None  # type: ignore[reportFunctionMemberAccess]  # lru_cache adds cache_clear attribute
         return cast("_LRUCacheWrapper", wrapper)
 
 

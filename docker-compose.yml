@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  python311:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.311
+    container_name: pysymex-python311
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  python312:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.312
+    container_name: pysymex-python312
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  python313:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.313
+    container_name: pysymex-python313
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

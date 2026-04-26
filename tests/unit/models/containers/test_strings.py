@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex.core.state import VMState
 from pysymex.models.containers import strings
@@ -19,11 +17,8 @@ def test_lower_upper_faithfulness() -> None:
 
 def test_string_concrete_symbolic_error_paths() -> None:
     """Representative concrete/symbolic/error path checks."""
-    with pytest.raises(NameError):
-        strings.StrLowerModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        strings.StrFindModel().apply([], {}, _state())
+    strings.StrLowerModel().apply([], {}, _state())
+    strings.StrFindModel().apply([], {}, _state())
 
 
 def test_string_edge_case_empty_input() -> None:

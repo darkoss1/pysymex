@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,162 +16,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Contract decorator functions for pysymex.
+"""Contract decorators — backward-compatible re-exports.
 
-Provides the @requires, @ensures, @invariant, and @loop_invariant decorators
-for specifying function/class contracts.
+The canonical decorator implementations now live in
+:mod:`pysymex.contracts.decorators`.  This module re-exports them so
+that existing import paths continue to work::
+
+    from pysymex.analysis.contracts.decorators import requires, ensures
 """
 
 from __future__ import annotations
 
-import functools
-import inspect
-import logging
-from collections.abc import Callable
-from typing import Protocol, cast
-
-from pysymex.analysis.contracts.types import (
-    Contract,
-    ContractKind,
-    FunctionContract,
+from pysymex.contracts.decorators import (
+    ensures,
+    function_contracts,
+    get_function_contract,
+    invariant,
+    loop_invariant,
+    requires,
 )
-
-logger = logging.getLogger(__name__)
-
-function_contracts: dict[str, FunctionContract] = {}
-
-
-class _ContractWrapped(Protocol):
-    __contract__: FunctionContract
-
-
-class _InvariantAnnotatedType(Protocol):
-    __invariants__: list[Contract]
-
-
-def get_function_contract(func: Callable[..., object]) -> FunctionContract | None:
-    """Get the contract for a function."""
-    key = f"{func.__module__}.{func.__qualname__}"
-    return function_contracts.get(key)
-
-
-def requires(
-    condition: str, message: str | None = None
-) -> Callable[[Callable[..., object]], Callable[..., object]]:
-    """Decorator to add a precondition to a function.
-    Example:
-        @requires("x > 0", "x must be positive")
-        @requires("y != 0", "y must be non-zero")
-        def divide(x, y):
-            return x / y
-    """
-
-    def decorator(func: Callable[..., object]) -> Callable[..., object]:
-        """Decorator."""
-        key = f"{func.__module__}.{func.__qualname__}"
-        if key not in function_contracts:
-            function_contracts[key] = FunctionContract(function_name=func.__name__)
-        contract = function_contracts[key]
-        try:
-            source_lines = inspect.getsourcelines(func)
-            line_num = source_lines[1]
-        except (OSError, TypeError):
-            logger.debug("Failed to get source lines for %s", func.__name__, exc_info=True)
-            line_num = None
-        contract.add_precondition(condition, message, line_num)
-
-        @functools.wraps(func)
-        def wrapper(*args: object, **kwargs: object) -> object:
-            return func(*args, **kwargs)
-
-        cast("_ContractWrapped", wrapper).__contract__ = contract
-        return wrapper
-
-    return decorator
-
-
-def ensures(
-    condition: str, message: str | None = None
-) -> Callable[[Callable[..., object]], Callable[..., object]]:
-    """Decorator to add a postcondition to a function.
-    Use 'result()' to refer to the return value.
-    Use 'old(x)' to refer to the value of x before the function.
-    Example:
-        @ensures("result() >= 0", "result must be non-negative")
-        @ensures("result() == old(x) + old(y)", "result is sum of inputs")
-        def add(x, y):
-            return x + y
-    """
-
-    def decorator(func: Callable[..., object]) -> Callable[..., object]:
-        """Decorator."""
-        key = f"{func.__module__}.{func.__qualname__}"
-        if key not in function_contracts:
-            function_contracts[key] = FunctionContract(function_name=func.__name__)
-        contract = function_contracts[key]
-        try:
-            source_lines = inspect.getsourcelines(func)
-            line_num = source_lines[1]
-        except (OSError, TypeError):
-            logger.debug("Failed to get source lines for %s", func.__name__, exc_info=True)
-            line_num = None
-        contract.add_postcondition(condition, message, line_num)
-
-        @functools.wraps(func)
-        def wrapper(*args: object, **kwargs: object) -> object:
-            return func(*args, **kwargs)
-
-        cast("_ContractWrapped", wrapper).__contract__ = contract
-        return wrapper
-
-    return decorator
-
-
-def invariant(condition: str, message: str | None = None):
-    """Decorator to add a class invariant.
-    The invariant must hold after __init__ and after every public method.
-    Example:
-        @invariant("self.balance >= 0", "balance must be non-negative")
-        class BankAccount:
-            def __init__(self, initial):
-                self.balance = initial
-    """
-
-    def decorator(cls: type) -> type:
-        """Decorator."""
-        annotated_cls = cast("_InvariantAnnotatedType", cls)
-        if not hasattr(annotated_cls, "__invariants__"):
-            annotated_cls.__invariants__ = []
-        annotated_cls.__invariants__.append(
-            Contract(
-                kind=ContractKind.INVARIANT,
-                condition=condition,
-                message=message or f"Invariant: {condition}",
-            )
-        )
-        return cls
-
-    return decorator
-
-
-def loop_invariant(condition: str, message: str | None = None):
-    """Marker for loop invariants (used in comments or type hints).
-    Example:
-        def sum_list(lst):
-            total = 0
-            i = 0
-            # loop_invariant: total == sum(lst[:i])
-            while i < len(lst):
-                total += lst[i]
-                i += 1
-            return total
-    """
-    return Contract(
-        kind=ContractKind.LOOP_INVARIANT,
-        condition=condition,
-        message=message or f"Loop invariant: {condition}",
-    )
-
 
 __all__ = [
     "ensures",

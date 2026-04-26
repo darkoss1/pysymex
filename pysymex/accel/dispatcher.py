@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,11 +16,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU Backend Dispatcher.
+"""Tiered CPU Dispatcher.
 
 Automatic backend selection and constraint evaluation dispatching.
-Selects the best available backend (CUDA > CPU > Reference)
+Selects the best available backend (CPU > Reference)
 and provides a unified interface for constraint evaluation.
+
+The dispatcher prioritizes CPU backends for high-performance constraint evaluation,
+bypassing the AST translation overhead of Z3 and the PCIe latency inherent in
+GPU-offloading architectures.
 """
 
 from __future__ import annotations
@@ -35,7 +39,6 @@ import numpy as np
 import numpy.typing as npt
 
 from pysymex.accel.backends import BackendError, BackendInfo, BackendType
-from pysymex.accel.memory import estimate_max_treewidth
 
 if TYPE_CHECKING:
     from pysymex.accel.bytecode import CompiledConstraint
@@ -43,7 +46,7 @@ if TYPE_CHECKING:
 __all__ = [
     "BackendType",
     "DispatchResult",
-    "GPUDispatcher",
+    "TieredDispatcher",
     "count_satisfying",
     "evaluate_bag",
     "get_backend_info",
@@ -113,18 +116,20 @@ class DispatchResult:
         return f"DispatchResult(backend={self.backend_used.name}, time={self.total_time_ms:.3f}ms)"
 
 
-class GPUDispatcher:
-    """GPU backend dispatcher with automatic selection.
+class TieredDispatcher:
+    """Tiered CPU dispatcher with automatic selection.
 
     Probes available backends on initialization and selects the best one
-    according to priority: CUDA > CPU > Reference.
+    according to priority: CPU > Reference. This tiered architecture
+    is optimized for high-frequency, low-latency graph resolution required
+    by modern symbolic execution engines, effectively bypassing AST translation
+    and PCIe overhead.
 
     Attributes:
         BACKEND_PRIORITY: Preference order for backend selection
     """
 
     BACKEND_PRIORITY: list[BackendType] = [
-        BackendType.GPU,
         BackendType.CPU,
         BackendType.REFERENCE,
     ]
@@ -145,7 +150,6 @@ class GPUDispatcher:
         self._forced_backend = force_backend
         self._backend_latency_ewma_ms: dict[BackendType, float] = {}
         self._routing_decisions: dict[BackendType, int] = {
-            BackendType.GPU: 0,
             BackendType.CPU: 0,
             BackendType.REFERENCE: 0,
         }
@@ -164,28 +168,11 @@ class GPUDispatcher:
             self._select_best_backend()
 
         logger.info(
-            f"GPU dispatcher initialized: {self._selected_backend.name if self._selected_backend else 'None'}"
+            f"Tiered dispatcher initialized: {self._selected_backend.name if self._selected_backend else 'None'}"
         )
 
     def _probe_backends(self) -> None:
         """Probe all backends to determine availability."""
-        try:
-            from pysymex.accel.backends import gpu
-
-            info = gpu.get_info()
-            self._backend_info[BackendType.GPU] = info
-            if info.available:
-                self._backends[BackendType.GPU] = gpu
-                logger.debug(f"CUDA backend available: {info.name}")
-        except ImportError:
-            self._backend_info[BackendType.GPU] = BackendInfo(
-                backend_type=BackendType.GPU,
-                name="CuPy NVRTC",
-                available=False,
-                max_treewidth=0,
-                error_message="cupy not installed",
-            )
-
         try:
             from pysymex.accel.backends import cpu
 
@@ -221,7 +208,7 @@ class GPUDispatcher:
                 self._selected_backend = backend_type
                 return
 
-        raise BackendError("No GPU backends available. Install numba.")
+        raise BackendError("No acceleration backends available. Install numba.")
 
     @property
     def selected_backend(self) -> BackendType:
@@ -298,9 +285,6 @@ class GPUDispatcher:
                 continue
             if constraint.num_variables > info.max_treewidth:
                 continue
-            if backend_type == BackendType.GPU and self._should_guardrail_gpu(constraint):
-                self._guardrail_fallbacks += 1
-                continue
             candidates.append(backend_type)
 
         if not candidates:
@@ -315,21 +299,10 @@ class GPUDispatcher:
                 best_cost = cost
         return best
 
-    def _should_guardrail_gpu(self, constraint: CompiledConstraint) -> bool:
-        info = self._backend_info.get(BackendType.GPU)
-        if info is None or info.device_memory_mb <= 0:
-            return False
-        memory_limited_max_w = estimate_max_treewidth(info.device_memory_mb)
-        return constraint.num_variables > memory_limited_max_w
-
     def _estimate_transfer_time_ms(
         self, backend_type: BackendType, constraint: CompiledConstraint
     ) -> float:
-        if backend_type != BackendType.GPU:
-            return 0.0
-        bytes_to_transfer = constraint.memory_bytes()
-        mb_to_transfer = float(bytes_to_transfer) / (1024.0 * 1024.0)
-        return (mb_to_transfer / self._default_memory_bandwidth_mb_per_s) * 1000.0
+        return 0.0
 
     def _estimate_backend_cost_ms(
         self, backend_type: BackendType, constraint: CompiledConstraint
@@ -417,10 +390,10 @@ class GPUDispatcher:
         raise BackendError(f"All backends failed: {error_msg}")
 
 
-_dispatcher: GPUDispatcher | None = None
+_dispatcher: TieredDispatcher | None = None
 
 
-def get_dispatcher(force_backend: BackendType | None = None) -> GPUDispatcher:
+def get_dispatcher(force_backend: BackendType | None = None) -> TieredDispatcher:
     """Get or create global dispatcher instance.
 
     Args:
@@ -431,7 +404,7 @@ def get_dispatcher(force_backend: BackendType | None = None) -> GPUDispatcher:
     """
     global _dispatcher
     if _dispatcher is None:
-        _dispatcher = GPUDispatcher(force_backend)
+        _dispatcher = TieredDispatcher(force_backend)
     return _dispatcher
 
 
@@ -517,4 +490,3 @@ def reset() -> None:
     """Reset global dispatcher (for testing)."""
     global _dispatcher
     _dispatcher = None
-

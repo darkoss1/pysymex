@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -96,10 +96,14 @@ class ReproductionGenerator:
         """Convert file path to importable module name."""
         try:
             rel_path = os.path.relpath(source_file)
-            name, _ = os.path.splitext(rel_path)
-            return name.replace(os.path.sep, ".")
         except ValueError:
-            return None
+            # On Windows, ValueError is raised when paths are on different drives
+            # Fall back to using the basename as the module name
+            basename = os.path.basename(source_file)
+            name, _ = os.path.splitext(basename)
+            return name
+        name, _ = os.path.splitext(rel_path)
+        return name.replace(os.path.sep, ".")
 
     def _get_all_function_args(
         self, source_file: str, func_name: str, class_name: str | None = None

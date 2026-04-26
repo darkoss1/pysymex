@@ -1,9 +1,11 @@
-﻿import pysymex.core.exceptions.analyzer
+import pysymex.core.exceptions.analyzer
 import pysymex.core.exceptions.types
 import z3
 
+
 class TestExceptionAnalyzer:
     """Test suite for pysymex.core.exceptions.analyzer.ExceptionAnalyzer."""
+
     def test_add_potential_exception(self) -> None:
         """Scenario: add potential exception; expected list contains it."""
         analyzer = pysymex.core.exceptions.analyzer.ExceptionAnalyzer()
@@ -26,8 +28,12 @@ class TestExceptionAnalyzer:
     def test_verify_raises_contract(self) -> None:
         """Scenario: matching potential exception and contract; expected satisfied result."""
         analyzer = pysymex.core.exceptions.analyzer.ExceptionAnalyzer()
-        analyzer.add_potential_exception(pysymex.core.exceptions.types.SymbolicException.concrete(ValueError))
-        ok, message = analyzer.verify_raises_contract(pysymex.core.exceptions.types.RaisesContract(ValueError))
+        analyzer.add_potential_exception(
+            pysymex.core.exceptions.types.SymbolicException.concrete(ValueError)
+        )
+        ok, message = analyzer.verify_raises_contract(
+            pysymex.core.exceptions.types.RaisesContract(ValueError)
+        )
         assert (ok, message) == (True, None)
 
     def test_check_unhandled_exceptions(self) -> None:

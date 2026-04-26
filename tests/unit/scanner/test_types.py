@@ -48,4 +48,3 @@ def test_scan_session_add_result_and_summary(tmp_path: Path) -> None:
     assert summary["total_issues"] == 1
     assert summary["files_with_issues"] == 1
     assert log_file.exists()
-

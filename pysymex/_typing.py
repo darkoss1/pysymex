@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -29,7 +29,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
     Protocol,
-    Self,
     TypeAlias,
     TypeGuard,
     TypeVar,
@@ -50,12 +49,15 @@ if TYPE_CHECKING:
     from pysymex.core.types.floats import SymbolicFloat
     from pysymex.core.solver.engine import SolverResult
     from pysymex.core.types.containers import SymbolicIterator
+    from pysymex.core.exceptions.types import SymbolicException
 
     _SymbolicFloatType = SymbolicFloat
     _SymbolicIteratorType = SymbolicIterator
+    _SymbolicExceptionType = SymbolicException
 else:
     _SymbolicFloatType = object
     _SymbolicIteratorType = object
+    _SymbolicExceptionType = object
 
 StackValue: TypeAlias = (
     AnySymbolic
@@ -73,6 +75,7 @@ StackValue: TypeAlias = (
     | tuple["StackValue", ...]
     | _SymbolicFloatType
     | _SymbolicIteratorType
+    | _SymbolicExceptionType
 )
 
 
@@ -137,7 +140,7 @@ class SymbolicTypeProtocol(Protocol):
 
 @runtime_checkable
 class SolverProtocol(Protocol):
-    """Abstract solver interface satisfied by IncrementalSolver, ShadowSolver, etc."""
+    """Abstract solver interface satisfied by IncrementalSolver, PortfolioSolver, etc."""
 
     def check(self, *assumptions: z3.BoolRef) -> SolverResult | z3.CheckSatResult:
         """Check satisfiability of current constraints with optional assumptions."""
@@ -260,15 +263,6 @@ class VerificationResultProtocol(Protocol):
 
 
 @runtime_checkable
-class TaintTrackerProtocol(Protocol):
-    """Protocol for taint tracking in execution state."""
-
-    def fork(self) -> TaintTrackerProtocol:
-        """Create an independent copy for state forking."""
-        ...
-
-
-@runtime_checkable
 class SymbolicContainerProtocol(Protocol):
     """Protocol for symbolic container values (List, Dict, Set, Tuple)."""
 
@@ -312,22 +306,24 @@ def is_symbolic_container(obj: object) -> TypeGuard[SymbolicContainerProtocol]:
     return isinstance(obj, (SymbolicList, SymbolicDict, SymbolicObject))
 
 
-@runtime_checkable
-class TaintableProtocol(Protocol):
-    """Protocol for values that can have taint labels applied."""
-
-    def with_taint(self, label: str | set[str] | frozenset[str]) -> Self:
-        """Return a copy with the given taint label(s) applied."""
-        ...
+def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+    """TypeGuard to narrow a value to list[object]."""
+    return isinstance(value, list)
 
 
-def is_taintable(obj: object) -> TypeGuard[TaintableProtocol]:
-    """TypeGuard narrowing for types that support taint propagation.
+def is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
+    """TypeGuard to narrow a value to tuple[object, ...]."""
+    return isinstance(value, tuple)
 
-    Returns True if the object has a `with_taint` method that can
-    be used to propagate taint labels during symbolic execution.
-    """
-    return hasattr(obj, "with_taint") and callable(getattr(obj, "with_taint", None))
+
+def is_dict_of_objects(value: object) -> TypeGuard[dict[object, object]]:
+    """TypeGuard to narrow a value to dict[object, object]."""
+    return isinstance(value, dict)
+
+
+def is_set_of_objects(value: object) -> TypeGuard[set[object]]:
+    """TypeGuard to narrow a value to set[object]."""
+    return isinstance(value, set)
 
 
 __all__ = [
@@ -346,11 +342,9 @@ __all__ = [
     "SymbolicTypeProtocol",
     "T",
     "T_co",
-    "TaintableProtocol",
     "UserCallable",
     "V",
     "is_symbolic_container",
     "is_symbolic_string",
     "is_symbolic_value",
-    "is_taintable",
 ]

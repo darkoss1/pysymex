@@ -1,8 +1,12 @@
 import pytest
 from pysymex.analysis.exceptions.handler import (
-    ExceptionHandlerType, ExceptionHandlerInfo, ExceptionHandlerState,
-    ExceptionHandlerAnalyzer, should_skip_issue_in_handler
+    ExceptionHandlerType,
+    ExceptionHandlerInfo,
+    ExceptionHandlerState,
+    ExceptionHandlerAnalyzer,
+    should_skip_issue_in_handler,
 )
+
 
 def make_dummy_code() -> object:
     def f() -> None:
@@ -12,17 +16,22 @@ def make_dummy_code() -> object:
             pass
         finally:
             pass
+
     return f.__code__
+
 
 class TestExceptionHandlerType:
     """Test suite for pysymex.analysis.exceptions.handler.ExceptionHandlerType."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert ExceptionHandlerType.EXCEPT.name == "EXCEPT"
         assert ExceptionHandlerType.FINALLY.name == "FINALLY"
 
+
 class TestExceptionHandlerInfo:
     """Test suite for pysymex.analysis.exceptions.handler.ExceptionHandlerInfo."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         info = ExceptionHandlerInfo(ExceptionHandlerType.EXCEPT, 10, 20)
@@ -30,8 +39,10 @@ class TestExceptionHandlerInfo:
         assert info.start_pc == 10
         assert info.end_pc == 20
 
+
 class TestExceptionHandlerState:
     """Test suite for pysymex.analysis.exceptions.handler.ExceptionHandlerState."""
+
     def test_enter_handler(self) -> None:
         """Test enter_handler behavior."""
         state = ExceptionHandlerState()
@@ -84,21 +95,22 @@ class TestExceptionHandlerState:
         assert len(c.all_handlers) == 1
         assert c is not state
 
+
 class TestExceptionHandlerAnalyzer:
     """Test suite for pysymex.analysis.exceptions.handler.ExceptionHandlerAnalyzer."""
+
     def test_analyze_bytecode(self) -> None:
         """Test analyze_bytecode behavior."""
         analyzer = ExceptionHandlerAnalyzer()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         handlers = analyzer.analyze_bytecode(code)
         assert isinstance(handlers, list)
-        # Should detect the handler from bytecode
         assert len(handlers) > 0
 
     def test_analyze_source(self) -> None:
         """Test analyze_source behavior."""
         analyzer = ExceptionHandlerAnalyzer()
-        source = '''
+        source = """
 try:
     pass
 except ValueError as e:
@@ -107,9 +119,9 @@ else:
     pass
 finally:
     pass
-        '''
+        """
         handlers = analyzer.analyze_source(source)
-        assert len(handlers) == 3 # EXCEPT_AS, ELSE, FINALLY
+        assert len(handlers) == 3
 
     def test_is_pc_in_handler(self) -> None:
         """Test is_pc_in_handler behavior."""
@@ -148,6 +160,7 @@ finally:
         state = ExceptionHandlerState()
         analyzer.set_state(state)
         assert analyzer.get_state() is state
+
 
 def test_should_skip_issue_in_handler() -> None:
     """Test should_skip_issue_in_handler behavior."""

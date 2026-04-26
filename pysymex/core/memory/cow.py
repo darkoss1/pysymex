@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -26,7 +26,7 @@ Provides efficient state forking via copy-on-write semantics:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -36,51 +36,52 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-class CowDict(Generic[K, V]):
-    """Copy-on-Write dictionary with incremental hashing.
+import immutables
 
-    Shares the backing dict between forks until a mutation occurs.
-    Maintains a rolling hash of its contents for O(1) deduplication.
+
+class CowDict(Generic[K, V]):
+    """True Copy-on-Write dictionary utilizing a Hash Array Mapped Trie (HAMT).
+    Guarantees O(log N) mutation overhead per write, eliminating the O(N)
+    deferred copy trap of the previous implementation.
     """
 
-    __slots__ = ("_data", "_hash", "_shared")
+    __slots__ = ("_data", "_hash")
+    _data: immutables.Map[K, V]
+    _hash: int | None
 
-    def __init__(self, data: dict[K, V] | None = None, *, shared: bool = False) -> None:
-        self._data: dict[K, V] = data if data is not None else {}
-        self._shared = shared
+    def __init__(
+        self,
+        data: immutables.Map[K, V] | dict[K, V] | CowDict[K, V] | None = None,
+        *,
+        shared: bool = False,
+    ) -> None:
+        if isinstance(data, immutables.Map):
+            base_data: immutables.Map[K, V] = data
+        elif isinstance(data, CowDict):
+            base_data = data._data
+        elif isinstance(data, dict):
+            base_data = immutables.Map(data)
+        else:
+            base_data = immutables.Map()
+        self._data = base_data
         self._hash: int | None = None
 
-    def _ensure_writable(self) -> None:
-        """Copy the backing dict if shared."""
-        if self._shared:
-            self._data = dict(self._data)
-            self._shared = False
-
     def __getitem__(self, key: K) -> V:
-        """Retrieve the value associated with the given key from the dictionary."""
         return self._data[key]
 
     def __contains__(self, key: object) -> bool:
-        """Check if the given key exists in the current dictionary view."""
         return key in self._data
 
     def __len__(self) -> int:
-        """Return the number of key-value pairs in the dictionary."""
         return len(self._data)
 
     def __iter__(self) -> Iterator[K]:
-        """Return an iterator over the dictionary's keys."""
         return iter(self._data)
 
     def __repr__(self) -> str:
-        return f"CowDict({self._data!r}, shared={self._shared})"
+        return f"CowDict({dict(self._data)!r})"
 
     def _safe_hash(self, obj: object) -> int:
-        """Compute a stable hash for a value, avoiding id() for symbolic types.
-
-        This is critical for state deduplication. We prioritize deterministic
-        hashing over object identity to allow merging of equivalent symbolic states.
-        """
         try:
             return hash(obj)
         except TypeError:
@@ -90,7 +91,6 @@ class CowDict(Generic[K, V]):
                 if isinstance(hv, int):
                     return hv
                 return hash(str(hv))
-
             to_z3 = getattr(obj, "to_z3", None)
             if callable(to_z3):
                 z3_ast = to_z3()
@@ -101,186 +101,186 @@ class CowDict(Generic[K, V]):
                         return zh
                     return hash(str(zh))
                 return hash(str(z3_ast))
-
             return 0
 
-    def hash_value(self) -> int:
-        """Compute/return content-based hash. O(N) first time, then O(1).
+    def _compute_pair_hash(self, k: object, v: object) -> int:
+        hk = self._safe_hash(k)
+        hv = self._safe_hash(v)
+        pair_h = (hk ^ (hv * 1000003)) & 0xFFFFFFFFFFFFFFFF
+        pair_h = (pair_h ^ (pair_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+        pair_h = (pair_h ^ (pair_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
+        pair_h = pair_h ^ (pair_h >> 31)
+        return pair_h
 
-        Uses an order-independent XOR-sum over a strongly avalanched SplitMix64
-        style payload for extreme collision resistance while maintaining a strict
-        64-bit boundary. This prevents Python from arbitrarily scaling the integer,
-        which previously destroyed CPU cache locality on deep Execution chains.
-        """
+    def hash_value(self) -> int:
         if self._hash is not None:
             return self._hash
-
         h = 0
         for k, v in self._data.items():
-            hk = self._safe_hash(k)
-            hv = self._safe_hash(v)
-
-            pair_h = (hk ^ (hv * 1000003)) & 0xFFFFFFFFFFFFFFFF
-            pair_h = (pair_h ^ (pair_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
-            pair_h = (pair_h ^ (pair_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
-            pair_h = pair_h ^ (pair_h >> 31)
-
-            h ^= pair_h
-
+            h ^= self._compute_pair_hash(k, v)
         self._hash = h & 0xFFFFFFFFFFFFFFFF
         return self._hash
 
     def __setitem__(self, key: K, value: V) -> None:
-        """Store a key-value pair, ensuring the internal data is writable first."""
-        self._ensure_writable()
-
-        self._hash = None
-        self._data[key] = value
+        try:
+            old_value = self._data[key]
+            if self._hash is not None:
+                self._hash ^= self._compute_pair_hash(key, old_value)
+                self._hash ^= self._compute_pair_hash(key, value)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+        except KeyError:
+            if self._hash is not None:
+                self._hash ^= self._compute_pair_hash(key, value)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+        self._data = self._data.set(key, value)
 
     def __delitem__(self, key: K) -> None:
-        """Remove a key and its value, ensuring the internal data is writable first.
-
-        Raises:
-            KeyError: If the key is not present (matching dict semantics).
-        """
-        if key not in self._data:
+        try:
+            old_value = self._data[key]
+            if self._hash is not None:
+                self._hash ^= self._compute_pair_hash(key, old_value)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+            self._data = self._data.delete(key)
+        except KeyError:
             raise KeyError(key)
-        self._ensure_writable()
-        self._hash = None
-        del self._data[key]
 
     def get(self, key: K, default: V | None = None) -> V | None:
-        """Get value by key with optional default."""
         return self._data.get(key, default)
 
-    def keys(self):
-        """Return dict keys."""
-        return self._data.keys()
+    def keys(self) -> KeysView[K]:
+        return self._data.keys()  # type: ignore[return-value]
 
-    def values(self):
-        """Return dict values."""
-        return self._data.values()
+    def values(self) -> ValuesView[V]:
+        return self._data.values()  # type: ignore[return-value]
 
-    def items(self):
-        """Return dict items."""
-        return self._data.items()
+    def items(self) -> ItemsView[K, V]:
+        return self._data.items()  # type: ignore[return-value]
 
-    def setdefault(self, key: K, default: V | None = None) -> V | None:
-        """Set default value for key, matching dict.setdefault semantics exactly.
-
-        Unlike the previous implementation, this always inserts *default*
-        (even when it is ``None``) if *key* is absent — matching the contract
-        of the built-in ``dict.setdefault``.
-        """
+    def setdefault(self, key: K, default: V) -> V:
         if key not in self._data:
-            self[key] = default  # type: ignore[assignment]
-        return self._data.get(key)
+            if self._hash is not None:
+                self._hash ^= self._compute_pair_hash(key, default)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+            self._data = self._data.set(key, default)
+            return default
+        return self._data[key]
 
     def update(self, other: dict[K, V] | CowDict[K, V]) -> None:
-        """Update with another dict."""
-        self._ensure_writable()
-        if isinstance(other, CowDict):
-            self._data.update(other._data)
-        else:
-            self._data.update(other)
-        self._hash = None
+        new_hash = self._hash
+        with self._data.mutate() as mm:
+            if isinstance(other, CowDict):
+                for k, v in other._data.items():
+                    if new_hash is not None:
+                        if k in self._data:
+                            new_hash ^= self._compute_pair_hash(k, self._data[k])
+                        new_hash ^= self._compute_pair_hash(k, v)
+                        new_hash &= 0xFFFFFFFFFFFFFFFF
+                    mm.set(k, v)
+            else:
+                for k, v in other.items():
+                    if new_hash is not None:
+                        if k in self._data:
+                            new_hash ^= self._compute_pair_hash(k, self._data[k])
+                        new_hash ^= self._compute_pair_hash(k, v)
+                        new_hash &= 0xFFFFFFFFFFFFFFFF
+                    mm.set(k, v)
+            self._data = mm.finish()
+        self._hash = new_hash
 
     def pop(self, key: K, *args: V) -> V:
-        """Remove and return value for key."""
-        self._ensure_writable()
-        self._hash = None
-        return self._data.pop(key, *args)
+        if key in self._data:
+            val = self._data[key]
+            if self._hash is not None:
+                self._hash ^= self._compute_pair_hash(key, val)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+            self._data = self._data.delete(key)
+            return val
+        if args:
+            return args[0]
+        raise KeyError(key)
 
-    def cow_fork(self) -> CowDict[K, V]:
-        """Create a copy-on-write fork. O(1) operation."""
-        self._shared = True
-        new_copy = CowDict(self._data, shared=True)
+    def cow_fork(self) -> "CowDict[K, V]":
+        new_copy = CowDict(self._data)
         new_copy._hash = self._hash
         return new_copy
 
-    def copy(self) -> CowDict[K, V]:
-        """Return a shallow copy (uses CoW under the hood)."""
+    def copy(self) -> "CowDict[K, V]":
         return self.cow_fork()
 
     def to_dict(self) -> dict[K, V]:
-        """Return a plain dict copy of the data."""
         return dict(self._data)
 
 
 class CowSet:
-    """Copy-on-Write set with caching hash."""
+    """Copy-on-Write set with caching hash using immutables.Map."""
 
-    __slots__ = ("_data", "_hash", "_shared")
+    __slots__ = ("_data", "_hash")
+    _data: immutables.Map[int, None]
+    _hash: int | None
 
-    def __init__(self, data: set[int] | None = None, *, shared: bool = False) -> None:
-        self._data: set[int] = data if data is not None else set()
-        self._shared = shared
+    def __init__(
+        self,
+        data: set[int] | frozenset[int] | immutables.Map[int, None] | CowSet | None = None,
+        *,
+        shared: bool = False,
+    ) -> None:
+        if isinstance(data, immutables.Map):
+            base_data: immutables.Map[int, None] = data
+        elif isinstance(data, CowSet):
+            base_data = data._data
+        elif data is not None:
+            base_data = immutables.Map({k: None for k in data})
+        else:
+            base_data = immutables.Map()
+        self._data = base_data
         self._hash: int | None = None
 
-    def _ensure_writable(self) -> None:
-        """Create a private copy of the backing set if it is currently marked as shared."""
-        if self._shared:
-            self._data = set(self._data)
-            self._shared = False
+    def _compute_item_hash(self, item: int) -> int:
+        item_h = (item + 0x9E3779B9) & 0xFFFFFFFFFFFFFFFF
+        item_h = (item_h ^ (item_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+        item_h = (item_h ^ (item_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
+        item_h = item_h ^ (item_h >> 31)
+        return item_h
 
     def add(self, item: int) -> None:
-        """Add an element to the set, ensuring it is writable first."""
         if item not in self._data:
-            self._ensure_writable()
-
-            self._hash = None
-            self._data.add(item)
+            if self._hash is not None:
+                self._hash ^= self._compute_item_hash(item)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+            self._data = self._data.set(item, None)
 
     def discard(self, item: int) -> None:
-        """Remove an element from the set if it is a member."""
         if item in self._data:
-            self._ensure_writable()
-            self._hash = None
-            self._data.discard(item)
+            if self._hash is not None:
+                self._hash ^= self._compute_item_hash(item)
+                self._hash &= 0xFFFFFFFFFFFFFFFF
+            self._data = self._data.delete(item)
 
     def __contains__(self, item: object) -> bool:
-        """Check if an element is present in the set."""
         return item in self._data
 
     def __len__(self) -> int:
-        """Return the number of elements in the set."""
         return len(self._data)
 
     def __iter__(self) -> Iterator[int]:
-        """Return an iterator over the elements in the set."""
-        return iter(self._data)
+        return iter(self._data.keys())
 
     def hash_value(self) -> int:
-        """Content hash for the set using a 64-bit bounded order-independent hash.
-
-        Items are avalanched and summed via XOR to ensure order-independence
-        without sorting, constrained to 64-bits for CPU cache optimization.
-        """
         if self._hash is not None:
-            return self._hash
-
+            return self._hash ^ len(self._data)
         h = 0
         for item in self._data:
-            item_h = (item + 0x9E3779B9) & 0xFFFFFFFFFFFFFFFF
-            item_h = (item_h ^ (item_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
-            item_h = (item_h ^ (item_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
-            item_h = item_h ^ (item_h >> 31)
-            h ^= item_h
-
-        h ^= len(self._data)
+            h ^= self._compute_item_hash(item)
         self._hash = h & 0xFFFFFFFFFFFFFFFF
-        return self._hash
+        return self._hash ^ len(self._data)
 
-    def cow_fork(self) -> CowSet:
-        """Create a copy-on-write fork. O(1) operation."""
-        self._shared = True
-        new_copy = CowSet(self._data, shared=True)
+    def cow_fork(self) -> "CowSet":
+        new_copy = CowSet(self._data)
         new_copy._hash = self._hash
         return new_copy
 
     def to_set(self) -> set[int]:
-        """Return a plain set copy."""
-        return set(self._data)
+        return set(self._data.keys())
 
 
 @dataclass(frozen=True, slots=True)

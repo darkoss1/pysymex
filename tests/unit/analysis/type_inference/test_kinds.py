@@ -1,7 +1,9 @@
 from pysymex.analysis.type_inference.kinds import TypeKind, PyType
 
+
 class TestTypeKind:
     """Test suite for pysymex.analysis.type_inference.kinds.TypeKind."""
+
     def test_int_type(self) -> None:
         """Test int_type behavior."""
         t = TypeKind.int_type()
@@ -87,8 +89,10 @@ class TestTypeKind:
         """Test none behavior."""
         assert TypeKind.none().kind == TypeKind.NONE
 
+
 class TestPyType:
     """Test suite for pysymex.analysis.type_inference.kinds.PyType."""
+
     def test_none(self) -> None:
         """Test none behavior."""
         assert PyType.none().kind == TypeKind.NONE

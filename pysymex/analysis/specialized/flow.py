@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -43,7 +43,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import CodeType
 
-import icontract
 
 from pysymex.analysis.control.cfg import (
     BasicBlock,
@@ -154,7 +153,6 @@ class FlowSensitiveAnalyzer:
                 return header_id
         return None
 
-    @icontract.require(lambda self, pc: self.cfg.get_block_at_pc(pc) is not None)  # type: ignore[attr-defined]
     def get_dominator(self, pc: int) -> int | None:
         """Get the immediate dominator block for a PC."""
         block = self.cfg.get_block_at_pc(pc)
@@ -162,7 +160,6 @@ class FlowSensitiveAnalyzer:
             return block.immediate_dominator
         return None
 
-    @icontract.ensure(lambda result: isinstance(result, bool))
     def is_reachable(self, pc: int) -> bool:
         """Check if a PC is reachable from entry."""
         block = self.cfg.get_block_at_pc(pc)
@@ -186,8 +183,6 @@ class FlowContext:
     null_info: NullInfo
 
     @classmethod
-    @icontract.require(lambda analyzer, pc: analyzer.cfg.get_block_at_pc(pc) is not None)  # type: ignore[attr-defined]
-    @icontract.ensure(lambda result: isinstance(result, FlowContext))
     def create(
         cls,
         analyzer: FlowSensitiveAnalyzer,

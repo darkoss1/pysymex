@@ -9,7 +9,9 @@ import pytest
 
 
 def _load_contextlib_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "contextlib.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "contextlib.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_contextlib", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib contextlib models module")

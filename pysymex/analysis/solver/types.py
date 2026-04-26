@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -26,7 +26,7 @@ used throughout the Z3 verification engine.
 from __future__ import annotations
 
 __version__ = "2.0.0"
-__author__ = "PySyMex Team"
+__author__ = "pysymex Team"
 
 import dis
 import logging
@@ -53,6 +53,11 @@ Z3_IMPORT_ERROR: RuntimeError | None = _z3_import_error
 logger = logging.getLogger(__name__)
 
 
+def _empty_instructions() -> list[dis.Instruction]:
+    """Create a typed empty instruction list."""
+    return []
+
+
 class BugType(Enum):
     """Types of bugs the Z3 engine can prove or disprove.
 
@@ -69,7 +74,6 @@ class BugType(Enum):
     KEY_ERROR = "key_error"
     ATTRIBUTE_ERROR = "attribute_error"
     UNREACHABLE_CODE = "unreachable_code"
-    TAINTED_SINK = "tainted_data_to_sink"
     OVERFLOW = "integer_overflow"
 
 
@@ -81,17 +85,6 @@ class Severity(Enum):
     MEDIUM = 3
     LOW = 4
     INFO = 5
-
-
-class TaintSource(Enum):
-    """Sources of untrusted data."""
-
-    USER_INPUT = "user_input"
-    FILE_READ = "file_read"
-    NETWORK = "network"
-    ENVIRONMENT = "environment"
-    DATABASE = "database"
-    UNKNOWN = "unknown"
 
 
 class SymType(Enum):
@@ -112,32 +105,8 @@ class SymType(Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class TaintInfo:
-    """Tracks taint information for a value."""
-
-    is_tainted: bool = False
-    sources: set[TaintSource] = field(default_factory=set[TaintSource])
-    propagation_path: list[str] = field(default_factory=list[str])
-
-    @property
-    def source(self) -> TaintSource | None:
-        """Return the primary taint source (first in set), or None."""
-        return next(iter(self.sources), None) if self.sources else None
-
-    def propagate(self, operation: str) -> TaintInfo:
-        """Create new taint info propagated through an operation."""
-        if not self.is_tainted:
-            return TaintInfo()
-        return TaintInfo(
-            is_tainted=True,
-            sources=self.sources.copy(),
-            propagation_path=[*self.propagation_path, operation],
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class SymValue:
-    """Enhanced symbolic value with type, taint, and origin metadata.
+    """Enhanced symbolic value with type and origin metadata.
 
     Attributes:
         expr: Underlying Z3 expression.
@@ -146,7 +115,6 @@ class SymValue:
         is_none: Whether this value represents ``None``.
         is_list: Whether this value represents a list.
         length: Optional length expression for containers.
-        taint: Taint provenance information.
         origin: Description of where this value originated.
         constraints: Additional Z3 constraints specific to this value.
     """
@@ -157,31 +125,8 @@ class SymValue:
     is_none: bool = False
     is_list: bool = False
     length: object | None = None
-    taint: TaintInfo = field(default_factory=TaintInfo)
     origin: str = ""
     constraints: list[object] = field(default_factory=list[object])
-
-    @property
-    def is_tainted(self) -> bool:
-        """Property returning the is_tainted."""
-        return self.taint.is_tainted
-
-    def with_taint(self, source: TaintSource, path: str = "") -> SymValue:
-        """Create a tainted copy of this value."""
-        new_taint = TaintInfo(
-            is_tainted=True, sources={source}, propagation_path=[path] if path else []
-        )
-        return SymValue(
-            self.expr,
-            self.name,
-            self.sym_type,
-            self.is_none,
-            self.is_list,
-            self.length,
-            new_taint,
-            self.origin,
-            self.constraints.copy(),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +143,6 @@ class CrashCondition:
         variables: Map of relevant variable names to Z3 expressions.
         severity: Bug severity level.
         call_stack: Call-stack frames at detection time.
-        taint_info: Optional taint provenance.
         file_path: Source file path.
     """
 
@@ -211,7 +155,6 @@ class CrashCondition:
     variables: dict[str, object] = field(default_factory=dict[str, object])
     severity: Severity = Severity.HIGH
     call_stack: list[str] = field(default_factory=list[str])
-    taint_info: TaintInfo | None = None
     file_path: str = ""
 
 
@@ -244,7 +187,6 @@ class FunctionSummary:
         calls_functions: Names of called functions.
         may_return_none: Whether the function can return ``None``.
         may_raise: Whether the function can raise an exception.
-        taint_propagation: Mapping of param→taint-output paths.
         pure: True if the function has no side effects.
         analyzed_at: Timestamp of analysis.
         verified: Whether verification completed.
@@ -260,7 +202,6 @@ class FunctionSummary:
     calls_functions: set[str]
     may_return_none: bool
     may_raise: bool
-    taint_propagation: dict[str, set[str]]
     pure: bool
     analyzed_at: float = 0.0
     verified: bool = False
@@ -301,7 +242,7 @@ class BasicBlock:
     """
 
     id: int
-    instructions: list[dis.Instruction] = field(default_factory=list)
+    instructions: list[dis.Instruction] = field(default_factory=_empty_instructions)
     successors: list[tuple[int, str]] = field(default_factory=list[tuple[int, str]])
     predecessors: list[int] = field(default_factory=list[int])
     dominators: set[int] = field(default_factory=set[int])

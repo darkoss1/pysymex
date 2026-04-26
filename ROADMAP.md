@@ -1,4 +1,4 @@
-# PySyMex Roadmap
+# pysymex Roadmap
 
 ## Released
 
@@ -40,7 +40,7 @@
 - [x] Z3 SMT solver integration with incremental/portfolio solving
 - [x] 12+ bug detectors with counterexample generation
 - [x] Interprocedural analysis with call graph and function summaries
-- [x] Taint tracking (source -> sink)
+- [ ] Taint tracking (source -> sink) - DEPRECATED: Removed due to maintenance overhead
 - [x] Abstract interpretation (Interval, Sign, Parity domains)
 - [x] False positive reduction pipeline
 - [x] CLI with scan, analyze, verify, benchmark commands
@@ -56,13 +56,14 @@
 ### v0.1.1 — Detection Depth
 **Theme:** Deeper analysis, more bug categories
 
-- [ ] Inter-module taint tracking
 - [ ] Escape analysis for resource leaks
-- [ ] Path traversal detection
 - [ ] Unsafe deserialization detection
-- [ ] Format string injection
-- [ ] Sanitizer-aware taint tracking
-- [ ] Custom taint sources/sinks via config
+- [ ] Format string injection (non-taint approach)
+# Taint-based features removed due to deprecation:
+# - Inter-module taint tracking
+# - Path traversal detection
+# - Sanitizer-aware taint tracking
+# - Custom taint sources/sinks via config
 
 ### v0.1.2 — Contract System
 **Theme:** Formal specifications

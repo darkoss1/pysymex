@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import dis
 
@@ -13,8 +13,10 @@ from pysymex.execution.strategies.merger import (
     create_state_merger,
 )
 
+
 class TestMergePolicy:
     """Test suite for pysymex.execution.strategies.merger.MergePolicy."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         names = {item.name for item in MergePolicy}
@@ -25,6 +27,7 @@ class TestMergePolicy:
 
 class TestMergeStatistics:
     """Test suite for pysymex.execution.strategies.merger.MergeStatistics."""
+
     def test_reduction_ratio(self) -> None:
         """Test reduction_ratio behavior."""
         stats = MergeStatistics(states_before_merge=10, states_after_merge=4)
@@ -33,6 +36,7 @@ class TestMergeStatistics:
 
 class TestAbstractVarInfo:
     """Test suite for pysymex.execution.strategies.merger.AbstractVarInfo."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         info = AbstractVarInfo(interval_lo=0, interval_hi=10, may_be_none=False, must_be_type="int")
@@ -43,6 +47,7 @@ class TestAbstractVarInfo:
 
 class TestStateMerger:
     """Test suite for pysymex.execution.strategies.merger.StateMerger."""
+
     def test_set_join_points(self) -> None:
         """Test set_join_points behavior."""
         merger = StateMerger()
@@ -109,3 +114,82 @@ def test_create_state_merger() -> None:
     assert isinstance(merger, StateMerger)
     assert merger.policy is MergePolicy.AGGRESSIVE
     assert merger.max_constraints_for_merge == 11
+
+
+class TestMergerHelpers:
+    """Test suite for pysymex.execution.strategies.merger helper functions."""
+
+    def test_is_any_symbolic_with_symbolic_value(self) -> None:
+        """Test that _is_any_symbolic returns True for SymbolicValue."""
+        from pysymex.core.types.scalars import SymbolicValue
+
+        val = SymbolicValue.from_const(42)
+        from pysymex.execution.strategies.merger import _is_any_symbolic  # type: ignore[private]
+
+        assert _is_any_symbolic(val) is True
+
+    def test_is_any_symbolic_with_non_symbolic(self) -> None:
+        """Test that _is_any_symbolic returns False for non-symbolic types."""
+        from pysymex.execution.strategies.merger import _is_any_symbolic  # type: ignore[private]
+
+        assert _is_any_symbolic(42) is False
+        assert _is_any_symbolic("string") is False
+        assert _is_any_symbolic(None) is False
+
+    def test_is_conditional_mergeable_with_callable(self) -> None:
+        """Test that _is_conditional_mergeable returns True for callable conditional_merge."""
+        from pysymex.core.types.scalars import SymbolicValue
+
+        val = SymbolicValue.from_const(42)
+        from pysymex.execution.strategies.merger import _is_conditional_mergeable  # type: ignore[private]
+
+        assert _is_conditional_mergeable(val) is True
+
+    def test_is_conditional_mergeable_without_callable(self) -> None:
+        """Test that _is_conditional_mergeable returns False for non-callable."""
+        from pysymex.execution.strategies.merger import _is_conditional_mergeable  # type: ignore[private]
+
+        assert _is_conditional_mergeable(42) is False
+        assert _is_conditional_mergeable("string") is False
+
+    def test_is_stack_value_with_valid_types(self) -> None:
+        """Test that _is_stack_value returns True for valid stack value types."""
+        from pysymex.execution.strategies.merger import _is_stack_value  # type: ignore[private]
+
+        assert _is_stack_value(None) is True
+        assert _is_stack_value(42) is True
+        assert _is_stack_value(True) is True
+        assert _is_stack_value("string") is True
+        assert _is_stack_value(3.14) is True
+        assert _is_stack_value(b"bytes") is True
+        assert _is_stack_value(int) is True
+        assert _is_stack_value([1, 2, 3]) is True
+        assert _is_stack_value((1, 2, 3)) is True
+        assert _is_stack_value({"key": "value"}) is True
+        assert _is_stack_value(lambda: None) is True
+
+    def test_is_stack_value_with_invalid_types(self) -> None:
+        """Test that _is_stack_value returns False for invalid stack value types."""
+        from pysymex.execution.strategies.merger import _is_stack_value  # type: ignore[private]
+
+        class CustomClass:
+            pass
+
+        assert _is_stack_value(CustomClass()) is False
+
+    def test_as_string_object_mapping_with_mapping(self) -> None:
+        """Test that _as_string_object_mapping converts valid mapping to dict."""
+        from pysymex.execution.strategies.merger import _as_string_object_mapping  # type: ignore[private]
+
+        mapping: dict[str, int] = {"key": 42}
+        result = _as_string_object_mapping(mapping)
+        assert result is not None
+        assert result == {"key": 42}
+
+    def test_as_string_object_mapping_with_none(self) -> None:
+        """Test that _as_string_object_mapping returns empty dict for None."""
+        from pysymex.execution.strategies.merger import _as_string_object_mapping  # type: ignore[private]
+
+        result = _as_string_object_mapping(None)
+        assert result is not None
+        assert result == {}

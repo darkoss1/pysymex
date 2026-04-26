@@ -1,5 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import sys
+import pytest
 import pytest
 
 from pysymex.core.state import VMState
@@ -12,8 +14,10 @@ from pysymex.execution.executors.async_exec import (
 )
 from pysymex.execution.types import ExecutionConfig
 
+
 class TestCoroutineState:
     """Test suite for pysymex.execution.executors.async_exec.CoroutineState."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert CoroutineState.CREATED.name == "CREATED"
@@ -21,6 +25,7 @@ class TestCoroutineState:
 
 class TestSymbolicCoroutine:
     """Test suite for pysymex.execution.executors.async_exec.SymbolicCoroutine."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         coro = SymbolicCoroutine(coro_id="c1", name="main")
@@ -30,6 +35,7 @@ class TestSymbolicCoroutine:
 
 class TestSymbolicEventLoop:
     """Test suite for pysymex.execution.executors.async_exec.SymbolicEventLoop."""
+
     def test_create_coroutine(self) -> None:
         """Test create_coroutine behavior."""
         loop = SymbolicEventLoop()
@@ -119,16 +125,19 @@ class TestSymbolicEventLoop:
 
 class TestAsyncSymbolicExecutor:
     """Test suite for pysymex.execution.executors.async_exec.AsyncSymbolicExecutor."""
+
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
     async def test_execute_function(self) -> None:
         """Test execute_function behavior."""
+
         async def sample(x: int) -> int:
             return x + 1
 
+        import pysymex.execution.opcodes  # Ensure opcodes are registered
+
         executor = AsyncSymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
-        with pytest.raises(NameError):
-            executor.execute_function(sample, {"x": "int"})
+        executor.execute_function(sample, {"x": "int"})
         await sample(1)
 
 
@@ -136,9 +145,9 @@ class TestAsyncSymbolicExecutor:
 @pytest.mark.timeout(30)
 async def test_analyze_async() -> None:
     """Test analyze_async behavior."""
+
     async def sample(v: int) -> int:
         return v * 2
 
-    with pytest.raises(NameError):
-        analyze_async(sample, {"v": "int"}, max_paths=3, max_iterations=30)
+    analyze_async(sample, {"v": "int"}, max_paths=3, max_iterations=30)
     await sample(2)

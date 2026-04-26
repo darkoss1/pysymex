@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Core exports for PySyMex (lazy-loaded)."""
+"""Core exports for pysymex (lazy-loaded)."""
 
 from __future__ import annotations
 
@@ -39,14 +39,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "SymbolicNone": ("pysymex.core.types.scalars", "SymbolicNone"),
     "AnySymbolic": ("pysymex.core.types.scalars", "AnySymbolic"),
     "VMState": ("pysymex.core.state", "VMState"),
-    "ShadowSolver": ("pysymex.core.solver.engine", "ShadowSolver"),
+    "IncrementalSolver": ("pysymex.core.solver.engine", "IncrementalSolver"),
     "ConstraintCache": ("pysymex.core.optimization", "ConstraintCache"),
     "get_constraint_cache": ("pysymex.core.optimization", "get_constraint_cache"),
     "cached_is_satisfiable": ("pysymex.core.optimization", "cached_is_satisfiable"),
-    "StateMerger": ("pysymex.core.optimization", "StateMerger"),
-    "LazySymbolicValue": ("pysymex.core.optimization", "LazySymbolicValue"),
-    "CompactState": ("pysymex.core.optimization", "CompactState"),
-    "ExecutionProfiler": ("pysymex.core.optimization", "ExecutionProfiler"),
     "HeapObject": ("pysymex.core.memory", "HeapObject"),
     "SymbolicHeap": ("pysymex.core.memory", "SymbolicHeap"),
     "FloatPrecision": ("pysymex.core.types.floats", "FloatPrecision"),
@@ -118,7 +114,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "HavocValue": ("pysymex.core.types.havoc", "HavocValue"),
     "is_havoc": ("pysymex.core.types.havoc", "is_havoc"),
     "has_havoc": ("pysymex.core.types.havoc", "has_havoc"),
-    "union_taint": ("pysymex.core.types.havoc", "union_taint"),
 }
 
 _NON_Z3_EXPORTS = {
@@ -131,85 +126,6 @@ _NON_Z3_EXPORTS = {
     "WatchModeRunner",
     "DependencyTracker",
 }
-
-__all__: list[str] = [
-    "AccuracyAnalyzer",
-    "AnalysisCache",
-    "AnySymbolic",
-    "CompactState",
-    "ConstraintCache",
-    "ConstraintPartitioner",
-    "DependencyTracker",
-    "EnhancedClass",
-    "EnhancedClassRegistry",
-    "EnhancedMethod",
-    "EnhancedObject",
-    "EnhancedSuper",
-    "ExceptionAnalyzer",
-    "ExceptionHandler",
-    "ExceptionState",
-    "ExecutionProfiler",
-    "ExplorationConfig",
-    "ExplorationStrategy",
-    "FileEvent",
-    "FileEventType",
-    "FileState",
-    "FileWatcher",
-    "FloatAnalyzer",
-    "FloatConfig",
-    "FloatPrecision",
-    "HavocValue",
-    "HeapObject",
-    "IncrementalAnalyzer",
-    "InitParameter",
-    "LazySymbolicValue",
-    "MemoryState",
-    "OOPMethodType",
-    "OpResult",
-    "ParallelExplorer",
-    "ParallelSolver",
-    "ParallelStateMerger",
-    "ShadowSolver",
-    "StateMerger",
-    "SymbolicArray",
-    "SymbolicClass_ObjModel",
-    "SymbolicDict",
-    "SymbolicDictOps",
-    "SymbolicException",
-    "SymbolicFloat",
-    "SymbolicHeap",
-    "SymbolicList",
-    "SymbolicListOps",
-    "SymbolicMap",
-    "SymbolicNone",
-    "SymbolicObject_ObjModel",
-    "SymbolicSetOps",
-    "SymbolicString",
-    "SymbolicStringOps",
-    "SymbolicTupleOps",
-    "SymbolicType",
-    "SymbolicValue",
-    "UnsatCoreResult",
-    "VMState",
-    "WatchModeRunner",
-    "WorkQueue",
-    "cached_is_satisfiable",
-    "create_enhanced_instance",
-    "enhanced_class_registry",
-    "extract_init_params",
-    "extract_unsat_core",
-    "get_constraint_cache",
-    "get_enhanced_class",
-    "has_havoc",
-    "is_havoc",
-    "make_dataclass",
-    "prune_with_core",
-    "quick_contradiction_check",
-    "register_enhanced_class",
-    "remove_subsumed",
-    "simplify_constraints",
-    "union_taint",
-]
 
 
 def __getattr__(name: str) -> object:
@@ -230,4 +146,4 @@ def __getattr__(name: str) -> object:
 
 def __dir__() -> list[str]:
     """Dir."""
-    return sorted(set(__all__) | set(globals()))
+    return sorted(set(_EXPORTS.keys()) | set(globals()))

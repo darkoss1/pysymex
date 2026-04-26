@@ -1,7 +1,8 @@
-﻿import pytest
+import pytest
 import pysymex.core.shutdown
 import asyncio
 import signal
+
 
 @pytest.mark.asyncio
 async def test_cancel_all_tasks() -> None:

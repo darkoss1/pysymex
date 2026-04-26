@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,9 +36,6 @@ from ..control.cfg import ControlFlowGraph
 from ..patterns import (
     PatternMatch,
 )
-from ..taint.checker import (
-    TaintViolation,
-)
 from ..type_inference import (
     PyType,
     TypeEnvironment,
@@ -53,7 +50,6 @@ class AnalysisConfig:
         type_inference: Enable type inference phase.
         flow_analysis: Enable flow-sensitive analysis.
         pattern_recognition: Enable safe-pattern recognition.
-        taint_analysis: Enable taint-flow analysis.
         abstract_interpretation: Enable abstract-interpretation phase.
         context_sensitivity: Call-site sensitivity depth.
         path_sensitivity: Enable path-sensitive reasoning.
@@ -72,7 +68,6 @@ class AnalysisConfig:
     type_inference: bool = True
     flow_analysis: bool = True
     pattern_recognition: bool = True
-    taint_analysis: bool = True
     abstract_interpretation: bool = True
     context_sensitivity: int = 2
     path_sensitivity: bool = True
@@ -95,7 +90,6 @@ class AnalysisResult:
     Attributes:
         file_path: Analysed file path.
         issues: Detected static-analysis issues.
-        taint_violations: Detected taint violations.
         warnings: Non-fatal analysis warnings.
         analysis_time: Wall-clock seconds spent analysing.
         functions_analyzed: Number of functions analysed.
@@ -105,7 +99,6 @@ class AnalysisResult:
 
     file_path: str
     issues: list[Issue] = field(default_factory=list[Issue])
-    taint_violations: list[TaintViolation] = field(default_factory=list[TaintViolation])
     warnings: list[object] = field(default_factory=list[object])
     analysis_time: float = 0.0
     functions_analyzed: int = 0
@@ -114,7 +107,7 @@ class AnalysisResult:
 
     def has_issues(self) -> bool:
         """Check if any issues were found."""
-        return bool(self.issues or self.taint_violations)
+        return bool(self.issues)
 
     def critical_count(self) -> int:
         """Count critical severity issues."""
@@ -126,7 +119,7 @@ class AnalysisResult:
 
     def total_count(self) -> int:
         """Total issue count."""
-        return len(self.issues) + len(self.taint_violations)
+        return len(self.issues)
 
 
 class AnalysisResultBuilder:
@@ -139,7 +132,6 @@ class AnalysisResultBuilder:
     def __init__(self, file_path: str) -> None:
         self.file_path = file_path
         self.issues: list[Issue] = []
-        self.taint_violations: list[TaintViolation] = []
         self.warnings: list[object] = []
         self.analysis_time: float = 0.0
         self.functions_analyzed: int = 0
@@ -149,11 +141,6 @@ class AnalysisResultBuilder:
     def add_issue(self, issue: Issue) -> AnalysisResultBuilder:
         """Add issue."""
         self.issues.append(issue)
-        return self
-
-    def add_taint_violation(self, violation: TaintViolation) -> AnalysisResultBuilder:
-        """Add taint violation."""
-        self.taint_violations.append(violation)
         return self
 
     def add_warning(self, warning: object) -> AnalysisResultBuilder:
@@ -171,7 +158,6 @@ class AnalysisResultBuilder:
         return AnalysisResult(
             file_path=self.file_path,
             issues=list(self.issues),
-            taint_violations=list(self.taint_violations),
             warnings=list(self.warnings),
             analysis_time=self.analysis_time,
             functions_analyzed=self.functions_analyzed,
@@ -244,7 +230,6 @@ class AnalysisSummary:
     Attributes:
         total_files: Number of files analysed.
         total_issues: Total detected issues.
-        total_taint_violations: Total taint violations.
         critical_count: Count of CRITICAL-severity issues.
         high_count: Count of HIGH-severity issues.
         medium_count: Count of MEDIUM-severity issues.
@@ -259,7 +244,6 @@ class AnalysisSummary:
 
     total_files: int = 0
     total_issues: int = 0
-    total_taint_violations: int = 0
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0
@@ -278,7 +262,6 @@ class AnalysisSummary:
         summary.total_files = len(results)
         for result in results.values():
             summary.total_issues += len(result.issues)
-            summary.total_taint_violations += len(result.taint_violations)
             summary.total_analysis_time += result.analysis_time
             summary.total_lines += result.lines_of_code
             summary.total_functions += result.functions_analyzed

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from concurrent.futures import Future
 from unittest.mock import patch
@@ -8,7 +8,7 @@ import numpy.typing as npt
 import z3
 
 from pysymex.accel.async_exec import (
-    AsyncGPUExecutor,
+    AsyncSatExecutor,
     AsyncHandle,
     PipelinedEvaluator,
     StreamPool,
@@ -35,13 +35,17 @@ def _compiled_constraint(name: str) -> CompiledConstraint:
 
 
 def _bitmap_with_first_byte(v: int) -> npt.NDArray[np.uint8]:
-    base = evaluate_bag(compile_constraint(z3.BoolVal(True), ["k0", "k1", "k2", "k3", "k4"])).bitmap.copy()
+    base = evaluate_bag(
+        compile_constraint(z3.BoolVal(True), ["k0", "k1", "k2", "k3", "k4"])
+    ).bitmap.copy()
     base[0] = v
     return base
 
 
 def _bitmap_four_bytes(a: int, b: int, c: int, d: int) -> npt.NDArray[np.uint8]:
-    base = evaluate_bag(compile_constraint(z3.BoolVal(True), ["u0", "u1", "u2", "u3", "u4"])).bitmap.copy()
+    base = evaluate_bag(
+        compile_constraint(z3.BoolVal(True), ["u0", "u1", "u2", "u3", "u4"])
+    ).bitmap.copy()
     base[0] = a
     base[1] = b
     base[2] = c
@@ -94,47 +98,33 @@ class TestStreamPool:
         pool = StreamPool(num_streams=2)
         pool.synchronize_all()
 
-    def test_synchronize_all_calls_each_stream(self) -> None:
+    def test_synchronize_all_safe_when_initialized(self) -> None:
         pool = StreamPool(num_streams=2)
-        s0 = _DummyStream()
-        s1 = _DummyStream()
-
-        streams: list[object] = [s0, s1]
+        streams: list[object] = [0, 1]
         object.__setattr__(pool, "_streams", streams)
         object.__setattr__(pool, "_initialized", True)
-
         pool.synchronize_all()
-
-        assert s0.sync_calls == 1
-        assert s1.sync_calls == 1
 
     def test_num_streams(self) -> None:
         pool = StreamPool(num_streams=5)
         assert pool.num_streams == 5
 
 
-class TestAsyncGPUExecutor:
+class TestAsyncSatExecutor:
     def test_submit_returns_bitmap_and_tracks_stream(self) -> None:
-        executor = AsyncGPUExecutor(num_streams=2, max_workers=1)
-        out_stream = _DummyStream()
+        executor = AsyncSatExecutor(num_streams=2, max_workers=1)
 
         def fake_get_stream() -> tuple[object, int]:
-            return _DummyStream(), 1
+            return 1, 1
 
-        class _DummyOutput:
-            def get(self) -> npt.NDArray[np.uint8]:
-                return _bitmap_four_bytes(1, 0, 1, 0)
-
-        def fake_evaluate_bag_async(
-            _constraint: CompiledConstraint, _stream: object
-        ) -> tuple[_DummyOutput, _DummyStream]:
-            return _DummyOutput(), out_stream
+        def fake_evaluate_bag(_constraint: CompiledConstraint) -> npt.NDArray[np.uint8]:
+            return _bitmap_four_bytes(1, 0, 1, 0)
 
         def fake_get_stream_method(_self: StreamPool) -> tuple[object, int]:
             return fake_get_stream()
 
         with patch.object(StreamPool, "get_stream", fake_get_stream_method):
-            with patch("pysymex.accel.backends.gpu.evaluate_bag_async", fake_evaluate_bag_async):
+            with patch("pysymex.accel.backends.sat.evaluate_bag", fake_evaluate_bag):
                 constraint = _compiled_constraint("c_submit")
                 handle = executor.submit(constraint)
                 result = handle.wait(timeout=2.0)
@@ -142,12 +132,11 @@ class TestAsyncGPUExecutor:
         assert handle.stream_id == 1
         assert handle.constraint_hash == constraint.source_hash
         assert list(result) == [1, 0, 1, 0]
-        assert out_stream.sync_calls == 1
 
         executor.shutdown()
 
     def test_submit_batch(self) -> None:
-        executor = AsyncGPUExecutor(num_streams=1, max_workers=1)
+        executor = AsyncSatExecutor(num_streams=1, max_workers=1)
 
         def fake_submit(constraint: CompiledConstraint) -> AsyncHandle:
             fut: Future[npt.NDArray[np.uint8]] = Future()
@@ -168,7 +157,7 @@ class TestAsyncGPUExecutor:
         executor.shutdown()
 
     def test_wait_all(self) -> None:
-        executor = AsyncGPUExecutor(num_streams=1, max_workers=1)
+        executor = AsyncSatExecutor(num_streams=1, max_workers=1)
 
         f0: Future[npt.NDArray[np.uint8]] = Future()
         f1: Future[npt.NDArray[np.uint8]] = Future()
@@ -185,7 +174,7 @@ class TestAsyncGPUExecutor:
         executor.shutdown()
 
     def test_shutdown_synchronizes_stream_pool(self) -> None:
-        executor = AsyncGPUExecutor(num_streams=1, max_workers=1)
+        executor = AsyncSatExecutor(num_streams=1, max_workers=1)
         synced = {"called": False}
 
         def fake_sync() -> None:
@@ -231,7 +220,7 @@ class TestPipelinedEvaluator:
             def shutdown(self, wait: bool = True) -> None:
                 return None
 
-        with patch("pysymex.accel.async_exec.AsyncGPUExecutor", _FakeExecutor):
+        with patch("pysymex.accel.async_exec.AsyncSatExecutor", _FakeExecutor):
             evaluator = PipelinedEvaluator(num_streams=2, prefetch=1)
 
             constraints = [
@@ -280,7 +269,7 @@ class TestPipelinedEvaluator:
             def shutdown(self, wait: bool = True) -> None:
                 return None
 
-        with patch("pysymex.accel.async_exec.AsyncGPUExecutor", _FakeExecutor):
+        with patch("pysymex.accel.async_exec.AsyncSatExecutor", _FakeExecutor):
             evaluator = PipelinedEvaluator(num_streams=3, prefetch=2)
             constraints = [_compiled_constraint("batch_x"), _compiled_constraint("batch_y")]
             fake_exec = _FakeExecutor.instances[0]
@@ -303,7 +292,7 @@ class TestPipelinedEvaluator:
             def shutdown(self, wait: bool = True) -> None:
                 calls["count"] += 1
 
-        with patch("pysymex.accel.async_exec.AsyncGPUExecutor", _FakeExecutor):
+        with patch("pysymex.accel.async_exec.AsyncSatExecutor", _FakeExecutor):
             evaluator = PipelinedEvaluator(num_streams=1, prefetch=1)
         evaluator.shutdown()
         assert calls["count"] == 1

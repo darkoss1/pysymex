@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import pytest
 import z3
 
@@ -35,8 +35,6 @@ def test_evaluate_bag_matches_expected_assignments_for_and() -> None:
     constraint = compile_constraint(z3.And(x, y), ["x", "y"])
     bitmap = evaluate_bag(constraint)
 
-    # Tid mapping is little-endian by variable index:
-    # tid 0 -> 00, tid 1 -> 01, tid 2 -> 10, tid 3 -> 11
     assert bitmap.dtype == np.uint8
     assert bitmap.shape == (1,)
     assert int(bitmap[0]) == 0b00001000
@@ -49,7 +47,6 @@ def test_unpackbits_little_is_not_default_unpackbits_order() -> None:
     constraint = compile_constraint(z3.Or(x, y), ["x", "y"])
     bitmap = evaluate_bag(constraint)
 
-    # LSB-first encoding means sat tids {1,2,3} => low four bits 1110 (14).
     assert int(bitmap[0] & np.uint8(0x0F)) == 0b1110
 
 

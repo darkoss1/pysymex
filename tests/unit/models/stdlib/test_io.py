@@ -4,8 +4,6 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
 from pysymex.core.types.containers import SymbolicList
 from pysymex.core.types.scalars import SymbolicNone, SymbolicString, SymbolicValue
@@ -36,56 +34,47 @@ class TestCopyModel:
         assert result.value == 7
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.CopyModel().apply([], {}, _state())
+        io_models.CopyModel().apply([], {}, _state())
 
 
 class TestDeepcopyModel:
     """Test suite for pysymex.models.stdlib.io.DeepcopyModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.DeepcopyModel().apply([1], {}, _state())
+        io_models.DeepcopyModel().apply([1], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.DeepcopyModel().apply([], {}, _state())
+        io_models.DeepcopyModel().apply([], {}, _state())
 
 
 class TestStringIOModel:
     """Test suite for pysymex.models.stdlib.io.StringIOModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.StringIOModel().apply([], {}, _state())
+        io_models.StringIOModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.StringIOModel().apply(["x"], {}, _state())
+        io_models.StringIOModel().apply(["x"], {}, _state())
 
 
 class TestBytesIOModel:
     """Test suite for pysymex.models.stdlib.io.BytesIOModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BytesIOModel().apply([], {}, _state())
+        io_models.BytesIOModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BytesIOModel().apply([b"x"], {}, _state())
+        io_models.BytesIOModel().apply([b"x"], {}, _state())
 
 
 class TestIOReadModel:
     """Test suite for pysymex.models.stdlib.io.IOReadModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.IOReadModel().apply([], {}, _state())
+        io_models.IOReadModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.IOReadModel().apply([1], {}, _state())
+        io_models.IOReadModel().apply([1], {}, _state())
 
 
 class TestIOWriteModel:
@@ -97,20 +86,17 @@ class TestIOWriteModel:
         assert isinstance(result.value, SymbolicValue)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.IOWriteModel().apply([], {}, _state())
+        io_models.IOWriteModel().apply([], {}, _state())
 
 
 class TestIOGetvalueModel:
     """Test suite for pysymex.models.stdlib.io.IOGetvalueModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.IOGetvalueModel().apply([], {}, _state())
+        io_models.IOGetvalueModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.IOGetvalueModel().apply([1], {}, _state())
+        io_models.IOGetvalueModel().apply([1], {}, _state())
 
 
 class TestHeappushModel:
@@ -129,12 +115,10 @@ class TestHeappopModel:
     """Test suite for pysymex.models.stdlib.io.HeappopModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeappopModel().apply([[]], {}, _state())
+        io_models.HeappopModel().apply([[]], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeappopModel().apply([], {}, _state())
+        io_models.HeappopModel().apply([], {}, _state())
 
 
 class TestHeapifyModel:
@@ -153,24 +137,20 @@ class TestHeapreplaceModel:
     """Test suite for pysymex.models.stdlib.io.HeapreplaceModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeapreplaceModel().apply([[1], 2], {}, _state())
+        io_models.HeapreplaceModel().apply([[1], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeapreplaceModel().apply([], {}, _state())
+        io_models.HeapreplaceModel().apply([], {}, _state())
 
 
 class TestHeappushpopModel:
     """Test suite for pysymex.models.stdlib.io.HeappushpopModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeappushpopModel().apply([[1], 2], {}, _state())
+        io_models.HeappushpopModel().apply([[1], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.HeappushpopModel().apply([], {}, _state())
+        io_models.HeappushpopModel().apply([], {}, _state())
 
 
 class TestNlargestModel:
@@ -201,36 +181,30 @@ class TestBisectLeftModel:
     """Test suite for pysymex.models.stdlib.io.BisectLeftModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectLeftModel().apply([[1, 2, 3], 2], {}, _state())
+        io_models.BisectLeftModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectLeftModel().apply([], {}, _state())
+        io_models.BisectLeftModel().apply([], {}, _state())
 
 
 class TestBisectRightModel:
     """Test suite for pysymex.models.stdlib.io.BisectRightModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectRightModel().apply([[1, 2, 3], 2], {}, _state())
+        io_models.BisectRightModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectRightModel().apply([], {}, _state())
+        io_models.BisectRightModel().apply([], {}, _state())
 
 
 class TestBisectModel:
     """Test suite for pysymex.models.stdlib.io.BisectModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectModel().apply([[1, 2, 3], 2], {}, _state())
+        io_models.BisectModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            io_models.BisectModel().apply([], {}, _state())
+        io_models.BisectModel().apply([], {}, _state())
 
 
 class TestInsortLeftModel:

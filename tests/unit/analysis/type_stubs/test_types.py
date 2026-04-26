@@ -1,10 +1,10 @@
-from pysymex.analysis.type_stubs.types import (
-    StubType, FunctionStub, ClassStub, ModuleStub
-)
+from pysymex.analysis.type_stubs.types import StubType, FunctionStub, ClassStub, ModuleStub
 from pysymex.analysis.type_inference import TypeKind
+
 
 class TestStubType:
     """Test suite for pysymex.analysis.type_stubs.types.StubType."""
+
     def test_any_type(self) -> None:
         """Test any_type behavior."""
         assert StubType.any_type().name == "Any"
@@ -94,29 +94,35 @@ class TestStubType:
         """Test to_pytype behavior."""
         pt = StubType.int_type().to_pytype()
         assert pt.kind == TypeKind.INT
-        
+
         pt_opt = StubType.optional(StubType.int_type()).to_pytype()
         assert pt_opt.kind == TypeKind.OPTIONAL
 
         pt_union = StubType.union(StubType.int_type(), StubType.str_type()).to_pytype()
         assert pt_union.kind == TypeKind.UNION
 
+
 class TestFunctionStub:
     """Test suite for pysymex.analysis.type_stubs.types.FunctionStub."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         f = FunctionStub("f")
         assert f.name == "f"
 
+
 class TestClassStub:
     """Test suite for pysymex.analysis.type_stubs.types.ClassStub."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         c = ClassStub("C")
         assert c.name == "C"
 
+
 class TestModuleStub:
     """Test suite for pysymex.analysis.type_stubs.types.ModuleStub."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         m = ModuleStub("m")

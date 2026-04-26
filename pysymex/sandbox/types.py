@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,6 +27,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
+
+
+def _default_environment() -> dict[str, str]:
+    """Return default empty environment mapping."""
+    return {}
+
+
+def _default_blocked_entries() -> list[str]:
+    """Return default empty blocked-entry list."""
+    return []
+
+
+def _default_output_files() -> dict[str, bytes]:
+    """Return default empty output-file mapping."""
+    return {}
 
 
 class SandboxBackend(Enum):
@@ -164,7 +179,7 @@ class SandboxConfig:
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     backend: SandboxBackend | None = None
     working_directory: Path | None = None
-    environment: dict[str, str] = field(default_factory=dict)
+    environment: dict[str, str] = field(default_factory=_default_environment)
     python_executable: str | None = None
     capture_output: bool = True
     allow_stdin: bool = False
@@ -220,10 +235,10 @@ class SandboxResult:
     peak_memory_bytes: int = 0
     """Peak memory usage in bytes."""
 
-    blocked_syscalls: list[str] = field(default_factory=list)
+    blocked_syscalls: list[str] = field(default_factory=_default_blocked_entries)
     """List of syscalls that were blocked by seccomp (Linux only)."""
 
-    blocked_operations: list[str] = field(default_factory=list)
+    blocked_operations: list[str] = field(default_factory=_default_blocked_entries)
     """List of operations that were blocked (network, filesystem, etc.)."""
 
     error_message: str | None = None
@@ -232,7 +247,7 @@ class SandboxResult:
     error_traceback: str | None = None
     """Python traceback if available."""
 
-    output_files: dict[str, bytes] = field(default_factory=dict)
+    output_files: dict[str, bytes] = field(default_factory=_default_output_files)
     """Files created by the sandboxed code (relative path -> content)."""
 
     @property

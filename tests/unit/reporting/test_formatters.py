@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from pysymex.reporting.formatters import JSONFormatter, MarkdownFormatter, TextFormatter, format_result
+from pysymex.reporting.formatters import (
+    JSONFormatter,
+    MarkdownFormatter,
+    TextFormatter,
+    format_result,
+)
 
 
 @dataclass
@@ -35,7 +40,9 @@ class _Result:
     paths_pruned: int = 1
     coverage: set[int] = field(default_factory=lambda: {1, 2, 3})
     total_time_seconds: float = 0.1
-    issues: list[_Issue] = field(default_factory=lambda: [_Issue(_IssueKind("TYPE_ERROR"), "bad", 7)])
+    issues: list[_Issue] = field(
+        default_factory=lambda: [_Issue(_IssueKind("TYPE_ERROR"), "bad", 7)]
+    )
 
 
 def test_text_and_json_formatter_emit_expected_fields() -> None:
@@ -44,7 +51,7 @@ def test_text_and_json_formatter_emit_expected_fields() -> None:
     text = TextFormatter(color=False).format(typed_result)
     payload = json.loads(JSONFormatter().format(typed_result))
 
-    assert "PySyMex" in text
+    assert "pysymex" in text
     assert payload["function"]["name"] == "f"
     assert payload["summary"]["total_issues"] == 1
 
@@ -57,7 +64,6 @@ def test_markdown_and_format_result_dispatch(tmp_path: Path) -> None:
     out = tmp_path / "report.txt"
     TextFormatter().save(typed_result, str(out))
 
-    assert "# PySyMex - Symbolic Execution Report" in md
-    assert "PySyMex" in fallback
+    assert "# pysymex - Symbolic Execution Report" in md
+    assert "pysymex" in fallback
     assert out.exists()
-

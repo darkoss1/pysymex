@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pysymex.analysis.contracts import ContractKind, VerificationResult
 from pysymex.analysis.properties import PropertyKind
@@ -16,8 +16,10 @@ from pysymex.execution.executors.verified import (
 )
 from pysymex.execution.termination import TerminationStatus
 
+
 class TestVerifiedExecutionConfig:
     """Test suite for pysymex.execution.executors.verified.VerifiedExecutionConfig."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         cfg = VerifiedExecutionConfig(max_paths=11, check_termination=True)
@@ -27,6 +29,7 @@ class TestVerifiedExecutionConfig:
 
 class TestContractIssue:
     """Test suite for pysymex.execution.executors.verified.ContractIssue."""
+
     def test_format(self) -> None:
         """Test format behavior."""
         issue = ContractIssue(
@@ -41,6 +44,7 @@ class TestContractIssue:
 
 class TestArithmeticIssue:
     """Test suite for pysymex.execution.executors.verified.ArithmeticIssue."""
+
     def test_format(self) -> None:
         """Test format behavior."""
         issue = ArithmeticIssue(kind="overflow", expression="x + 1", message="bad")
@@ -50,14 +54,18 @@ class TestArithmeticIssue:
 
 class TestInferredProperty:
     """Test suite for pysymex.execution.executors.verified.InferredProperty."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        prop = InferredProperty(kind=PropertyKind.MONOTONIC_INC, description="monotone", confidence=0.5)
+        prop = InferredProperty(
+            kind=PropertyKind.MONOTONIC_INC, description="monotone", confidence=0.5
+        )
         assert prop.description == "monotone"
 
 
 class TestVerifiedExecutionResult:
     """Test suite for pysymex.execution.executors.verified.VerifiedExecutionResult."""
+
     def test_is_verified(self) -> None:
         """Test is_verified behavior."""
         result = VerifiedExecutionResult()
@@ -65,9 +73,9 @@ class TestVerifiedExecutionResult:
 
     def test_has_issues(self) -> None:
         """Test has_issues behavior."""
-        result = VerifiedExecutionResult(contract_issues=[
-            ContractIssue(kind=ContractKind.REQUIRES, condition="x", message="m")
-        ])
+        result = VerifiedExecutionResult(
+            contract_issues=[ContractIssue(kind=ContractKind.REQUIRES, condition="x", message="m")]
+        )
         assert result.has_issues is True
 
     def test_format_summary(self) -> None:
@@ -79,8 +87,10 @@ class TestVerifiedExecutionResult:
 
 class TestVerifiedExecutor:
     """Test suite for pysymex.execution.executors.verified.VerifiedExecutor."""
+
     def test_execute_function(self) -> None:
         """Test execute_function behavior."""
+
         def sample(x: int) -> int:
             return x + 1
 
@@ -91,6 +101,7 @@ class TestVerifiedExecutor:
 
 def test_verify() -> None:
     """Test verify behavior."""
+
     def sample(x: int) -> int:
         return x + 1
 
@@ -100,6 +111,7 @@ def test_verify() -> None:
 
 def test_check_contracts() -> None:
     """Test check_contracts behavior."""
+
     def sample(x: int) -> int:
         return x
 
@@ -109,6 +121,7 @@ def test_check_contracts() -> None:
 
 def test_check_arithmetic() -> None:
     """Test check_arithmetic behavior."""
+
     def sample(x: int) -> int:
         return x + 1
 
@@ -118,6 +131,7 @@ def test_check_arithmetic() -> None:
 
 def test_prove_termination() -> None:
     """Test prove_termination behavior."""
+
     def sample(x: int) -> int:
         return x + 1
 

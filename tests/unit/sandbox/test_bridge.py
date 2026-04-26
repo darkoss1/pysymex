@@ -1,4 +1,4 @@
-﻿import marshal
+import marshal
 import sys
 from unittest.mock import patch
 
@@ -9,6 +9,7 @@ from pysymex.sandbox.bridge import (
     execute_concrete,
     extract_bytecode,
 )
+
 
 class TestConcreteResult:
     """Test suite for pysymex.sandbox.bridge.ConcreteResult."""
@@ -78,7 +79,9 @@ def test_extract_bytecode() -> None:
     code_obj = compile("value = 5\n", "demo.py", "exec")
     payload = b"__PYSYMEX_BYTECODE__" + marshal.dumps(code_obj)
     with patch("pysymex.sandbox.bridge._run_raw_worker", return_value=payload):
-        blob = extract_bytecode(b"value = 5\n", "demo.py", sandbox_config={"allow_weak_backends": True})
+        blob = extract_bytecode(
+            b"value = 5\n", "demo.py", sandbox_config={"allow_weak_backends": True}
+        )
     rebuilt = blob.reconstruct()
     assert rebuilt.co_filename == "demo.py"
 

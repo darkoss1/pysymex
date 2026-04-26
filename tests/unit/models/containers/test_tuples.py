@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -27,17 +25,13 @@ def test_tuple_add_faithfulness() -> None:
 def test_tuple_concrete_paths() -> None:
     """Concrete paths for constructor and hash-like behavior."""
     assert isinstance(tuples.TupleModel().apply([], {}, _state()), ModelResult)
-    with pytest.raises(NameError):
-        tuples.TupleHashModel().apply([], {}, _state())
+    tuples.TupleHashModel().apply([], {}, _state())
 
 
 def test_tuple_symbolic_and_error_paths() -> None:
     """Symbolic and error path coverage."""
-    with pytest.raises(NameError):
-        tuples.TupleGetitemModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        tuples.TupleIndexModel().apply([], {}, _state())
+    tuples.TupleGetitemModel().apply([], {}, _state())
+    tuples.TupleIndexModel().apply([], {}, _state())
 
 
 def test_tuple_edge_case_empty_tuple() -> None:

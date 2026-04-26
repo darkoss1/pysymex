@@ -1,8 +1,10 @@
-﻿import pysymex.core.iterators.base
+import pysymex.core.iterators.base
 import z3
+
 
 class TestIteratorState:
     """Test suite for pysymex.core.iterators.base.IteratorState."""
+
     def test_initialization(self) -> None:
         """Scenario: iterator states are declared; expected enum members exist."""
         assert pysymex.core.iterators.base.IteratorState.ACTIVE.name == "ACTIVE"
@@ -10,6 +12,7 @@ class TestIteratorState:
 
 class TestIterationResult:
     """Test suite for pysymex.core.iterators.base.IterationResult."""
+
     def test_has_value(self) -> None:
         """Scenario: non-exhausted result; expected has_value to be true."""
         iterator = pysymex.core.iterators.base.SymbolicRange.from_args(0, 1)
@@ -19,6 +22,7 @@ class TestIterationResult:
 
 class TestSymbolicIterator:
     """Test suite for pysymex.core.iterators.base.SymbolicIterator."""
+
     def test_has_next(self) -> None:
         """Scenario: base behavior via concrete range; expected has_next true initially."""
         iterator = pysymex.core.iterators.base.SymbolicRange.from_args(0, 2)
@@ -43,6 +47,7 @@ class TestSymbolicIterator:
 
 class TestSymbolicRange:
     """Test suite for pysymex.core.iterators.base.SymbolicRange."""
+
     def test_from_args(self) -> None:
         """Scenario: one-argument factory form; expected start zero and stop set."""
         rng = pysymex.core.iterators.base.SymbolicRange.from_args(5)
@@ -78,6 +83,7 @@ class TestSymbolicRange:
 
 class TestSymbolicSequenceIterator:
     """Test suite for pysymex.core.iterators.base.SymbolicSequenceIterator."""
+
     def test_has_next(self) -> None:
         """Scenario: index inside concrete list bounds; expected has_next true."""
         iterator = pysymex.core.iterators.base.SymbolicSequenceIterator([1, 2, 3])

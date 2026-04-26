@@ -2,8 +2,10 @@ from typing import Union
 from pysymex.analysis.type_inference.engine import TypeInferenceEngine
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind
 
+
 class TestTypeInferenceEngine:
     """Test suite for pysymex.analysis.type_inference.engine.TypeInferenceEngine."""
+
     def test_stub_resolver(self) -> None:
         """Test stub_resolver behavior."""
         engine = TypeInferenceEngine()
@@ -23,8 +25,10 @@ class TestTypeInferenceEngine:
     def test_infer_function_signature(self) -> None:
         """Test infer_function_signature behavior."""
         engine = TypeInferenceEngine()
+
         def my_func(a: int, b: str = "default") -> bool:
             return True
+
         params, ret = engine.infer_function_signature(my_func)
         assert params[0].kind == TypeKind.INT
         assert params[1].kind == TypeKind.STR
@@ -43,9 +47,13 @@ class TestTypeInferenceEngine:
         """Test infer_binary_op_result behavior."""
         engine = TypeInferenceEngine()
         assert engine.infer_binary_op_result("+", PyType.int_(), PyType.int_()).kind == TypeKind.INT
-        assert engine.infer_binary_op_result("/", PyType.int_(), PyType.int_()).kind == TypeKind.FLOAT
+        assert (
+            engine.infer_binary_op_result("/", PyType.int_(), PyType.int_()).kind == TypeKind.FLOAT
+        )
         assert engine.infer_binary_op_result("+", PyType.str_(), PyType.str_()).kind == TypeKind.STR
-        assert engine.infer_binary_op_result("==", PyType.int_(), PyType.str_()).kind == TypeKind.BOOL
+        assert (
+            engine.infer_binary_op_result("==", PyType.int_(), PyType.str_()).kind == TypeKind.BOOL
+        )
 
     def test_infer_unary_op_result(self) -> None:
         """Test infer_unary_op_result behavior."""
@@ -58,7 +66,7 @@ class TestTypeInferenceEngine:
         engine = TypeInferenceEngine()
         lst = PyType.list_(PyType.int_())
         assert engine.infer_subscript_result(lst, PyType.int_()).kind == TypeKind.INT
-        
+
         dic = PyType.dict_(PyType.str_(), PyType.bool_())
         assert engine.infer_subscript_result(dic, PyType.str_()).kind == TypeKind.BOOL
 
@@ -68,7 +76,7 @@ class TestTypeInferenceEngine:
         s = PyType.str_()
         assert engine.infer_attribute_result(s, "lower").kind == TypeKind.CALLABLE
         assert engine.infer_attribute_result(PyType.list_(), "append").kind == TypeKind.CALLABLE
-        
+
         inst = PyType.instance("MyObj", my_attr=PyType.int_())
         assert engine.infer_attribute_result(inst, "my_attr").kind == TypeKind.INT
 
@@ -87,7 +95,7 @@ class TestTypeInferenceEngine:
         u = PyType.union_(PyType.int_(), PyType.str_())
         narrowed_pos = engine.narrow_type_for_isinstance(u, PyType.int_(), positive=True)
         assert narrowed_pos.kind == TypeKind.INT
-        
+
         narrowed_neg = engine.narrow_type_for_isinstance(u, PyType.int_(), positive=False)
         assert narrowed_neg.kind == TypeKind.STR
 

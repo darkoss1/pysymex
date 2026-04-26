@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -24,6 +24,7 @@ summarization, invariant generation, and widening.
 from __future__ import annotations
 
 import dis
+from collections.abc import Sized
 from typing import TYPE_CHECKING, cast
 
 import z3
@@ -254,17 +255,30 @@ class LoopBoundInference:
     def _try_extract_iterator_bound(self, state: VMState) -> LoopBound | None:
         """Try to extract bound from iterator on the stack."""
         from pysymex.core.iterators import SymbolicIterator, SymbolicRange
+        from pysymex.core.types.containers import SymbolicIterator as ContainerSymbolicIterator
 
         if not state.stack:
             return None
-        for item in reversed(state.stack[:3]):
+        for item in reversed(state.stack[-3:]):
             if isinstance(item, SymbolicIterator):
-                bound = item.remaining_bound()
-                if isinstance(bound, int):
-                    return LoopBound.constant(bound)
-                else:
-                    return LoopBound.symbolic(bound)
-            if isinstance(item, SymbolicRange):
+                try:
+                    bound = item.remaining_bound()
+                    if isinstance(bound, int):
+                        return LoopBound.constant(bound)
+                    else:
+                        return LoopBound.symbolic(bound)
+                except (AttributeError, NotImplementedError):
+                    pass
+            elif isinstance(item, ContainerSymbolicIterator):
+                try:
+                    iterable = item.iterable
+                    if isinstance(iterable, Sized):
+                        length = len(iterable)
+                        remaining = length - item.index
+                        return LoopBound.constant(remaining)
+                except (AttributeError, TypeError):
+                    pass
+            elif isinstance(item, SymbolicRange):
                 if getattr(item, "_is_concrete", False):
                     return LoopBound.constant(cast("int", item.length))
                 else:
@@ -664,7 +678,7 @@ class LoopWidening:
         constraints from ``SymbolicValue.symbolic()`` are added to the path
         so widened values retain proper typing.
         """
-        from pysymex.core.types.scalars import SymbolicString, SymbolicValue, merge_taint
+        from pysymex.core.types.scalars import SymbolicString, SymbolicValue
 
         widened = new_state.copy()
 
@@ -742,16 +756,6 @@ class LoopWidening:
                     else:
                         widened_sym, type_constraint = SymbolicValue.symbolic(f"{name}_widened")
 
-                    old_taint = getattr(old_val, "taint_labels", None)
-                    new_taint = getattr(new_val, "taint_labels", None)
-                    if old_taint or new_taint:
-                        import dataclasses as _dc
-
-                        widened_sym = _dc.replace(
-                            widened_sym,
-                            taint_labels=merge_taint(old_taint or set(), new_taint or set()),
-                        )
-
                     widened.locals[name] = widened_sym
                     widened.path_constraints = widened.path_constraints.append(type_constraint)
 
@@ -766,4 +770,3 @@ __all__ = [
     "LoopSummarizer",
     "LoopWidening",
 ]
-

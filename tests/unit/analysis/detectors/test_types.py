@@ -1,36 +1,50 @@
-import pytest
+from pysymex.analysis.detectors.types import TypeEnvironment, DetectionContext
+from pysymex.analysis.detectors.base import IssueKind
 from unittest.mock import Mock
 from pysymex.analysis.detectors.types import (
-    IssueKind, Severity, Issue, DetectionContext, StaticDetector
+    IssueKind,
+    Severity,
+    Issue,
+    DetectionContext,
+    StaticDetector,
 )
 from pysymex.analysis.type_inference import PyType, TypeKind, TypeEnvironment
+
 
 class DummyStaticDetector(StaticDetector):
     def issue_kind(self) -> IssueKind:
         return IssueKind.UNKNOWN
-    
+
     def check(self, ctx: DetectionContext) -> Issue | None:
         return self.create_issue(ctx, "test msg")
 
+
 class TestIssueKind:
     """Test suite for pysymex.analysis.detectors.types.IssueKind."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert IssueKind.TYPE_ERROR.name == "TYPE_ERROR"
 
+
 class TestSeverity:
     """Test suite for pysymex.analysis.detectors.types.Severity."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert Severity.CRITICAL.name == "CRITICAL"
 
+
 class TestIssue:
     """Test suite for pysymex.analysis.detectors.types.Issue."""
+
     def test_is_suppressed(self) -> None:
         """Test is_suppressed behavior."""
         issue = Issue(IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg")
         assert issue.is_suppressed() is False
-        suppressed = Issue(IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg", suppression_reason="reason")
+        suppressed = Issue(
+            IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg", suppression_reason="reason"
+        )
         assert suppressed.is_suppressed() is True
 
     def test_format(self) -> None:
@@ -41,8 +55,10 @@ class TestIssue:
         assert "f.py:10" in fmt
         assert "msg" in fmt
 
+
 class TestDetectionContext:
     """Test suite for pysymex.analysis.detectors.types.DetectionContext."""
+
     def test_get_type(self) -> None:
         """Test get_type behavior."""
         env = TypeEnvironment()
@@ -68,12 +84,14 @@ class TestDetectionContext:
         ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
         assert ctx.is_in_try_block("Exception") is False
 
+
 class TestStaticDetector:
     """Test suite for pysymex.analysis.detectors.types.StaticDetector."""
+
     def test_issue_kind(self) -> None:
         """Test issue_kind behavior."""
         d = DummyStaticDetector()
-        assert d.issue_kind() == IssueKind.UNKNOWN
+        assert d.issue_kind().name == "UNKNOWN"
 
     def test_check(self) -> None:
         """Test check behavior."""

@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from unittest.mock import PropertyMock, patch
 
 import pytest
@@ -16,7 +16,9 @@ class _FakeProcess:
         self._handle = 99
         self.kill_called = False
 
-    def communicate(self, input: bytes | None = None, timeout: float | None = None) -> tuple[bytes, bytes]:
+    def communicate(
+        self, input: bytes | None = None, timeout: float | None = None
+    ) -> tuple[bytes, bytes]:
         _ = input
         _ = timeout
         return self._stdout, self._stderr
@@ -27,6 +29,7 @@ class _FakeProcess:
     def wait(self, timeout: float | None = None) -> int:
         _ = timeout
         return self.returncode
+
 
 class TestWindowsJobBackend:
     """Test suite for pysymex.sandbox.isolation.windows.WindowsJobBackend."""
@@ -57,7 +60,9 @@ class TestWindowsJobBackend:
         """Test setup behavior."""
         backend = WindowsJobBackend(SandboxConfig())
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=123),
         ):
             try:
@@ -74,7 +79,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig())
         with (
             patch("ctypes.windll.kernel32.CloseHandle", return_value=1),
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=321),
         ):
             backend.setup()
@@ -89,7 +96,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig(harness_install_audit_hook=False))
         fake = _FakeProcess(0, b"ok\n", b"")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=1),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -120,7 +129,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig(harness_install_audit_hook=False))
         fake = _FakeProcess(1, b"", b"sandbox-harness: network access is hard-blocked")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=2),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -143,7 +154,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(config)
         fake = _FakeProcess(1, b"", b"sandbox-harness: blocked write")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=3),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -165,7 +178,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig(harness_install_audit_hook=False))
         fake = _FakeProcess(1, b"", b"sandbox-harness: blocked runtime event")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=4),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -187,7 +202,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig(harness_install_audit_hook=False))
         fake = _FakeProcess(1, b"", b"sandbox-harness: rejected")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=5),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -209,7 +226,9 @@ class TestWindowsJobBackend:
         backend = WindowsJobBackend(SandboxConfig(harness_install_audit_hook=False))
         fake = _FakeProcess(0, b"safe\n", b"")
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=6),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
@@ -245,11 +264,15 @@ class TestWindowsJobBackend:
 
         popen_side_effect = _RaiseOnce()
         with (
-            patch.object(WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                WindowsJobBackend, "is_available", new_callable=PropertyMock, return_value=True
+            ),
             patch.object(WindowsJobBackend, "_create_configured_job_object", return_value=7),
             patch.object(WindowsJobBackend, "_assign_to_job", return_value=None),
             patch.object(WindowsJobBackend, "_resume_process_main_thread", return_value=None),
-            patch("pysymex.sandbox.isolation.windows.subprocess.Popen", side_effect=popen_side_effect),
+            patch(
+                "pysymex.sandbox.isolation.windows.subprocess.Popen", side_effect=popen_side_effect
+            ),
             patch("ctypes.windll.kernel32.CloseHandle", return_value=1),
         ):
             backend.setup()

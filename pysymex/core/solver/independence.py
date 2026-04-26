@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -247,10 +247,7 @@ class ConstraintIndependenceOptimizer:
         names: set[str] = set()
         worklist: list[_z3.ExprRef] = [expr]
         seen_ids: set[int] = {expr.get_id()}
-        
-        # KEEP ALIVE: Z3_dec_ref recursive C stack overflow happens when deep AST proxy objects 
-        # are destructed by Python's GC asynchronously. We keep all objects flatly referenced 
-        # here so they are destroyed iteratively as this list clears, preventing C segfaults.
+
         keepalive: list[_z3.ExprRef] = []
 
         while worklist:
@@ -324,6 +321,10 @@ class ConstraintIndependenceOptimizer:
 
         self._constraint_index += 1
         return var_names
+
+    def find_group_root(self, variable: str) -> str:
+        """Return the union-find root for a variable name."""
+        return self._uf.find(variable)
 
     def get_variables(self, constraint: z3.BoolRef) -> frozenset[str]:
         """Get the cached variable set for a constraint.

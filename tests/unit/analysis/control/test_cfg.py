@@ -1,20 +1,31 @@
-import pytest
 import dis
 from pysymex.analysis.control.cfg import (
-    ExceptionEntryProtocol, EdgeKind, BasicBlock, ControlFlowGraph, CFGBuilder
+    ExceptionEntryProtocol,
+    EdgeKind,
+    BasicBlock,
+    ControlFlowGraph,
+    CFGBuilder,
 )
+
 
 class MockExceptionEntry(ExceptionEntryProtocol):
     def __init__(self, target: int, start: int, end: int) -> None:
         self._target = target
         self._start = start
         self._end = end
+
     @property
-    def target(self) -> int: return self._target
+    def target(self) -> int:
+        return self._target
+
     @property
-    def start(self) -> int: return self._start
+    def start(self) -> int:
+        return self._start
+
     @property
-    def end(self) -> int: return self._end
+    def end(self) -> int:
+        return self._end
+
 
 class MockInstr:
     def __init__(self, opname: str, offset: int, argval: object = None) -> None:
@@ -23,8 +34,10 @@ class MockInstr:
         self.argval = argval
         self.starts_line = 10
 
+
 class TestExceptionEntryProtocol:
     """Test suite for pysymex.analysis.control.cfg.ExceptionEntryProtocol."""
+
     def test_target(self) -> None:
         """Test target behavior."""
         entry = MockExceptionEntry(target=1, start=2, end=3)
@@ -40,15 +53,19 @@ class TestExceptionEntryProtocol:
         entry = MockExceptionEntry(target=1, start=2, end=3)
         assert entry.end == 3
 
+
 class TestEdgeKind:
     """Test suite for pysymex.analysis.control.cfg.EdgeKind."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert EdgeKind.SEQUENTIAL.name == "SEQUENTIAL"
         assert EdgeKind.BRANCH_TRUE.name == "BRANCH_TRUE"
 
+
 class TestBasicBlock:
     """Test suite for pysymex.analysis.control.cfg.BasicBlock."""
+
     def test_block_id(self) -> None:
         """Test block_id behavior."""
         b = BasicBlock(id=1, start_pc=0, end_pc=10)
@@ -58,7 +75,7 @@ class TestBasicBlock:
         """Test add_instruction behavior."""
         b = BasicBlock(id=1, start_pc=0, end_pc=0)
         instr = MockInstr("LOAD_CONST", 2)
-        b.add_instruction(instr) # type: ignore[arg-type]
+        b.add_instruction(instr)
         assert len(b.instructions) == 1
         assert b.end_pc == 2
 
@@ -74,7 +91,7 @@ class TestBasicBlock:
         b = BasicBlock(id=1, start_pc=0, end_pc=10)
         assert b.get_terminator() is None
         instr = MockInstr("RETURN_VALUE", 10)
-        b.add_instruction(instr) # type: ignore[arg-type]
+        b.add_instruction(instr)
         assert b.get_terminator() is instr
 
     def test_is_conditional(self) -> None:
@@ -82,11 +99,13 @@ class TestBasicBlock:
         b = BasicBlock(id=1, start_pc=0, end_pc=10)
         assert b.is_conditional() is False
         instr = MockInstr("POP_JUMP_IF_TRUE", 10)
-        b.add_instruction(instr) # type: ignore[arg-type]
+        b.add_instruction(instr)
         assert b.is_conditional() is True
+
 
 class TestControlFlowGraph:
     """Test suite for pysymex.analysis.control.cfg.ControlFlowGraph."""
+
     def test_entry(self) -> None:
         """Test entry behavior."""
         cfg = ControlFlowGraph()
@@ -201,12 +220,16 @@ class TestControlFlowGraph:
         assert blocks[0].id == 1
         assert blocks[1].id == 0
 
+
 class TestCFGBuilder:
     """Test suite for pysymex.analysis.control.cfg.CFGBuilder."""
+
     def test_build(self) -> None:
         """Test build behavior."""
+
         def my_func() -> int:
             return 42
+
         builder = CFGBuilder()
         cfg = builder.build(my_func.__code__)
         assert isinstance(cfg, ControlFlowGraph)
@@ -215,9 +238,11 @@ class TestCFGBuilder:
 
     def test_build_from_instructions(self) -> None:
         """Test build_from_instructions behavior."""
-        def my_func() -> int: return 42
+
+        def my_func() -> int:
+            return 42
+
         builder = CFGBuilder()
-        # Fallback to fetching instructions to pass to build_from_instructions
         instructions = list(dis.get_instructions(my_func.__code__))
         cfg = builder.build_from_instructions(instructions)
         assert isinstance(cfg, ControlFlowGraph)

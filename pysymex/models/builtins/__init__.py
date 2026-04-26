@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -38,6 +38,40 @@ if TYPE_CHECKING:
 
 
 from .base import FunctionModel, ModelResult
+from .exceptions import (
+    AssertionErrorModel,
+    AttributeErrorModel,
+    create_exception_models,
+    ExceptionTypeModel,
+    GeneratorExitModel,
+    IndexErrorModel,
+    KeyErrorModel,
+    NotImplementedErrorModel,
+    RuntimeErrorModel,
+    StopIterationModel,
+    TypeErrorModel,
+    ValueErrorModel,
+    ZeroDivisionErrorModel,
+)
+from .types import (
+    BuiltinTypeModel,
+    BoolModel as BuiltinBoolModel,
+    BytearrayModel as BuiltinBytearrayModel,
+    BytesModel as BuiltinBytesModel,
+    DictModel as BuiltinDictModel,
+    FloatModel as BuiltinFloatModel,
+    FrozensetModel as BuiltinFrozensetModel,
+    IntModel as BuiltinIntModel,
+    ListModel as BuiltinListModel,
+    NoneTypeModel,
+    ObjectModel as BuiltinObjectModel,
+    SetModel as BuiltinSetModel,
+    StrModel as BuiltinStrModel,
+    TupleModel as BuiltinTupleModel,
+    TypeModel as TypeModelBase,
+    TypeModelResult,
+    TypeTypeModel,
+)
 from .core import (
     AbsModel,
     BoolModel,
@@ -108,6 +142,39 @@ from .extended import (
     VarsModel,
 )
 
+_TYPE_AND_EXCEPTION_EXPORTS: dict[str, object] = {
+    "AssertionErrorModel": AssertionErrorModel,
+    "AttributeErrorModel": AttributeErrorModel,
+    "create_exception_models": create_exception_models,
+    "ExceptionTypeModel": ExceptionTypeModel,
+    "GeneratorExitModel": GeneratorExitModel,
+    "IndexErrorModel": IndexErrorModel,
+    "KeyErrorModel": KeyErrorModel,
+    "NotImplementedErrorModel": NotImplementedErrorModel,
+    "RuntimeErrorModel": RuntimeErrorModel,
+    "StopIterationModel": StopIterationModel,
+    "TypeErrorModel": TypeErrorModel,
+    "ValueErrorModel": ValueErrorModel,
+    "ZeroDivisionErrorModel": ZeroDivisionErrorModel,
+    "BuiltinTypeModel": BuiltinTypeModel,
+    "BuiltinBoolModel": BuiltinBoolModel,
+    "BuiltinBytearrayModel": BuiltinBytearrayModel,
+    "BuiltinBytesModel": BuiltinBytesModel,
+    "BuiltinDictModel": BuiltinDictModel,
+    "BuiltinFloatModel": BuiltinFloatModel,
+    "BuiltinFrozensetModel": BuiltinFrozensetModel,
+    "BuiltinIntModel": BuiltinIntModel,
+    "BuiltinListModel": BuiltinListModel,
+    "NoneTypeModel": NoneTypeModel,
+    "BuiltinObjectModel": BuiltinObjectModel,
+    "BuiltinSetModel": BuiltinSetModel,
+    "BuiltinStrModel": BuiltinStrModel,
+    "BuiltinTupleModel": BuiltinTupleModel,
+    "TypeModelBase": TypeModelBase,
+    "TypeModelResult": TypeModelResult,
+    "TypeTypeModel": TypeTypeModel,
+}
+
 
 class ModelRegistry:
     """Registry for function models."""
@@ -119,6 +186,7 @@ class ModelRegistry:
 
     def _register_defaults(self) -> None:
         """Register default builtin models and standard library models."""
+        from pysymex.models.builtins.core import ComplexModel, SliceModel
         from pysymex.models.builtins.extended import EXTENDED_MODELS
         from pysymex.models.containers.bytes import BYTES_MODELS
         from pysymex.models.containers.dicts import DICT_MODELS
@@ -214,6 +282,8 @@ class ModelRegistry:
             DirModel(),
             AsciiModel(),
             BreakpointModel(),
+            ComplexModel(),
+            SliceModel(),
             *math_models,
             *collections_models,
             *itertools_models,

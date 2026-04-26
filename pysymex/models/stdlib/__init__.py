@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Extended Standard Library Models for PySyMex v1.2.
+Extended Standard Library Models for pysymex v1.2.
 
 Slim hub that re-exports all stdlib model classes from extraction modules:
 - stdlib_math: Mathematical functions (sqrt, ceil, floor, sin, cos, etc.)
@@ -65,9 +65,6 @@ from pysymex.models.stdlib.system import (
 )
 from pysymex.models.containers.strings import STRING_MODELS
 
-# stdlib container modules now expose dict-based registries rather than
-# FunctionModel instance lists. Keep these empty lists for legacy aggregation
-# points that still concatenate model lists.
 collections_models: list[FunctionModel] = []
 itertools_models: list[FunctionModel] = []
 functools_models: list[FunctionModel] = []

@@ -1,27 +1,38 @@
 import pytest
 from unittest.mock import Mock, patch
 from pysymex.analysis.specialized.none import (
-    NoneCheckType, NoneCheck, NoneCheckState, NoneCheckAnalyzer,
-    apply_none_check, extract_variable_from_expression, is_none_check_in_message
+    NoneCheckType,
+    NoneCheck,
+    NoneCheckState,
+    NoneCheckAnalyzer,
+    apply_none_check,
+    extract_variable_from_expression,
+    is_none_check_in_message,
 )
+
 
 class TestNoneCheckType:
     """Test suite for pysymex.analysis.specialized.none.NoneCheckType."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert NoneCheckType.IS_NONE.name == "IS_NONE"
         assert NoneCheckType.IS_NOT_NONE.name == "IS_NOT_NONE"
 
+
 class TestNoneCheck:
     """Test suite for pysymex.analysis.specialized.none.NoneCheck."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         c = NoneCheck("x", NoneCheckType.IS_NONE)
         assert c.variable_name == "x"
         assert c.check_type == NoneCheckType.IS_NONE
 
+
 class TestNoneCheckState:
     """Test suite for pysymex.analysis.specialized.none.NoneCheckState."""
+
     def test_mark_not_none(self) -> None:
         """Test mark_not_none behavior."""
         state = NoneCheckState()
@@ -71,8 +82,10 @@ class TestNoneCheckState:
         assert merged.is_known_none("x") is True
         assert merged.is_known_not_none("y") is False
 
+
 class TestNoneCheckAnalyzer:
     """Test suite for pysymex.analysis.specialized.none.NoneCheckAnalyzer."""
+
     def test_analyze_source(self) -> None:
         """Test analyze_source behavior."""
         analyzer = NoneCheckAnalyzer()
@@ -84,8 +97,9 @@ class TestNoneCheckAnalyzer:
     def test_analyze_ast_condition(self) -> None:
         """Test analyze_ast_condition behavior."""
         import ast
+
         analyzer = NoneCheckAnalyzer()
-        node = ast.parse("x is None").body[0].value # type: ignore[attr-defined]
+        node = ast.parse("x is None").body[0].value
         check = analyzer.analyze_ast_condition(node)
         assert check is not None
         assert check.variable_name == "x"
@@ -98,7 +112,7 @@ class TestNoneCheckAnalyzer:
         analyzer.set_state(state)
         analyzer.update_state_for_check(NoneCheck("x", NoneCheckType.IS_NONE), True)
         assert analyzer.get_state().is_known_none("x") is True
-        
+
         state2 = NoneCheckState()
         analyzer.set_state(state2)
         analyzer.update_state_for_check(NoneCheck("x", NoneCheckType.IS_NONE), False)
@@ -121,11 +135,13 @@ class TestNoneCheckAnalyzer:
         analyzer.set_state(state)
         assert analyzer.get_state() is state
 
+
 def test_apply_none_check() -> None:
     """Test apply_none_check behavior."""
     state = NoneCheckState()
     new_state = apply_none_check(state, NoneCheck("x", NoneCheckType.IS_NONE), True)
     assert new_state.is_known_none("x") is True
+
 
 def test_extract_variable_from_expression() -> None:
     """Test extract_variable_from_expression behavior."""
@@ -133,11 +149,12 @@ def test_extract_variable_from_expression() -> None:
     assert extract_variable_from_expression("x[0]") == "x"
     assert extract_variable_from_expression("x") == "x"
 
+
 def test_is_none_check_in_message() -> None:
     """Test is_none_check_in_message behavior."""
     is_none, var = is_none_check_in_message("'x' may be None")
     assert is_none is True
     assert var == "x"
-    
+
     is_none2, var2 = is_none_check_in_message("x == 1")
     assert is_none2 is False

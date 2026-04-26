@@ -40,7 +40,11 @@ def test_all_any_parametrized_faithfulness(items: list[int | bool]) -> None:
 def test_extended_auto_discovery_apply() -> None:
     classes: list[type[FunctionModel]] = []
     for _, obj in inspect.getmembers(extended, inspect.isclass):
-        if obj.__module__ == extended.__name__ and issubclass(obj, FunctionModel) and obj is not FunctionModel:
+        if (
+            obj.__module__ == extended.__name__
+            and issubclass(obj, FunctionModel)
+            and obj is not FunctionModel
+        ):
             classes.append(obj)
     for cls in classes:
         model = cls()

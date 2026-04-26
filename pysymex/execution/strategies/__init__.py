@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -20,12 +20,8 @@
 
 from pysymex.execution.strategies.manager import (
     AdaptivePathManager,
-    CHTDNativePathManager,
-    CoverageGuidedPathManager,
-    DirectedPathManager,
     ExplorationStrategy,
     PathManager,
-    PriorityPathManager,
     create_path_manager,
 )
 from pysymex.execution.strategies.merger import (
@@ -37,14 +33,10 @@ from pysymex.execution.strategies.merger import (
 
 __all__ = [
     "AdaptivePathManager",
-    "CHTDNativePathManager",
-    "CoverageGuidedPathManager",
-    "DirectedPathManager",
     "ExplorationStrategy",
     "MergePolicy",
     "MergeStatistics",
     "PathManager",
-    "PriorityPathManager",
     "StateMerger",
     "create_path_manager",
     "create_state_merger",

@@ -5,31 +5,42 @@ from pysymex.analysis.abstract.domains.base import AbstractValue, Interval
 
 T = TypeVar("T")
 
+
 class ConcreteValue(AbstractValue["ConcreteValue"]):
     def is_top(self) -> bool:
         return False
+
     def is_bottom(self) -> bool:
         return False
+
     def join(self, other: "ConcreteValue") -> "ConcreteValue":
         return self
+
     def meet(self, other: "ConcreteValue") -> "ConcreteValue":
         return self
+
     def widen(self, other: "ConcreteValue") -> "ConcreteValue":
         return self
+
     def to_z3_constraint(self, var: z3.ExprRef) -> z3.BoolRef:
         return z3.BoolVal(True)
+
     @classmethod
     def from_concrete(cls, value: object) -> "ConcreteValue":
         return cls()
+
     @classmethod
     def top(cls) -> "ConcreteValue":
         return cls()
+
     @classmethod
     def bottom(cls) -> "ConcreteValue":
         return cls()
 
+
 class TestAbstractValue:
     """Test suite for pysymex.analysis.abstract.domains.base.AbstractValue."""
+
     def test_is_top(self) -> None:
         """Test is_top behavior on concrete subclass."""
         val = ConcreteValue()
@@ -76,8 +87,10 @@ class TestAbstractValue:
         val = ConcreteValue.bottom()
         assert isinstance(val, ConcreteValue)
 
+
 class TestInterval:
     """Test suite for pysymex.analysis.abstract.domains.base.Interval."""
+
     def test_is_top(self) -> None:
         """Test is_top behavior."""
         top_val = Interval.top()
@@ -150,7 +163,7 @@ class TestInterval:
         val = Interval.from_concrete(5)
         assert val.lo == 5 and val.hi == 5
         with pytest.raises(TypeError):
-            Interval.from_concrete("not int") # type: ignore[arg-type] # Testing invalid input
+            Interval.from_concrete("not int")
 
     def test_top(self) -> None:
         """Test top behavior."""

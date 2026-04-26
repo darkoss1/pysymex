@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import z3
+
+_BUILTIN_NAMES = ("int", "str", "float", "bool", "list", "dict", "set", "tuple")
 
 
 class MethodType(Enum):
@@ -108,18 +110,25 @@ class SymbolicClass:
 
         def merge(seqs: list[list[SymbolicClass]]) -> list[SymbolicClass]:
             result: list[SymbolicClass] = []
+            tail_counts: dict[int, int] = {}
+            for s in seqs:
+                for i in range(1, len(s)):
+                    item_id = id(s[i])
+                    tail_counts[item_id] = tail_counts.get(item_id, 0) + 1
+
             while True:
                 seqs = [s for s in seqs if s]
                 if not seqs:
                     return result
                 for seq in seqs:
                     candidate = seq[0]
-                    in_tail = any(candidate in s[1:] for s in seqs)
-                    if not in_tail:
+                    if not tail_counts.get(id(candidate), 0):
                         result.append(candidate)
                         for s in seqs:
-                            if s and s[0] == candidate:
+                            if s and s[0] is candidate:
                                 s.pop(0)
+                                if s:
+                                    tail_counts[id(s[0])] -= 1
                         break
                 else:
                     raise TypeError("Cannot create MRO")
@@ -293,7 +302,7 @@ class ClassRegistry:
         self._builtin_classes["type"] = type_cls
         exc_cls = SymbolicClass(name="Exception", bases=[obj_cls], module="builtins")
         self._builtin_classes["Exception"] = exc_cls
-        for name in ["int", "str", "float", "bool", "list", "dict", "set", "tuple"]:
+        for name in _BUILTIN_NAMES:
             cls = SymbolicClass(name=name, bases=[obj_cls], module="builtins")
             self._builtin_classes[name] = cls
 

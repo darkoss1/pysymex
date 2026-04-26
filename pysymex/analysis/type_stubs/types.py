@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from pysymex.analysis.type_inference import PyType, TypeKind
+from pysymex.analysis.type_inference.kinds import TypeKind, PyType
 
 __all__ = ["ClassStub", "FunctionStub", "ModuleStub", "StubType"]
 
@@ -128,35 +128,6 @@ class StubType:
     def typevar(cls, name: str) -> StubType:
         return cls(name, "typing", is_typevar=True)
 
-    def to_pytype(self) -> PyType:
-        """Convert to the simpler PyType representation."""
-        kind_map = {
-            "int": TypeKind.INT,
-            "float": TypeKind.FLOAT,
-            "str": TypeKind.STR,
-            "bytes": TypeKind.BYTES,
-            "bool": TypeKind.BOOL,
-            "None": TypeKind.NONE,
-            "list": TypeKind.LIST,
-            "dict": TypeKind.DICT,
-            "set": TypeKind.SET,
-            "frozenset": TypeKind.FROZENSET,
-            "tuple": TypeKind.TUPLE,
-            "object": TypeKind.OBJECT,
-            "type": TypeKind.TYPE,
-            "Callable": TypeKind.CALLABLE,
-            "Iterator": TypeKind.ITERATOR,
-            "Generator": TypeKind.GENERATOR,
-            "Coroutine": TypeKind.COROUTINE,
-            "Any": TypeKind.ANY,
-        }
-        if self.is_union:
-            return PyType(kind=TypeKind.UNION)
-        if self.is_optional:
-            return PyType(kind=TypeKind.OPTIONAL)
-        kind = kind_map.get(self.name, TypeKind.OBJECT)
-        return PyType(kind=kind, name=self.name)
-
     def __str__(self) -> str:
         """Return a human-readable string representation."""
         if self.is_callable:
@@ -172,6 +143,50 @@ class StubType:
             return f"{self.name}[{args}]"
         return self.name
 
+    def to_pytype(self) -> PyType:
+        """Convert StubType to PyType for type inference."""
+        name_to_kind = {
+            "Any": TypeKind.ANY,
+            "None": TypeKind.NONE,
+            "int": TypeKind.INT,
+            "str": TypeKind.STR,
+            "bool": TypeKind.BOOL,
+            "float": TypeKind.FLOAT,
+            "bytes": TypeKind.BYTES,
+            "object": TypeKind.OBJECT,
+            "list": TypeKind.LIST,
+            "dict": TypeKind.DICT,
+            "set": TypeKind.SET,
+            "tuple": TypeKind.TUPLE,
+            "Optional": TypeKind.OPTIONAL,
+            "Union": TypeKind.UNION,
+        }
+
+        kind = name_to_kind.get(self.name, TypeKind.OBJECT)
+
+        if self.is_optional:
+            return PyType(kind, name=self.name, nullable=True)
+
+        if self.is_union:
+            member_types = frozenset(m.to_pytype() for m in self.union_members)
+            return PyType(kind, name=self.name, union_members=member_types)
+
+        if self.type_args:
+            arg_types = tuple(arg.to_pytype() for arg in self.type_args)
+            return PyType(kind, name=self.name, params=arg_types)
+
+        return PyType(kind, name=self.name)
+
+
+def _empty_overloads() -> list[FunctionStub]:
+    """Create a typed empty function-overload list."""
+    return []
+
+
+def _empty_submodules() -> dict[str, ModuleStub]:
+    """Create a typed empty submodule map."""
+    return {}
+
 
 @dataclass
 class FunctionStub:
@@ -180,7 +195,7 @@ class FunctionStub:
     name: str
     params: dict[str, StubType] = field(default_factory=dict[str, StubType])
     return_type: StubType | None = None
-    overloads: list[FunctionStub] = field(default_factory=list)
+    overloads: list[FunctionStub] = field(default_factory=_empty_overloads)
     is_staticmethod: bool = False
     is_classmethod: bool = False
     is_property: bool = False
@@ -216,4 +231,4 @@ class ModuleStub:
     variables: dict[str, StubType] = field(default_factory=dict[str, StubType])
     type_aliases: dict[str, StubType] = field(default_factory=dict[str, StubType])
     imports: dict[str, str] = field(default_factory=dict[str, str])
-    submodules: dict[str, ModuleStub] = field(default_factory=dict)
+    submodules: dict[str, ModuleStub] = field(default_factory=_empty_submodules)

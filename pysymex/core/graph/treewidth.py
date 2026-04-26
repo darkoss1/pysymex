@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -44,6 +43,16 @@ if TYPE_CHECKING:
     from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
 
 logger = logging.getLogger(__name__)
+
+
+def _empty_elimination_order() -> list[int]:
+    """Create a typed empty elimination-order list."""
+    return []
+
+
+def _empty_parent_map() -> dict[int, int]:
+    """Create a typed empty parent map."""
+    return {}
 
 
 _DISCRIMINATOR_SUFFIXES = (
@@ -127,8 +136,8 @@ class TreeDecomposition:
     tree_edges: list[tuple[int, int]]
     adhesion: dict[tuple[int, int], frozenset[int]]
     width: int
-    elimination_order: list[int] = field(default_factory=list)
-    parent_map: dict[int, int] = field(default_factory=dict)
+    elimination_order: list[int] = field(default_factory=_empty_elimination_order)
+    parent_map: dict[int, int] = field(default_factory=_empty_parent_map)
 
     def get_parent(self, bag_id: int) -> int | None:
         """Get the parent bag ID, or None if this is the root."""
@@ -289,7 +298,8 @@ class ConstraintInteractionGraph:
             if current_min > max_degree:
                 break
 
-            v = buckets[current_min].pop()
+            v = min(buckets[current_min])
+            buckets[current_min].remove(v)
             if v not in remaining:
                 continue
 
@@ -405,70 +415,6 @@ class ConstraintInteractionGraph:
         for overlap in td.adhesion.values():
             skeleton.update(overlap)
         return frozenset(skeleton)
-
-    def propagate_bag_constraints(
-        self,
-        td: TreeDecomposition,
-        solve_local_bag: Callable[[frozenset[int]], bool],
-        pass_messages: Callable[[int, int, frozenset[int]], None],
-    ) -> bool:
-        """[DEPRECATED] Dynamic programming (message passing) over the tree decomposition.
-
-        .. deprecated:: 0.x
-            This method is deprecated in favor of the GPU-accelerated
-            ``GPUBagSolver.propagate_all`` in the ``h_acceleration`` module.
-
-        Instead of extracting a global skeleton and brute-forcing adhesion
-        variablesâ€”which scales poorly as |S| approaches O(N)â€”this method
-        achieves O(N Â· 2^w) structural complexity via local message passing.
-
-        For a tree decomposition T, constraints are solved locally within
-        each bag. The valid truth assignments are projected onto the adhesion
-        set and passed as a constrained interface to the parent bag. This
-        confines the exponential blowup strictly to the local bag width w.
-
-        Args:
-            td: The tree decomposition to traverse.
-            solve_local_bag: Callable(bag: frozenset[int]) -> bool that checks
-                satisfiability of constraints within a single bag.
-            pass_messages: Callable(child_id: int, parent_id: int,
-                adhesion: frozenset[int]) -> None that projects valid
-                assignments from child to parent via the adhesion set.
-
-        Returns:
-            True if all bags are locally satisfiable, False if any bag
-            is unsatisfiable (early termination).
-
-        Complexity:
-            O(N Â· 2^w) where N = number of bags and w = treewidth.
-        """
-        import warnings
-
-        warnings.warn(
-            "ConstraintInteractionGraph.propagate_bag_constraints is deprecated. "
-            "Use pysymex.accel.chtd_solver.GPUBagSolver instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not td.bags:
-            return True
-
-        for bag_id in range(len(td.bags)):
-            bag = td.bags.get(bag_id)
-            if bag is None:
-                continue
-
-            local_sat = solve_local_bag(bag)
-            if not local_sat:
-                return False
-
-            parent = td.get_parent(bag_id)
-            if parent is not None:
-                edge = (bag_id, parent)
-                adhesion = td.adhesion.get(edge, frozenset())
-                pass_messages(bag_id, parent, adhesion)
-
-        return True
 
     def get_independent_groups(self) -> list[frozenset[int]]:
         """Partition branches into fully-independent groups (treewidth 0).
@@ -621,4 +567,3 @@ def _run_self_tests() -> None:
 
 if __name__ == "__main__":
     _run_self_tests()
-

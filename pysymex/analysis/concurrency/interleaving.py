@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -222,8 +222,7 @@ class DPORExplorer:
         These are potential data race candidates identified during exploration.
         """
         candidates: list[tuple[int, int]] = []
-        operations = getattr(self._hb_graph, "_operations", {})
-        all_ops = list(operations.items()) if isinstance(operations, dict) else []
+        all_ops = list(self._hb_graph.operations.items())
         for i, (id1, op1) in enumerate(all_ops):
             for id2, op2 in all_ops[i + 1 :]:
                 if op1.conflicts_with(op2) and self._hb_graph.are_concurrent(id1, id2):

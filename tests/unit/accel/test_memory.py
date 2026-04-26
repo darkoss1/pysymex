@@ -1,10 +1,10 @@
-﻿from unittest.mock import patch
+from unittest.mock import patch
 
 import z3
 
 from pysymex.accel.bytecode import compile_constraint
 from pysymex.accel.memory import (
-    GPUMemoryError,
+    DispatcherMemoryError,
     MemoryBudget,
     calculate_memory_budget,
     estimate_max_treewidth,
@@ -13,9 +13,9 @@ from pysymex.accel.memory import (
 )
 
 
-class TestGPUMemoryError:
+class TestDispatcherMemoryError:
     def test_initialization(self) -> None:
-        err = GPUMemoryError("oom")
+        err = DispatcherMemoryError("oom")
         assert str(err) == "oom"
 
 

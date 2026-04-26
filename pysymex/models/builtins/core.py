@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,6 +33,11 @@ import z3
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
     from pysymex.core.state import VMState
+
+from pysymex._typing import (
+    is_list_of_objects,
+    is_tuple_of_objects,
+)
 
 from pysymex.core.types.scalars import (
     SymbolicNone,
@@ -160,6 +165,7 @@ class RangeModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         """Apply range() model."""
+
         def _const_int(value: StackValue) -> int | None:
             if isinstance(value, int):
                 return value
@@ -238,17 +244,13 @@ class RangeModel(FunctionModel):
                             z3.Select(result.z3_array, z3.IntVal(idx)) == z3.IntVal(value)
                         )
                 else:
-                    constraints.append(
-                        result.z3_array == z3.Lambda([i], start.z3_int + i)
-                    )
+                    constraints.append(result.z3_array == z3.Lambda([i], start.z3_int + i))
         if len(args) == 1 and isinstance(args[0], SymbolicValue):
             stop = args[0]
             length = z3.If(stop.z3_int > 0, stop.z3_int, 0)
             constraints.append(result.z3_len == length)
             i = z3.Int(f"range_idx_{state.pc}")
-            constraints.append(
-                result.z3_array == z3.Lambda([i], i)
-            )
+            constraints.append(result.z3_array == z3.Lambda([i], i))
         elif len(args) == 1:
             stop_val = _const_int(args[0])
             if stop_val is not None:
@@ -261,9 +263,7 @@ class RangeModel(FunctionModel):
                         )
                 else:
                     i = z3.Int(f"range_idx_{state.pc}")
-                    constraints.append(
-                        result.z3_array == z3.Lambda([i], i)
-                    )
+                    constraints.append(result.z3_array == z3.Lambda([i], i))
         return ModelResult(value=result, constraints=constraints)
 
 
@@ -314,9 +314,19 @@ class MinModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"min_{state.pc}")[0])
 
-        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+        if len(args) == 1 and is_list_of_objects(args[0]):
             seq = args[0]
-            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
+            ):  # x is object from list[object]
+                concrete_min = _safe_min_concrete(cast("Sequence[StackValue]", seq))
+                if concrete_min is not None:
+                    return ModelResult(value=concrete_min)
+        elif len(args) == 1 and is_tuple_of_objects(args[0]):
+            seq = args[0]
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
+            ):  # x is object from tuple[object, ...]
                 concrete_min = _safe_min_concrete(cast("Sequence[StackValue]", seq))
                 if concrete_min is not None:
                     return ModelResult(value=concrete_min)
@@ -362,9 +372,19 @@ class MaxModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"max_{state.pc}")[0])
 
-        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+        if len(args) == 1 and is_list_of_objects(args[0]):
             seq = args[0]
-            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
+            ):  # x is object from list[object]
+                concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", seq))
+                if concrete_max is not None:
+                    return ModelResult(value=concrete_max)
+        elif len(args) == 1 and is_tuple_of_objects(args[0]):
+            seq = args[0]
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
+            ):  # x is object from tuple[object, ...]
                 concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", seq))
                 if concrete_max is not None:
                     return ModelResult(value=concrete_max)
@@ -624,14 +644,24 @@ class SumModel(FunctionModel):
         iterable = args[0]
         start = args[1] if len(args) > 1 else 0
 
-        if isinstance(iterable, (list, tuple)):
+        if is_list_of_objects(iterable):
             if all(
-                not isinstance(x, (SymbolicValue, SymbolicType)) for x in iterable
+                not isinstance(x, (SymbolicValue, SymbolicType))
+                for x in iterable  # x is object from list[object]
             ) and not isinstance(start, (SymbolicValue, SymbolicType)):
                 concrete_sum = _safe_sum_concrete(
                     cast("Sequence[StackValue]", iterable), cast("StackValue", start)
                 )
-
+                if concrete_sum is not None:
+                    return ModelResult(value=concrete_sum)
+        elif is_tuple_of_objects(iterable):
+            if all(
+                not isinstance(x, (SymbolicValue, SymbolicType))
+                for x in iterable  # x is object from tuple[object, ...]
+            ) and not isinstance(start, (SymbolicValue, SymbolicType)):
+                concrete_sum = _safe_sum_concrete(
+                    cast("Sequence[StackValue]", iterable), cast("StackValue", start)
+                )
                 if concrete_sum is not None:
                     return ModelResult(value=concrete_sum)
 
@@ -742,6 +772,41 @@ class FloatModel(FunctionModel):
         return ModelResult(value=result)
 
 
+class ComplexModel(FunctionModel):
+    """Model for complex()."""
+
+    name = "complex"
+    qualname = "builtins.complex"
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        if not args:
+            result, constraint = SymbolicValue.symbolic(f"complex_{state.pc}")
+            return ModelResult(value=result, constraints=[constraint])
+        result, constraint = SymbolicValue.symbolic(f"complex_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
+
+
+class SliceModel(FunctionModel):
+    """Model for slice()."""
+
+    name = "slice"
+    qualname = "builtins.slice"
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        result, constraint = SymbolicValue.symbolic(f"slice_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
+
+
 class ListModel(FunctionModel):
     """Model for list()."""
 
@@ -759,19 +824,26 @@ class ListModel(FunctionModel):
         val = args[0]
         if isinstance(val, SymbolicList):
             return ModelResult(value=val)
-        if isinstance(val, (list, tuple)):
-            int_values: list[int] = []
-            all_int = True
-            for item in val:
+        int_values: list[int] = []
+        all_int = True
+        if is_list_of_objects(val):
+            for item in val:  # item is object from list[object]
                 if isinstance(item, int):
                     int_values.append(item)
                 else:
                     all_int = False
                     break
-            if all_int:
-                return ModelResult(value=SymbolicList.from_const(int_values))
-            result, constraint = SymbolicList.symbolic(f"list_{state.pc}")
-            return ModelResult(value=result, constraints=[constraint])
+        elif is_tuple_of_objects(val):
+            for item in val:  # item is object from tuple[object, ...]
+                if isinstance(item, int):
+                    int_values.append(item)
+                else:
+                    all_int = False
+                    break
+        else:
+            all_int = False
+        if all_int:
+            return ModelResult(value=SymbolicList.from_const(int_values))
         result, constraint = SymbolicList.symbolic(f"list_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -792,7 +864,7 @@ class TupleModel(FunctionModel):
             return ModelResult(value=())
         val = args[0]
         if isinstance(val, tuple):
-            return ModelResult(value=val)
+            return ModelResult(value=val)  # type: ignore[return-value]  # tuple element type unknown
         if isinstance(val, (list, SymbolicList)):
             if isinstance(val, list):
                 return ModelResult(value=tuple(cast("list[StackValue]", val)))

@@ -2,8 +2,10 @@ import pytest
 import pysymex.analysis.abstract.interpreter.state
 from pysymex.analysis.abstract.interpreter.values import Interval, SignValue, Congruence
 
+
 class TestNumericProduct:
     """Test suite for pysymex.analysis.abstract.interpreter.state.NumericProduct."""
+
     def test_bottom(self) -> None:
         """Test bottom behavior."""
         val = pysymex.analysis.abstract.interpreter.state.NumericProduct.bottom()
@@ -29,7 +31,9 @@ class TestNumericProduct:
 
     def test_is_bottom(self) -> None:
         """Test is_bottom behavior."""
-        assert pysymex.analysis.abstract.interpreter.state.NumericProduct.bottom().is_bottom() is True
+        assert (
+            pysymex.analysis.abstract.interpreter.state.NumericProduct.bottom().is_bottom() is True
+        )
 
     def test_is_top(self) -> None:
         """Test is_top behavior."""
@@ -110,8 +114,10 @@ class TestNumericProduct:
         assert res.interval.get_const() == 1
         assert raises is False
 
+
 class TestAbstractState:
     """Test suite for pysymex.analysis.abstract.interpreter.state.AbstractState."""
+
     def test_bottom(self) -> None:
         """Test bottom behavior."""
         state = pysymex.analysis.abstract.interpreter.state.AbstractState.bottom()
@@ -191,26 +197,38 @@ class TestAbstractState:
         s2 = pysymex.analysis.abstract.interpreter.state.AbstractState.top()
         assert s1.leq(s2) is True
 
+
 class TestAbstractWarning:
     """Test suite for pysymex.analysis.abstract.interpreter.state.AbstractWarning."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        warning = pysymex.analysis.abstract.interpreter.state.AbstractWarning("kind", "msg", "file", 1)
+        warning = pysymex.analysis.abstract.interpreter.state.AbstractWarning(
+            "kind", "msg", "file", 1
+        )
         assert warning.kind == "kind"
+
 
 class TestDivisionByZeroWarning:
     """Test suite for pysymex.analysis.abstract.interpreter.state.DivisionByZeroWarning."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         val = pysymex.analysis.abstract.interpreter.state.NumericProduct.const(0)
-        warning = pysymex.analysis.abstract.interpreter.state.DivisionByZeroWarning(1, 0, "x", val, "high")
+        warning = pysymex.analysis.abstract.interpreter.state.DivisionByZeroWarning(
+            1, 0, "x", val, "high"
+        )
         assert warning.variable == "x"
+
 
 class TestIndexOutOfBoundsWarning:
     """Test suite for pysymex.analysis.abstract.interpreter.state.IndexOutOfBoundsWarning."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         idx = pysymex.analysis.abstract.interpreter.state.NumericProduct.const(5)
         sz = pysymex.analysis.abstract.interpreter.state.NumericProduct.const(5)
-        warning = pysymex.analysis.abstract.interpreter.state.IndexOutOfBoundsWarning(1, 0, "arr", idx, sz)
+        warning = pysymex.analysis.abstract.interpreter.state.IndexOutOfBoundsWarning(
+            1, 0, "arr", idx, sz
+        )
         assert warning.collection == "arr"

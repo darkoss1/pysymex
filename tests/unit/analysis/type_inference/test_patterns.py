@@ -1,21 +1,21 @@
 from pysymex.analysis.type_inference.engine import TypeInferenceEngine
 from pysymex.analysis.type_inference.env import TypeEnvironment
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind
-from pysymex.analysis.type_inference.patterns import (
-    PatternRecognizer, TypeState, TypeStateMachine
-)
+from pysymex.analysis.type_inference.patterns import PatternRecognizer, TypeState, TypeStateMachine
+
 
 class TestPatternRecognizer:
     """Test suite for pysymex.analysis.type_inference.patterns.PatternRecognizer."""
+
     def test_is_dict_get_pattern(self) -> None:
         """Test is_dict_get_pattern behavior."""
         engine = TypeInferenceEngine()
         pr = PatternRecognizer(engine)
         d = PyType.dict_(PyType.str_(), PyType.int_())
-        
+
         res1 = pr.is_dict_get_pattern(d, "get", [PyType.str_()])
         assert res1 is not None and res1.is_optional() is True
-        
+
         res2 = pr.is_dict_get_pattern(d, "get", [PyType.str_(), PyType.float_()])
         assert res2 is not None and res2.kind == TypeKind.FLOAT
 
@@ -67,8 +67,10 @@ class TestPatternRecognizer:
         assert pr.is_string_operation_safe(s, i, "*") is True
         assert pr.is_string_operation_safe(s, i, "+") is False
 
+
 class TestTypeState:
     """Test suite for pysymex.analysis.type_inference.patterns.TypeState."""
+
     def test_copy(self) -> None:
         """Test copy behavior."""
         env = TypeEnvironment()
@@ -88,8 +90,10 @@ class TestTypeState:
         assert joined.pc == 20
         assert joined.in_try_block is True
 
+
 class TestTypeStateMachine:
     """Test suite for pysymex.analysis.type_inference.patterns.TypeStateMachine."""
+
     def test_get_state(self) -> None:
         """Test get_state behavior."""
         engine = TypeInferenceEngine()
@@ -113,7 +117,7 @@ class TestTypeStateMachine:
         tsm = TypeStateMachine(engine, PatternRecognizer(engine))
         ts = TypeState(TypeEnvironment())
         ts.env.set_type("x", PyType.union_(PyType.int_(), PyType.str_()))
-        
+
         pos = tsm.enter_branch(ts, "x", PyType.int_(), True)
         assert pos.env.get_type("x").kind == TypeKind.INT
         assert pos.positive_branch is True
@@ -124,7 +128,7 @@ class TestTypeStateMachine:
         tsm = TypeStateMachine(engine, PatternRecognizer(engine))
         ts = TypeState(TypeEnvironment())
         ts.env.set_type("x", PyType.optional_(PyType.int_()))
-        
+
         res = tsm.enter_none_branch(ts, "x", True)
         assert res.env.get_type("x").kind == TypeKind.NONE
 
@@ -134,7 +138,7 @@ class TestTypeStateMachine:
         tsm = TypeStateMachine(engine, PatternRecognizer(engine))
         ts = TypeState(TypeEnvironment())
         ts.env.set_type("x", PyType.optional_(PyType.int_()))
-        
+
         res = tsm.enter_truthiness_branch(ts, "x", True)
         assert res.env.get_type("x").kind == TypeKind.INT
 
@@ -146,7 +150,7 @@ class TestTypeStateMachine:
         ts1.env.set_type("x", PyType.int_())
         ts2 = TypeState(TypeEnvironment())
         ts2.env.set_type("x", PyType.str_())
-        
+
         merged = tsm.merge_branches([ts1, ts2])
         assert merged.env.get_type("x").kind == TypeKind.UNION
 
@@ -176,7 +180,7 @@ class TestTypeStateMachine:
         ts1.env.set_type("x", PyType.int_())
         ts2 = TypeState(TypeEnvironment())
         ts2.env.set_type("x", PyType.float_())
-        
+
         widened = tsm.widen_loop_state(ts1, ts2)
         assert widened.env.get_type("x").kind == TypeKind.FLOAT
 

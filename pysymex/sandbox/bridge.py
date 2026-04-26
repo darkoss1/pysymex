@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -18,7 +18,7 @@
 
 """Strict sandbox bridge with minimal data-boundary workers.
 
-The host process keeps all PySyMex orchestration and analysis logic.
+The host process keeps all pysymex orchestration and analysis logic.
 Only untrusted target code operations cross into the sandbox as raw
 bytes/JSON requests.
 """
@@ -29,11 +29,11 @@ import json
 import marshal
 import sys
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import CodeType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, TypeGuard
 
 if TYPE_CHECKING:
     from pysymex.sandbox import SandboxConfig
@@ -81,6 +81,44 @@ class BytecodeBlob:
         if code_obj.co_filename != self.filename:
             raise ValueError("Sandbox bytecode payload filename metadata mismatch")
         return code_obj
+
+
+class _ObjectMapping(Protocol):
+    """Mapping protocol with object key/value pairs for strict normalization."""
+
+    def items(self) -> Iterable[tuple[object, object]]:
+        """Return key/value pairs."""
+        return ()
+
+    def get(self, key: str, default: object = None) -> object:
+        """Return value for key or default."""
+        return default
+
+
+def _is_object_mapping(value: object) -> TypeGuard[_ObjectMapping]:
+    """Return whether value behaves like a mapping of arbitrary objects."""
+    return isinstance(value, Mapping)
+
+
+def _normalize_mapping(value: object) -> dict[str, object] | None:
+    """Convert a generic mapping-like object into ``dict[str, object]``."""
+    if not _is_object_mapping(value):
+        return None
+    normalized: dict[str, object] = {}
+    for key, item in value.items():
+        normalized[str(key)] = item
+    return normalized
+
+
+def _parse_module_list(value: object) -> frozenset[str] | None:
+    """Parse a comma-separated module list into ``frozenset[str]``."""
+    if not isinstance(value, str):
+        return None
+    modules = [item.strip() for item in value.split(",")]
+    filtered = [module for module in modules if module]
+    if not filtered:
+        return frozenset()
+    return frozenset(filtered)
 
 
 def _to_int(value: object, default: int) -> int:
@@ -226,9 +264,10 @@ def _make_sandbox_config(
 
     env_raw = normalized.get("environment")
     environment: dict[str, str] = {}
-    if isinstance(env_raw, Mapping):
-        for key, value in env_raw.items():
-            environment[str(key)] = str(value)
+    normalized_env = _normalize_mapping(env_raw)
+    if normalized_env is not None:
+        for key, value in normalized_env.items():
+            environment[key] = str(value)
 
     python_executable_raw = normalized.get("python_executable")
     python_executable = python_executable_raw if isinstance(python_executable_raw, str) else None
@@ -241,20 +280,13 @@ def _make_sandbox_config(
     block_process_spawn = _to_bool(normalized.get("_block_process_spawn", True), True)
 
     harness_modules_raw = normalized.get("harness_blocked_modules")
-    harness_blocked: frozenset[str] | None = None
-    if isinstance(harness_modules_raw, frozenset):
-        harness_blocked = harness_modules_raw
-    elif isinstance(harness_modules_raw, (set, tuple, list)):
-        harness_blocked = frozenset(str(m) for m in harness_modules_raw)
-    else:
-        harness_blocked = None
+    harness_blocked = _parse_module_list(harness_modules_raw)
 
     allowed_imports_raw = normalized.get("harness_allowed_imports")
     harness_allowed_imports: frozenset[str] | None
-    if isinstance(allowed_imports_raw, frozenset):
-        harness_allowed_imports = allowed_imports_raw
-    elif isinstance(allowed_imports_raw, (set, tuple, list)):
-        harness_allowed_imports = frozenset(str(m) for m in allowed_imports_raw)
+    allowed_imports_set = _parse_module_list(allowed_imports_raw)
+    if allowed_imports_set is not None:
+        harness_allowed_imports = allowed_imports_set
     elif allowed_imports_raw is None:
         harness_allowed_imports = SANDBOX_IMPORT_ALLOWLIST
     else:
@@ -277,16 +309,22 @@ def _make_sandbox_config(
     required_caps_raw = normalized.get("required_capabilities")
     if isinstance(required_caps_raw, SecurityCapabilities):
         required_caps = required_caps_raw
-    elif isinstance(required_caps_raw, Mapping):
-        required_caps = SecurityCapabilities(
-            process_isolation=_to_bool(required_caps_raw.get("process_isolation", False), False),
-            filesystem_jail=_to_bool(required_caps_raw.get("filesystem_jail", False), False),
-            network_blocking=_to_bool(required_caps_raw.get("network_blocking", False), False),
-            syscall_filtering=_to_bool(required_caps_raw.get("syscall_filtering", False), False),
-            memory_limits=_to_bool(required_caps_raw.get("memory_limits", False), False),
-            cpu_limits=_to_bool(required_caps_raw.get("cpu_limits", False), False),
-            process_limits=_to_bool(required_caps_raw.get("process_limits", False), False),
-        )
+    else:
+        required_caps_data = _normalize_mapping(required_caps_raw)
+        if required_caps_data is not None:
+            required_caps = SecurityCapabilities(
+                process_isolation=_to_bool(
+                    required_caps_data.get("process_isolation", False), False
+                ),
+                filesystem_jail=_to_bool(required_caps_data.get("filesystem_jail", False), False),
+                network_blocking=_to_bool(required_caps_data.get("network_blocking", False), False),
+                syscall_filtering=_to_bool(
+                    required_caps_data.get("syscall_filtering", False), False
+                ),
+                memory_limits=_to_bool(required_caps_data.get("memory_limits", False), False),
+                cpu_limits=_to_bool(required_caps_data.get("cpu_limits", False), False),
+                process_limits=_to_bool(required_caps_data.get("process_limits", False), False),
+            )
 
     return SandboxConfig(
         limits=limits,
@@ -317,7 +355,7 @@ def _extract_payload(stdout_text: str, marker: str) -> tuple[str, dict[str, obje
             raw_payload = line[len(marker) :]
             try:
                 loaded = json.loads(raw_payload)
-                parsed = cast("dict[str, object]", loaded) if isinstance(loaded, dict) else None
+                parsed = _normalize_mapping(loaded)
             except json.JSONDecodeError:
                 parsed = None
             continue
@@ -549,10 +587,10 @@ def extract_bytecode(
     cfg_overrides.setdefault("harness_install_audit_hook", True)
     cfg_overrides.setdefault("harness_block_ast_imports", False)
     cfg_overrides.setdefault("allow_compat_fallback", True)
-    cfg_overrides.setdefault("harness_allowed_imports", frozenset({"marshal", "sys"}))
+    cfg_overrides.setdefault("harness_allowed_imports", "marshal,sys")
     cfg_overrides.setdefault(
         "harness_blocked_modules",
-        SANDBOX_BLOCKED_MODULES.union({"json", "socket", "subprocess"}),
+        ",".join(sorted(SANDBOX_BLOCKED_MODULES.union({"json", "socket", "subprocess"}))),
     )
 
     raw = _run_raw_worker(
@@ -625,11 +663,11 @@ def execute_concrete(
     cfg_overrides.setdefault("harness_block_ast_imports", False)
     cfg_overrides.setdefault(
         "harness_allowed_imports",
-        SANDBOX_IMPORT_ALLOWLIST.union({"json", "pathlib", "sys", "traceback"}),
+        ",".join(sorted(SANDBOX_IMPORT_ALLOWLIST.union({"json", "pathlib", "sys", "traceback"}))),
     )
     cfg_overrides.setdefault(
         "harness_blocked_modules",
-        SANDBOX_BLOCKED_MODULES.union({"marshal", "socket", "subprocess"}),
+        ",".join(sorted(SANDBOX_BLOCKED_MODULES.union({"marshal", "socket", "subprocess"}))),
     )
 
     payload = json.dumps({"args": dict(args)}).encode("utf-8")
@@ -669,4 +707,3 @@ __all__ = [
     "execute_concrete",
     "extract_bytecode",
 ]
-

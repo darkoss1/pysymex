@@ -23,4 +23,3 @@ def test_serializer_handles_plain_python_values() -> None:
     entries = serializer.constraints_to_smtlib([1, "x"], causality="test")
     assert len(entries) == 2
     assert entries[0]["causality"] == "test"
-

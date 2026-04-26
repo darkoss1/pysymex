@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
@@ -20,8 +18,7 @@ def test_dict_get_faithfulness() -> None:
     real = data.get(key)
     stack_dict: dict[str, StackValue] = {k: v for k, v in data.items()}
     args: list[StackValue] = [stack_dict, key]
-    with pytest.raises(NameError):
-        dicts.DictGetModel().apply(args, {}, _state())
+    dicts.DictGetModel().apply(args, {}, _state())
     assert real is None
 
 
@@ -42,15 +39,11 @@ def test_mutating_dict_models_concrete_none_result() -> None:
 
 def test_symbolic_and_error_paths() -> None:
     """Symbolic and error-path coverage for dictionary methods."""
-    with pytest.raises(NameError):
-        dicts.DictGetitemModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        dicts.DictContainsModel().apply([], {}, _state())
+    dicts.DictGetitemModel().apply([], {}, _state())
+    dicts.DictContainsModel().apply([], {}, _state())
 
 
 def test_dict_edge_case_empty_input() -> None:
     """Edge case: empty dict and missing key for pop path."""
     args: list[StackValue] = [{}, "x"]
-    with pytest.raises(NameError):
-        dicts.DictPopModel().apply(args, {}, _state())
+    dicts.DictPopModel().apply(args, {}, _state())

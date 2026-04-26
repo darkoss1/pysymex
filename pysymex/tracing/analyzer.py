@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -64,7 +64,7 @@ import collections
 import json
 import sys
 from collections.abc import Callable, Generator, Iterator
-from typing import cast
+from typing import TypeGuard
 
 FilterFn = Callable[[dict[str, object]], bool]
 """A predicate that accepts a parsed event dict and returns True to keep it."""
@@ -155,7 +155,7 @@ def stream_events(
                 if callable(close_fn):
                     close_fn()
             except Exception:
-                pass
+                _ = None
 
 
 def _str_contains(text: str | None, substring: str) -> bool:
@@ -170,21 +170,30 @@ def _list_contains(lst: list[object] | None, substring: str) -> bool:
     return any(substring in str(item) for item in lst)
 
 
-def _constraints_contain(constraints: list[dict[str, object]] | None, substring: str) -> bool:
+def _constraints_contain(constraints: list[object] | None, substring: str) -> bool:
     """Return True if any constraint's ``smtlib`` field contains *substring*."""
     if not constraints:
         return False
-    return any(substring in (_as_str(c.get("smtlib")) or "") for c in constraints)
+    for constraint in constraints:
+        constraint_dict = _as_dict(constraint)
+        if constraint_dict is None:
+            continue
+        if substring in (_as_str(constraint_dict.get("smtlib")) or ""):
+            return True
+    return False
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
-    if not isinstance(value, dict):
+    if not _is_object_dict(value):
         return None
-    return cast("dict[str, object]", value)
+    normalized: dict[str, object] = {}
+    for key_obj, value_obj in value.items():
+        normalized[str(key_obj)] = value_obj
+    return normalized
 
 
 def _as_list(value: object) -> list[object] | None:
-    if not isinstance(value, list):
+    if not _is_object_list(value):
         return None
     return value
 
@@ -202,11 +211,21 @@ def _as_float(value: object) -> float | None:
 
 
 def _has_stack_pop(event: dict[str, object]) -> bool:
-    stack_diff = event.get("stack_diff")
-    if not isinstance(stack_diff, dict):
+    stack_diff = _as_dict(event.get("stack_diff"))
+    if stack_diff is None:
         return False
-    popped = stack_diff.get("popped", 0)
-    return isinstance(popped, int) and popped > 0
+    popped = _as_int(stack_diff.get("popped"))
+    return popped is not None and popped > 0
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+    """Return True when *value* is a dictionary."""
+    return isinstance(value, dict)
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """Return True when *value* is a list."""
+    return isinstance(value, list)
 
 
 def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
@@ -361,11 +380,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.constraint_smtlib_contains:
         csc: str = args.constraint_smtlib_contains
-        p.add(
-            lambda e, s=csc: _constraints_contain(
-                cast("list[dict[str, object]] | None", _as_list(e.get("path_constraints"))), s
-            )
-        )
+        p.add(lambda e, s=csc: _constraints_contain(_as_list(e.get("path_constraints")), s))
 
     if args.num_path_constraints_min is not None:
         npcmin: int = args.num_path_constraints_min
@@ -446,11 +461,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
 
     if args.constraint_at_issue_contains:
         caic: str = args.constraint_at_issue_contains
-        p.add(
-            lambda e, s=caic: _constraints_contain(
-                cast("list[dict[str, object]] | None", _as_list(e.get("constraints_at_issue"))), s
-            )
-        )
+        p.add(lambda e, s=caic: _constraints_contain(_as_list(e.get("constraints_at_issue")), s))
 
     if args.function_name:
         fn_sub: str = args.function_name
@@ -503,13 +514,11 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
             if ca and needle in (_as_str(ca.get("smtlib")) or ""):
                 return True
 
-            if _constraints_contain(
-                cast("list[dict[str, object]] | None", _as_list(e.get("path_constraints"))), needle
-            ):
+            if _constraints_contain(_as_list(e.get("path_constraints")), needle):
                 return True
 
             if _constraints_contain(
-                cast("list[dict[str, object]] | None", _as_list(e.get("constraints_at_issue"))),
+                _as_list(e.get("constraints_at_issue")),
                 needle,
             ):
                 return True
@@ -518,7 +527,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
         p.add(_any_constraint)
 
     if args.any_field_contains:
-        pass
+        _ = args.any_field_contains
 
     return p
 
@@ -621,7 +630,7 @@ def run(args: argparse.Namespace) -> int:
             if summary is not None:
                 summary.record(event)
             elif count_only:
-                pass
+                _ = matched
             elif tail_buf is not None:
                 tail_buf.append(rendered)
             else:
@@ -630,12 +639,12 @@ def run(args: argparse.Namespace) -> int:
                     break
 
     except BrokenPipeError:
-        pass
+        return 0
     except FileNotFoundError as exc:
         print(f"[pysymex-trace-analyze] ERROR: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        pass
+        return 130
 
     if tail_buf is not None and not count_only and summary is None:
         for line in tail_buf:

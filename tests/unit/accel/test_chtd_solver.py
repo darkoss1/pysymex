@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import z3
 
-from pysymex.accel.chtd_solver import BagSolution, GPUBagSolver, create_gpu_bag_solver
+from pysymex.accel.chtd_solver import BagSolution, ChtdBagSolver, create_sat_bag_solver
 from pysymex.accel.dispatcher import evaluate_bag
 from pysymex.accel.bytecode import compile_constraint
 from pysymex.core.graph.treewidth import BranchInfo, TreeDecomposition
@@ -21,13 +21,13 @@ class TestBagSolution:
         assert list(sat.get_satisfying_indices()) == [0, 1, 2, 3]
 
 
-class TestGPUBagSolver:
-    def test_is_gpu_available_false_when_gpu_disabled(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
-        assert solver.is_gpu_available is False
+class TestChtdBagSolver:
+    def test_is_sat_available_false_when_sat_disabled(self) -> None:
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
+        assert solver.is_sat_available is False
 
     def test_solve_children_sequential(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
         x = z3.Bool("x")
         y = z3.Bool("y")
 
@@ -42,7 +42,7 @@ class TestGPUBagSolver:
         assert all(s.count > 0 for s in sols)
 
     def test_solve_bag_with_no_constraints_returns_all_sat_bitmap(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
         result = solver.solve_bag(frozenset({1}), {})
 
         assert result.count == 2
@@ -50,7 +50,7 @@ class TestGPUBagSolver:
         assert result.is_satisfiable() is True
 
     def test_pass_message_and_get_messages_for_bag(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
         tautology = compile_constraint(z3.BoolVal(True), ["x", "y"])
         bitmap = evaluate_bag(tautology).bitmap
         solution = BagSolution(bag_id=7, variables=["x", "y"], bitmap=bitmap, count=4)
@@ -64,13 +64,15 @@ class TestGPUBagSolver:
             )
         }
 
-        solver.pass_message(solution, parent_bag_id=99, adhesion=frozenset({10}), branch_info=branch_info)
+        solver.pass_message(
+            solution, parent_bag_id=99, adhesion=frozenset({10}), branch_info=branch_info
+        )
         msgs = solver.get_messages_for_bag(99)
 
         assert len(msgs) == 1
 
     def test_clear_messages_preallocates_inboxes(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
         solver.clear_messages(num_bags=3)
 
         assert len(solver.get_messages_for_bag(0)) == 0
@@ -78,7 +80,7 @@ class TestGPUBagSolver:
         assert len(solver.get_messages_for_bag(2)) == 0
 
     def test_propagate_all_sat_and_unsat_paths(self) -> None:
-        solver = GPUBagSolver(use_gpu=False, warmup=False)
+        solver = ChtdBagSolver(use_sat=False, warmup=False)
         x = z3.Bool("x")
 
         td = TreeDecomposition(
@@ -112,7 +114,7 @@ class TestGPUBagSolver:
         assert solver.propagate_all(td, unsat_info) is False
 
 
-def test_create_gpu_bag_solver_factory() -> None:
-    solver = create_gpu_bag_solver(use_gpu=False)
-    assert isinstance(solver, GPUBagSolver)
-    assert solver.is_gpu_available is False
+def test_create_sat_bag_solver_factory() -> None:
+    solver = create_sat_bag_solver(use_sat=False)
+    assert isinstance(solver, ChtdBagSolver)
+    assert solver.is_sat_available is False

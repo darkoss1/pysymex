@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,18 +16,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU-Accelerated CHTD Bag Solver.
+"""SAT-Accelerated CHTD Bag Solver.
 
-Integrates GPU acceleration into the CHTD message-passing algorithm.
+Integrates SAT acceleration into the CHTD message-passing algorithm.
 Provides a drop-in replacement for CPU-based bag solving used in executor_core.py.
 
 The key insight: CHTD message passing requires enumerating ALL satisfying
 assignments within each bag (not just checking SAT), then projecting
-valid assignments onto adhesion variables. The GPU can evaluate 2^w
-assignments in parallel. Maximum supported treewidth is hardware-dependent determined by available GPU VRAM.
+valid assignments onto adhesion variables. The SAT backend can evaluate 2^w
+assignments in parallel. Maximum supported treewidth is hardware-dependent determined by available system memory.
 
 Note: This solver conservatively caps at w=25 by default for memory safety.
-Override GPU_MAX_TREEWIDTH if you have sufficient GPU memory (2^30+ states
+Override SAT_MAX_TREEWIDTH if you have sufficient SAT memory (2^30+ states
 require 128MB+ output bitmaps).
 """
 
@@ -38,7 +38,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -47,9 +47,32 @@ if TYPE_CHECKING:
     import z3
 
     from pysymex.core.graph.treewidth import BranchInfo, TreeDecomposition
-    from pysymex.accel.chtd_integration import GPUBagEvaluator
+    from pysymex.accel.chtd_integration import SatBagEvaluator
 
 logger = logging.getLogger(__name__)
+
+
+def _default_projected_messages() -> dict[frozenset[str], npt.NDArray[np.uint8]]:
+    """Return default empty projected-message cache."""
+    return {}
+
+
+@runtime_checkable
+class _ProjectedSatBackend(Protocol):
+    """Protocol for SAT backends that support projection kernels."""
+
+    def is_available(self) -> bool:
+        """Report backend availability."""
+        ...
+
+    def evaluate_bag_projected(
+        self,
+        compiled_constraint: object,
+        projection_variables: list[str],
+        all_variables: list[str],
+    ) -> npt.NDArray[np.uint8]:
+        """Evaluate projected bitmap for adhesion variables."""
+        ...
 
 
 def _is_bytecode_compatible(expr: "z3.ExprRef") -> bool:
@@ -133,6 +156,7 @@ def _solve_exact_bitmap(
     bitmap: npt.NDArray[np.uint8] = np.zeros((num_states + 7) // 8, dtype=np.uint8)
 
     from pysymex.core.solver.engine import create_solver
+
     solver = create_solver()
     solver.add(combined)
 
@@ -196,8 +220,8 @@ def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
 
 __all__ = [
     "BagSolution",
-    "GPUBagSolver",
-    "create_gpu_bag_solver",
+    "ChtdBagSolver",
+    "create_sat_bag_solver",
 ]
 
 
@@ -220,17 +244,19 @@ class BagSolution:
     variables: list[str]
     bitmap: npt.NDArray[np.uint8]
     count: int
-    projected_messages: dict[frozenset[str], npt.NDArray[np.uint8]] = field(default_factory=dict)
+    projected_messages: dict[frozenset[str], npt.NDArray[np.uint8]] = field(
+        default_factory=_default_projected_messages
+    )
 
     def is_satisfiable(self) -> bool:
         """Check if at least one assignment satisfies the bag."""
         return self.count > 0
 
-    def get_satisfying_indices(self) -> npt.NDArray[np.intp]:
+    def get_satisfying_indices(self) -> list[int]:
         """Get indices of all satisfying assignments."""
         bits = _unpackbits_little(self.bitmap)
         indices = [i for i, b in enumerate(bits[: self.num_states]) if int(b) != 0]
-        return cast("npt.NDArray[np.intp]", indices)
+        return indices
 
     @property
     def num_states(self) -> int:
@@ -284,58 +310,58 @@ def _cache_put(
             _GLOBAL_BITMAP_CACHE.popitem(last=False)
 
 
-class GPUBagSolver:
-    """GPU-accelerated solver for CHTD bags.
+class ChtdBagSolver:
+    """SAT-accelerated solver for CHTD bags.
 
     Integrates with the existing ConstraintInteractionGraph and
     TreeDecomposition to accelerate the message-passing DP.
 
     Attributes:
-        GPU_THRESHOLD: Minimum treewidth where GPU is beneficial (10)
-        GPU_MAX_TREEWIDTH: Conservative memory limit for typical GPUs (25).
+        SAT_THRESHOLD: Minimum treewidth where SAT is beneficial (10)
+        SAT_MAX_TREEWIDTH: Conservative memory limit for typical SAT backends (25).
             Hardware supports up to w=36, but w>25 requires 128MB+ per bitmap.
-            Override this constant if you have high VRAM (16GB+).
+            Override this constant if you have high system memory (16GB+).
     """
 
-    GPU_THRESHOLD: int = 10
-    GPU_MAX_TREEWIDTH: int = 25
+    SAT_THRESHOLD: int = 10
+    SAT_MAX_TREEWIDTH: int = 25
 
-    def __init__(self, use_gpu: bool = True, warmup: bool = True) -> None:
-        """Initialize GPU bag solver.
+    def __init__(self, use_sat: bool = True, warmup: bool = True) -> None:
+        """Initialize SAT bag solver.
 
         Args:
-            use_gpu: Whether to use GPU acceleration when available
-            warmup: Whether to warmup GPU JIT compilation
+            use_sat: Whether to use SAT acceleration when available
+            warmup: Whether to warmup SAT JIT compilation
         """
-        self._use_gpu = use_gpu
-        self._gpu_evaluator: "GPUBagEvaluator | None" = None
+        self._use_sat = use_sat
+        self._sat_evaluator: "SatBagEvaluator | None" = None
         self._cached_solutions: dict[int, BagSolution] = {}
         self._message_inbox: dict[int, list[tuple[npt.NDArray[np.uint8], list[str]]]] = {}
         self._message_inbox_lock = Lock()
 
-        if use_gpu:
-            self._init_gpu(warmup)
+        if use_sat:
+            self._init_sat(warmup)
 
-    def _init_gpu(self, warmup: bool) -> None:
-        """Initialize GPU evaluator."""
-        from pysymex.accel.chtd_integration import GPUBagEvaluator
+    def _init_sat(self, warmup: bool) -> None:
+        """Initialize SAT evaluator."""
+        from pysymex.accel.chtd_integration import SatBagEvaluator
 
         try:
-            self._gpu_evaluator = GPUBagEvaluator(
-                gpu_threshold=self.GPU_THRESHOLD,
+            self._sat_evaluator = SatBagEvaluator(
+                sat_threshold=self.SAT_THRESHOLD,
                 warmup=warmup,
             )
-            logger.info(f"GPU bag solver initialized: {self._gpu_evaluator.get_backend_info()}")
+            logger.info(f"SAT bag solver initialized: {self._sat_evaluator.get_backend_info()}")
         except ImportError as e:
-            logger.debug(f"GPU acceleration not available: {e}")
-            self._gpu_evaluator = None
+            logger.debug(f"SAT acceleration not available: {e}")
+            self._sat_evaluator = None
 
     @property
-    def is_gpu_available(self) -> bool:
-        """Check if GPU acceleration is available."""
-        if self._gpu_evaluator is None:
+    def is_sat_available(self) -> bool:
+        """Check if SAT acceleration is available."""
+        if self._sat_evaluator is None:
             return False
-        return self._gpu_evaluator.is_available
+        return self._sat_evaluator.is_available
 
     def solve_children_sequential(
         self,
@@ -353,7 +379,7 @@ class GPUBagSolver:
         Returns:
             List of BagSolutions
         """
-        if len(children) <= 1 or not self.is_gpu_available:
+        if len(children) <= 1 or not self.is_sat_available:
             return [self.solve_bag(c, branch_info) for c in children]
 
         def _solve_child(child: frozenset[int]) -> BagSolution:
@@ -369,13 +395,13 @@ class GPUBagSolver:
         parent_messages: list[tuple[npt.NDArray[np.uint8], list[str]]] | None = None,
         adhesion: frozenset[int] | None = None,
     ) -> BagSolution:
-        """Solve a single CHTD bag using GPU acceleration.
+        """Solve a single CHTD bag using SAT acceleration.
 
         Args:
             bag: Set of branch PCs in this bag
             branch_info: Mapping from PC to BranchInfo
             parent_messages: Constraint bitmaps from child bags
-            adhesion: Optional shared adhesion with parent for GPU projection
+            adhesion: Optional shared adhesion with parent for SAT projection
 
         Returns:
             BagSolution with satisfying assignment bitmap
@@ -411,8 +437,8 @@ class GPUBagSolver:
         combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
         bytecode_compatible = _is_bytecode_compatible(combined)
 
-        projected_cache = {}
-        if self._should_use_gpu(w) and adhesion is not None and bytecode_compatible:
+        projected_cache: dict[frozenset[str], npt.NDArray[np.uint8]] = {}
+        if self._should_use_sat(w) and adhesion is not None and bytecode_compatible:
             adhesion_vars: set[str] = set()
             for pc in adhesion:
                 info = branch_info.get(pc)
@@ -424,16 +450,16 @@ class GPUBagSolver:
 
                 compiled = compile_constraint(combined, variables)
 
-                from pysymex.accel.backends import gpu as cuda
+                from pysymex.accel.backends import sat
 
-                if cuda.is_available() and hasattr(cuda, "evaluate_bag_projected"):
-                    _proj_bitmap = cuda.evaluate_bag_projected(
+                if isinstance(sat, _ProjectedSatBackend) and sat.is_available():
+                    _proj_bitmap = sat.evaluate_bag_projected(
                         compiled, sorted(adhesion_vars), variables
                     )
                     projected_cache[frozenset(adhesion_vars)] = _proj_bitmap
 
-        if self._should_use_gpu(w):
-            bitmap = self._solve_gpu(constraints, variables)
+        if self._should_use_sat(w):
+            bitmap = self._solve_sat(constraints, variables)
         else:
             bitmap = self._solve_cpu(constraints, variables)
 
@@ -441,35 +467,27 @@ class GPUBagSolver:
             for msg_bitmap, msg_vars in parent_messages:
                 msg_indices = [variables.index(v) for v in msg_vars if v in variables]
                 if not msg_indices:
-                    continue  # Message does not constrain any variables in this bag
+                    continue
 
-                # We must modify 'bitmap' in place to only keep states that are also SAT in msg.
-                # msg maps its domain variables (msg_vars) to a boolean validity.
-                # For each state in this bag (0 to 1<<w - 1), we map it onto msg_vars and check msg.
                 w_msg = len(msg_vars)
                 num_msg_states = 1 << w_msg
 
-                # Optimization: if msg_vars perfectly matches this bag's variables, just bitwise AND.
                 if w_msg == w and msg_indices == list(range(w)):
                     if len(msg_bitmap) == len(bitmap):
                         bitmap = bitmap & msg_bitmap
                     continue
 
                 for i in range(1 << w):
-                    # Check if current state in bitmap is valid. If not, skip.
                     if not (bitmap[i >> 3] & (1 << (i & 7))):
                         continue
 
-                    # Construct index in the message projection space
                     msg_idx = 0
                     for j, pos in enumerate(msg_indices):
                         if (i >> pos) & 1:
                             msg_idx |= 1 << j
 
-                    # Check if the restricted state is valid in the child's message
                     if msg_idx < num_msg_states:
                         if not (msg_bitmap[msg_idx >> 3] & (1 << (msg_idx & 7))):
-                            # The child rejected this assignment; zero it out in the parent.
                             bitmap[i >> 3] &= ~(1 << (i & 7))
 
         count = int(_unpackbits_little(bitmap)[: 1 << w].sum())
@@ -482,22 +500,22 @@ class GPUBagSolver:
             projected_messages=projected_cache,
         )
 
-    def _should_use_gpu(self, w: int) -> bool:
-        """Determine if GPU should be used for this bag width."""
-        if not self.is_gpu_available:
+    def _should_use_sat(self, w: int) -> bool:
+        """Determine if SAT should be used for this bag width."""
+        if not self.is_sat_available:
             return False
-        if w < self.GPU_THRESHOLD:
+        if w < self.SAT_THRESHOLD:
             return False
-        if w > self.GPU_MAX_TREEWIDTH:
+        if w > self.SAT_MAX_TREEWIDTH:
             return False
         return True
 
-    def _solve_gpu(
+    def _solve_sat(
         self,
         constraints: list[z3.BoolRef],
         variables: list[str],
     ) -> npt.NDArray[np.uint8]:
-        """Solve using GPU acceleration."""
+        """Solve using SAT acceleration."""
         import z3
 
         combined = z3.And(*constraints) if len(constraints) > 1 else constraints[0]
@@ -511,12 +529,12 @@ class GPUBagSolver:
         if cached is not None:
             return cached
 
-        if self._gpu_evaluator is None:
+        if self._sat_evaluator is None:
             bitmap = self._solve_cpu(constraints, variables)
             _cache_put(cache_key, combined, variables_key, bitmap)
             return bitmap
 
-        bitmap = self._gpu_evaluator.evaluate_bag([combined], variables)
+        bitmap = self._sat_evaluator.evaluate_bag([combined], variables)
         if bitmap is None:
             bitmap = self._solve_cpu(constraints, variables)
             _cache_put(cache_key, combined, variables_key, bitmap)
@@ -530,7 +548,7 @@ class GPUBagSolver:
         constraints: list[z3.BoolRef],
         variables: list[str],
     ) -> npt.NDArray[np.uint8]:
-        """Solve using hardware dispatcher (CPU or GPU or Reference).
+        """Solve using hardware dispatcher (SAT or CPU or Reference).
 
         Args:
             constraints: List of Z3 constraints
@@ -614,9 +632,7 @@ class GPUBagSolver:
 
         var_positions = {name: idx for idx, name in enumerate(solution.variables)}
         adhesion_list = sorted(adhesion_vars)
-        adhesion_indices = [
-            var_positions[var] for var in adhesion_list if var in var_positions
-        ]
+        adhesion_indices = [var_positions[var] for var in adhesion_list if var in var_positions]
 
         if not adhesion_indices:
             return
@@ -632,13 +648,12 @@ class GPUBagSolver:
             for i, pos in enumerate(adhesion_indices):
                 if (idx >> pos) & 1:
                     adhesion_idx |= 1 << i
-            
+
             projected[adhesion_idx >> 3] |= np.uint8(1 << (adhesion_idx & 7))
 
         with self._message_inbox_lock:
             if parent_bag_id not in self._message_inbox:
                 self._message_inbox[parent_bag_id] = []
-            # We ONLY append variables that are actually present (which corresponds to adhesion_indices)
             actual_adhesion_vars = [var for var in adhesion_list if var in var_positions]
             self._message_inbox[parent_bag_id].append((projected, actual_adhesion_vars))
 
@@ -664,7 +679,7 @@ class GPUBagSolver:
         td: TreeDecomposition,
         branch_info: dict[int, BranchInfo],
     ) -> bool:
-        """Run full CHTD message-passing with GPU/Thread acceleration.
+        """Run full CHTD message-passing with SAT/Thread acceleration.
 
         This replaces the sequential propagate_bag_constraints loop.
         It groups bags by depth (layers) and processes each layer in parallel
@@ -696,7 +711,7 @@ class GPUBagSolver:
 
         while ready:
             layers.append(ready)
-            next_ready = []
+            next_ready: list[int] = []
             for node in ready:
                 p = td.get_parent(node)
                 if p is not None:
@@ -731,7 +746,7 @@ class GPUBagSolver:
 
             return True
 
-        if not self.is_gpu_available:
+        if not self.is_sat_available:
             for layer in layers:
                 results = [process_bag(bag_id) for bag_id in layer]
                 if not all(results):
@@ -747,14 +762,13 @@ class GPUBagSolver:
         return True
 
 
-def create_gpu_bag_solver(use_gpu: bool = True) -> GPUBagSolver:
-    """Factory function to create GPU bag solver.
+def create_sat_bag_solver(use_sat: bool = True) -> ChtdBagSolver:
+    """Factory function to create SAT bag solver.
 
     Args:
-        use_gpu: Whether to use GPU acceleration
+        use_sat: Whether to use SAT acceleration
 
     Returns:
-        Configured GPUBagSolver instance
+        Configured ChtdBagSolver instance
     """
-    return GPUBagSolver(use_gpu=use_gpu)
-
+    return ChtdBagSolver(use_sat=use_sat)

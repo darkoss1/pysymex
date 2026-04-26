@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,12 +31,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING
-
 import z3
-
-if TYPE_CHECKING:
-    from pysymex.core.types.scalars import SymbolicValue
 
 
 class TypeTag(Enum):
@@ -107,10 +102,6 @@ class SymbolicType(ABC):
     @abstractmethod
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
         """Z3 equality expression."""
-
-    @abstractmethod
-    def as_unified(self) -> SymbolicValue:
-        """Convert this specialized type to a unified SymbolicValue representation."""
 
     @property
     def is_int(self) -> z3.BoolRef:
@@ -185,20 +176,6 @@ class SymbolicNoneType(SymbolicType):
         if hasattr(other, "is_none"):
             return other.is_none
         return z3.BoolVal(False)
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-            is_none=Z3_TRUE,
-        )
 
 
 SYMBOLIC_NONE = SymbolicNoneType()

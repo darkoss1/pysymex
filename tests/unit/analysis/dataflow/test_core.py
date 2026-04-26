@@ -3,11 +3,17 @@ import dis
 from unittest.mock import Mock
 from pysymex.analysis.control.cfg import ControlFlowGraph, BasicBlock
 from pysymex.analysis.dataflow.core import (
-    DataFlowAnalysis, ReachingDefinitions, LiveVariables, DefUseAnalysis,
-    AvailableExpressions, TypeFlowAnalysis, NullAnalysis
+    DataFlowAnalysis,
+    ReachingDefinitions,
+    LiveVariables,
+    DefUseAnalysis,
+    AvailableExpressions,
+    TypeFlowAnalysis,
+    NullAnalysis,
 )
 from pysymex.analysis.dataflow.types import Definition, Use, Expression, NullState, NullInfo
 from pysymex.analysis.type_inference import PyType, TypeAnalyzer, TypeEnvironment
+
 
 class MockInstr:
     def __init__(self, opname: str, offset: int, argval: object = None, argrepr: str = "") -> None:
@@ -18,36 +24,43 @@ class MockInstr:
         self.starts_line = 10
         self.positions = None
 
+
 class MockCFG(ControlFlowGraph):
     def __init__(self) -> None:
         self.blocks = {}
         self.entry_block_id = 0
         self.exit_block_ids = {1}
         self.reverse_postorder = [0, 1]
-    
+
     def iter_blocks_forward(self) -> list[BasicBlock]:
         return [self.blocks[k] for k in sorted(self.blocks.keys())]
-        
+
     def iter_blocks_reverse(self) -> list[BasicBlock]:
         return [self.blocks[k] for k in sorted(self.blocks.keys(), reverse=True)]
-        
+
     def get_block_at_pc(self, pc: int) -> BasicBlock | None:
         if self.blocks:
             return next(iter(self.blocks.values()))
         return None
 
+
 class ConcreteDataFlow(DataFlowAnalysis[str]):
     def initial_value(self) -> str:
         return "init"
+
     def boundary_value(self) -> str:
         return "bound"
+
     def transfer(self, block: BasicBlock, in_fact: str) -> str:
         return in_fact + "_" + str(block.id)
+
     def meet(self, facts: list[str]) -> str:
         return "+".join(sorted(facts)) if facts else "init"
 
+
 class TestDataFlowAnalysis:
     """Test suite for pysymex.analysis.dataflow.core.DataFlowAnalysis."""
+
     def test_initial_value(self) -> None:
         """Test initial_value behavior."""
         df = ConcreteDataFlow(MockCFG())
@@ -99,8 +112,10 @@ class TestDataFlowAnalysis:
         df = ConcreteDataFlow(MockCFG())
         assert df.get_out(99) == "init"
 
+
 class TestReachingDefinitions:
     """Test suite for pysymex.analysis.dataflow.core.ReachingDefinitions."""
+
     def test_initial_value(self) -> None:
         """Test initial_value behavior."""
         rd = ReachingDefinitions(MockCFG())
@@ -114,7 +129,7 @@ class TestReachingDefinitions:
     def test_transfer(self) -> None:
         """Test transfer behavior."""
         rd = ReachingDefinitions(MockCFG())
-        instr = MockInstr("STORE_NAME", 10, "x") # type: ignore[arg-type] # mock
+        instr = MockInstr("STORE_NAME", 10, "x")
         b = BasicBlock(1, [], [])
         b.instructions = [instr]
         out = rd.transfer(b, frozenset([Definition("x", 0, 5)]))
@@ -136,7 +151,7 @@ class TestReachingDefinitions:
         instr1 = MockInstr("STORE_NAME", 10, "x")
         instr2 = MockInstr("LOAD_NAME", 20, "x")
         b = BasicBlock(1, [], [])
-        b.instructions = [instr1, instr2] # type: ignore[list-item] # mock
+        b.instructions = [instr1, instr2]
         cfg.blocks = {1: b}
         rd = ReachingDefinitions(cfg)
         rd.in_facts[1] = frozenset()
@@ -145,8 +160,10 @@ class TestReachingDefinitions:
         d = next(iter(defs))
         assert d.var_name == "x" and d.pc == 10
 
+
 class TestLiveVariables:
     """Test suite for pysymex.analysis.dataflow.core.LiveVariables."""
+
     def test_is_forward(self) -> None:
         """Test is_forward behavior."""
         lv = LiveVariables(MockCFG())
@@ -167,7 +184,7 @@ class TestLiveVariables:
         lv = LiveVariables(MockCFG())
         instr = MockInstr("LOAD_NAME", 20, "y")
         b = BasicBlock(1, [], [])
-        b.instructions = [instr] # type: ignore[list-item] # mock
+        b.instructions = [instr]
         out = lv.transfer(b, frozenset(["x"]))
         assert "x" in out and "y" in out
 
@@ -182,15 +199,17 @@ class TestLiveVariables:
         instr1 = MockInstr("STORE_NAME", 10, "x")
         instr2 = MockInstr("LOAD_NAME", 20, "y")
         b = BasicBlock(1, [], [])
-        b.instructions = [instr1, instr2] # type: ignore[list-item] # mock
+        b.instructions = [instr1, instr2]
         cfg.blocks = {1: b}
         lv = LiveVariables(cfg)
         lv.out_facts[1] = frozenset(["z"])
         assert lv.is_live_at("y", 10) is True
         assert lv.is_live_at("z", 10) is True
 
+
 class TestDefUseAnalysis:
     """Test suite for pysymex.analysis.dataflow.core.DefUseAnalysis."""
+
     def test_get_chain(self) -> None:
         """Test get_chain behavior."""
         cfg = MockCFG()
@@ -214,23 +233,25 @@ class TestDefUseAnalysis:
         cfg = MockCFG()
         instr1 = MockInstr("STORE_NAME", 10, "x")
         b = BasicBlock(0, [], [])
-        b.instructions = [instr1] # type: ignore[list-item] # mock
+        b.instructions = [instr1]
         cfg.blocks = {0: b}
         dua = DefUseAnalysis(cfg)
         dead = dua.find_dead_stores()
         assert len(dead) == 1
         assert dead[0].var_name == "x"
 
+
 class TestAvailableExpressions:
     """Test suite for pysymex.analysis.dataflow.core.AvailableExpressions."""
+
     def test_initial_value(self) -> None:
         """Test initial_value behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [ # type: ignore[list-item] # mock
+        b.instructions = [
             MockInstr("LOAD_FAST", 10, "x"),
             MockInstr("LOAD_FAST", 12, "y"),
-            MockInstr("BINARY_OP", 14, "+", "+")
+            MockInstr("BINARY_OP", 14, "+", "+"),
         ]
         cfg.blocks = {0: b}
         ae = AvailableExpressions(cfg)
@@ -245,10 +266,10 @@ class TestAvailableExpressions:
         """Test transfer behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [ # type: ignore[list-item] # mock
+        b.instructions = [
             MockInstr("LOAD_FAST", 10, "x"),
             MockInstr("LOAD_FAST", 12, "y"),
-            MockInstr("BINARY_OP", 14, "+", "+")
+            MockInstr("BINARY_OP", 14, "+", "+"),
         ]
         cfg.blocks = {0: b}
         ae = AvailableExpressions(cfg)
@@ -262,8 +283,10 @@ class TestAvailableExpressions:
         e2 = Expression("-", ("a", "c"))
         assert ae.meet([frozenset([e1, e2]), frozenset([e1])]) == frozenset([e1])
 
+
 class TestTypeFlowAnalysis:
     """Test suite for pysymex.analysis.dataflow.core.TypeFlowAnalysis."""
+
     def test_initial_value(self) -> None:
         """Test initial_value behavior."""
         cfg = MockCFG()
@@ -284,10 +307,7 @@ class TestTypeFlowAnalysis:
         analyzer = TypeAnalyzer()
         tfa = TypeFlowAnalysis(cfg, analyzer)
         b = BasicBlock(0, [], [])
-        b.instructions = [ # type: ignore[list-item] # mock
-            MockInstr("LOAD_CONST", 10, 42),
-            MockInstr("STORE_NAME", 12, "x")
-        ]
+        b.instructions = [MockInstr("LOAD_CONST", 10, 42), MockInstr("STORE_NAME", 12, "x")]
         out_env = tfa.transfer(b, TypeEnvironment())
         assert out_env.get_type("x").is_numeric()
 
@@ -307,10 +327,7 @@ class TestTypeFlowAnalysis:
         """Test get_type_at behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [ # type: ignore[list-item] # mock
-            MockInstr("LOAD_CONST", 10, 42),
-            MockInstr("STORE_NAME", 12, "x")
-        ]
+        b.instructions = [MockInstr("LOAD_CONST", 10, 42), MockInstr("STORE_NAME", 12, "x")]
         cfg.blocks = {0: b}
         analyzer = TypeAnalyzer()
         tfa = TypeFlowAnalysis(cfg, analyzer)
@@ -318,8 +335,10 @@ class TestTypeFlowAnalysis:
         t = tfa.get_type_at(14, "x")
         assert t.is_numeric()
 
+
 class TestNullAnalysis:
     """Test suite for pysymex.analysis.dataflow.core.NullAnalysis."""
+
     def test_initial_value(self) -> None:
         """Test initial_value behavior."""
         na = NullAnalysis(MockCFG())
@@ -334,10 +353,7 @@ class TestNullAnalysis:
         """Test transfer behavior."""
         na = NullAnalysis(MockCFG())
         b = BasicBlock(0, [], [])
-        b.instructions = [ # type: ignore[list-item] # mock
-            MockInstr("LOAD_CONST", 10, None),
-            MockInstr("STORE_NAME", 12, "x")
-        ]
+        b.instructions = [MockInstr("LOAD_CONST", 10, None), MockInstr("STORE_NAME", 12, "x")]
         out = na.transfer(b, NullInfo())
         assert out.get_state("x") == NullState.DEFINITELY_NULL
 
@@ -353,7 +369,7 @@ class TestNullAnalysis:
         """Test is_definitely_null behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [MockInstr("LOAD_CONST", 10, None), MockInstr("STORE_NAME", 12, "x")] # type: ignore[list-item] # mock
+        b.instructions = [MockInstr("LOAD_CONST", 10, None), MockInstr("STORE_NAME", 12, "x")]
         cfg.blocks = {0: b}
         na = NullAnalysis(cfg)
         na.in_facts[0] = NullInfo({"x": NullState.DEFINITELY_NULL})
@@ -363,7 +379,7 @@ class TestNullAnalysis:
         """Test is_definitely_not_null behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [MockInstr("LOAD_CONST", 10, 42), MockInstr("STORE_NAME", 12, "x")] # type: ignore[list-item] # mock
+        b.instructions = [MockInstr("LOAD_CONST", 10, 42), MockInstr("STORE_NAME", 12, "x")]
         cfg.blocks = {0: b}
         na = NullAnalysis(cfg)
         na.in_facts[0] = NullInfo({"x": NullState.DEFINITELY_NOT_NULL})
@@ -373,7 +389,7 @@ class TestNullAnalysis:
         """Test may_be_null behavior."""
         cfg = MockCFG()
         b = BasicBlock(0, [], [])
-        b.instructions = [MockInstr("LOAD_CONST", 10, None), MockInstr("STORE_NAME", 12, "x")] # type: ignore[list-item] # mock
+        b.instructions = [MockInstr("LOAD_CONST", 10, None), MockInstr("STORE_NAME", 12, "x")]
         cfg.blocks = {0: b}
         na = NullAnalysis(cfg)
         na.in_facts[0] = NullInfo({"x": NullState.MAYBE_NULL})

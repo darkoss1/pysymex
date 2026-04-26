@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -22,10 +22,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from types import CodeType
-from typing import (
-    cast,
-)
-
+from typing import TypeGuard
 import z3
 
 from pysymex._compat import get_starts_line
@@ -53,6 +50,11 @@ __all__ = [
     "EffectAnalyzer",
     "FunctionSummaryCache",
 ]
+
+
+def _is_set_of_objects(value: object) -> TypeGuard[set[object]]:
+    """Type guard to narrow a value to set[object]."""
+    return isinstance(value, set)
 
 
 class FunctionSummaryCache:
@@ -125,9 +127,9 @@ class FunctionSummaryCache:
             canonical_constraints: list[z3.BoolRef] = []
             for c in relevant_slice:
                 if canonical_map:
-                    canonical_constraints.append(
-                        cast("z3.BoolRef", z3.substitute(c, *canonical_map))
-                    )
+                    substituted = z3.substitute(c, *canonical_map)
+                    if isinstance(substituted, z3.BoolRef):
+                        canonical_constraints.append(substituted)
                 else:
                     canonical_constraints.append(c)
 
@@ -169,6 +171,12 @@ class CallGraph:
 
         raw_arg_count = kwargs.get("arg_count", 0)
         arg_count = int(raw_arg_count) if isinstance(raw_arg_count, (int, float, str)) else 0
+        possible_callees: set[str] = set()
+        possible_callees_obj = kwargs.get("possible_callees")
+        if _is_set_of_objects(possible_callees_obj):
+            for item in possible_callees_obj:
+                if isinstance(item, str):
+                    possible_callees.add(item)
         call_site = CallSiteInfo(
             caller=caller,
             callee=callee,
@@ -181,7 +189,7 @@ class CallGraph:
             is_static=bool(kwargs.get("is_static", False)),
             is_super_call=bool(kwargs.get("is_super_call", False)),
             is_dynamic=bool(kwargs.get("is_dynamic", False)),
-            possible_callees=cast("set[str]", kwargs.get("possible_callees", set())),
+            possible_callees=possible_callees,
         )
         caller_node.callees.append(call_site)
         callee_node.callers.add(caller)
@@ -692,4 +700,3 @@ class CrossFunctionAnalyzer:
                 if name not in code_objects:
                     code_objects[name] = const
                 self._collect_code_objects(const, code_objects, qualified)
-

@@ -1,14 +1,23 @@
 import ast
 import z3
 from pysymex.contracts.quantifiers.core import (
-    QuantifierParser, parse_condition_to_z3, ConditionTranslator,
-    forall, exists, exists_unique, QuantifierInstantiator,
-    QuantifierVerifier, extract_quantifiers, replace_quantifiers_with_z3
+    QuantifierParser,
+    parse_condition_to_z3,
+    ConditionTranslator,
+    forall,
+    exists,
+    exists_unique,
+    QuantifierInstantiator,
+    QuantifierVerifier,
+    extract_quantifiers,
+    replace_quantifiers_with_z3,
 )
 from pysymex.contracts.quantifiers.types import Quantifier, QuantifierKind
 
+
 class TestQuantifierParser:
     """Test suite for pysymex.contracts.quantifiers.core.QuantifierParser."""
+
     def test_parse(self) -> None:
         """Test parse behavior."""
         parser = QuantifierParser()
@@ -17,21 +26,23 @@ class TestQuantifierParser:
         assert q.kind == QuantifierKind.FORALL
         assert len(q.variables) == 1
         assert q.variables[0].name == "i"
-        
+
         assert parser.parse("invalid syntax") is None
+
 
 def test_parse_condition_to_z3() -> None:
     """Test parse_condition_to_z3 behavior."""
     x = z3.Int("x")
     res = parse_condition_to_z3("x > 0", {"x": x})
     assert z3.is_bool(res)
-    
-    # syntax error fall-back
+
     res2 = parse_condition_to_z3("x > ", {"x": x})
     assert z3.is_bool(res2)
 
+
 class TestConditionTranslator:
     """Test suite for pysymex.contracts.quantifiers.core.ConditionTranslator."""
+
     def test_visit_Compare(self) -> None:
         """Test visit_Compare behavior."""
         translator = ConditionTranslator({"x": z3.Int("x")})
@@ -102,11 +113,13 @@ class TestConditionTranslator:
         res = translator.generic_visit(ast.Pass())
         assert z3.is_expr(res)
 
+
 def test_forall() -> None:
     """Test forall behavior."""
     q = forall("i", (0, 10), "i > 0")
     assert isinstance(q, Quantifier)
     assert q.kind == QuantifierKind.FORALL
+
 
 def test_exists() -> None:
     """Test exists behavior."""
@@ -114,14 +127,17 @@ def test_exists() -> None:
     assert isinstance(q, Quantifier)
     assert q.kind == QuantifierKind.EXISTS
 
+
 def test_exists_unique() -> None:
     """Test exists_unique behavior."""
     q = exists_unique("i", (0, 10), "i == 5")
     assert isinstance(q, Quantifier)
     assert q.kind == QuantifierKind.UNIQUE
 
+
 class TestQuantifierInstantiator:
     """Test suite for pysymex.contracts.quantifiers.core.QuantifierInstantiator."""
+
     def test_instantiate_bounded(self) -> None:
         """Test instantiate_bounded behavior."""
         q = forall("i", (0, 2), "i >= 0")
@@ -138,8 +154,10 @@ class TestQuantifierInstantiator:
         res = inst.add_triggers(q, [f(q.variables[0].z3_var)])
         assert z3.is_bool(res)
 
+
 class TestQuantifierVerifier:
     """Test suite for pysymex.contracts.quantifiers.core.QuantifierVerifier."""
+
     def test_verify_forall(self) -> None:
         """Test verify_forall behavior."""
         v = QuantifierVerifier(timeout_ms=100)
@@ -154,12 +172,14 @@ class TestQuantifierVerifier:
         sat, _ = v.verify_exists(q)
         assert sat in (True, False, None)
 
+
 def test_extract_quantifiers() -> None:
     """Test extract_quantifiers behavior."""
     text = "forall(i, 0 <= i < 5, i > 0) and foo"
     qs = extract_quantifiers(text)
     assert len(qs) == 1
     assert qs[0].kind == QuantifierKind.FORALL
+
 
 def test_replace_quantifiers_with_z3() -> None:
     """Test replace_quantifiers_with_z3 behavior."""

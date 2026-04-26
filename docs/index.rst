@@ -37,7 +37,7 @@ This will detect that ``y`` could be zero, causing a division by zero error.
 Features
 --------
 
-- **Hardware Acceleration**: GPU Virtual Machine for evaluating trillions of states per second
+- **Tiered Dispatcher**: CPU-local SAT Virtual Machine for evaluating millions of constraints per second without PCIe latency.
 - **Sandbox**: Isolated execution with strict path checks and containment enforcement
 - **Symbolic Execution**: Explores all possible execution paths
 - **Z3 Integration**: Uses SMT solving for constraint reasoning

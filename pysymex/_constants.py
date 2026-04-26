@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -68,6 +68,12 @@ SANDBOX_IMPORT_ALLOWLIST: Final[frozenset[str]] = frozenset(
         "statistics",
         "copy",
         "types",
+        "pysymex.contracts",  # Only allow contracts module for contract verification
+        "pysymex.contracts.types",
+        "pysymex.contracts.decorators",
+        "pysymex.execution.executors.verified",
+        "pysymex.execution.opcodes",
+        "z3",
     }
 )
 

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -110,7 +110,6 @@ def run_differential_validation() -> list[DifferentialResult]:
     plain_instr = list(dis.get_instructions(plain_sub))
     plain_matches = matcher.find_patterns(plain_instr, env)
     samples += 1
-    # Differential invariant: plain dict subscription is not dict.get semantics.
     if any(m.kind == PatternKind.DICT_GET for m in plain_matches):
         mismatches += 1
 

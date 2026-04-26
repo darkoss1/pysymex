@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -30,7 +30,7 @@ Key responsibilities:
 * Bug detection via pluggable :class:`Detector` instances.
 * Loop detection, widening, and state merging.
 * Resource limit enforcement (paths, depth, time, memory).
-* Optional analysis passes: taint tracking, abstract interpretation,
+* Optional analysis passes: abstract interpretation,
   cross-function analysis, and type inference.
 """
 
@@ -42,13 +42,12 @@ import logging
 import time
 import types
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, get_type_hints
+from typing import TYPE_CHECKING, TypeAlias, cast, get_type_hints
 
 import z3
 
 if TYPE_CHECKING:
     from pysymex._typing import SolverProtocol, StackValue
-    from pysymex.core.graph.treewidth import BranchInfo, TreeDecomposition
     from pysymex.plugins.base import PluginManager
 
 import pysymex.core.solver.engine as solver_mod
@@ -64,15 +63,18 @@ from pysymex.analysis.detectors import (
     default_registry,
 )
 from pysymex.analysis.detectors.filter import deduplicate_issues, filter_issues
+from pysymex.stats.registry import StatsRegistry
+from pysymex.stats.types import EventType, Metadata
 from pysymex.analysis.loops import LoopDetector, LoopWidening
 from pysymex.execution.strategies.manager import (
     AdaptivePathManager,
     PathManager,
     create_path_manager,
 )
+
 from pysymex.execution.strategies.merger import MergePolicy, StateMerger
-from pysymex.analysis.taint import TaintTracker
 from pysymex.analysis.type_inference import TypeAnalyzer
+from pysymex.core.builtins import get_all_builtins
 from pysymex.core.memory.addressing import next_address
 from pysymex.core.memory.cow import CowDict
 from pysymex.core.types.floats import SymbolicFloat
@@ -93,53 +95,22 @@ from pysymex.execution.types import (
 from pysymex.resources import LimitExceeded, ResourceLimits, ResourceTracker
 
 
-class _GpuBagSolver(Protocol):
-    """Minimal protocol for GPU CHTD solvers."""
-
-    is_gpu_available: bool
-
-    def propagate_all(self, td: TreeDecomposition, branch_info: dict[int, BranchInfo]) -> bool: ...
-
-
-_CHTD_SOLVER_UNAVAILABLE = object()
-_chtd_solvers: dict[bool, _GpuBagSolver | object] = {}
-
-
-def _get_chtd_solver(*, use_gpu: bool) -> _GpuBagSolver | None:
-    """Lazy-load the unified CHTD solver with backend preference.
-
-    The solver implements the same CHTD algorithm in both modes:
-    - ``use_gpu=True``: prefer GPU backend, CPU fallback inside solver when unavailable
-    - ``use_gpu=False``: force CPU backend path
-    """
-    cached = _chtd_solvers.get(use_gpu)
-    if cached is None:
-        try:
-            from pysymex.accel.chtd_solver import create_gpu_bag_solver
-
-            loaded_solver = create_gpu_bag_solver(use_gpu=use_gpu)
-            solver = cast("_GpuBagSolver", loaded_solver)
-            _chtd_solvers[use_gpu] = solver
-            logger.info(
-                "CHTD solver initialized: use_gpu=%s gpu_available=%s",
-                use_gpu,
-                solver.is_gpu_available,
-            )
-            return solver
-        except ImportError:
-            _chtd_solvers[use_gpu] = _CHTD_SOLVER_UNAVAILABLE
-            return None
-
-    if cached is _CHTD_SOLVER_UNAVAILABLE:
-        return None
-    return cast("_GpuBagSolver", cached)
-
-
 logger = logging.getLogger(__name__)
+_stats_registry = StatsRegistry()
+
+
+def _emit_event(
+    event_type: EventType,
+    value: float = 0.0,
+    metadata: Metadata | None = None,
+) -> None:
+    """Emit a stats event through the shared stats registry."""
+    _stats_registry.emit(event_type, value, metadata)
+
 
 _CHTD_MAX_BRANCH_INFOS = 256
 _CHTD_CHECK_INTERVAL = 64
-_CHTD_GPU_MIN_BRANCH_INFOS = 32
+_CHTD_SAT_MIN_BRANCH_INFOS = 32
 
 __all__ = ["SymbolicExecutor"]
 
@@ -173,8 +144,6 @@ class SymbolicExecutor:
         detector_registry: DetectorRegistry | None = None,
         **config_overrides: object,
     ) -> None:
-        import pysymex.execution.opcodes as _opcodes  # type: ignore[reportUnusedImport]  # noqa: F401
-
         if config is None:
             config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
             self.config = config_ctor(**config_overrides)
@@ -186,6 +155,7 @@ class SymbolicExecutor:
             self.config = config
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
+        setattr(self.dispatcher, "config", self.config)
         self.solver: SolverProtocol = IncrementalSolver(
             timeout_ms=self.config.solver_timeout_ms,
             use_cache=self.config.enable_solver_cache,
@@ -203,7 +173,6 @@ class SymbolicExecutor:
         self._iterations: int = 0
         self._loop_detector: LoopDetector | None = None
         self._loop_widening: LoopWidening | None = None
-        self._taint_tracker: TaintTracker | None = None
         self._result_cache: LRUCache[str, ExecutionResult] | None = None
         self._state_merger: StateMerger | None = None
         self._resource_tracker: ResourceTracker | None = None
@@ -215,13 +184,14 @@ class SymbolicExecutor:
         self._reported_hacc_fallback: bool = False
         self._prev_loop_states: dict[int, VMState] = {}
         self._interaction_graph = ConstraintInteractionGraph()
-        
+
         try:
             from pysymex.core.solver.mus_gatekeeper import MUSGatekeeper, AsyncMUSWorker
-            from pysymex.core.memory.unsat_core_registry import BitPackedCoreRegistry
+            from pysymex.core.memory.unsat_core_registry import SparseCoreRegistry
+
             self.mus_gatekeeper = MUSGatekeeper(timeout_ms=self.config.solver_timeout_ms)
             self.async_mus_worker = AsyncMUSWorker(self.mus_gatekeeper)
-            self.core_registry = BitPackedCoreRegistry()
+            self.core_registry = SparseCoreRegistry()
         except ImportError:
             pass
         self._current_chtd_interval: int = max(1, self.config.chtd_check_interval)
@@ -254,8 +224,6 @@ class SymbolicExecutor:
             "chtd_decomposition": 0,
             "chtd_propagation": 0,
         }
-        if self.config.enable_taint_tracking:
-            self._taint_tracker = TaintTracker()
         if self.config.enable_caching:
             self._result_cache = LRUCache[str, ExecutionResult](maxsize=500)
         if self.config.enable_state_merging:
@@ -320,6 +288,24 @@ class SymbolicExecutor:
         self._plugin_manager = plugin_manager
         plugin_manager.activate(self)
 
+    def _execute_with_post_analysis(
+        self,
+        func: Callable[..., object],
+        symbolic_args: dict[str, str] | None = None,
+        initial_values: dict[str, object] | None = None,
+        issue_collector: Callable[[], list[Issue]] | None = None,
+    ) -> ExecutionResult:
+        """Template method for subclasses to execute with post-analysis issue collection.
+
+        Subclasses should override this to call their specific execute_function
+        and then extend the result with collected issues.
+        """
+        result = self.execute_function(func, symbolic_args, initial_values)
+        if issue_collector:
+            issues = issue_collector()
+            result.issues.extend(issues)
+        return result
+
     def execute_function(
         self,
         func: Callable[..., object],
@@ -351,8 +337,6 @@ class SymbolicExecutor:
         5. **Finalize**: Reconciles abstract hints with symbolic findings to produce
            the final issue report.
         """
-        import time
-
         cache_key = None
         if self.config.enable_caching and self._result_cache is not None:
             code = func.__code__
@@ -360,7 +344,6 @@ class SymbolicExecutor:
             cached = self._result_cache.get(cache_key)
             if cached is not None:
                 return cached
-        start_time = time.time()
         self._reset()
         code = func.__code__
         self._instructions = list(self._get_instructions(code))
@@ -394,15 +377,15 @@ class SymbolicExecutor:
                 ):
                     module_funcs[g_name] = cast("StackValue", g_val)
             if module_funcs:
-                initial_state.global_vars = CowDict(module_funcs)
+                for g_name, g_val in module_funcs.items():
+                    initial_state.global_vars[g_name] = g_val
         except (AttributeError, TypeError):
             pass
-        if self._taint_tracker is not None:
-            initial_state.taint_tracker = self._taint_tracker
         self._worklist = create_path_manager(
             self.config.strategy,
             deterministic=self.config.deterministic_mode,
             random_seed=self.config.random_seed,
+            cig=self._interaction_graph,
         )
         self._worklist.add_state(initial_state)
         if self.config.use_loop_analysis:
@@ -435,7 +418,6 @@ class SymbolicExecutor:
                 self._type_analyzer = None
         self._execute_loop()
         self._promote_abstract_hints()
-        end_time = time.time()
         logger.debug("Executor issues count: %d", len(self._issues))
         final_issues = self._issues
         if self.config.enable_fp_filtering:
@@ -446,19 +428,28 @@ class SymbolicExecutor:
                 logger.warning("FP filtering/deduplication failed, using raw issues", exc_info=True)
                 self._degraded_passes.append("fp_filtering")
                 final_issues = self._issues
+        if self._resource_tracker is None:
+            raise RuntimeError("Resource tracker is unavailable")
+        snap = self._resource_tracker.snapshot()
         result = ExecutionResult(
             issues=final_issues,
             paths_explored=self._paths_explored,
             paths_completed=self._paths_completed,
             paths_pruned=self._paths_pruned,
             coverage=self._coverage,
-            total_time_seconds=end_time - start_time,
+            total_time_seconds=snap.elapsed_time,
+            avg_memory_mb=snap.avg_memory_mb,
             function_name=func.__name__,
             source_file=code.co_filename,
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
+            final_stack=getattr(self, "_last_stack", []),
+            final_exception=getattr(self, "_last_exception", None),
             branches=getattr(self, "_last_branches", []),
-            treewidth_stats={"num_vertices": self._interaction_graph.num_vertices, "num_edges": self._interaction_graph.num_edges},
+            treewidth_stats={
+                "num_vertices": self._interaction_graph.num_vertices,
+                "num_edges": self._interaction_graph.num_edges,
+            },
             solver_stats={
                 **self.solver.get_stats(),
                 "chtd": self._collect_chtd_stats(),
@@ -479,8 +470,6 @@ class SymbolicExecutor:
         initial_state = VMState()
         if initial_globals:
             initial_state.global_vars = CowDict(initial_globals.copy())
-        if self._taint_tracker is not None:
-            initial_state.taint_tracker = self._taint_tracker
         symbolic_vars = dict(symbolic_vars or {})
 
         argcount = code.co_argcount + code.co_kwonlyargcount
@@ -522,9 +511,6 @@ class SymbolicExecutor:
         Returns:
             ExecutionResult with issues and statistics
         """
-        import time
-
-        start_time = time.time()
         self._reset()
         self._instructions = list(self._get_instructions(code))
         self.dispatcher.set_instructions(self._instructions)
@@ -545,6 +531,7 @@ class SymbolicExecutor:
             self.config.strategy,
             deterministic=self.config.deterministic_mode,
             random_seed=self.config.random_seed,
+            cig=self._interaction_graph,
         )
         self._worklist.add_state(initial_state)
         if self.config.use_loop_analysis:
@@ -563,7 +550,6 @@ class SymbolicExecutor:
 
         self._execute_loop()
         self._promote_abstract_hints()
-        end_time = time.time()
         final_issues = self._issues
         if self.config.enable_fp_filtering:
             try:
@@ -573,19 +559,26 @@ class SymbolicExecutor:
                 logger.warning("FP filtering/deduplication failed, using raw issues", exc_info=True)
                 self._degraded_passes.append("fp_filtering")
                 final_issues = self._issues
+        if self._resource_tracker is None:
+            raise RuntimeError("Resource tracker is unavailable")
+        snap = self._resource_tracker.snapshot()
         return ExecutionResult(
             issues=final_issues,
             paths_explored=self._paths_explored,
             paths_completed=self._paths_completed,
             paths_pruned=self._paths_pruned,
             coverage=self._coverage,
-            total_time_seconds=end_time - start_time,
+            total_time_seconds=snap.elapsed_time,
+            avg_memory_mb=snap.avg_memory_mb,
             function_name=code.co_name,
             source_file=code.co_filename,
             final_globals=getattr(self, "_last_globals", {}),
             final_locals=getattr(self, "_last_locals", {}),
             branches=getattr(self, "_last_branches", []),
-            treewidth_stats={"num_vertices": self._interaction_graph.num_vertices, "num_edges": self._interaction_graph.num_edges},
+            treewidth_stats={
+                "num_vertices": self._interaction_graph.num_vertices,
+                "num_edges": self._interaction_graph.num_edges,
+            },
             solver_stats={
                 **self.solver.get_stats(),
                 "chtd": self._collect_chtd_stats(),
@@ -640,12 +633,12 @@ class SymbolicExecutor:
             "chtd_propagation": 0,
         }
         self._last_branches = []
-        self._degraded_passes: list[str] = []
+        self._last_stack = []
+        self._last_exception = None
+        self._degraded_passes = []
         self._loop_detector = None
         self._loop_widening = None
         self._prev_loop_states = {}
-        if self._taint_tracker is not None:
-            self._taint_tracker.clear()
         if self._state_merger is not None:
             self._state_merger.reset()
 
@@ -757,6 +750,9 @@ class SymbolicExecutor:
     ) -> VMState:
         """Create initial VM state with symbolic arguments."""
         state = VMState()
+        builtin_globals = get_all_builtins()
+        for name, value in builtin_globals.items():
+            state.global_vars[name] = value
         parameters: dict[str, inspect.Parameter] = {}
         try:
             sig = inspect.signature(func)
@@ -786,40 +782,8 @@ class SymbolicExecutor:
                 type_hint = symbolic_args.get(name) or inferred_types.get(name, "int")
 
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
-            if self.config and self.config.enable_taint_tracking:
-                with_taint = getattr(sym_val, "with_taint", None)
-                if callable(with_taint):
-                    try:
-                        tainted = with_taint("user_input")
-                        if isinstance(
-                            tainted,
-                            (
-                                SymbolicValue,
-                                SymbolicString,
-                                SymbolicList,
-                                SymbolicDict,
-                                SymbolicObject,
-                                SymbolicFloat,
-                            ),
-                        ):
-                            sym_val = tainted
-                    except (AttributeError, TypeError):
-                        pass
             state.local_vars[name] = sym_val
             state = state.add_constraint(constraint)
-
-            if self._taint_tracker is not None:
-                try:
-                    from pysymex.analysis.taint import TaintSource
-
-                    self._taint_tracker.mark_tainted(
-                        sym_val,
-                        TaintSource.USER_INPUT,
-                        origin=name,
-                        line=0,
-                    )
-                except (ImportError, AttributeError, TypeError):
-                    pass
 
             if self.config and self.config.heuristic_assume_non_null_self:
                 ln_name = name.lower()
@@ -841,6 +805,13 @@ class SymbolicExecutor:
                         state = state.add_constraint(sym_val.z3_int == val)
                     elif isinstance(val, bool):
                         state = state.add_constraint(sym_val.z3_bool == val)
+
+        if self.config and getattr(self.config, "enable_contract_verification", False):
+            from pysymex.contracts.injector import inject_preconditions_initial
+
+            state = inject_preconditions_initial(state, func)
+            state.contract_frames.append(func)
+
         return state
 
     def _hint_to_type_str(self, hint: type) -> str:
@@ -1008,16 +979,16 @@ class SymbolicExecutor:
         since the last successful feasibility check.
         """
         if getattr(self, "core_registry", None):
-            mask = 0
+            path_indices: set[int] = set()
             for c in state.path_constraints:
-                mask |= (1 << (hash(c) % 64))
-            if not self.core_registry.is_feasible(mask):
+                path_indices.add(hash(c))
+            if not self.core_registry.is_feasible(path_indices):
                 self._paths_pruned += 1
                 for _hook in self._hooks.get("on_prune", ()):
                     try:
                         _hook(self, state, "chtd_pruned")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Plugin hook execution failed: %s", exc)
                 return False
 
         if state.pending_constraint_count <= 0:
@@ -1105,6 +1076,7 @@ class SymbolicExecutor:
                             if self._worklist:
                                 self._worklist.add_state(widened)
                             self._paths_explored += 1
+                            _emit_event(EventType.PATH_EXPLORED, 1.0)
                             if self.config.verbose:
                                 logger.debug("Loop at PC %s: widened and jumped to exit", pc_key)
                             return False
@@ -1145,6 +1117,8 @@ class SymbolicExecutor:
                 self._last_branches = state.branch_trace.to_list()
                 self._last_globals = state.global_vars
                 self._last_locals = state.local_vars
+                self._last_stack = list(state.stack)
+                self._last_exception = result.issues[0] if result.issues else None
                 return
 
             sat = True
@@ -1158,11 +1132,10 @@ class SymbolicExecutor:
                         if last_constraint is None:
                             continue
                         try:
-                            def _extract_vars(expr):
-                                # Fast path mock for benchmark performance 
-                                # In real system, we'd cache these or use C++ visitor
+
+                            def _extract_vars(expr: z3.BoolRef) -> set[int]:
                                 return {hash(expr)}
-                            
+
                             vars_set = frozenset(_extract_vars(last_constraint))
                             self._interaction_graph.add_branch(ns.pc, vars_set)
                         except Exception:
@@ -1181,19 +1154,25 @@ class SymbolicExecutor:
                 if should_run_chtd:
                     start = time.perf_counter()
                     try:
+
                         def _mus_callback(core_indices: list[int] | None) -> None:
                             if core_indices:
                                 self._chtd_unsat_hits += 1
                                 if getattr(self, "core_registry", None):
                                     exprs_list = list(state.path_constraints)
-                                    global_indices = [(hash(exprs_list[i]) % 64) for i in core_indices]
+                                    global_indices = [hash(exprs_list[i]) for i in core_indices]
                                     self.core_registry.add_core(global_indices)
-                                if isinstance(self._worklist, AdaptivePathManagerV2):
+                                if isinstance(self._worklist, AdaptivePathManager):
                                     self._worklist.feedback_mus(core_indices)
 
                         if getattr(self, "async_mus_worker", None):
                             exprs = list(state.path_constraints)
-                            self.async_mus_worker.dispatch(exprs, _mus_callback)
+                            self.async_mus_worker.dispatch(
+                                exprs,
+                                _mus_callback,
+                                current_depth=state.depth,
+                                max_depth=self.config.max_depth,
+                            )
                             self._chtd_runs += 1
                     except Exception:
                         self._chtd_runtime_failures += 1
@@ -1233,6 +1212,7 @@ class SymbolicExecutor:
                         if self._worklist:
                             self._worklist.add_state(new_state)
                         self._paths_explored += 1
+                        _emit_event(EventType.PATH_EXPLORED, 1.0)
 
             if len(result.new_states) >= 2:
                 for _hook in self._hooks.get("on_fork", ()):
@@ -1249,10 +1229,13 @@ class SymbolicExecutor:
         if self._chtd_runtime_disabled:
             return False
 
-        if self.config.chtd_max_branch_infos and self._interaction_graph.num_vertices > self.config.chtd_max_branch_infos:
+        if (
+            self.config.chtd_max_branch_infos
+            and self._interaction_graph.num_vertices > self.config.chtd_max_branch_infos
+        ):
             self._chtd_skipped_size += 1
             return False
-            
+
         return self._iterations >= self._next_chtd_check_iteration
 
     def _reschedule_chtd_check(self) -> None:
@@ -1406,6 +1389,14 @@ class SymbolicExecutor:
         try:
             result = self.dispatcher.dispatch(instr, state)
 
+            if state.call_stack:
+                self._last_locals = state.call_stack[-1].local_vars
+            else:
+                self._last_locals = state.local_vars
+
+            self._last_globals = state.global_vars
+            self._last_stack = list(state.stack)
+
             states_to_hook = result.new_states or [state]
             for next_state in states_to_hook:
                 for _hook in self._hooks.get("post_step", ()):
@@ -1414,19 +1405,9 @@ class SymbolicExecutor:
                     except Exception:
                         logger.exception("Plugin hook execution failed")
             self._process_execution_result(result, state, active_instructions)
-        except (
-            RuntimeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            AttributeError,
-            IndexError,
-            z3.Z3Exception,
-        ) as e:
-            if self.config.verbose:
-                logger.debug("Execution error at PC %d: %s", state.pc, e)
-            self._paths_pruned += 1
-            return
+        except Exception as e:
+            logger.error("Engine failure at PC %d: %s", state.pc, e, exc_info=True)
+            raise e
 
     def _get_line_number(self, pc: int, active_instructions: list[dis.Instruction]) -> int | None:
         """Get line number."""
@@ -1539,6 +1520,3 @@ class SymbolicExecutor:
             len(state.call_stack),
             len(state.block_stack),
         )
-
-
-

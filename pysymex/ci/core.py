@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -30,10 +30,17 @@ import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TextIO, cast
+from typing import TextIO, TypeGuard, cast
 
 from pysymex.ci.types import CIResult, ExitCode, FailureThreshold
 from pysymex.reporting.sarif import Severity, VulnerabilityReport, generate_sarif
+
+
+def _is_object_dict_list(value: object) -> TypeGuard[list[dict[object, object]]]:
+    """Return whether value is list[dict[object, object]]."""
+    if not isinstance(value, list):
+        return False
+    return all(isinstance(item, dict) for item in value)  # type: ignore[misc]  # item is object from list iteration
 
 
 class GitHubActionsReporter:
@@ -181,7 +188,7 @@ class GitHubActionsReporter:
         """Build a markdown summary for the job."""
         status = "✅ Passed" if result.exit_code == ExitCode.SUCCESS else "❌ Failed"
         lines = [
-            "## PySyMex Analysis Results",
+            "## pysymex Analysis Results",
             "",
             f"**Status**: {status}",
             f"**Files Analyzed**: {result.files_analyzed}",
@@ -316,13 +323,13 @@ class GitLabReporter:
 
 def generate_precommit_config() -> str:
     """Generate .pre-commit-config.yaml content."""
-    return """# PySyMex pre-commit hook
+    return """# pysymex pre-commit hook
 repos:
   - repo: local
     hooks:
-      - id: PySyMex
-        name: PySyMex Security Check
-        entry: PySyMex check
+      - id: pysymex
+        name: pysymex Security Check
+        entry: pysymex check
         language: system
         types: [python]
         pass_filenames: true
@@ -349,7 +356,7 @@ def main():
     files = [f for f in result.stdout.strip().split("\\n") if f.endswith(".py")]
     if not files:
         return 0
-    # Run PySyMex
+    # Run pysymex
     cmd = ["pysymex", "check", "--fail-on", "high"] + files
     result = subprocess.run(cmd)
     return result.returncode
@@ -359,7 +366,7 @@ if __name__ == "__main__":
 
 
 class CIRunner:
-    """Runs PySyMex in CI mode with configurable thresholds.
+    """Runs pysymex in CI mode with configurable thresholds.
 
     Supports GitHub Actions annotations, GitLab reports, and
     optional SARIF output.
@@ -447,7 +454,7 @@ def run_ci_check(
     fail_on: Severity = Severity.HIGH,
     sarif_output: str | None = None,
 ) -> int:
-    """Run PySyMex analysis suitable for CI/CD pipelines.
+    """Run pysymex analysis suitable for CI/CD pipelines.
 
     Scans the given *files*, evaluates results against *fail_on*
     severity, optionally writes a SARIF report, and emits CI-specific
@@ -480,10 +487,12 @@ def run_ci_check(
         try:
             scan_result = scan_file(file_path)
             raw_issues = getattr(scan_result, "issues", None)
-            if isinstance(raw_issues, list):
+            if _is_object_dict_list(raw_issues):
                 for issue in raw_issues:
-                    if isinstance(issue, dict):
-                        all_issues.append(cast("dict[str, object]", issue))
+                    normalized_issue: dict[str, object] = {}
+                    for key, value in issue.items():
+                        normalized_issue[str(key)] = value
+                    all_issues.append(normalized_issue)
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
     ci_result = runner.analyze_and_report(

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -37,8 +37,6 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from ..exceptions.handler import ExceptionHandlerInfo
 
-from ..taint.checker import TaintKind
-
 __all__ = [
     "SUGGESTION_MAP",
     "AnalysisContext",
@@ -51,6 +49,11 @@ __all__ = [
 
 class NoneCheckAnalyzerLike(Protocol):
     def is_none_safe(self, var_name: str) -> bool: ...
+
+
+def _empty_exception_handlers() -> list[ExceptionHandlerInfo]:
+    """Create a typed empty exception-handler list."""
+    return []
 
 
 SUGGESTION_MAP: dict[str, str] = {
@@ -86,10 +89,6 @@ SUGGESTION_MAP: dict[str, str] = {
     "RESOURCE_LEAK": "Use a 'with' statement to ensure proper cleanup",
     "UNCLOSED_FILE": "Use a 'with' statement for file operations",
     "UNCLOSED_CONNECTION": "Use a 'with' statement or ensure close() is called",
-    "TAINT": "Sanitize or validate the input before use",
-    "SQL_INJECTION": "Use parameterized queries instead of string formatting",
-    "COMMAND_INJECTION": "Use subprocess with a list of args instead of shell=True",
-    "PATH_TRAVERSAL": "Validate and sanitize file paths before use",
     "EVAL": "Avoid eval/exec on untrusted input; use ast.literal_eval for data",
     "HARDCODED_SECRET": "Move secrets to environment variables or a secrets manager",
     "WEAK_CRYPTO": "Use a stronger cryptographic algorithm",
@@ -112,7 +111,6 @@ class ScannerConfig:
         enable_resource_analysis: Enable resource leak detection.
         enable_exception_analysis: Enable exception handler analysis.
         enable_string_analysis: Enable string security analysis.
-        enable_taint_analysis: Enable taint analysis.
         min_confidence: Minimum confidence for reporting issues.
         suppress_likely_false_positives: Auto-suppress likely FPs.
         verbose: Enable verbose output.
@@ -132,7 +130,6 @@ class ScannerConfig:
     enable_resource_analysis: bool = True
     enable_exception_analysis: bool = True
     enable_string_analysis: bool = True
-    enable_taint_analysis: bool = True
     min_confidence: float = 0.7
     suppress_likely_false_positives: bool = True
     verbose: bool = False
@@ -229,7 +226,6 @@ class AnalysisContext:
         types: Type-inference results.
         patterns: Pattern-recognition results.
         ranges: Range-analysis results.
-        taint: Variable-level taint sets.
         flow_analyzer: Flow-sensitive analyser instance.
         function_summaries: Inter-procedural function summaries.
         exception_handlers: Detected exception handler regions.
@@ -242,10 +238,11 @@ class AnalysisContext:
     types: dict[str, object] = field(default_factory=dict[str, object])
     patterns: object = None
     ranges: dict[str, object] = field(default_factory=dict[str, object])
-    taint: dict[str, set[TaintKind]] = field(default_factory=dict[str, set[TaintKind]])
     flow_analyzer: object | None = None
     function_summaries: dict[str, object] = field(default_factory=dict[str, object])
-    exception_handlers: list[ExceptionHandlerInfo] = field(default_factory=list)
+    exception_handlers: list[ExceptionHandlerInfo] = field(
+        default_factory=_empty_exception_handlers
+    )
     none_check_analyzer: NoneCheckAnalyzerLike | None = None
 
 

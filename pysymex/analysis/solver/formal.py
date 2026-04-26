@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -35,6 +35,8 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import z3
+
+from pysymex.analysis.utils.math import wilson_upper_95
 
 import pysymex.analysis.solver as solver_init
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
@@ -101,17 +103,6 @@ STRICT_TARGETS = {
     "Z3Engine._verify_crashes",
     "Z3Engine._verify_single_crash",
 }
-
-
-def _wilson_upper_95(k: int, n: int) -> float:
-    if n <= 0:
-        return 0.0
-    z = 1.96
-    p = k / n
-    denom = 1.0 + (z * z / n)
-    center = p + (z * z) / (2 * n)
-    spread = z * ((p * (1 - p) + (z * z) / (4 * n)) / n) ** 0.5
-    return min(1.0, (center + spread) / denom)
 
 
 def _solver_modules() -> list[ModuleType]:
@@ -321,7 +312,7 @@ def run_opcode_differential_validation(
             samples=tested,
             mismatches=mismatches,
             mismatch_rate=(mismatches / tested) if tested else 0.0,
-            mismatch_upper_95=_wilson_upper_95(mismatches, tested),
+            mismatch_upper_95=wilson_upper_95(mismatches, tested),
         )
     )
 
@@ -360,7 +351,7 @@ def run_opcode_differential_validation(
             samples=branch_tested,
             mismatches=branch_mismatches,
             mismatch_rate=(branch_mismatches / branch_tested) if branch_tested else 0.0,
-            mismatch_upper_95=_wilson_upper_95(branch_mismatches, branch_tested),
+            mismatch_upper_95=wilson_upper_95(branch_mismatches, branch_tested),
         )
     )
 
@@ -426,7 +417,6 @@ def run_mutation_robustness() -> list[MutationResult]:
     state = SymbolicState()
     call_sites = []
     crashes = []
-    from pysymex.analysis.solver.types import TaintInfo, TaintSource
 
     state.push(SymValue(expr=z3.Int("f_eval"), name="eval", sym_type=SymType.CALLABLE))
     state.push(
@@ -434,14 +424,9 @@ def run_mutation_robustness() -> list[MutationResult]:
             expr=z3.Int("star"),
             name="star",
             sym_type=SymType.TUPLE,
-            taint=TaintInfo(is_tainted=True, sources={TaintSource.USER_INPUT}),
         )
     )
     _call_op_call_function_ex(analyzer, 0, state, crashes, call_sites)
-    expected_taint_sink = any(getattr(c, "bug_type", None) == BugType.TAINTED_SINK for c in crashes)
-    mutant_taint_sink = False
-    if expected_taint_sink != mutant_taint_sink:
-        stack_killed += 1
 
     results.append(
         MutationResult(

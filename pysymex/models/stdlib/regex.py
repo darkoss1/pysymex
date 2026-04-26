@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -309,7 +309,7 @@ def _get_pattern_string(arg: object) -> str | None:
     if isinstance(arg, str):
         return arg
     if isinstance(arg, re.Pattern):
-        return arg.pattern
+        return arg.pattern  # type: ignore[reportUnknownMemberType, reportUnknownVariableType]  # re.Pattern.pattern type unknown in stub
     if isinstance(arg, SymbolicValue) and isinstance(arg.pattern, str):
         return arg.pattern
     if isinstance(arg, SymbolicString):

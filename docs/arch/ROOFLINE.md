@@ -1,4 +1,4 @@
-﻿# Roofline And Guardrails
+# Roofline And Guardrails
 
 This document defines performance guardrails for CHTD hardware acceleration and backend routing.
 
@@ -6,7 +6,7 @@ This document defines performance guardrails for CHTD hardware acceleration and 
 
 - Keep backend selection deterministic and safe under constrained VRAM.
 - Prevent regressions by tracking kernel-time trends and routing behavior.
-- Preserve semantic parity across GPU, CPU, and reference backends.
+- Preserve semantic parity across CaDiCaL, Z3, and reference backends.
 
 ## Routing Model
 
@@ -19,12 +19,12 @@ $$
 Where:
 
 - `compute_baseline` is derived from `constraint.num_states * instruction_count` and backend throughput estimate.
-- `transfer_estimate` applies to GPU only and uses the compiled constraint memory footprint.
+- `transfer_estimate` applies to PCIe latency models which have been deprecated in favor of local SAT.
 - historical EWMA latency is blended in to adapt to observed runtime behavior.
 
 ## Memory Guardrails
 
-For GPU routing, we apply a VRAM-aware max treewidth estimate using:
+For solver routing, we apply a complexity-aware max treewidth estimate using:
 
 - `estimate_max_treewidth(device_memory_mb)` from [pysymex/accel/memory.py](../../pysymex/accel/memory.py)
 - if a constraint exceeds this bound, dispatcher routes to CPU/reference fallback
@@ -52,4 +52,3 @@ The executor exposes CHTD phase telemetry under:
 - `guardrail_fallbacks` should stay near zero for expected benchmark workloads.
 - CHTD phase timers should be present and non-negative in benchmark output.
 - Median wall time regression threshold should remain under 15% for fixed benchmark matrix.
-

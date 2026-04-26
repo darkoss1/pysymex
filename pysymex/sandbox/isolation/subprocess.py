@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -215,39 +215,39 @@ class SubprocessBackend(IsolationBackend):
             max_fds = max(1, limits.max_file_descriptors)
 
             try:
-                resource.setrlimit(  # type: ignore[attr-defined]
+                resource.setrlimit(
                     resource.RLIMIT_AS,
-                    (mem_bytes, mem_bytes),  # type: ignore[attr-defined]
+                    (mem_bytes, mem_bytes),
                 )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
+            except (OSError, ValueError):
                 pass
             try:
-                resource.setrlimit(  # type: ignore[attr-defined]
-                    resource.RLIMIT_CPU,  # type: ignore[attr-defined]
+                resource.setrlimit(
+                    resource.RLIMIT_CPU,
                     (limits.cpu_seconds, limits.cpu_seconds),
                 )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
+            except (OSError, ValueError):
                 pass
             try:
-                resource.setrlimit(  # type: ignore[attr-defined]
-                    resource.RLIMIT_NPROC,  # type: ignore[attr-defined]
+                resource.setrlimit(
+                    resource.RLIMIT_NPROC,
                     (limits.max_processes, limits.max_processes),
                 )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
+            except (OSError, ValueError):
                 pass
             try:
-                resource.setrlimit(  # type: ignore[attr-defined]
+                resource.setrlimit(
                     resource.RLIMIT_FSIZE,
-                    (fsize, fsize),  # type: ignore[attr-defined]
+                    (fsize, fsize),
                 )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
+            except (OSError, ValueError):
                 pass
             try:
-                resource.setrlimit(  # type: ignore[attr-defined]
+                resource.setrlimit(
                     resource.RLIMIT_NOFILE,
-                    (max_fds, max_fds),  # type: ignore[attr-defined]
+                    (max_fds, max_fds),
                 )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
+            except (OSError, ValueError):
                 pass
 
         return _apply_limits

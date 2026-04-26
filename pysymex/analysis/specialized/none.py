@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -28,8 +28,6 @@ import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-
-import icontract
 
 
 class NoneCheckType(Enum):
@@ -90,7 +88,6 @@ class NoneCheckState:
         """Check if variable is confirmed None."""
         return var_name in self.confirmed_none
 
-    @icontract.ensure(lambda result: isinstance(result, NoneCheckState))
     def copy(self) -> NoneCheckState:
         """Create a copy of the state."""
         return NoneCheckState(
@@ -125,7 +122,6 @@ class NoneCheckAnalyzer:
         self._state = NoneCheckState()
         self._checks: list[NoneCheck] = []
 
-    @icontract.ensure(lambda result: isinstance(result, list))
     def analyze_source(self, source_code: str) -> list[NoneCheck]:
         """Extract None checks from source code.
 

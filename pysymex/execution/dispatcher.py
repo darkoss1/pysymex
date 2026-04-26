@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -47,38 +47,22 @@ class OpcodeResult:
     issues: list[Issue]
     terminal: bool = False
 
-    @staticmethod
-    def _collect_pending(state: VMState) -> list[Issue]:
-        issues = []
-        pending = state.pending_taint_issues
-        try:
-            from pysymex.analysis.detectors import Issue as RuntimeIssue
-
-            issues.extend(issue for issue in pending if isinstance(issue, RuntimeIssue))
-        except Exception:
-            issues.extend(issue for issue in pending if issue is not None)
-        state.pending_taint_issues = []
-        return issues
-
     @classmethod
     def continue_with(cls, state: VMState) -> OpcodeResult:
         """Continue execution with a single state."""
-        return cls(new_states=[state], issues=cls._collect_pending(state))
+        return cls(new_states=[state], issues=[])
 
     @classmethod
     def branch(cls, states: list[VMState], issues: list[Issue] | None = None) -> OpcodeResult:
         """Branch into multiple states."""
         all_issues = list(issues) if issues is not None else []
-        for s in states:
-            all_issues.extend(cls._collect_pending(s))
         return cls(new_states=states, issues=all_issues)
 
     @classmethod
     def fork(cls, states: list[VMState], issues: list[Issue | None]) -> OpcodeResult:
         """Fork into multiple states with specific issues for some states."""
-        all_issues = []
-        for state, issue in zip(states, issues, strict=False):
-            all_issues.extend(cls._collect_pending(state))
+        all_issues: list[Issue] = []
+        for issue in issues:
             if issue is not None:
                 all_issues.append(issue)
         return cls(new_states=states, issues=all_issues)
@@ -91,17 +75,12 @@ class OpcodeResult:
     @classmethod
     def with_issue(cls, state: VMState, issue: Issue) -> OpcodeResult:
         """Continue with an issue detected."""
-        issues = cls._collect_pending(state)
-        issues.append(issue)
-        return cls(new_states=[state], issues=issues)
+        return cls(new_states=[state], issues=[issue])
 
     @classmethod
     def error(cls, issue: Issue, state: VMState | None = None) -> OpcodeResult:
         """Terminate with an error."""
-        all_issues = [issue]
-        if state is not None:
-            all_issues.extend(cls._collect_pending(state))
-        return cls(new_states=[], issues=all_issues, terminal=True)
+        return cls(new_states=[], issues=[issue], terminal=True)
 
 
 OpcodeHandler = Callable[[dis.Instruction, "VMState", "OpcodeDispatcher"], OpcodeResult]
@@ -223,6 +202,11 @@ class OpcodeDispatcher:
     def register_global(cls, opcode: str, handler: OpcodeHandler) -> None:
         """Register a handler globally for all dispatcher instances."""
         cls._global_handlers[opcode] = handler
+
+    @classmethod
+    def clear_global_handlers(cls) -> None:
+        """Clear all globally registered opcode handlers."""
+        cls._global_handlers.clear()
 
     def instruction_count(self) -> int:
         """Get the number of instructions."""

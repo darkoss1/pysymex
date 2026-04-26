@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -446,7 +446,7 @@ class WatchModeRunner:
     def start(self) -> None:
         """Start watch mode."""
         self._running = True
-        print("ðŸ‘€ PySyMex Watch Mode")
+        print("ðŸ‘€ pysymex Watch Mode")
         print(f"   Watching: {', '.join(str(p) for p in self.paths)}")
         print("   Press Ctrl+C to stop\n")
         self._analyze_all()
@@ -582,5 +582,3 @@ __all__ = [
     "IncrementalAnalyzer",
     "WatchModeRunner",
 ]
-
-

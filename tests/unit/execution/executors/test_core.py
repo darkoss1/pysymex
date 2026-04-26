@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import dis
 import z3
@@ -35,8 +35,10 @@ def _simple(x: int) -> int:
         return x + 1
     return x - 1
 
+
 class TestSymbolicExecutor:
     """Test suite for pysymex.execution.executors.core.SymbolicExecutor."""
+
     def test_add_detector(self) -> None:
         """Test add_detector behavior."""
         executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
@@ -104,8 +106,10 @@ class TestSymbolicExecutor:
 
     def test_partition_chtd_unsat_uses_full_constraints(self) -> None:
         """CHTD UNSAT validation must not rely on known SAT prefix lengths."""
-        executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40, enable_chtd=True))
-        executor.solver = _IncrementalSensitiveSolver()  # type: ignore[assignment]
+        executor = SymbolicExecutor(
+            ExecutionConfig(max_paths=4, max_iterations=40, enable_chtd=True)
+        )
+        executor.solver = _IncrementalSensitiveSolver()
 
         x = z3.Int("x")
         parent = VMState(path_constraints=[x > 0], pc=1)
@@ -119,12 +123,14 @@ class TestSymbolicExecutor:
         assert unsat_states == [contradictory]
         assert sat_states == []
         assert executor._chtd_unsat_mismatches == 0
-        assert executor.solver.prefix_args == [None]  # type: ignore[attr-defined]
+        assert executor.solver.prefix_args == [None]
 
     def test_partition_chtd_unsat_splits_sat_and_unsat_correctly(self) -> None:
         """CHTD partitioning should preserve SAT candidates and prune only UNSAT ones."""
-        executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40, enable_chtd=True))
-        executor.solver = _IncrementalSensitiveSolver()  # type: ignore[assignment]
+        executor = SymbolicExecutor(
+            ExecutionConfig(max_paths=4, max_iterations=40, enable_chtd=True)
+        )
+        executor.solver = _IncrementalSensitiveSolver()
 
         x = z3.Int("x")
         y = z3.Int("y")

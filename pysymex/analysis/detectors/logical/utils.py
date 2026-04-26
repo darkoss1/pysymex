@@ -1,40 +1,63 @@
+# pysymex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 from typing import Iterable, cast
 import z3
+
 
 def get_variables(expr: z3.ExprRef, *, include_internal: bool = False) -> set[z3.ExprRef]:
     """Recursively extract all uninterpreted constants (variables) from an expression."""
     vars_set: set[z3.ExprRef] = set()
     worklist = [expr]
     seen = {expr.get_id()}
-    
+
     ignore_patterns = ["_is_", "cmp_mixed", "type_constraint", "iter_"]
-    
+
     while worklist:
         node = worklist.pop()
-        
+
         if z3.is_const(node) and node.decl().arity() == 0:
             if node.decl().kind() == z3.Z3_OP_UNINTERPRETED:
                 name = node.decl().name()
                 if include_internal or not any(pat in name for pat in ignore_patterns):
                     vars_set.add(node)
                 continue
-                
+
         for child in node.children():
             cid = child.get_id()
             if cid not in seen:
                 seen.add(cid)
                 worklist.append(child)
-                
+
     return vars_set
 
-def get_variables_for_core(core: Iterable[z3.ExprRef], *, include_internal: bool = False) -> set[z3.ExprRef]:
+
+def get_variables_for_core(
+    core: Iterable[z3.ExprRef], *, include_internal: bool = False
+) -> set[z3.ExprRef]:
     """Extract all variables from an unsat core."""
     vars_set: set[z3.ExprRef] = set()
     for c in core:
         vars_set.update(get_variables(c, include_internal=include_internal))
     return vars_set
+
 
 def count_variables(core: Iterable[z3.ExprRef]) -> int:
     """Return the number of unique variables in the unsat core."""
@@ -83,7 +106,11 @@ def _as_bool_value(expr: z3.ExprRef) -> bool | None:
 
 def _extract_symbol_name(expr: z3.ExprRef) -> str | None:
     node = _unwrap_numeric(expr)
-    if z3.is_const(node) and node.decl().arity() == 0 and node.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+    if (
+        z3.is_const(node)
+        and node.decl().arity() == 0
+        and node.decl().kind() == z3.Z3_OP_UNINTERPRETED
+    ):
         return str(node.decl().name())
     return None
 
@@ -296,11 +323,12 @@ def extract_bool_assignments(core: Iterable[z3.ExprRef]) -> dict[str, set[bool]]
             values.setdefault(rname, set()).add(lbool if op == "==" else (not lbool))
     return values
 
+
 def has_operator(expr: z3.ExprRef, target_kinds: set[int]) -> bool:
     """Check if the expression uses any of the specified Z3 operator kinds."""
     worklist = [expr]
     seen = {expr.get_id()}
-    
+
     while worklist:
         node = worklist.pop()
         if z3.is_app(node):
@@ -313,6 +341,7 @@ def has_operator(expr: z3.ExprRef, target_kinds: set[int]) -> bool:
                 worklist.append(child)
     return False
 
+
 def core_has_operator(core: Iterable[z3.ExprRef], target_kinds: set[int]) -> bool:
     """Check if the core uses any of the specified Z3 operator kinds."""
     for c in core:
@@ -320,12 +349,13 @@ def core_has_operator(core: Iterable[z3.ExprRef], target_kinds: set[int]) -> boo
             return True
     return False
 
+
 def count_operator(expr: z3.ExprRef, target_kinds: set[int]) -> int:
     """Count how many times specific operators appear in the expression."""
     count = 0
     worklist = [expr]
     seen = {expr.get_id()}
-    
+
     while worklist:
         node = worklist.pop()
         if z3.is_app(node):
@@ -338,9 +368,11 @@ def count_operator(expr: z3.ExprRef, target_kinds: set[int]) -> int:
                 worklist.append(child)
     return count
 
+
 def core_count_operator(core: Iterable[z3.ExprRef], target_kinds: set[int]) -> int:
     """Count occurrences of operators across the core."""
     return sum(count_operator(c, target_kinds) for c in core)
+
 
 def relax_to_real(expr: z3.ExprRef, var_map: dict[z3.ExprRef, z3.ExprRef]) -> z3.ExprRef:
     """Translate an integer expression to a real expression to test for arithmetic impossibility."""
@@ -354,33 +386,47 @@ def relax_to_real(expr: z3.ExprRef, var_map: dict[z3.ExprRef, z3.ExprRef]) -> z3
         elif expr.sort() == z3.IntSort():
             return z3.RealVal(expr.as_long())
         return expr
-        
+
     if z3.is_app(expr):
         decl = expr.decl()
         children = [relax_to_real(c, var_map) for c in expr.children()]
-        
-        # Mapping integer operators to real operators
+
         kind = decl.kind()
-        if kind == z3.Z3_OP_ADD: return z3.Sum(*children)
-        if kind == z3.Z3_OP_MUL: return z3.Product(*children)
-        if kind == z3.Z3_OP_SUB: return children[0] - children[1] if len(children) == 2 else -children[0]
-        if kind == z3.Z3_OP_DIV or kind == z3.Z3_OP_IDIV: return children[0] / children[1]
-        if kind == z3.Z3_OP_EQ: return children[0] == children[1]
-        if kind == z3.Z3_OP_DISTINCT: return children[0] != children[1]
-        if kind == z3.Z3_OP_LT: return children[0] < children[1]
-        if kind == z3.Z3_OP_LE: return children[0] <= children[1]
-        if kind == z3.Z3_OP_GT: return children[0] > children[1]
-        if kind == z3.Z3_OP_GE: return children[0] >= children[1]
-        if kind == z3.Z3_OP_AND: return z3.And(*children)
-        if kind == z3.Z3_OP_OR: return z3.Or(*children)
-        if kind == z3.Z3_OP_NOT: return z3.Not(children[0])
-        if kind == z3.Z3_OP_IMPLIES: return z3.Implies(children[0], children[1])
-        if kind == z3.Z3_OP_ITE: return z3.If(children[0], children[1], children[2])
-        
-        # If it contains modulo or something we can't cleanly relax, return original
+        if kind == z3.Z3_OP_ADD:
+            return z3.Sum(*children)
+        if kind == z3.Z3_OP_MUL:
+            return z3.Product(*children)
+        if kind == z3.Z3_OP_SUB:
+            return children[0] - children[1] if len(children) == 2 else -children[0]
+        if kind == z3.Z3_OP_DIV or kind == z3.Z3_OP_IDIV:
+            return children[0] / children[1]
+        if kind == z3.Z3_OP_EQ:
+            return children[0] == children[1]
+        if kind == z3.Z3_OP_DISTINCT:
+            return children[0] != children[1]
+        if kind == z3.Z3_OP_LT:
+            return children[0] < children[1]
+        if kind == z3.Z3_OP_LE:
+            return children[0] <= children[1]
+        if kind == z3.Z3_OP_GT:
+            return children[0] > children[1]
+        if kind == z3.Z3_OP_GE:
+            return children[0] >= children[1]
+        if kind == z3.Z3_OP_AND:
+            return z3.And(*children)
+        if kind == z3.Z3_OP_OR:
+            return z3.Or(*children)
+        if kind == z3.Z3_OP_NOT:
+            return z3.Not(children[0])
+        if kind == z3.Z3_OP_IMPLIES:
+            return z3.Implies(children[0], children[1])
+        if kind == z3.Z3_OP_ITE:
+            return z3.If(children[0], children[1], children[2])
+
         return expr
-        
+
     return expr
+
 
 def is_sat_over_reals(core: list[z3.BoolRef]) -> bool:
     """Check if the core is SAT when integers are relaxed to reals.
@@ -393,8 +439,9 @@ def is_sat_over_reals(core: list[z3.BoolRef]) -> bool:
             rc = relax_to_real(c, var_map)
             solver.add(cast(z3.BoolRef, rc))
         except Exception:
-            return False # If relaxation fails, we assume it's not a pure arithmetic impossibility
+            return False
     return solver.check() == z3.sat
+
 
 def get_variable_names(core: Iterable[z3.ExprRef]) -> set[str]:
     """Get the string names of all variables in the core."""
@@ -414,10 +461,11 @@ def expr_contains_variable(expr: z3.ExprRef, variable_name: str) -> bool:
             return True
     return False
 
+
 def extract_constants(expr: z3.ExprRef) -> list[int]:
     """Extract all integer constants from an expression."""
-    consts = []
-    worklist = [expr]
+    consts: list[int] = []
+    worklist: list[z3.ExprRef] = [expr]
     while worklist:
         node = worklist.pop()
         if z3.is_int_value(node):

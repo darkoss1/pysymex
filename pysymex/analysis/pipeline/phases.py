@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -28,7 +28,7 @@ Phases (executed in order):
 4. BugDetectionPhase — bug detection with context
 5. DeadCodePhase — dead code detection
 6. ResourcePhase — resource leak detection
-7. SecurityPhase — taint + string security analysis
+7. SecurityPhase — string security analysis
 8. ExceptionPhase — exception handling quality
 """
 
@@ -49,7 +49,6 @@ from ..specialized.none import is_none_check_in_message
 from ..patterns import FunctionPatternInfo, PatternAnalyzer, PatternKind
 from ..resources.analysis import ResourceAnalyzer
 from ..specialized.strings import StringAnalyzer
-from ..taint.checker import TaintChecker
 from ..type_inference import TypeAnalyzer, TypeEnvironment
 from .types import (
     AnalysisContext,
@@ -617,7 +616,7 @@ def extract_var_name_from_message(message: str) -> str:
     return ""
 
 
-def group_issues(  # type: ignore[reportUnusedFunction]
+def group_issues(
     issues: list[ScanIssue],
 ) -> dict[tuple[str, str, str], list[ScanIssue]]:
     """Group issues by (file, function_name, kind) for report grouping."""
@@ -707,16 +706,15 @@ class ResourcePhase(AnalysisPhase):
 
 
 class SecurityPhase(AnalysisPhase):
-    """Phase 7: Security analysis (taint + string).
+    """Phase 7: Security analysis (string).
 
-    Combines :class:`TaintChecker` and :class:`StringAnalyzer` to detect
+    Uses :class:`StringAnalyzer` to detect
     injection, XSS, path-traversal, and related vulnerabilities.
     """
 
     name = "security"
 
     def __init__(self) -> None:
-        self.taint_checker = TaintChecker()
         self.string_analyzer = StringAnalyzer()
 
     def analyze(
@@ -726,33 +724,6 @@ class SecurityPhase(AnalysisPhase):
     ) -> list[ScanIssue]:
         """Run security analysis."""
         issues: list[ScanIssue] = []
-        if config.enable_taint_analysis:
-            taint_issues = self.taint_checker.check_function(ctx.code)
-            for ti in taint_issues:
-                taint_line = getattr(ti, "sink_line", None) or getattr(ti, "line", 0)
-                taint_kind = "TAINT"
-                if hasattr(ti, "sink") and hasattr(ti.sink, "kind"):
-                    sink_kind = ti.sink.kind
-                    taint_kind = str(getattr(sink_kind, "name", sink_kind))
-                elif hasattr(ti, "kind"):
-                    taint_kind = str(getattr(ti.kind, "name", ti.kind))
-
-                taint_severity = "error"
-                if hasattr(ti, "sink") and hasattr(ti.sink, "severity"):
-                    taint_severity = str(getattr(ti.sink, "severity", "error"))
-                issues.append(
-                    ScanIssue(
-                        category=IssueCategory.SECURITY,
-                        kind=taint_kind,
-                        severity=taint_severity,
-                        file=ctx.file_path,
-                        line=taint_line,
-                        message=str(ti),
-                        confidence=0.9,
-                        function_name=ctx.code.co_name,
-                        detected_by=["taint_analysis"],
-                    )
-                )
         if config.enable_string_analysis:
             string_issues = self.string_analyzer.analyze_source(ctx.source, ctx.file_path)
             for si in string_issues:

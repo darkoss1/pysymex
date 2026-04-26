@@ -7,7 +7,9 @@ from types import ModuleType
 
 
 def _load_dataclasses_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "dataclasses.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "dataclasses.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_dataclasses", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib dataclasses models module")
@@ -100,3 +102,17 @@ def test_dataclass_fields_model() -> None:
 def test_get_dataclasses_model() -> None:
     assert dc_models.get_dataclasses_model("dataclass") is not None
     assert dc_models.get_dataclasses_model("missing") is None
+
+
+class TestDataclassModelHash:
+    """Test suite for dataclass_model __hash__ method."""
+
+    def test_hash_returns_zero_when_unsafe_hash(self) -> None:
+        """Test that __hash__ returns 0 when unsafe_hash=True is used."""
+
+        @dc_models.dataclass_model(unsafe_hash=True)
+        class HashableClass:
+            pass
+
+        instance = HashableClass()
+        assert hash(instance) == 0

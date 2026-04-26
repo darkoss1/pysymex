@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,10 +16,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU CHTD Integration Layer.
+"""SAT CHTD Integration Layer.
 
 Provides the high-level interface between CHTD's bag evaluation needs
-and the GPU backend infrastructure. Handles GPU availability detection,
+and the SAT backend infrastructure. Handles SAT availability detection,
 automatic fallback, and efficient batch evaluation.
 """
 
@@ -37,12 +37,12 @@ if TYPE_CHECKING:
     import z3
 
     from pysymex.accel.backends import BackendInfo
-    from pysymex.accel.dispatcher import GPUDispatcher
+    from pysymex.accel.dispatcher import TieredDispatcher
 
 __all__ = [
-    "GPUBagEvaluator",
+    "SatBagEvaluator",
     "get_bag_evaluator",
-    "is_gpu_available",
+    "is_sat_available",
 ]
 
 logger = logging.getLogger(__name__)
@@ -54,20 +54,20 @@ def _unpackbits_little(bitmap: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
     return bits.reshape(-1, 8)[:, ::-1].reshape(-1)
 
 
-_gpu_available: bool | None = None
-_gpu_module: tuple[types.ModuleType, types.ModuleType] | None = None
+_sat_available: bool | None = None
+_sat_module: tuple[types.ModuleType, types.ModuleType] | None = None
 
 
-def _init_gpu() -> bool:
-    """Initialize GPU subsystem and check availability.
+def _init_sat() -> bool:
+    """Initialize SAT subsystem and check availability.
 
     Returns:
-        True if GPU is available and initialized
+        True if SAT is available and initialized
     """
-    global _gpu_available, _gpu_module
+    global _sat_available, _sat_module
 
-    if _gpu_available is not None:
-        return _gpu_available
+    if _sat_available is not None:
+        return _sat_available
 
     try:
         from pysymex.accel import bytecode, dispatcher
@@ -75,86 +75,86 @@ def _init_gpu() -> bool:
         disp = dispatcher.get_dispatcher()
         info = disp.get_backend_info()
 
-        _gpu_module = (bytecode, dispatcher)
-        _gpu_available = True
+        _sat_module = (bytecode, dispatcher)
+        _sat_available = True
 
-        logger.info(f"GPU acceleration available: {info.name}")
+        logger.info(f"SAT acceleration available: {info.name}")
         return True
 
     except ImportError as e:
-        _gpu_available = False
-        logger.info(f"GPU acceleration not available (import error): {e}")
+        _sat_available = False
+        logger.info(f"SAT acceleration not available (import error): {e}")
         return False
 
     except Exception as e:
-        _gpu_available = False
-        logger.info(f"GPU acceleration not available: {e}")
+        _sat_available = False
+        logger.info(f"SAT acceleration not available: {e}")
         return False
 
 
-def is_gpu_available() -> bool:
-    """Check if GPU acceleration is available.
+def is_sat_available() -> bool:
+    """Check if SAT acceleration is available.
 
     Returns:
-        True if GPU backends are available
+        True if SAT backends are available
     """
-    return _init_gpu()
+    return _init_sat()
 
 
-class GPUBagEvaluator:
-    """High-level GPU evaluator for CHTD bag constraints.
+class SatBagEvaluator:
+    """High-level SAT evaluator for CHTD bag constraints.
 
-    Provides automatic GPU/CPU selection based on problem size
+    Provides automatic SAT/CPU selection based on problem size
     and hardware capabilities.
 
     Attributes:
-        DEFAULT_GPU_THRESHOLD: Minimum variables for GPU use (12)
-        gpu_threshold: Current threshold for this instance
-        max_gpu_treewidth: Maximum supported treewidth
+        DEFAULT_SAT_THRESHOLD: Minimum variables for SAT use (12)
+        sat_threshold: Current threshold for this instance
+        max_sat_treewidth: Maximum supported treewidth
     """
 
-    DEFAULT_GPU_THRESHOLD: int = 12
+    DEFAULT_SAT_THRESHOLD: int = 12
 
     def __init__(
         self,
-        gpu_threshold: int = DEFAULT_GPU_THRESHOLD,
+        sat_threshold: int = DEFAULT_SAT_THRESHOLD,
         warmup: bool = True,
     ) -> None:
-        """Initialize GPU bag evaluator.
+        """Initialize SAT bag evaluator.
 
         Args:
-            gpu_threshold: Minimum variables to trigger GPU use
-            warmup: Whether to warmup GPU JIT compilation
+            sat_threshold: Minimum variables to trigger SAT use
+            warmup: Whether to warmup SAT JIT compilation
         """
-        self.gpu_threshold = gpu_threshold
-        self._gpu_ready = _init_gpu()
-        self._dispatcher: GPUDispatcher | None = None
+        self.sat_threshold = sat_threshold
+        self._sat_ready = _init_sat()
+        self._dispatcher: TieredDispatcher | None = None
         self._backend_info: BackendInfo | None = None
-        self.max_gpu_treewidth: int = 0
+        self.max_sat_treewidth: int = 0
 
-        if self._gpu_ready and _gpu_module is not None:
+        if self._sat_ready and _sat_module is not None:
             from pysymex.accel import dispatcher as disp_module
 
             self._dispatcher = disp_module.get_dispatcher()
             self._backend_info = self._dispatcher.get_backend_info()
-            self.max_gpu_treewidth = self._backend_info.max_treewidth
+            self.max_sat_treewidth = self._backend_info.max_treewidth
 
             if warmup:
                 self._warmup()
 
     def _warmup(self) -> None:
-        """Warmup GPU JIT compilation."""
+        """Warmup SAT JIT compilation."""
         try:
             from pysymex.accel import dispatcher
 
             dispatcher.warmup()
         except Exception as e:
-            logger.debug(f"GPU warmup failed: {e}")
+            logger.debug(f"SAT warmup failed: {e}")
 
     @property
     def is_available(self) -> bool:
-        """Check if GPU is ready for use."""
-        return self._gpu_ready
+        """Check if SAT is ready for use."""
+        return self._sat_ready
 
     def get_backend_info(self) -> dict[str, bool | str | int]:
         """Get information about current backend.
@@ -162,7 +162,7 @@ class GPUBagEvaluator:
         Returns:
             Dict with backend info or just available=False
         """
-        if not self._gpu_ready or self._backend_info is None:
+        if not self._sat_ready or self._backend_info is None:
             return {"available": False}
 
         return {
@@ -173,22 +173,22 @@ class GPUBagEvaluator:
             "supports_async": self._backend_info.supports_async,
         }
 
-    def should_use_gpu(self, num_variables: int) -> bool:
-        """Determine if GPU should be used for given variable count.
+    def should_use_sat(self, num_variables: int) -> bool:
+        """Determine if SAT should be used for given variable count.
 
         Args:
             num_variables: Number of Boolean variables
 
         Returns:
-            True if GPU should be used
+            True if SAT should be used
         """
-        if not self._gpu_ready:
+        if not self._sat_ready:
             return False
 
-        if num_variables < self.gpu_threshold:
+        if num_variables < self.sat_threshold:
             return False
 
-        if num_variables > self.max_gpu_treewidth:
+        if num_variables > self.max_sat_treewidth:
             return False
 
         return True
@@ -198,24 +198,24 @@ class GPUBagEvaluator:
         constraints: Sequence[z3.ExprRef],
         variables: Sequence[str],
     ) -> npt.NDArray[np.uint8] | None:
-        """Evaluate bag constraints using GPU.
+        """Evaluate bag constraints using SAT.
 
         Args:
             constraints: Z3 constraint expressions
             variables: Variable names in order
 
         Returns:
-            Packed bitmap of satisfying assignments, or None if GPU
+            Packed bitmap of satisfying assignments, or None if SAT
             should not be used
         """
         import z3
 
         w = len(variables)
 
-        if not self.should_use_gpu(w):
+        if not self.should_use_sat(w):
             return None
 
-        if _gpu_module is None:
+        if _sat_module is None:
             return None
 
         from pysymex.accel import bytecode as bytecode_mod
@@ -236,14 +236,14 @@ class GPUBagEvaluator:
             result = self._dispatcher.evaluate_bag(compiled)
 
             logger.debug(
-                f"GPU evaluated bag w={w}: {result.count_satisfying()} SAT "
+                f"SAT evaluated bag w={w}: {result.count_satisfying()} SAT "
                 f"in {result.kernel_time_ms:.2f}ms via {result.backend_used.name}"
             )
 
             return result.bitmap
 
         except Exception as e:
-            logger.warning(f"GPU evaluation failed, falling back to CPU: {e}")
+            logger.warning(f"SAT evaluation failed, falling back to CPU: {e}")
             return None
 
     def evaluate_bag_with_timeout(
@@ -268,7 +268,7 @@ class GPUBagEvaluator:
 
         if estimated_ms > timeout_ms:
             logger.debug(
-                f"Skipping GPU for w={w}: estimated {estimated_ms:.0f}ms "
+                f"Skipping SAT for w={w}: estimated {estimated_ms:.0f}ms "
                 f"exceeds timeout {timeout_ms:.0f}ms"
             )
             return None
@@ -276,7 +276,7 @@ class GPUBagEvaluator:
         return self.evaluate_bag(constraints, variables)
 
     def _estimate_execution_time(self, num_vars: int, num_constraints: int) -> float:
-        """Estimate GPU execution time based on problem size.
+        """Estimate SAT execution time based on problem size.
 
         Args:
             num_vars: Number of variables
@@ -285,12 +285,12 @@ class GPUBagEvaluator:
         Returns:
             Estimated milliseconds
         """
-        if not self._gpu_ready or self._backend_info is None:
+        if not self._sat_ready or self._backend_info is None:
             return float("inf")
 
         num_states = 1 << num_vars
 
-        if self._backend_info.backend_type.name == "GPU":
+        if self._backend_info.backend_type.name == "SAT":
             a, b, c = 1e-10, 1e-7, 0.1
         else:
             a, b, c = 5e-10, 5e-7, 0.5
@@ -347,23 +347,23 @@ class GPUBagEvaluator:
         return list(self.iter_satisfying(bitmap, variables))
 
 
-_evaluator: GPUBagEvaluator | None = None
+_evaluator: SatBagEvaluator | None = None
 
 
 def get_bag_evaluator(
-    gpu_threshold: int = GPUBagEvaluator.DEFAULT_GPU_THRESHOLD,
-) -> GPUBagEvaluator:
-    """Get or create global GPU bag evaluator.
+    sat_threshold: int = SatBagEvaluator.DEFAULT_SAT_THRESHOLD,
+) -> SatBagEvaluator:
+    """Get or create global SAT bag evaluator.
 
     Args:
-        gpu_threshold: Minimum variables for GPU use
+        sat_threshold: Minimum variables for SAT use
 
     Returns:
         Singleton evaluator instance
     """
     global _evaluator
     if _evaluator is None:
-        _evaluator = GPUBagEvaluator(gpu_threshold=gpu_threshold)
+        _evaluator = SatBagEvaluator(sat_threshold=sat_threshold)
     return _evaluator
 
 
@@ -371,4 +371,3 @@ def reset() -> None:
     """Reset global evaluator (for testing)."""
     global _evaluator
     _evaluator = None
-

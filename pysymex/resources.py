@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,6 +36,8 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
+
+from pysymex.stats import EventType, emit
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,7 @@ class ResourceSnapshot:
         iterations: Total bytecode steps executed.
         elapsed_time: Wall-clock time in seconds.
         memory_mb: Process RSS in megabytes (0 if unavailable).
+        avg_memory_mb: Average RSS across the analysis lifetime.
         constraint_count: Cumulative constraints added.
         solver_calls: Total Z3 solver invocations.
         cache_hits: Solver cache hits.
@@ -121,6 +124,7 @@ class ResourceSnapshot:
     iterations: int = 0
     elapsed_time: float = 0.0
     memory_mb: float = 0.0
+    avg_memory_mb: float = 0.0
     constraint_count: int = 0
     solver_calls: int = 0
     cache_hits: int = 0
@@ -135,6 +139,7 @@ class ResourceSnapshot:
             "iterations": self.iterations,
             "elapsed_time": self.elapsed_time,
             "memory_mb": self.memory_mb,
+            "avg_memory_mb": self.avg_memory_mb,
             "constraint_count": self.constraint_count,
             "solver_calls": self.solver_calls,
             "cache_hits": self.cache_hits,
@@ -213,14 +218,16 @@ class ResourceTracker:
         self._degraded: bool = False
         self._degradation_reason: str | None = None
         self._memory_baseline_mb: float = 0.0
+        self._memory_sum_mb: float = 0.0
+        self._memory_samples: int = 0
         self._lock = threading.RLock()
 
     def start(self) -> None:
         """Start resource tracking."""
         self._start_time = time.perf_counter()
         self._reset_counters()
-        # Use per-analysis memory growth rather than process lifetime RSS.
         self._memory_baseline_mb = self.memory_usage_mb
+        self._record_memory_sample()
 
     def reset(self) -> None:
         """Reset for a new analysis unit while keeping limits."""
@@ -241,10 +248,15 @@ class ResourceTracker:
         self._warnings_issued.clear()
         self._degraded = False
         self._degradation_reason = None
+        self._memory_sum_mb = 0.0
+        self._memory_samples = 0
 
     def snapshot(self) -> ResourceSnapshot:
         """Get current resource usage snapshot."""
         with self._lock:
+            avg_mem = (
+                self._memory_sum_mb / self._memory_samples if self._memory_samples > 0 else 0.0
+            )
             return ResourceSnapshot(
                 paths_explored=self._paths_explored,
                 current_depth=self._current_depth,
@@ -252,11 +264,20 @@ class ResourceTracker:
                 iterations=self._iterations,
                 elapsed_time=self.elapsed_time,
                 memory_mb=self.memory_usage_mb,
+                avg_memory_mb=avg_mem,
                 constraint_count=self._constraint_count,
                 solver_calls=self._solver_calls,
                 cache_hits=self._cache_hits,
                 cache_misses=self._cache_misses,
             )
+
+    def _record_memory_sample(self) -> None:
+        """Record a memory usage sample for average calculation."""
+        mem = self.memory_usage_mb
+        if mem > 0:
+            with self._lock:
+                self._memory_sum_mb += mem
+                self._memory_samples += 1
 
     @property
     def elapsed_time(self) -> float:
@@ -269,8 +290,6 @@ class ResourceTracker:
     def memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
         try:
-            # Prefer current RSS to avoid poisoning long-lived test workers.
-            # ``ru_maxrss`` is a peak metric on Linux and never decreases.
             try:
                 import importlib
 
@@ -281,7 +300,6 @@ class ResourceTracker:
                 pass
 
             if sys.platform != "win32":
-                # Fallback for environments without psutil.
                 try:
                     with open("/proc/self/statm", "r", encoding="ascii") as f:
                         parts = f.read().strip().split()
@@ -386,6 +404,7 @@ class ResourceTracker:
         if memory_mb <= 0:
             return
 
+        self._record_memory_sample()
         baseline_mb = self._memory_baseline_mb if self._memory_baseline_mb > 0 else memory_mb
         growth_mb = max(0.0, memory_mb - baseline_mb)
 
@@ -425,6 +444,7 @@ class ResourceTracker:
         Lock-free for the common single-threaded case.
         """
         self._paths_explored += 1
+        emit(EventType.PATH_EXPLORED, 1.0)
         return self._paths_explored
 
     def record_iteration(self) -> int:

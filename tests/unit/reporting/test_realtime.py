@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from pysymex.reporting.realtime import GlobalState, RealtimeVisualizationPlugin, start_realtime_visualization
+from pysymex.reporting.realtime import (
+    GlobalState,
+    RealtimeVisualizationPlugin,
+    start_realtime_visualization,
+)
 
 
 class _Engine:
@@ -36,4 +40,3 @@ def test_start_realtime_visualization_returns_plugin_and_registers_hook() -> Non
     plugin = start_realtime_visualization(cast("Any", engine))
     assert isinstance(plugin, RealtimeVisualizationPlugin)
     assert "pre_step" in engine.hooks
-

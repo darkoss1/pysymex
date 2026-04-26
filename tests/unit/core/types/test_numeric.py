@@ -36,10 +36,6 @@ class TestSymbolicBool:
         b = mod.SymbolicBool.concrete(True)
         assert z3.is_true(b.z3_bool)
 
-    def test_as_unified(self) -> None:
-        b = mod.SymbolicBool.symbolic("b")
-        assert z3.is_bool(b.as_unified().is_bool)
-
 
 class TestSymbolicInt:
     def test_type_tag(self) -> None:
@@ -82,10 +78,6 @@ class TestSymbolicInt:
         i = mod.SymbolicInt.concrete(7)
         assert z3.is_int_value(i.z3_int)
 
-    def test_as_unified(self) -> None:
-        i = mod.SymbolicInt.symbolic("i")
-        assert z3.is_bool(i.as_unified().is_int)
-
 
 class TestSymbolicFloat:
     def test_type_tag(self) -> None:
@@ -123,7 +115,3 @@ class TestSymbolicFloat:
     def test_concrete(self) -> None:
         f = mod.SymbolicFloat.concrete(1.5)
         assert z3.is_rational_value(f.z3_real)
-
-    def test_as_unified(self) -> None:
-        f = mod.SymbolicFloat.symbolic("f")
-        assert z3.is_bool(f.as_unified().is_float)

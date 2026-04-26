@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .errors import (
     SandboxError,
@@ -370,7 +370,7 @@ class SandboxRunner:
         suspicious = _pre_screen_code(code)
         if suspicious:
             return SandboxResult(
-                status=_import_status().SECURITY_VIOLATION,
+                status=cast("SandboxStatus", _import_status().SECURITY_VIOLATION),  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # SECURITY_VIOLATION exists in enum
                 error_message=(
                     f"Code rejected by pre-screening: suspicious patterns {suspicious!r}"
                 ),
@@ -465,19 +465,10 @@ def _check_windows_job_support() -> bool:
         return False
 
 
-def _check_macos_sandbox_support() -> bool:  # type: ignore[unused-def]
-    """Check if macOS native sandboxing support is available.
-
-    Current implementation is conservative and returns False until a
-    dedicated macOS backend is implemented.
-    """
-    return False
-
-
 def _check_wasm_support() -> bool:
     """Check if wasmtime is available."""
     try:
-        import wasmtime  # type: ignore[import-untyped]  # noqa: F401
+        import wasmtime  # type: ignore[reportUnusedImport]  # Import to check availability
 
         return True
     except ImportError:
@@ -488,4 +479,3 @@ __all__ = [
     "SandboxRunner",
     "SecureSandbox",
 ]
-

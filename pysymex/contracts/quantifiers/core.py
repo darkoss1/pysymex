@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -170,6 +170,13 @@ class ConditionTranslator(ast.NodeVisitor):
     def __init__(self, context: dict[str, z3.ExprRef]) -> None:
         self.context = context
 
+    def _visit_expr(self, node: ast.AST) -> z3.ExprRef:
+        """Visit an AST node and guarantee a Z3 expression result."""
+        visited = self.visit(node)
+        if isinstance(visited, z3.ExprRef):
+            return visited
+        raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
     def visit_Compare(self, node: ast.Compare) -> z3.BoolRef:
         """Handle comparisons."""
         left = self.visit(node.left)
@@ -293,14 +300,19 @@ class ConditionTranslator(ast.NodeVisitor):
                 if isinstance(arg, ast.Name):
                     return z3.Int(f"len_{arg.id}")
             if func_name == "abs" and len(node.args) == 1:
-                arg = self.visit(node.args[0])
-                return z3.If(arg >= 0, arg, -arg)
+                arg = self._visit_expr(node.args[0])
+                if isinstance(arg, z3.ArithRef):
+                    return z3.If(arg >= 0, arg, -arg)
             if func_name == "min" and len(node.args) == 2:
-                a, b = [self.visit(arg) for arg in node.args]
-                return z3.If(a <= b, a, b)
+                a = self._visit_expr(node.args[0])
+                b = self._visit_expr(node.args[1])
+                if isinstance(a, z3.ArithRef) and isinstance(b, z3.ArithRef):
+                    return z3.If(a <= b, a, b)
             if func_name == "max" and len(node.args) == 2:
-                a, b = [self.visit(arg) for arg in node.args]
-                return z3.If(a >= b, a, b)
+                a = self._visit_expr(node.args[0])
+                b = self._visit_expr(node.args[1])
+                if isinstance(a, z3.ArithRef) and isinstance(b, z3.ArithRef):
+                    return z3.If(a >= b, a, b)
         return z3.Int(f"call_{next_address()}")
 
     def generic_visit(self, node: ast.AST) -> z3.ExprRef:
@@ -663,4 +675,3 @@ __all__ = [
     "parse_condition_to_z3",
     "replace_quantifiers_with_z3",
 ]
-

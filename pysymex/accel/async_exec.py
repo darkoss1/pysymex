@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,18 +16,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Asynchronous GPU Execution with ThreadPoolExecutor.
+"""Asynchronous SAT Execution with ThreadPoolExecutor.
 
 Provides concurrent evaluation of multiple constraints using a thread pool.
-Each thread uses a dedicated CUDA stream, but synchronizes immediately after
-kernel launch (no true GPU pipelining).
+Each thread uses a dedicated SAT stream, but synchronizes immediately after
+kernel launch (no true pipelining).
 
 Concurrency model:
-- Multiple ThreadPoolExecutor threads can submit work to different CUDA streams
-- Each submission blocks within its thread until GPU kernel completes
+- Multiple ThreadPoolExecutor threads can submit work to different SAT streams
+- Each submission blocks within its thread until SAT kernel completes
 - Overall throughput improves when evaluating multiple bags concurrently
 
-Note: True CUDA stream pipelining (overlapping transfers and kernels without
+Note: True SAT stream pipelining (overlapping transfers and kernels without
 synchronization) is planned for a future release.
 """
 
@@ -37,7 +37,7 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -45,12 +45,10 @@ import numpy.typing as npt
 from pysymex.accel.backends import BackendError
 
 if TYPE_CHECKING:
-    from numba.cuda.cudadrv.driver import Stream
-
     from pysymex.accel.bytecode import CompiledConstraint
 
 __all__ = [
-    "AsyncGPUExecutor",
+    "AsyncSatExecutor",
     "AsyncHandle",
     "PipelinedEvaluator",
     "StreamPool",
@@ -59,13 +57,13 @@ __all__ = [
 
 @dataclass
 class AsyncHandle:
-    """Handle for asynchronous GPU evaluation.
+    """Handle for asynchronous SAT evaluation.
 
     Use wait() to block until completion and retrieve results.
 
     Attributes:
         future: Underlying Future object
-        stream_id: CUDA stream used
+        stream_id: SAT stream used
         constraint_hash: Hash of evaluated constraint
     """
 
@@ -105,9 +103,9 @@ class AsyncHandle:
 
 
 class StreamPool:
-    """Pool of CUDA streams for concurrent kernel execution.
+    """Pool of SAT streams for concurrent kernel execution.
 
-    Manages a fixed pool of CUDA streams, allocating them in round-robin
+    Manages a fixed pool of SAT streams, allocating them in round-robin
     fashion to enable pipeline parallelism.
 
     Attributes:
@@ -118,39 +116,39 @@ class StreamPool:
         """Initialize stream pool.
 
         Args:
-            num_streams: Number of CUDA streams to create
+            num_streams: Number of SAT streams to create
         """
         self._num_streams = num_streams
-        self._streams: list[Stream] = []
+        self._streams: list[int] = []
         self._current_idx = 0
         self._lock = threading.Lock()
         self._initialized = False
 
     def _ensure_initialized(self) -> None:
-        """Lazy initialization of CUDA streams.
+        """Lazy initialization of SAT streams.
 
         Raises:
-            BackendError: If CUDA is not available
+            BackendError: If SAT is not available
         """
         if self._initialized:
             return
 
         try:
-            from numba import cuda
+            from pysymex.accel.backends import sat
 
-            if not cuda.is_available():
-                raise BackendError("CUDA not available")
+            if not sat.is_available():
+                raise BackendError("SAT not available")
 
-            self._streams = cast("list[Stream]", [cuda.stream() for _ in range(self._num_streams)])
+            self._streams = list(range(self._num_streams))
             self._initialized = True
         except ImportError:
             raise BackendError("Numba not installed (pip install numba)") from None
 
-    def get_stream(self) -> tuple[Stream, int]:
+    def get_stream(self) -> tuple[int, int]:
         """Get next available stream from pool.
 
         Returns:
-            Tuple of (Stream, stream_id)
+            Tuple of (stream_token, stream_id)
         """
         self._ensure_initialized()
 
@@ -165,29 +163,26 @@ class StreamPool:
         if not self._initialized:
             return
 
-        for stream in self._streams:
-            stream.synchronize()
-
     @property
     def num_streams(self) -> int:
         return self._num_streams
 
 
-class AsyncGPUExecutor:
-    """Asynchronous executor for GPU constraint evaluation.
+class AsyncSatExecutor:
+    """Asynchronous executor for SAT constraint evaluation.
 
-    Submits constraints to multiple CUDA streams in parallel,
+    Submits constraints to multiple SAT streams in parallel,
     enabling concurrent data transfers and kernel execution.
 
     Attributes:
-        num_streams: Number of CUDA streams in pool
+        num_streams: Number of SAT streams in pool
     """
 
     def __init__(self, num_streams: int = 4, max_workers: int = 4) -> None:
         """Initialize async executor.
 
         Args:
-            num_streams: Number of CUDA streams
+            num_streams: Number of SAT streams
             max_workers: Thread pool size for async operations
         """
         self._stream_pool = StreamPool(num_streams)
@@ -205,15 +200,13 @@ class AsyncGPUExecutor:
         Returns:
             AsyncHandle for result retrieval
         """
-        _stream, stream_id = self._stream_pool.get_stream()
+        _stream_token, stream_id = self._stream_pool.get_stream()
 
         def evaluate_on_stream() -> npt.NDArray[np.uint8]:
-            from pysymex.accel.backends import gpu as gpu_backend
+            from pysymex.accel.backends import sat as sat_backend
 
-            d_output, used_stream = gpu_backend.evaluate_bag_async(constraint, None)
-            used_stream.synchronize()
-            result = cast("npt.NDArray[np.uint8]", d_output.get().view(np.uint8))
-            return result
+            result = sat_backend.evaluate_bag(constraint)
+            return result.view(np.uint8)
 
         future = self._executor.submit(evaluate_on_stream)
 
@@ -267,7 +260,7 @@ class PipelinedEvaluator:
     """Pipelined evaluator for sequential constraint batches.
 
     Overlaps evaluation of multiple constraints by maintaining
-    a window of in-flight operations across CUDA streams.
+    a window of in-flight operations across SAT streams.
 
     Attributes:
         prefetch: Number of constraints to keep in-flight
@@ -281,10 +274,10 @@ class PipelinedEvaluator:
         """Initialize pipelined evaluator.
 
         Args:
-            num_streams: Number of CUDA streams for parallelism
+            num_streams: Number of SAT streams for parallelism
             prefetch: Pipeline depth (constraints in-flight)
         """
-        self._executor = AsyncGPUExecutor(num_streams=num_streams)
+        self._executor = AsyncSatExecutor(num_streams=num_streams)
         self._prefetch = prefetch
 
     def evaluate_sequence(
@@ -332,18 +325,18 @@ class PipelinedEvaluator:
         self._executor.shutdown()
 
 
-_global_executor: AsyncGPUExecutor | None = None
+_global_executor: AsyncSatExecutor | None = None
 
 
-def get_async_executor() -> AsyncGPUExecutor:
+def get_async_executor() -> AsyncSatExecutor:
     """Get or create global async executor instance.
 
     Returns:
-        Singleton AsyncGPUExecutor
+        Singleton AsyncSatExecutor
     """
     global _global_executor
     if _global_executor is None:
-        _global_executor = AsyncGPUExecutor()
+        _global_executor = AsyncSatExecutor()
     return _global_executor
 
 
@@ -368,4 +361,3 @@ def reset_async_executor() -> None:
     if _global_executor is not None:
         _global_executor.shutdown()
         _global_executor = None
-

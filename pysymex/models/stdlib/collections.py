@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -263,6 +263,28 @@ class OrderedDictModel:
     def model_init(state: VMState) -> SymbolicDict:
         """Model OrderedDict() initialization."""
         return SymbolicDict.empty("ordereddict")
+
+    @staticmethod
+    def apply(
+        args: list[object],
+        kwargs: dict[str, object],
+        state: VMState,
+    ) -> object:
+        """Model method calls on OrderedDict instances.
+
+        Args:
+            args: Positional arguments (self + method args)
+            kwargs: Keyword arguments
+            state: Current VM state
+
+        Returns:
+            ModelResult with symbolic result and constraints
+        """
+        from pysymex.models.numeric import ModelResult
+        from pysymex.core.types.scalars import SymbolicValue
+
+        result, constraint = SymbolicValue.symbolic(f"ordereddict_call_{state.pc}_{state.path_id}")
+        return ModelResult(value=result, constraints=[constraint])
 
     @staticmethod
     def model_move_to_end(

@@ -54,4 +54,3 @@ def test_create_report_from_result_maps_issue_like_objects() -> None:
     report = create_report_from_result(_Result(), "f.py", "run", 0.2)
     assert report.issues[0].issue_type == "TYPE_ERROR"
     assert report.paths_explored == 2
-

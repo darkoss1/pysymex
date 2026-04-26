@@ -1,8 +1,10 @@
-﻿import pysymex.core.exceptions.types
+import pysymex.core.exceptions.types
 import z3
+
 
 class TestExceptionCategory:
     """Test suite for pysymex.core.exceptions.types.ExceptionCategory."""
+
     def test_initialization(self) -> None:
         """Scenario: category enum exists; expected RUNTIME member name."""
         assert pysymex.core.exceptions.types.ExceptionCategory.RUNTIME.name == "RUNTIME"
@@ -23,6 +25,7 @@ def test_get_exception_category() -> None:
 
 class TestSymbolicException:
     """Test suite for pysymex.core.exceptions.types.SymbolicException."""
+
     def test_concrete(self) -> None:
         """Scenario: concrete constructor; expected unconditional condition."""
         exc = pysymex.core.exceptions.types.SymbolicException.concrete(ValueError, "bad")
@@ -49,18 +52,23 @@ class TestSymbolicException:
     def test_may_occur(self) -> None:
         """Scenario: satisfiable condition; expected may_occur true."""
         solver = z3.Solver()
-        exc = pysymex.core.exceptions.types.SymbolicException.symbolic("e", ValueError, z3.BoolVal(True))
+        exc = pysymex.core.exceptions.types.SymbolicException.symbolic(
+            "e", ValueError, z3.BoolVal(True)
+        )
         assert exc.may_occur(solver) is True
 
     def test_must_occur(self) -> None:
         """Scenario: true condition; expected must_occur true."""
         solver = z3.Solver()
-        exc = pysymex.core.exceptions.types.SymbolicException.symbolic("e", ValueError, z3.BoolVal(True))
+        exc = pysymex.core.exceptions.types.SymbolicException.symbolic(
+            "e", ValueError, z3.BoolVal(True)
+        )
         assert exc.must_occur(solver) is True
 
 
 class TestExceptionHandler:
     """Test suite for pysymex.core.exceptions.types.ExceptionHandler."""
+
     def test_catches(self) -> None:
         """Scenario: broad handler catches specific exception instance."""
         handler = pysymex.core.exceptions.types.ExceptionHandler((Exception,), target_pc=1)
@@ -75,6 +83,7 @@ class TestExceptionHandler:
 
 class TestFinallyHandler:
     """Test suite for pysymex.core.exceptions.types.FinallyHandler."""
+
     def test_initialization(self) -> None:
         """Scenario: finally handler stores target and exit PCs."""
         fh = pysymex.core.exceptions.types.FinallyHandler(target_pc=10, exit_pc=20)
@@ -83,6 +92,7 @@ class TestFinallyHandler:
 
 class TestTryBlock:
     """Test suite for pysymex.core.exceptions.types.TryBlock."""
+
     def test_in_try_block(self) -> None:
         """Scenario: PC inside range [start,end); expected true."""
         block = pysymex.core.exceptions.types.TryBlock(try_start=5, try_end=10)
@@ -98,6 +108,7 @@ class TestTryBlock:
 
 class TestExceptionPath:
     """Test suite for pysymex.core.exceptions.types.ExceptionPath."""
+
     def test_add_condition(self) -> None:
         """Scenario: add condition to path; expected conjunction includes new condition."""
         path = pysymex.core.exceptions.types.ExceptionPath(
@@ -127,6 +138,7 @@ class TestExceptionPath:
 
 class TestExceptionState:
     """Test suite for pysymex.core.exceptions.types.ExceptionState."""
+
     def test_push_try(self) -> None:
         """Scenario: push try block; expected stack size increments."""
         state = pysymex.core.exceptions.types.ExceptionState()
@@ -160,7 +172,9 @@ class TestExceptionState:
         state = pysymex.core.exceptions.types.ExceptionState()
         handler = pysymex.core.exceptions.types.ExceptionHandler((ValueError,), target_pc=7)
         state.push_try(pysymex.core.exceptions.types.TryBlock(0, 10, handlers=[handler]))
-        handled, pc = state.handle_exception(pysymex.core.exceptions.types.SymbolicException.concrete(ValueError))
+        handled, pc = state.handle_exception(
+            pysymex.core.exceptions.types.SymbolicException.concrete(ValueError)
+        )
         assert (handled, pc) == (handler, 7)
 
     def test_clear_exception(self) -> None:
@@ -189,6 +203,7 @@ class TestExceptionState:
 
 class TestRaisesContract:
     """Test suite for pysymex.core.exceptions.types.RaisesContract."""
+
     def test_type_name(self) -> None:
         """Scenario: contract from type class; expected class name."""
         contract = pysymex.core.exceptions.types.RaisesContract(ValueError)

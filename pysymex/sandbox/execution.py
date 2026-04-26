@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -53,6 +53,7 @@ import threading
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import cast
 
 from pysymex._constants import (
     DANGEROUS_BUILTINS,
@@ -153,14 +154,18 @@ def make_restricted_import(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
-        """Restricted import."""
+        """Restricted import with support for granular submodule allowlisting."""
         top_level = name.split(".", maxsplit=1)[0]
-        if top_level not in permitted:
-            raise SecurityError(
-                f"Import of '{name}' is not permitted in sandbox mode. "
-                f"Allowed modules: {', '.join(sorted(permitted))}"
-            )
-        return real_import(name, globals, locals, fromlist, level)
+        # Check if the full import path is explicitly allowed
+        if name in permitted:
+            return real_import(name, globals, locals, fromlist, level)
+        # Check if the top-level module is allowed
+        if top_level in permitted:
+            return real_import(name, globals, locals, fromlist, level)
+        raise SecurityError(
+            f"Import of '{name}' is not permitted in sandbox mode. "
+            f"Allowed modules: {', '.join(sorted(permitted))}"
+        )
 
     return _restricted_import
 
@@ -203,13 +208,13 @@ def timeout_context(seconds: float) -> Generator[None, None, None]:
     def handler(_signum: int, frame: object) -> None:
         raise ExecutionTimeout(f"Execution timed out after {seconds} seconds")
 
-    old_handler = signal.signal(signal.SIGALRM, handler)  # type: ignore[attr-defined]
-    signal.setitimer(signal.ITIMER_REAL, seconds)  # type: ignore[attr-defined]
+    old_handler = signal.signal(signal.SIGALRM, handler)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
         yield
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)  # type: ignore[attr-defined]
-        signal.signal(signal.SIGALRM, old_handler)  # type: ignore[attr-defined]
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 @contextmanager
@@ -225,7 +230,7 @@ def resource_limits(
         yield
         return
 
-    import resource  # type: ignore[import-not-found]
+    import resource
 
     def _is_infinity(limit_value: int) -> bool:
         return limit_value == getattr(resource, "RLIM_INFINITY", -1)
@@ -250,7 +255,6 @@ def resource_limits(
 
     requested_memory_bytes = max_memory_mb * 1024 * 1024
     current_as = _current_address_space_bytes()
-    # Keep a headroom above current VAS so lowering RLIMIT_AS cannot destabilize the worker.
     if current_as is not None:
         requested_memory_bytes = max(requested_memory_bytes, current_as + (64 * 1024 * 1024))
     if not _is_infinity(as_hard):
@@ -263,8 +267,6 @@ def resource_limits(
     except (AttributeError, OSError, ValueError):
         consumed_cpu_seconds = 0.0
 
-    # RLIMIT_CPU is absolute process CPU time, not incremental. Convert requested
-    # per-context budget into an absolute cap to avoid killing long-lived workers.
     requested_cpu_seconds = int(consumed_cpu_seconds) + max_cpu_seconds + 1
     if not _is_infinity(cpu_hard):
         requested_cpu_seconds = min(requested_cpu_seconds, cpu_hard)
@@ -450,7 +452,7 @@ def _validate_ast_security(
         {"__builtins__", "__loader__", "__spec__", "__import__"}
     )
 
-    for node in ast.walk(tree):  # type: ignore[arg-type]
+    for node in ast.walk(cast("ast.AST", tree)):  # type: ignore[arg-type]  # tree is AST but inferred as object
         if isinstance(node, ast.Attribute):
             if node.attr in DANGEROUS_ATTR_NAMES:
                 lineno = getattr(node, "lineno", "?")

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import logging
 
-import icontract
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +42,6 @@ from dataclasses import dataclass, field
 from pysymex._compat import get_starts_line
 
 from pysymex.analysis.specialized.flow import BasicBlock, CFGBuilder, ControlFlowGraph
-
-
-def _union_postcondition(self: Range, other: Range, result: Range) -> bool:
-    return self.subset_of(result) and other.subset_of(result)
-
-
-def _intersect_postcondition(self: Range, other: Range, result: Range) -> bool:
-    return result.subset_of(self) or result.is_empty
 
 
 @dataclass(frozen=True)
@@ -153,7 +144,6 @@ class Range:
             return True
         return not self.contains(0)
 
-    @icontract.ensure(_union_postcondition)
     def union(self, other: Range) -> Range:
         """Compute union (join) of two ranges."""
         if self.is_empty:
@@ -172,7 +162,6 @@ class Range:
             new_high = max(self.high, other.high)
         return Range(new_low, new_high)
 
-    @icontract.ensure(_intersect_postcondition)
     def intersect(self, other: Range) -> Range:
         """Compute intersection (meet) of two ranges."""
         if self.is_empty or other.is_empty:
@@ -333,10 +322,6 @@ class Range:
         return f"[{low_str}, {high_str}]"
 
 
-def _pop_precondition(self: RangeState) -> bool:
-    return not self.is_bottom
-
-
 @dataclass
 class RangeState:
     """State for range analysis."""
@@ -371,7 +356,6 @@ class RangeState:
     def push(self, range_val: Range) -> None:
         self.stack.append(range_val)
 
-    @icontract.require(_pop_precondition)
     def pop(self) -> Range:
         """Pop."""
         if self.stack:

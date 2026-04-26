@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Unpack, cast
+from typing import TypeGuard, Unpack, cast
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.integration import (
@@ -94,6 +94,11 @@ def _to_bool(value: object, default: bool) -> bool:
         if lowered in {"0", "false", "no", "off"}:
             return False
     return default
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """Return whether value is a generic object-key/object-value mapping."""
+    return isinstance(value, Mapping)
 
 
 def analyze(
@@ -220,6 +225,12 @@ def analyze_file(
     kwargs_mut = dict(kwargs)
     sandbox_mode = _to_bool(kwargs_mut.pop("sandbox", False), False)
     sandbox_config = kwargs_mut.pop("sandbox_config", None)
+    sandbox_config_map: dict[str, object] | None = None
+    if _is_object_mapping(sandbox_config):
+        normalized: dict[str, object] = {}
+        for key, value in sandbox_config.items():
+            normalized[str(key)] = value
+        sandbox_config_map = normalized
 
     try:
         validated_path = validate_path(
@@ -249,7 +260,7 @@ def analyze_file(
         bytecode_blob = extract_bytecode(
             validated_path.read_bytes(),
             str(validated_path),
-            sandbox_config=(sandbox_config if isinstance(sandbox_config, Mapping) else None),
+            sandbox_config=sandbox_config_map,
         )
         compiled = bytecode_blob.reconstruct()
 
@@ -533,12 +544,11 @@ def scan_pipeline(
     min_confidence: float = 0.5,
     type_inference: bool = True,
     flow_analysis: bool = True,
-    taint_analysis: bool = True,
 ) -> dict[str, AnalysisResult]:
     """Run the full analysis pipeline on a file or directory.
 
     Integrates type inference, flow-sensitive analysis, pattern
-    recognition, taint analysis, and abstract interpretation.
+    recognition, and abstract interpretation.
 
     Args:
         path: File or directory path to analyse.
@@ -546,7 +556,6 @@ def scan_pipeline(
         min_confidence: Minimum confidence threshold.
         type_inference: Enable type-inference pass.
         flow_analysis: Enable flow-sensitive analysis.
-        taint_analysis: Enable taint-flow analysis.
 
     Returns:
         Mapping of file paths to :class:`AnalysisResult` objects.
@@ -557,7 +566,6 @@ def scan_pipeline(
     config = AnalysisConfig(
         type_inference=type_inference,
         flow_analysis=flow_analysis,
-        taint_analysis=taint_analysis,
         min_confidence=min_confidence,
     )
     pipeline = AnalysisPipeline(config)
@@ -570,5 +578,3 @@ def scan_pipeline(
         return pipeline.analyze_directory(str(path_obj), recursive=recursive)
     else:
         raise ValueError(f"Path not found: {path}")
-
-

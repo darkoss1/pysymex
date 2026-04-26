@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,9 +16,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU Bytecode Instruction Set Architecture and Z3-to-Bytecode Compiler.
+"""Tiered CPU Bytecode Instruction Set Architecture and Z3-to-Bytecode Compiler.
 
-This module defines a minimal, GPU-optimized instruction set for evaluating
+This module defines a minimal, SAT-optimized instruction set for evaluating
 Boolean constraints. The ISA is designed for:
 - Minimal warp divergence (no branching opcodes)
 - Coalesced memory access (fixed 128-bit instruction encoding)
@@ -65,7 +65,7 @@ _compile_lock = threading.Lock()
 
 
 class Opcode(IntEnum):
-    """GPU bytecode opcodes.
+    """SAT bytecode opcodes.
 
     Grouped by function:
     - 0x00-0x0F: Control & Load
@@ -117,7 +117,7 @@ assert INSTRUCTION_DTYPE.itemsize == 16, (
 class Instruction:
     """Single bytecode instruction.
 
-    Immutable value type representing one GPU operation.
+    Immutable value type representing one operation.
 
     Attributes:
         opcode: Operation to perform
@@ -168,13 +168,13 @@ class Instruction:
 
 @dataclass(frozen=True, slots=True)
 class CompiledConstraint:
-    """Compiled constraint ready for GPU execution.
+    """Compiled constraint ready for SAT execution.
 
     Contains the bytecode instruction stream and metadata needed
     for kernel launch configuration and memory allocation.
 
     Attributes:
-        instructions: NumPy array of instructions (GPU-transferable)
+        instructions: NumPy array of instructions (SAT-transferable)
         num_variables: Number of Boolean variables (= bag treewidth)
         register_count: Number of registers used (for occupancy analysis)
         source_hash: Hash of source Z3 expression (for caching)
@@ -221,14 +221,14 @@ class CompiledConstraint:
 
 
 class BytecodeCompiler:
-    """Compiles Z3 Boolean expressions to GPU bytecode.
+    """Compiles Z3 Boolean expressions to SAT bytecode.
 
     The compiler performs a single-pass recursive descent over the Z3 AST,
     emitting instructions in postorder (operands before operation).
 
     Register Allocation:
         R[0]: Reserved for final result
-        R[1..w]: Pre-loaded with variable values (by GPU kernel)
+        R[1..w]: Pre-loaded with variable values (by SAT kernel)
         R[w+1..MAX_REGISTERS-1]: Temporaries for intermediate results
 
     Thread Safety:
@@ -251,14 +251,14 @@ class BytecodeCompiler:
         expr: z3.ExprRef,
         variables: Sequence[str],
     ) -> CompiledConstraint:
-        """Compile a Z3 Boolean expression to GPU bytecode.
+        """Compile a Z3 Boolean expression to SAT bytecode.
 
         Args:
             expr: Z3 Boolean expression (conjunction of constraints)
             variables: Ordered list of variable names (defines bit positions)
 
         Returns:
-            CompiledConstraint ready for GPU execution
+            CompiledConstraint ready for SAT execution
         """
 
         self._reset()
@@ -293,7 +293,7 @@ class BytecodeCompiler:
         for i, instr in enumerate(self._instructions):
             instr_array[i] = instr.to_tuple()
 
-        source_hash = structural_hash([expr]) & 0xFFFFFFFFFFFFFFFF
+        source_hash = structural_hash([expr], None) & 0xFFFFFFFFFFFFFFFF
 
         return CompiledConstraint(
             instructions=instr_array,
@@ -515,7 +515,7 @@ class BytecodeCompiler:
         """
         import z3
 
-        filtered_children = []
+        filtered_children: list[z3.ExprRef] = []
         for child in children:
             if z3.is_true(child):
                 if opcode == Opcode.OR:
@@ -566,7 +566,7 @@ def compile_constraint(
     expr: z3.ExprRef,
     variables: Sequence[str],
 ) -> CompiledConstraint:
-    """Compile Z3 Boolean expression to GPU bytecode.
+    """Compile Z3 Boolean expression to SAT bytecode.
 
     This is the primary public API for compilation. Uses an in-memory cache
     to avoid redundant compilations of the same expression.
@@ -576,8 +576,9 @@ def compile_constraint(
         variables: Ordered list of variable names
 
     Returns:
-        CompiledConstraint ready for GPU execution
+        CompiledConstraint ready for SAT execution
     """
+    import z3
 
     key = expr.hash()
     variables_key = tuple(variables)
@@ -587,7 +588,7 @@ def compile_constraint(
         if cached_bucket is not None:
             for cached_expr, cached_variables, compiled in cached_bucket:
                 try:
-                    if cached_variables == variables_key and expr.eq(cached_expr):  # type: ignore[attr-defined]
+                    if cached_variables == variables_key and z3.eq(expr, cached_expr):
                         return compiled
                 except Exception:
                     continue

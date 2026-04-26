@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Callable
 from types import CodeType
@@ -30,6 +30,7 @@ class _FakeExecutor:
         _ = symbolic_vars
         _ = initial_globals
         return ExecutionResult(function_name="execute_code")
+
 
 def test_execute_function() -> None:
     """Test execute_function behavior."""

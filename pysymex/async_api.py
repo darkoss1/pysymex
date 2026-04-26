@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -98,6 +98,9 @@ async def analyze_code_async(
 ) -> ExecutionResult:
     """Async version of :func:`pysymex.api.analyze_code`.
 
+    Offloads CPU-bound symbolic execution to a thread so the event loop
+    remains responsive.
+
     Args:
         code: Python source code to analyze.
         symbolic_vars: Mapping of variable names to types.
@@ -109,6 +112,8 @@ async def analyze_code_async(
     from pysymex.api import analyze_code
 
     timeout_secs = _timeout_from_kwargs(kwargs)
+    # Remove timeout from kwargs to avoid ExecutionConfig error
+    kwargs.pop("timeout", None)
     async with asyncio.timeout(timeout_secs + 5.0):
         return await asyncio.to_thread(analyze_code, code, symbolic_vars, **kwargs)
 
@@ -135,6 +140,8 @@ async def analyze_file_async(
     from pysymex.api import analyze_file
 
     timeout_secs = _timeout_from_kwargs(kwargs)
+    # Remove timeout from kwargs to avoid ExecutionConfig error
+    kwargs.pop("timeout", None)
     async with asyncio.timeout(timeout_secs + 5.0):
         return await asyncio.to_thread(
             analyze_file, filepath, function_name, symbolic_args, **kwargs
@@ -246,5 +253,3 @@ __all__ = [
     "analyze_file_async",
     "scan_directory_async",
 ]
-
-

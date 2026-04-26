@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -175,7 +175,7 @@ class StateMerger(Generic[T]):
 
         try:
             head = constraints[:5]
-            constraint_hash_val = structural_hash(head)
+            constraint_hash_val = structural_hash(head, None)  # Temporary hasher for one-off call
             constraint_disc = (len(constraints), *tuple(sorted(c.hash() for c in head)))
         except (TypeError, RecursionError):
             constraint_hash_val = hash(len(constraints))
@@ -438,7 +438,7 @@ class ConstraintPartitioner:
             if not var_names:
                 root = "CONST"
             else:
-                root = optimizer._uf.find(next(iter(var_names)))  # type: ignore[protected-access]
+                root = optimizer.find_group_root(next(iter(var_names)))
             if root not in partitions:
                 partitions[root] = []
             partitions[root].append(c)

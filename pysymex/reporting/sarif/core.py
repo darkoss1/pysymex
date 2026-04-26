@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -42,7 +42,7 @@ from pysymex.reporting.sarif.types import (
 
 
 def severity_to_level(severity: Severity) -> str:
-    """Map the internal PySyMex severity enum to standard SARIF notification levels.
+    """Map the internal pysymex severity enum to standard SARIF notification levels.
 
     SARIF levels (error, warning, note, none) determine how the result is
     rendered in IDEs and GHAS dashboards.
@@ -268,17 +268,12 @@ def vuln_type_to_rule_id(vuln_type: str) -> str:
     """
     v = str(vuln_type).lower().replace(" ", "_")
     mapping = {
-        "command_injection": "SVM001",
-        "sql_injection": "SVM002",
-        "path_traversal": "SVM003",
-        "potential_path_traversal": "SVM003",
         "server_side_request_forgery_(ssrf)": "SVM004",
         "insecure_deserialization": "SVM005",
         "potentially_unsafe_deserialization": "SVM005",
         "server_side_template_injection": "SVM006",
         "hardcoded_secret": "SVM007",
         "weak_cryptography": "SVM008",
-        "code_injection": "SVM009",
         "division_by_zero": "SVM010",
         "assertion_error": "SVM011",
         "index_error": "SVM012",
@@ -309,28 +304,6 @@ def vulnerability_to_sarif_result(vuln: VulnerabilityReport) -> SARIFResult:
             )
         )
     code_flows: list[CodeFlow] = []
-    if vuln.taint_path:
-        flow_locations: list[PhysicalLocation] = []
-        for step in vuln.taint_path:
-            if ":" in step:
-                parts = step.rsplit(":", 1)
-                try:
-                    line = int(parts[1])
-                    flow_locations.append(
-                        PhysicalLocation(
-                            file_path=parts[0],
-                            start_line=line,
-                        )
-                    )
-                except ValueError:
-                    pass
-        if flow_locations:
-            code_flows.append(
-                CodeFlow(
-                    locations=flow_locations,
-                    message=f"Taint flows from {vuln.source} to {vuln.sink}",
-                )
-            )
     properties: dict[str, object] = {}
     if vuln.owasp_category:
         properties["owasp"] = vuln.owasp_category
@@ -394,7 +367,7 @@ def issue_to_sarif_result(issue: dict[str, object]) -> SARIFResult:
 
 
 class SARIFGenerator:
-    """Orchestrator for transforming PySyMex internal results into SARIF 2.1.0 JSON.
+    """Orchestrator for transforming pysymex internal results into SARIF 2.1.0 JSON.
 
     **Mapping Strategy:**
     Transforms internal engine artifacts into the standard Static Analysis
@@ -402,8 +375,6 @@ class SARIFGenerator:
     - **Vulnerabilities**: Mapped to SARIF `result` objects with associated rule IDs.
     - **Path Constraints**: Encoded in the `codeFlows` property to allow
       step-by-step path reproduction in SARIF viewers.
-    - **Taint Analysis**: Mapped to `codeFlows` for data-flow visualization from
-      source to sink.
 
     The generated output is compatible with GitHub Advanced Security (GHAS)
     code scanning and other SARIF-aware tools.
@@ -537,4 +508,3 @@ __all__ = [
     "vuln_type_to_rule_id",
     "vulnerability_to_sarif_result",
 ]
-

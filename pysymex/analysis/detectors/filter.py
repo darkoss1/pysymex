@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -34,7 +34,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeGuard, TypeVar
 
 
 class IssueLike(Protocol):
@@ -58,6 +58,28 @@ class IssueLike(Protocol):
 
 
 TIssue = TypeVar("TIssue", bound=IssueLike)
+
+
+class _DeclLike(Protocol):
+    """Small protocol for Z3 model declarations."""
+
+    def name(self) -> str: ...
+
+
+def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+    """Type guard to narrow a value to list[object]."""
+    return isinstance(value, list)
+
+
+def _is_decl_list(value: object) -> TypeGuard[list[_DeclLike]]:
+    """Return whether a value is a list of declaration-like objects."""
+    if not is_list_of_objects(value):
+        return False
+    for item in value:
+        name_attr = getattr(item, "name", None)
+        if not callable(name_attr):
+            return False
+    return True
 
 
 class Confidence(Enum):
@@ -233,7 +255,7 @@ def _model_involves_havoc(issue: IssueLike) -> bool:
         if not callable(decls_fn):
             return False
         decls = decls_fn()
-        if not isinstance(decls, list):
+        if not _is_decl_list(decls):
             return False
         for decl in decls:
             if decl.name().startswith("havoc_"):

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -31,15 +31,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import z3
 
 from .base import SymbolicType, TypeTag, fresh_name
 from .numeric import SymbolicBool, SymbolicInt
-
-if TYPE_CHECKING:
-    from .scalars import SymbolicValue
 
 
 @dataclass
@@ -145,12 +142,12 @@ class SymbolicString(SymbolicType):
     def __ge__(self, other: SymbolicString) -> SymbolicBool:
         return SymbolicBool(self.z3_str >= other.z3_str)
 
-    def __eq__(self, other: object) -> SymbolicBool:  # type: ignore[override]
+    def __eq__(self, other: object) -> SymbolicBool:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
         if not isinstance(other, SymbolicString):
             return SymbolicBool(z3.BoolVal(False))
         return SymbolicBool(self.z3_str == other.z3_str)
 
-    def __ne__(self, other: object) -> SymbolicBool:  # type: ignore[override]
+    def __ne__(self, other: object) -> SymbolicBool:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
         return SymbolicBool(z3.Not(self.__eq__(other).z3_bool))
 
     @staticmethod
@@ -163,21 +160,6 @@ class SymbolicString(SymbolicType):
     def concrete(value: str) -> SymbolicString:
         """Create a concrete string."""
         return SymbolicString(z3.StringVal(value), repr(value))
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            z3_str=self.z3_str,
-            is_str=Z3_TRUE,
-            is_path=Z3_FALSE,
-        )
 
 
 @dataclass
@@ -244,19 +226,6 @@ class SymbolicBytes(SymbolicType):
         for b in value[1:]:
             result = z3.Concat(result, z3.Unit(z3.BitVecVal(b, 8)))
         return SymbolicBytes(result, repr(value))
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-        )
 
 
 @dataclass
@@ -346,19 +315,6 @@ class SymbolicTuple(SymbolicType):
         """Create empty tuple."""
         return SymbolicTuple(())
 
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-        )
-
 
 @dataclass
 class SymbolicList(SymbolicType):
@@ -447,20 +403,6 @@ class SymbolicList(SymbolicType):
         for v in values[1:]:
             result = z3.Concat(result, z3.Unit(z3.IntVal(v)))
         return SymbolicList(result, z3.IntSort(), str(values))
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_list=Z3_TRUE,
-            is_path=Z3_FALSE,
-        )
 
 
 @dataclass
@@ -570,21 +512,6 @@ class SymbolicDict(SymbolicType):
             _membership=membership,
         )
 
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_dict=Z3_TRUE,
-            z3_array=self.z3_array,
-            is_path=Z3_FALSE,
-        )
-
 
 @dataclass
 class SymbolicSet(SymbolicType):
@@ -678,16 +605,3 @@ class SymbolicSet(SymbolicType):
     def empty_int_set() -> SymbolicSet:
         """Create an empty int set."""
         return SymbolicSet(z3.EmptySet(z3.IntSort()), z3.IntSort(), "set()")
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_ZERO, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=Z3_ZERO,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-        )

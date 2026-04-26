@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 import z3
 
 from pysymex.accel.bytecode import (

@@ -4,13 +4,17 @@ import z3
 from pysymex.analysis.solver.graph import CallGraph, CFGBuilder, SymbolicState
 from pysymex.analysis.solver.types import CallSite, SymValue, SymType
 
+
 def make_dummy_code() -> object:
     def f() -> None:
         pass
+
     return f.__code__
+
 
 class TestCallGraph:
     """Test suite for pysymex.analysis.solver.graph.CallGraph."""
+
     def test_add_call(self) -> None:
         """Test add_call behavior."""
         cg = CallGraph()
@@ -55,18 +59,22 @@ class TestCallGraph:
         affected = cg.get_all_affected("f3")
         assert "f1" in affected and "f2" in affected
 
+
 class TestCFGBuilder:
     """Test suite for pysymex.analysis.solver.graph.CFGBuilder."""
+
     def test_build(self) -> None:
         """Test build behavior."""
         builder = CFGBuilder()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         cfg = builder.build(code)
         assert len(cfg) > 0
         assert 0 in cfg
 
+
 class TestSymbolicState:
     """Test suite for pysymex.analysis.solver.graph.SymbolicState."""
+
     def test_fork(self) -> None:
         """Test fork behavior."""
         state = SymbolicState()

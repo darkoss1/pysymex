@@ -54,10 +54,6 @@ class TestSymbolicNone:
     def test_hash_value(self) -> None:
         assert isinstance(mod.SymbolicNone().hash_value(), int)
 
-    def test_as_unified(self) -> None:
-        unified = mod.SymbolicNone().as_unified()
-        assert z3.is_bool(unified.is_none)
-
     def test_conditional_merge(self) -> None:
         out = mod.SymbolicNone().conditional_merge(mod.SymbolicValue.from_const(1), z3.Bool("c"))
         assert out is not None
@@ -96,10 +92,6 @@ class TestSymbolicValue:
         sv = mod.SymbolicValue.from_const(0)
         assert z3.is_bool(sv.could_be_falsy())
 
-    def test_with_taint(self) -> None:
-        sv = mod.SymbolicValue.from_const(1).with_taint("input")
-        assert sv.taint_labels is not None
-
     def test_conditional_merge(self) -> None:
         a = mod.SymbolicValue.from_const(1)
         b = mod.SymbolicValue.from_const(2)
@@ -108,10 +100,6 @@ class TestSymbolicValue:
     def test_as_string(self) -> None:
         sv = mod.SymbolicValue.from_const("abc")
         assert isinstance(sv.as_string(), mod.SymbolicString)
-
-    def test_as_unified(self) -> None:
-        sv = mod.SymbolicValue.from_const(1)
-        assert sv.as_unified() is sv
 
     def test_symbolic(self) -> None:
         sv, c = mod.SymbolicValue.symbolic("x")
@@ -178,10 +166,6 @@ class TestSymbolicString:
         s = mod.SymbolicString.from_const("a")
         assert isinstance(s.hash_value(), int)
 
-    def test_as_unified(self) -> None:
-        s = mod.SymbolicString.from_const("a")
-        assert z3.is_bool(s.as_unified().is_str)
-
     def test_symbolic(self) -> None:
         s, c = mod.SymbolicString.symbolic("s")
         assert isinstance(s, mod.SymbolicString) and z3.is_bool(c)
@@ -189,10 +173,6 @@ class TestSymbolicString:
     def test_from_const(self) -> None:
         s = mod.SymbolicString.from_const("x")
         assert isinstance(s, mod.SymbolicString)
-
-    def test_with_taint(self) -> None:
-        s = mod.SymbolicString.from_const("x").with_taint("t")
-        assert s.taint_labels is not None
 
     def test_length(self) -> None:
         s = mod.SymbolicString.from_const("abc")

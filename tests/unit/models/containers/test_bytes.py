@@ -1,6 +1,4 @@
-﻿from __future__ import annotations
-
-import pytest
+from __future__ import annotations
 
 from pysymex.core.state import VMState
 from pysymex.models.containers import bytes as bytes_models
@@ -19,11 +17,8 @@ def test_bytes_concrete_faithfulness_baseline() -> None:
 
 def test_bytes_symbolic_error_paths() -> None:
     """Symbolic and error path checks for representative methods."""
-    with pytest.raises(NameError):
-        bytes_models.BytesFindModel().apply([], {}, _state())
-
-    with pytest.raises(NameError):
-        bytes_models.BytesLenModel().apply([], {}, _state())
+    bytes_models.BytesFindModel().apply([], {}, _state())
+    bytes_models.BytesLenModel().apply([], {}, _state())
 
 
 def test_bytes_edge_case_empty() -> None:

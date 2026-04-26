@@ -1,3 +1,21 @@
+# pysymex: Python Symbolic Execution & Formal Verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
 from pysymex.analysis.detectors.logical.utils import (
@@ -6,6 +24,7 @@ from pysymex.analysis.detectors.logical.utils import (
     extract_bounds,
     extract_var_const_equalities,
 )
+
 
 class LoopInvariantViolationRule(LogicRule):
     name = "Loop Invariant Violation"
@@ -23,12 +42,15 @@ class LoopInvariantViolationRule(LogicRule):
             if expr_contains_variable(rhs, name) and str(rhs) != str(lhs):
                 return True
 
-        # Loop-tagged variable ranges collapsing to empty intervals indicate invariant drift.
         bounds = extract_bounds(ctx.core)
         equalities = extract_var_const_equalities(ctx.core)
         for var, b in bounds.items():
             lower_name = var.lower()
-            if "loop" not in lower_name and "iter" not in lower_name and "induction" not in lower_name:
+            if (
+                "loop" not in lower_name
+                and "iter" not in lower_name
+                and "induction" not in lower_name
+            ):
                 continue
             if bounds_are_inconsistent(b):
                 return True

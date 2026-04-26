@@ -1,4 +1,5 @@
-﻿import pysymex.core.memory.addressing
+import pysymex.core.memory.addressing
+
 
 def test_next_address() -> None:
     """Scenario: sequential allocation; expected strictly increasing addresses."""

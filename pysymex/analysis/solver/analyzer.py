@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -49,7 +49,6 @@ from pysymex.analysis.solver.types import (
     Severity,
     SymType,
     SymValue,
-    TaintInfo,
     z3,
 )
 
@@ -486,22 +485,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
     def _do_binary_op(
         self, left: SymValue, right: SymValue, op: str, state: SymbolicState
     ) -> SymValue:
-        """Perform binary operation with taint propagation."""
-        taint = TaintInfo()
-
-        left_is_tainted = getattr(left, "is_tainted", False)
-        right_is_tainted = getattr(right, "is_tainted", False)
-        left_taint = getattr(left, "taint", None)
-        right_taint = getattr(right, "taint", None)
-        if left_is_tainted or right_is_tainted:
-            left_sources = getattr(left_taint, "sources", set()) if left_taint else set()
-            right_sources = getattr(right_taint, "sources", set()) if right_taint else set()
-            left_path = getattr(left_taint, "propagation_path", []) if left_taint else []
-            taint = TaintInfo(
-                is_tainted=True,
-                sources=left_sources | right_sources,
-                propagation_path=[*left_path, op],
-            )
+        """Perform binary operation."""
         try:
             left_expr = getattr(left, "expr", None)
             right_expr = getattr(right, "expr", None)
@@ -576,10 +560,10 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
                 expr = z3.Int(state.fresh_name("binop"))
             left_name = getattr(left, "name", "?")
             right_name = getattr(right, "name", "?")
-            return SymValue(expr, f"({left_name}{op}{right_name})", SymType.INT, taint=taint)
+            return SymValue(expr, f"({left_name}{op}{right_name})", SymType.INT)
         except (z3.Z3Exception, TypeError, ValueError):
             logger.debug("Z3 binary op %s failed", op, exc_info=True)
-            return SymValue(z3.Int(state.fresh_name("binop")), "", SymType.INT, taint=taint)
+            return SymValue(z3.Int(state.fresh_name("binop")), "", SymType.INT)
 
     def _check_division(
         self, divisor: SymValue, op: str, state: SymbolicState, crashes: list[CrashCondition]
@@ -676,7 +660,6 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         description: str,
         variables: dict[str, object],
         severity: Severity = Severity.HIGH,
-        taint_info: TaintInfo | None = None,
     ) -> None:
         """Add a crash condition."""
         crashes.append(
@@ -690,7 +673,6 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
                 variables=variables,
                 severity=severity,
                 call_stack=state.call_stack.copy(),
-                taint_info=taint_info,
                 file_path=self.current_file,
             )
         )
@@ -723,7 +705,6 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             calls_functions=set(),
             may_return_none=True,
             may_raise=True,
-            taint_propagation={},
             pure=False,
             analyzed_at=time.time(),
             verified=True,
@@ -748,7 +729,6 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
             calls_functions={cs.callee for cs in call_sites},
             may_return_none=False,
             may_raise=len(crashes) > 0,
-            taint_propagation={},
             pure=len(call_sites) == 0,
             analyzed_at=time.time(),
             verified=True,

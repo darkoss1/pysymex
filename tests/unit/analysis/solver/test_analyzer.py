@@ -5,19 +5,23 @@ from pysymex.analysis.solver.analyzer import FunctionAnalyzer
 from pysymex.analysis.solver.graph import SymbolicState
 from pysymex.analysis.solver.types import SymValue, SymType, BugType, CrashCondition
 
+
 def make_dummy_code() -> object:
     def f(a: int) -> int:
         b = a + 1
         return b
+
     return f.__code__
+
 
 class TestFunctionAnalyzer:
     """Test suite for pysymex.analysis.solver.analyzer.FunctionAnalyzer."""
+
     def test_analyze(self) -> None:
         """Test analyze behavior."""
         engine = Mock(max_depth=5)
         analyzer = FunctionAnalyzer(engine)
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         crashes, summary = analyzer.analyze(code)
         assert isinstance(crashes, list)
         assert summary.name == "f"

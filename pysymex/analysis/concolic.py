@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -43,7 +43,7 @@ class ConcreteInput:
 
     def __hash__(self) -> int:
         """Return the hash value of the object."""
-        items = []
+        items: list[tuple[str, int]] = []
         for k, v in sorted(self.values.items()):
             try:
                 items.append((k, hash(v)))
@@ -381,5 +381,3 @@ __all__ = [
     "ExecutionTrace",
     "GenerationalSearch",
 ]
-
-

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -42,7 +42,7 @@ class AnalysisTask:
     task_id: str
     target: object
     priority: int = 0
-    dependencies: list[str] = field(default_factory=lambda: [])
+    dependencies: list[str] = field(default_factory=list[str])
 
     def __lt__(self, other: AnalysisTask) -> bool:
         return self.priority > other.priority
@@ -142,9 +142,9 @@ class ParallelAnalyzer:
         with executor_class(max_workers=self.max_workers) as executor:
             futures: dict[Future[AnalysisResult], AnalysisTask] = {}
             completed_ids: set[str] = set()
-            pending = list(ordered)
+            pending: list[AnalysisTask] = list(ordered)
             while pending or futures:
-                ready = []
+                ready: list[AnalysisTask] = []
                 for t in pending:
                     can_run = True
                     for d in t.dependencies:

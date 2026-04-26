@@ -2,8 +2,10 @@ from unittest.mock import MagicMock
 import pysymex.cli.reporter
 from pysymex.scanner.types import ScanResult, ScanSession
 
+
 class TestConsoleScanReporter:
     """Test suite for pysymex.cli.reporter.ConsoleScanReporter."""
+
     def test_on_file_start(self) -> None:
         """Test on_file_start behavior."""
         reporter = pysymex.cli.reporter.ConsoleScanReporter()
@@ -57,7 +59,7 @@ class TestConsoleScanReporter:
             "files_clean": 1,
             "files_error": 0,
             "total_issues": 0,
-            "issue_breakdown": {}
+            "issue_breakdown": {},
         }
         mock_session.log_file = "log.txt"
         reporter.on_session_summary(mock_session)

@@ -1,0 +1,65 @@
+from pysymex.analysis.detectors.types import TypeEnvironment, DetectionContext, PyType
+from pysymex.analysis.detectors.base import IssueKind
+
+"""Tests for pysymex/analysis/detectors/static/key_error.py."""
+
+from unittest.mock import Mock, patch
+import z3
+import dis
+import pytest
+from pysymex.analysis.detectors.static.key_error import StaticKeyErrorDetector
+
+
+def MockInstr(
+    opname: str, argval: object = None, argrepr: str = "", arg: int = 0, offset: int = 10
+) -> dis.Instruction:
+    import dis
+
+    def _dummy() -> None:
+        pass
+
+    template = next(dis.get_instructions(_dummy))
+    return template._replace(
+        opname=opname,
+        opcode=dis.opmap.get(opname, 0),
+        arg=arg,
+        argval=argval,
+        argrepr=argrepr,
+        offset=offset,
+    )
+
+
+class TestStaticKeyErrorDetector:
+    """Test suite for pysymex.analysis.detectors.static.StaticKeyErrorDetector."""
+
+    def test_issue_kind(self) -> None:
+        """Test issue_kind behavior."""
+        assert StaticKeyErrorDetector().issue_kind().name == "KEY_ERROR"
+
+    def test_should_check(self) -> None:
+        """Test should_check behavior."""
+        d = StaticKeyErrorDetector()
+        ctx = create_mock_ctx(MockInstr("BINARY_SUBSCR"))
+        assert d.should_check(ctx) is True
+
+    def test_check(self) -> None:
+        """Test check behavior."""
+        d = StaticKeyErrorDetector()
+        instr0 = MockInstr("NOP", offset=0)
+        instr1 = MockInstr("LOAD_FAST", argval="d", offset=2)
+        instr2 = MockInstr("LOAD_CONST", argval="k", offset=4)
+        instr3 = MockInstr("BINARY_SUBSCR", offset=6)
+        env = TypeEnvironment()
+        env.set_type("d", PyType.dict_())
+        ctx = DetectionContext(Mock(), [instr0, instr1, instr2, instr3], 6, instr3, 10, env)
+        issue = d.check(ctx)
+        assert issue is not None
+        assert issue.kind.name == "KEY_ERROR"
+
+
+def create_mock_ctx(instr):
+    from unittest.mock import Mock
+
+    ctx = Mock()
+    ctx.instruction = instr
+    return ctx

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -62,6 +62,9 @@ class SymbolicHeap:
         self._freed: set[int] = set()
         self._solver = create_solver()
         self._symbolic_candidate_cache: dict[tuple[MemoryRegion, str], list[int]] = {}
+
+        self._z3_memory: dict[tuple[MemoryRegion, str], z3.ArrayRef] = {}
+
         self._allocations = 0
         self._frees = 0
         self._reads = 0
@@ -73,6 +76,15 @@ class SymbolicHeap:
         self._peak_live_objects = 0
         self._symbolic_candidate_cache_limit = 512
         self._shared_object_addrs: set[int] = set()
+
+    def _get_memory_array(self, region: MemoryRegion, field: str) -> z3.ArrayRef:
+        key = (region, field)
+        if key not in self._z3_memory:
+            arr = z3.Array(
+                f"mem_{region.name}_{field}_{next_address()}", z3.BitVecSort(64), z3.IntSort()
+            )
+            self._z3_memory[key] = arr
+        return self._z3_memory[key]
 
     @staticmethod
     def _clone_heap_object(obj: HeapObject) -> HeapObject:
@@ -224,6 +236,7 @@ class SymbolicHeap:
         child._symbolic_candidate_cache = {
             k: list(v) for k, v in self._symbolic_candidate_cache.items()
         }
+        child._z3_memory = dict(self._z3_memory)
         child._allocations = self._allocations
         child._frees = self._frees
         child._reads = self._reads
@@ -289,79 +302,25 @@ class SymbolicHeap:
         return sym
 
     def _read_symbolic(self, address: SymbolicAddress, field: str) -> SymbolicValue:
-        candidates = [
-            obj
-            for obj in self._heap.values()
-            if obj.address.region == address.region and not z3.is_false(z3.simplify(obj.is_alive))
-        ]
-        if not candidates:
-            fresh, _ = SymbolicValue.symbolic(f"mem_read_{next_address()}_{field}")
-            return fresh
-
-        default_val, _ = SymbolicValue.symbolic(f"mem_read_default_{next_address()}_{field}")
-        merged_int = default_val.z3_int
-        for obj in reversed(candidates):
-            cond = address.effective_address == obj.address.effective_address
-            field_val = self._as_symbolic_value(obj.get_field(field), f"mem_read_obj_{field}")
-            merged_int = z3.simplify(z3.If(cond, field_val.z3_int, merged_int))
+        arr = self._get_memory_array(address.region, field)
+        merged_expr = z3.Select(arr, address.effective_address)
+        if not isinstance(merged_expr, z3.ArithRef):
+            raise TypeError("Symbolic heap read expected arithmetic Z3 value")
 
         return SymbolicValue(
-            _name=f"mem_read_{field}",
-            z3_int=merged_int,
+            _name=f"mem_read_{field}_{next_address()}",
+            z3_int=merged_expr,
             is_int=Z3_TRUE,
             z3_bool=Z3_FALSE,
             is_bool=Z3_FALSE,
         )
 
     def _write_symbolic(self, address: SymbolicAddress, value: object, field: str) -> None:
-        from pysymex.core.solver.engine import active_incremental_solver
-
         value_sv = self._as_symbolic_value(value, f"mem_write_{field}")
-        active = active_incremental_solver.get()
-
-        if active is not None:
-            cache_key = (address.region, str(address.effective_address.hash()))
-            candidate_addrs = self._symbolic_candidate_cache.get(cache_key)
-            if candidate_addrs is None:
-                self._candidate_cache_misses += 1
-                candidate_addrs = []
-                for concrete_addr, obj in self._heap.items():
-                    if obj.address.region != address.region:
-                        continue
-                    cond = address.effective_address == obj.address.effective_address
-                    if active.is_sat([cond]):
-                        candidate_addrs.append(concrete_addr)
-                if len(self._symbolic_candidate_cache) >= self._symbolic_candidate_cache_limit:
-                    self._symbolic_candidate_cache.pop(next(iter(self._symbolic_candidate_cache)))
-                self._symbolic_candidate_cache[cache_key] = candidate_addrs
-            else:
-                self._candidate_cache_hits += 1
-            objects = [self._heap[a] for a in candidate_addrs if a in self._heap]
-        else:
-            objects = [obj for obj in self._heap.values() if obj.address.region == address.region]
-
-        for obj in objects:
-            cond = address.effective_address == obj.address.effective_address
-            if not self._may_alias(cond):
-                continue
-
-            concrete_addr = self._get_concrete_address(obj.address)
-            if concrete_addr is not None:
-                self._ensure_unshared_object(concrete_addr)
-                obj = self._heap[concrete_addr]
-
-            current_sv = self._as_symbolic_value(obj.get_field(field), f"mem_old_{field}")
-            merged = z3.simplify(z3.If(cond, value_sv.z3_int, current_sv.z3_int))
-            obj.set_field(
-                field,
-                SymbolicValue(
-                    _name=f"mem_write_{field}",
-                    z3_int=merged,
-                    is_int=Z3_TRUE,
-                    z3_bool=Z3_FALSE,
-                    is_bool=Z3_FALSE,
-                ),
-            )
+        arr = self._get_memory_array(address.region, field)
+        self._z3_memory[(address.region, field)] = z3.Store(
+            arr, address.effective_address, value_sv.z3_int
+        )
 
     def _may_alias(self, condition: z3.BoolRef) -> bool:
         from pysymex.core.solver.engine import active_incremental_solver

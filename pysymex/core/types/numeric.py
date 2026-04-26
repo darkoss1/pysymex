@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -26,14 +26,10 @@ in the same module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import z3
 
 from .base import SymbolicType, TypeTag, fresh_name
-
-if TYPE_CHECKING:
-    from .scalars import SymbolicValue
 
 _BV_WIDTH: int = 64
 
@@ -101,19 +97,6 @@ class SymbolicBool(SymbolicType):
     def concrete(value: bool) -> SymbolicBool:
         """Create a concrete boolean."""
         return SymbolicBool(z3.BoolVal(value), str(value))
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=z3.If(self.z3_bool, z3.IntVal(1), z3.IntVal(0)),
-            is_int=Z3_FALSE,
-            z3_bool=self.z3_bool,
-            is_bool=Z3_TRUE,
-            is_path=Z3_FALSE,
-        )
 
 
 @dataclass
@@ -302,19 +285,6 @@ class SymbolicInt(SymbolicType):
         """Create a concrete integer."""
         return SymbolicInt(z3.IntVal(value), str(value))
 
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, Z3_TRUE, SymbolicValue
-
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=self.z3_int,
-            is_int=Z3_TRUE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-        )
-
 
 @dataclass
 class SymbolicFloat(SymbolicType):
@@ -481,18 +451,3 @@ class SymbolicFloat(SymbolicType):
     def concrete(value: float) -> SymbolicFloat:
         """Create a concrete float."""
         return SymbolicFloat(z3.RealVal(value), str(value))
-
-    def as_unified(self) -> SymbolicValue:
-        """As unified."""
-        from .scalars import Z3_FALSE, SymbolicValue
-
-        _abs_floor = z3.ToInt(z3.If(self.z3_real >= 0, self.z3_real, -self.z3_real))
-        _sign = z3.If(self.z3_real < 0, z3.IntVal(-1), z3.IntVal(1))
-        return SymbolicValue(
-            _name=self._name,
-            z3_int=_abs_floor * _sign,
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            is_path=Z3_FALSE,
-        )

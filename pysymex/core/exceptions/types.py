@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Protocol, cast
+from typing import Protocol, TypeGuard, cast
 
 import z3
 
@@ -516,14 +516,29 @@ def raises(
     """
     contract = RaisesContract(exc_type, when, message)
 
+    def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
+        """Type guard to narrow a value to list[object]."""
+        return isinstance(value, list)
+
+    def _ensure_raises_list(annotated: _RaisesAnnotated) -> list[RaisesContract]:
+        """Get a typed raises-contract list attached to a callable."""
+        existing_attr = getattr(annotated, "__raises__", None)
+        if _is_list_of_objects(existing_attr):
+            normalized: list[RaisesContract] = []
+            for item in existing_attr:  # type: ignore[misc]  # TypeGuard ensures list[object]
+                if isinstance(item, RaisesContract):
+                    normalized.append(item)
+            annotated.__raises__ = normalized
+            return normalized
+        normalized = []
+        annotated.__raises__ = normalized
+        return normalized
+
     def decorator(func: Callable[..., object]) -> Callable[..., object]:
         """Decorator."""
         annotated_func = cast("_RaisesAnnotated", func)
-        existing = getattr(annotated_func, "__raises__", None)
-        if not isinstance(existing, list):
-            annotated_func.__raises__ = []
-            existing = annotated_func.__raises__
-        existing.append(contract)
+        raises_list = _ensure_raises_list(annotated_func)
+        raises_list.append(contract)
         return func
 
     return decorator

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import z3
 import pytest
@@ -26,8 +26,10 @@ class _IdentityModel(FunctionModel):
             return ModelResult(value=value, constraints=(value.is_int,))
         return ModelResult(value=value)
 
+
 class TestModelResult:
     """Test suite for pysymex.models.builtins.base.ModelResult."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         cond = z3.Int("x") > 0
@@ -40,6 +42,7 @@ class TestModelResult:
 
 class TestFunctionModel:
     """Test suite for pysymex.models.builtins.base.FunctionModel."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         model = _IdentityModel()

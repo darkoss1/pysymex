@@ -114,14 +114,6 @@ class TestIncrementalSolver:
         assert "queries" in stats and "cache_hits" in stats
 
 
-class TestShadowSolver:
-    def test_initialization(self) -> None:
-        with warnings.catch_warnings(record=True) as recorded:
-            warnings.simplefilter("always")
-            _solver = mod.ShadowSolver()
-        assert any(issubclass(w.category, DeprecationWarning) for w in recorded)
-
-
 class TestPortfolioSolver:
     def test_check_hard(self) -> None:
         solver = mod.PortfolioSolver(timeout_ms=200, fast_timeout_ms=50, max_workers=1)

@@ -36,4 +36,3 @@ def test_trace_event_union_round_trip_for_step_event() -> None:
     assert isinstance(parsed, StepDeltaEvent)
     assert parsed.event_type == "step"
     assert parsed.seq == 7
-

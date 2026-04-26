@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -303,9 +303,9 @@ class StubRepository:
             Path.home() / ".typeshed",
         ]
         try:
-            import mypy
+            import mypy  # type: ignore[import]
 
-            mypy_path = Path(mypy.__file__).parent / "typeshed"
+            mypy_path = Path(mypy.__file__).parent / "typeshed"  # type: ignore[arg-type]
             if mypy_path.exists():
                 possible_paths.append(mypy_path)
         except ImportError:

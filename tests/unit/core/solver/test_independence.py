@@ -1,9 +1,11 @@
-﻿import pysymex.core.solver.independence
+import pysymex.core.solver.independence
 import z3
 from unittest.mock import patch
 
+
 class TestUnionFind:
     """Test suite for pysymex.core.solver.independence.UnionFind."""
+
     def test_find(self) -> None:
         """Scenario: first find on unseen element; expected element as its own root."""
         uf = pysymex.core.solver.independence.UnionFind()
@@ -30,6 +32,7 @@ class TestUnionFind:
 
 class TestConstraintIndependenceOptimizer:
     """Test suite for pysymex.core.solver.independence.ConstraintIndependenceOptimizer."""
+
     def test_reset(self) -> None:
         """Scenario: reset after registration; expected stats counters cleared."""
         opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()

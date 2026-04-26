@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -23,7 +23,6 @@ main scanning pipeline, providing a unified interface for:
 - Type inference
 - Flow-sensitive analysis
 - Pattern recognition
-- Taint analysis
 - Abstract interpretation
 - Enhanced detectors
 This creates a comprehensive static analysis pipeline that minimizes
@@ -124,11 +123,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Disable type inference",
     )
     parser.add_argument(
-        "--no-taint",
-        action="store_true",
-        help="Disable taint analysis",
-    )
-    parser.add_argument(
         "--include-info",
         action="store_true",
         help="Include info-level issues",
@@ -142,7 +136,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config = AnalysisConfig(
         type_inference=not args.no_type_inference,
-        taint_analysis=not args.no_taint,
         include_info=args.include_info,
         min_confidence=args.min_confidence,
     )

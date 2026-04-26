@@ -1,9 +1,10 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import pytest
 from pysymex.sandbox.errors import SandboxError
 from pysymex.sandbox.runner import SandboxRunner
 from pysymex.sandbox.types import ExecutionStatus, SandboxBackend, SandboxConfig, ResourceLimits
+
 
 class TestSandboxRunner:
     """Test suite for pysymex.sandbox.runner.SandboxRunner."""

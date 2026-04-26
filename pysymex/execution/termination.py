@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,8 +33,6 @@ from enum import Enum, auto
 from typing import cast
 
 import z3
-
-from pysymex.analysis.contracts import ContractCompiler
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +69,7 @@ class RankingFunction:
         """Compile to Z3 expression."""
         if self.z3_expr is not None:
             return cast("z3.ArithRef", self.z3_expr)
-        self.z3_expr = ContractCompiler.compile_expression(self.expression, symbols)
+        self.z3_expr = eval(self.expression, {"__builtins__": {}}, symbols)
         return cast("z3.ArithRef", self.z3_expr)
 
 

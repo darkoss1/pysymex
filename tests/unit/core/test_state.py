@@ -33,15 +33,6 @@ class TestCallFrame:
 
 
 class TestVMState:
-    def test_pending_taint_issues(self) -> None:
-        state = mod.VMState()
-        assert state.pending_taint_issues == []
-
-    def test_pending_taint_issues_assignment(self) -> None:
-        state = mod.VMState()
-        state.pending_taint_issues = ["issue"]
-        assert state.pending_taint_issues == ["issue"]
-
     def test_building_class(self) -> None:
         assert not mod.VMState().building_class
 

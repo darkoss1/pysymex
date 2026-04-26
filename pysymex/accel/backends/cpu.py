@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -48,8 +48,9 @@ MAX_TREEWIDTH: int = 28
 def is_available() -> bool:
     """Check if Numba is available."""
     try:
-        from numba import njit, prange  # type: ignore[reportUnusedImport]  # noqa: F401
+        import numba
 
+        _ = numba
         return True
     except ImportError:
         return False
@@ -263,4 +264,3 @@ def warmup() -> None:
         evaluate_bag(constraint)
     except ImportError:
         pass
-

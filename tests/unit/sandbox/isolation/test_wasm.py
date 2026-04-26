@@ -1,4 +1,4 @@
-﻿from unittest.mock import patch
+from unittest.mock import patch
 
 import pytest
 from pysymex.sandbox.errors import SandboxSetupError
@@ -12,7 +12,9 @@ class _FakeProcess:
         self._stdout = stdout
         self._stderr = stderr
 
-    def communicate(self, input: bytes | None = None, timeout: float | None = None) -> tuple[bytes, bytes]:
+    def communicate(
+        self, input: bytes | None = None, timeout: float | None = None
+    ) -> tuple[bytes, bytes]:
         _ = input
         _ = timeout
         return self._stdout, self._stderr
@@ -23,6 +25,7 @@ class _FakeProcess:
     def wait(self, timeout: float | None = None) -> int:
         _ = timeout
         return self.returncode
+
 
 class TestWasmBackend:
     """Test suite for pysymex.sandbox.isolation.wasm.WasmBackend."""

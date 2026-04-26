@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -70,27 +70,29 @@ def extract_unsat_core(
     solver = z3.Solver()
     solver.set("timeout", timeout_ms)
 
-    indicators = [z3.Bool(f"_core_ind_{i}") for i in range(len(constraints))]
+    indicators = [z3.Bool(f"_core_ind_{id(c)}_{i}") for i, c in enumerate(constraints)]
+    assumptions: list[z3.BoolRef] = []
 
     for ind, c in zip(indicators, constraints, strict=False):
         try:
             solver.add(z3.Implies(ind, c))
+            assumptions.append(ind)
         except z3.Z3Exception:
             continue
 
-    result = solver.check(*indicators)
+    result = solver.check(*assumptions)
 
     if result != z3.unsat:
         return None
 
     core_indicators = solver.unsat_core()
-    core_ids = {ind.get_id() for ind in core_indicators}  # type: ignore[attr-defined]
+    core_ids = {ind.get_id() for ind in core_indicators}
 
     core_constraints: list[z3.BoolRef] = []
     core_indices: list[int] = []
 
     for i, (ind, c) in enumerate(zip(indicators, constraints, strict=False)):
-        if ind.get_id() in core_ids:  # type: ignore[attr-defined]
+        if ind.get_id() in core_ids:
             core_constraints.append(c)
             core_indices.append(i)
 

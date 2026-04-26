@@ -1,16 +1,25 @@
 import z3
 from pysymex.analysis.abstract.domains.lattices import (
-    Sign, SignValue, Parity, ParityValue, Null, NullValue
+    Sign,
+    SignValue,
+    Parity,
+    ParityValue,
+    Null,
+    NullValue,
 )
+
 
 class TestSignValue:
     """Test suite for pysymex.analysis.abstract.domains.lattices.SignValue."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert SignValue.BOTTOM.name == "BOTTOM"
 
+
 class TestSign:
     """Test suite for pysymex.analysis.abstract.domains.lattices.Sign."""
+
     def test_is_top(self) -> None:
         """Test is_top behavior."""
         assert Sign.top().is_top() is True
@@ -91,14 +100,18 @@ class TestSign:
         """Test non_zero behavior."""
         assert Sign.non_zero().value == SignValue.NON_ZERO
 
+
 class TestParityValue:
     """Test suite for pysymex.analysis.abstract.domains.lattices.ParityValue."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert ParityValue.BOTTOM.name == "BOTTOM"
 
+
 class TestParity:
     """Test suite for pysymex.analysis.abstract.domains.lattices.Parity."""
+
     def test_is_top(self) -> None:
         """Test is_top behavior."""
         assert Parity.top().is_top() is True
@@ -154,14 +167,18 @@ class TestParity:
         """Test odd behavior."""
         assert Parity.odd().value == ParityValue.ODD
 
+
 class TestNullValue:
     """Test suite for pysymex.analysis.abstract.domains.lattices.NullValue."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert NullValue.BOTTOM.name == "BOTTOM"
 
+
 class TestNull:
     """Test suite for pysymex.analysis.abstract.domains.lattices.Null."""
+
     def test_is_top(self) -> None:
         """Test is_top behavior."""
         assert Null.top().is_top() is True

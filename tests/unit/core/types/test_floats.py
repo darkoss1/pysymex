@@ -102,10 +102,6 @@ class TestSymbolicFloat:
         merged = a.conditional_merge(b, z3.Bool("cond"))
         assert merged is not None
 
-    def test_as_unified(self) -> None:
-        sf = mod.SymbolicFloat("x")
-        assert sf.as_unified() is not None
-
 
 class TestFloatAnalyzer:
     def test_check_operation(self) -> None:

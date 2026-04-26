@@ -2,19 +2,27 @@ import pytest
 import z3
 import ast
 from pysymex.analysis.cross_function.core import (
-    FunctionSummaryCache, CallGraph, CallGraphBuilder, EffectAnalyzer,
-    ContextSensitiveAnalyzer, CrossFunctionAnalyzer
+    FunctionSummaryCache,
+    CallGraph,
+    CallGraphBuilder,
+    EffectAnalyzer,
+    ContextSensitiveAnalyzer,
+    CrossFunctionAnalyzer,
 )
 from pysymex.analysis.cross_function.types import CallContext
 from pysymex.core.types.scalars import SymbolicValue
 
+
 def make_dummy_code() -> object:
     def my_func() -> None:
         print("hello")
+
     return my_func.__code__
+
 
 class TestFunctionSummaryCache:
     """Test suite for pysymex.analysis.cross_function.core.FunctionSummaryCache."""
+
     def test_get(self) -> None:
         """Test get behavior."""
         cache = FunctionSummaryCache()
@@ -30,8 +38,10 @@ class TestFunctionSummaryCache:
         assert res == "summary1"
         assert cache._hits == 1
 
+
 class TestCallGraph:
     """Test suite for pysymex.analysis.cross_function.core.CallGraph."""
+
     def test_add_function(self) -> None:
         """Test add_function behavior."""
         cg = CallGraph()
@@ -75,13 +85,6 @@ class TestCallGraph:
         cg.add_call("f1", "f2", 1, 1)
         cg.add_call("f2", "f3", 2, 2)
         order = cg.topological_order()
-        # Topo order returns callees before callers? Actually the code reverses at the end.
-        # queue is nodes with in_degree 0 (nobody calls them). So f1.
-        # It processes f1 -> f2 -> f3. Then reverses.
-        # Wait, get_callees increments in_degree for callee.
-        # So f1 in_deg=0, f2=1, f3=1.
-        # Processing: f1 out, decreases f2 to 0. f2 out, decreases f3 to 0. f3 out.
-        # Result = [f1, f2, f3]. Reverse -> [f3, f2, f1]
         assert order == ["f3", "f2", "f1"]
 
     def test_get_reachable(self) -> None:
@@ -92,54 +95,62 @@ class TestCallGraph:
         r = cg.get_reachable("f1")
         assert "f1" in r and "f2" in r and "f3" in r
 
+
 class TestCallGraphBuilder:
     """Test suite for pysymex.analysis.cross_function.core.CallGraphBuilder."""
+
     def test_build_from_module(self) -> None:
         """Test build_from_module behavior."""
         cgb = CallGraphBuilder()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         cg = cgb.build_from_module(code)
         assert isinstance(cg, CallGraph)
         assert "<module>" in cg.nodes
 
+
 class TestEffectAnalyzer:
     """Test suite for pysymex.analysis.cross_function.core.EffectAnalyzer."""
+
     def test_analyze_function(self) -> None:
         """Test analyze_function behavior."""
         ea = EffectAnalyzer()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         summary = ea.analyze_function(code, "my_func")
-        assert summary.effects.value >= 0 # Has some effect, probably READ_GLOBAL for print
+        assert summary.effects.value >= 0
 
     def test_analyze_with_call_graph(self) -> None:
         """Test analyze_with_call_graph behavior."""
         ea = EffectAnalyzer()
         cg = CallGraph()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         cg.add_call("f1", "f2", 1, 1)
         summaries = ea.analyze_with_call_graph(cg, {"f1": code, "f2": code})
         assert "f1" in summaries
 
+
 class TestContextSensitiveAnalyzer:
     """Test suite for pysymex.analysis.cross_function.core.ContextSensitiveAnalyzer."""
+
     def test_analyze(self) -> None:
         """Test analyze behavior."""
         csa = ContextSensitiveAnalyzer()
         cg = CallGraph()
         cg.add_function("entry_func")
         cg.entry_points.add("entry_func")
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         summaries = csa.analyze(cg, {"entry_func": code})
         key = ("entry_func", CallContext())
         assert key in summaries
         assert summaries[key].function == "entry_func"
 
+
 class TestCrossFunctionAnalyzer:
     """Test suite for pysymex.analysis.cross_function.core.CrossFunctionAnalyzer."""
+
     def test_analyze_module(self) -> None:
         """Test analyze_module behavior."""
         cfa = CrossFunctionAnalyzer()
-        code = make_dummy_code() # type: ignore[arg-type]
+        code = make_dummy_code()
         res = cfa.analyze_module(code)
         assert "call_graph" in res
         assert "effects" in res

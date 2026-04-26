@@ -1,13 +1,21 @@
 import z3
 from pysymex.analysis.summaries.core import (
-    SummaryBuilder, SummaryRegistry, get_summary, register_summary,
-    compose_summaries, instantiate_summary, create_builtin_summaries,
-    register_builtin_summaries, SummaryAnalyzer
+    SummaryBuilder,
+    SummaryRegistry,
+    get_summary,
+    register_summary,
+    compose_summaries,
+    instantiate_summary,
+    create_builtin_summaries,
+    register_builtin_summaries,
+    SummaryAnalyzer,
 )
 from pysymex.analysis.summaries.types import CallSite, FunctionSummary
 
+
 class TestSummaryBuilder:
     """Test suite for pysymex.analysis.summaries.core.SummaryBuilder."""
+
     def test_initial_args(self) -> None:
         """Test initial_args behavior."""
         b = SummaryBuilder("f")
@@ -94,15 +102,17 @@ class TestSummaryBuilder:
         s = b.build()
         assert s.name == "f"
 
+
 class TestSummaryRegistry:
     """Test suite for pysymex.analysis.summaries.core.SummaryRegistry."""
+
     def test_register(self) -> None:
         """Test register behavior."""
         r = SummaryRegistry()
         s = FunctionSummary("f", module="mod")
         r.register(s)
         assert r.has("f")
-        
+
     def test_get(self) -> None:
         """Test get behavior."""
         r = SummaryRegistry()
@@ -137,14 +147,17 @@ class TestSummaryRegistry:
         r.clear()
         assert not r.has("f")
 
+
 def test_get_summary() -> None:
     """Test get_summary behavior."""
     assert get_summary("missing_f") is None
+
 
 def test_register_summary() -> None:
     """Test register_summary behavior."""
     register_summary(FunctionSummary("f_global"))
     assert get_summary("f_global") is not None
+
 
 def test_compose_summaries() -> None:
     """Test compose_summaries behavior."""
@@ -154,24 +167,29 @@ def test_compose_summaries() -> None:
     comp = compose_summaries(outer, call, inner)
     assert len(comp.may_raise) == 1
 
+
 def test_instantiate_summary() -> None:
     """Test instantiate_summary behavior."""
     s = SummaryBuilder("f").add_parameter("x", "int").build()
     _pre, _post, ret = instantiate_summary(s, [z3.IntVal(1)], {})
     assert ret is not None
 
+
 def test_create_builtin_summaries() -> None:
     """Test create_builtin_summaries behavior."""
     summaries = create_builtin_summaries()
     assert len(summaries) > 0
+
 
 def test_register_builtin_summaries() -> None:
     """Test register_builtin_summaries behavior."""
     register_builtin_summaries()
     assert get_summary("builtins.len") is not None
 
+
 class TestSummaryAnalyzer:
     """Test suite for pysymex.analysis.summaries.core.SummaryAnalyzer."""
+
     def test_is_pure(self) -> None:
         """Test is_pure behavior."""
         register_builtin_summaries()
@@ -197,7 +215,6 @@ class TestSummaryAnalyzer:
     def test_check_preconditions(self) -> None:
         """Test check_preconditions behavior."""
         a = SummaryAnalyzer()
-        # Non-existent summary => True
         ok, ce = a.check_preconditions("missing", [], [])
         assert ok is True
         assert ce is None

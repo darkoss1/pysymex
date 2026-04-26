@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -265,18 +265,25 @@ def compute_mro(cls: SymbolicClass) -> tuple[SymbolicClass, ...]:
 
     def merge(seqs: list[list[SymbolicClass]]) -> list[SymbolicClass]:
         result: list[SymbolicClass] = []
+
+        tail_counts: dict[int, int] = {}
+        for s in seqs:
+            for item in s[1:]:
+                tail_counts[id(item)] = tail_counts.get(id(item), 0) + 1
+
         while True:
             seqs = [s for s in seqs if s]
             if not seqs:
                 return result
             for seq in seqs:
                 head = seq[0]
-                in_tail = any(head in s[1:] for s in seqs)
-                if not in_tail:
+                if tail_counts.get(id(head), 0) == 0:
                     result.append(head)
                     for s in seqs:
                         if s and s[0] == head:
                             s.pop(0)
+                            if s:
+                                tail_counts[id(s[0])] -= 1
                     break
             else:
                 raise TypeError(f"Cannot create consistent MRO for {cls.name}")

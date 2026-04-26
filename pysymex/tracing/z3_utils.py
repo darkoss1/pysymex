@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -50,7 +50,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from threading import Lock
-from typing import Final
+from typing import Final, Protocol, runtime_checkable
 
 _z3_avail: bool = False
 try:
@@ -70,6 +70,37 @@ _MAX_EXPR_CHARS = 16384
 
 
 _UNSERIALIZABLE = "<unserializable>"
+
+
+@runtime_checkable
+class _ModelDeclLike(Protocol):
+    """Minimal declaration protocol used for model serialization."""
+
+    def name(self) -> str:
+        """Return the declaration name."""
+        ...
+
+
+@runtime_checkable
+class _ModelLike(Protocol):
+    """Minimal model protocol for indexed declaration lookup."""
+
+    def decls(self) -> list[_ModelDeclLike]:
+        """Return model declarations."""
+        ...
+
+    def __getitem__(self, key: _ModelDeclLike) -> object:
+        """Return the assignment associated with a declaration."""
+        ...
+
+
+@runtime_checkable
+class _NamespaceLike(Protocol):
+    """Dictionary-like namespace protocol for state serialization."""
+
+    def items(self) -> Iterable[tuple[object, object]]:
+        """Iterate namespace key/value pairs."""
+        ...
 
 
 class Z3SemanticRegistry:
@@ -322,18 +353,15 @@ class Z3Serializer:
         if _z3 is None or model is None:
             return {}
         result: dict[str, str] = {}
+        if not isinstance(model, _ModelLike):
+            return result
         try:
-            decls_fn = getattr(model, "decls", None)
-            if not callable(decls_fn):
-                return result
-            decls = decls_fn()
-            if not isinstance(decls, list):
-                return result
+            decls = model.decls()
             for decl in decls[:max_vars]:
                 try:
-                    raw_name: str = decl.name()
+                    raw_name = decl.name()
                     semantic_name = self._registry.lookup(raw_name)
-                    value_expr = model[decl]  # type: ignore[index]
+                    value_expr = model[decl]
                     value_str = self.safe_sexpr(value_expr)
                     result[semantic_name] = value_str
                 except Exception:
@@ -391,14 +419,10 @@ class Z3Serializer:
         out: dict[str, str] = {}
         if ns is None:
             return out
+        if not isinstance(ns, _NamespaceLike):
+            return out
         try:
-            items_fn = getattr(ns, "items", None)
-            if not callable(items_fn):
-                return out
-            items_obj = items_fn()
-            if not isinstance(items_obj, Iterable):
-                return out
-            for k, v in items_obj:
+            for k, v in ns.items():
                 try:
                     out[str(k)] = self.serialize_stack_value(v)
                 except Exception:

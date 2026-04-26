@@ -1,12 +1,12 @@
 # Sandbox Security Architecture
 
-**PySyMex v0.1.0a3 - Sandbox Hardening Reference**
+**pysymex v0.1.0a4 - Sandbox Hardening Reference**
 
 ---
 
 ## Overview
 
-PySyMex includes a hardened sandbox subsystem to contain risky execution paths during analysis workflows.
+pysymex includes a hardened sandbox subsystem to contain risky execution paths during analysis workflows.
 The sandbox layer focuses on strict filesystem boundaries, backend capability checks, and platform-aware isolation behavior.
 
 ## Threat Model
@@ -38,7 +38,7 @@ This prevents host filesystem overwrite through redirection tricks.
 ### 3. Backend Capability Validation
 
 Runner backend selection validates platform/runtime support before choosing a strict backend.
-If unsupported, PySyMex falls back safely instead of applying an invalid isolation mode.
+If unsupported, pysymex falls back safely instead of applying an invalid isolation mode.
 
 ### 4. Windows Job Object Enforcement
 

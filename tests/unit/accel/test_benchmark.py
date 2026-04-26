@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 from unittest.mock import patch
@@ -89,7 +89,7 @@ def test_system_info_initialization() -> None:
         platform="win32",
         processor="x86_64",
         numba_version=None,
-        cuda_device=None,
+        sat_device=None,
         backends_available=["Reference"],
     )
 

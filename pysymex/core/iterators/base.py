@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -189,13 +189,18 @@ class SymbolicRange(SymbolicIterator):
             return False
 
     @property
-    def _is_concrete(self) -> bool:
+    def is_concrete(self) -> bool:
         """Check if all values are concrete."""
         return (
             (isinstance(self.current, int) or z3.is_int_value(self.current))
             and (isinstance(self.stop, int) or z3.is_int_value(self.stop))
             and (isinstance(self.step, int) or z3.is_int_value(self.step))
         )
+
+    @property
+    def _is_concrete(self) -> bool:
+        """Check if all values are concrete. (Deprecated: use is_concrete instead)"""
+        return self.is_concrete
 
     def remaining_bound(self) -> int | z3.ArithRef:
         """Calculate remaining iterations."""
@@ -330,4 +335,3 @@ class SymbolicSequenceIterator(SymbolicIterator):
     def is_bounded(self) -> bool:
         """Property returning the is_bounded."""
         return True
-

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Argument parser creation for PySyMex CLI."""
+"""Argument parser creation for pysymex CLI."""
 
 from __future__ import annotations
 
@@ -27,28 +27,27 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser with subcommands."""
     parser = argparse.ArgumentParser(
         prog="pysymex",
-        description=" PySyMex - Symbolic Execution Engine for Python",
+        description=" pysymex - Symbolic Execution Engine for Python",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  PySyMex scan path/to/file.py          Scan a file (symbolic mode)
-  PySyMex scan path/to/dir -r           Scan directory recursively
-  PySyMex scan path/ --mode static      Static analysis mode
-  PySyMex scan path/ --mode pipeline    Full pipeline mode
-  PySyMex analyze file.py -f func_name  Analyze specific function
-  PySyMex verify file.py                Verify function contracts
-  PySyMex concolic file.py -f func -n 50  Concolic test generation
-  PySyMex benchmark                      Run benchmark suite
+  pysymex scan path/to/file.py          Scan a file (symbolic mode)
+  pysymex scan path/to/dir -r           Scan directory recursively
+  pysymex scan path/ --mode static      Static analysis mode
+  pysymex scan path/ --mode pipeline    Full pipeline mode
+  pysymex analyze file.py -f func_name  Analyze specific function
+  pysymex verify file.py                Verify function contracts
+  pysymex concolic file.py -f func -n 50  Concolic test generation
+  pysymex benchmark                      Run benchmark suite
         """,
     )
 
-    from importlib.metadata import PackageNotFoundError
     from importlib.metadata import version as pkg_version
 
     try:
         __version__ = pkg_version("pysymex")
-    except PackageNotFoundError:
-        __version__ = "0.1.0a3"
+    except Exception:
+        __version__ = "0.1.0a4"
 
     parser.add_argument(
         "-V",
@@ -78,7 +77,7 @@ Examples:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["text", "json", "sarif"],
+        choices=["text", "json", "sarif", "rich"],
         default="text",
         help="Output format (default: text)",
     )
@@ -98,6 +97,11 @@ Examples:
         "--verbose",
         action="store_true",
         help="Verbose output",
+    )
+    scan_parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show detailed performance statistics (time, memory)",
     )
     scan_parser.add_argument(
         "--max-paths",
@@ -231,7 +235,7 @@ Examples:
     )
     analyze_parser.add_argument(
         "--format",
-        choices=["text", "json", "sarif", "html", "markdown"],
+        choices=["text", "json", "sarif", "html", "markdown", "rich"],
         default="text",
         help="Output format (default: text)",
     )
@@ -257,6 +261,11 @@ Examples:
         "--verbose",
         action="store_true",
         help="Verbose output",
+    )
+    analyze_parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show detailed performance statistics (time, memory)",
     )
 
     verify_parser = subparsers.add_parser(
@@ -356,11 +365,16 @@ Examples:
         default=5,
         help="Iterations per benchmark (default: 5)",
     )
+    bench_parser.add_argument(
+        "--case",
+        type=str,
+        help="Run a specific benchmark case by name",
+    )
 
     check_parser = subparsers.add_parser(
         "check",
         help="Run CI-friendly check (exit code reflects severity)",
-        description="Run PySyMex analysis suitable for CI/CD pipelines",
+        description="Run pysymex analysis suitable for CI/CD pipelines",
     )
     check_parser.add_argument(
         "paths",

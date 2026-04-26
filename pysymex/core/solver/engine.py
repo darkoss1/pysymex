@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -35,28 +35,43 @@ import contextvars
 import logging
 import os
 import time
+import concurrent.futures
+import multiprocessing as mp
+import queue
+from multiprocessing.queues import Queue as MpQueue
+from multiprocessing.process import BaseProcess
 from collections import OrderedDict, deque
 from collections.abc import Iterable
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Protocol, cast
 
 import z3
 
 from pysymex._typing import SolverProtocol
-from pysymex.core.solver.constraints import structural_hash
+from pysymex.core.solver.constraints import ConstraintHasher, structural_hash
 from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
 from pysymex.core.solver.unsat import UnsatCoreResult, extract_unsat_core
+from pysymex.stats.registry import StatsRegistry
+from pysymex.stats.types import EventType, Metadata
 
 logger = logging.getLogger(__name__)
 
 _CACHE_CONTEXT_MASK = (1 << 128) - 1
 
+
+def _emit_event(
+    event_type: EventType,
+    value: float = 0.0,
+    metadata: Metadata | None = None,
+) -> None:
+    """Emit a solver telemetry event through the stats registry."""
+    StatsRegistry().emit(event_type, value, metadata)
+
+
 __all__ = [
     "DEFAULT_SOLVER_TIMEOUT_MS",
     "IncrementalSolver",
     "PortfolioSolver",
-    "ShadowSolver",
     "SolverResult",
     "clear_solver_caches",
     "create_solver",
@@ -175,12 +190,13 @@ class IncrementalSolver:
         self._solver.set("timeout", timeout_ms)
         try:
             import os
+
             threads = max(1, os.cpu_count() or 1)
             z3.set_param("parallel.enable", True)
             z3.set_param("sat.threads", threads)
             self._solver.set("threads", threads)
-        except Exception:
-            pass
+        except (z3.Z3Exception, OSError, ValueError) as exc:
+            logger.debug("Failed to enable Z3 parallel mode: %s", exc)
         z3.set_param("timeout", timeout_ms)
         self._timeout_ms = timeout_ms
         self._scope_depth = 0
@@ -199,23 +215,23 @@ class IncrementalSolver:
         self._is_unsat_context: set[int] = set()
         self._portfolio: PortfolioSolver | None = None
         self._escalation_threshold_ms: float = 500.0
-        self._theory_hits: dict[str, int] = {"qflia": 0, "qfs": 0, "qfbv": 0, "mixed": 0}
+
         self._escalations: int = 0
+        self._abandoned_solvers: list[z3.Solver] = []
 
         self._active_path: list[z3.BoolRef] = []
+        self._hasher = ConstraintHasher()
+        self._executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
     def reset(self) -> None:
-        """Reset the solver state and clear all caches.
+        """Reset the solver state and clear all caches instantaneously.
 
-        This effectively starts a fresh Z3 session by popping all scopes,
+        This effectively starts a fresh Z3 session by resetting the solver,
         clearing the model history, and wiping the structural cache indices.
         Used between independent analysis runs or during resource recovery.
         """
-
-        while self._scope_depth > 0:
-            self._solver.pop()
-            self._scope_depth -= 1
         self._solver.reset()
+        self._scope_depth = 0
         self._cache.clear()
         self._cache_index.clear()
         self._cache_context_stack = [0]
@@ -223,13 +239,30 @@ class IncrementalSolver:
         self._optimizer.reset()
         self._is_unsat_context.clear()
         self._active_path.clear()
+        self._hasher = ConstraintHasher()
+        self._executor_pool.shutdown(wait=False, cancel_futures=True)
+        self._executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-    @staticmethod
-    def _expr_equal(a: z3.BoolRef, b: z3.BoolRef) -> bool:
+    def __del__(self) -> None:
+        """Cleanup executor pool on garbage collection."""
+        try:
+            self._executor_pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+    def _expr_equal(self, a: z3.BoolRef, b: z3.BoolRef) -> bool:
         """Return semantic equality for two constraints with a fast hash pre-check."""
         if a is b:
             return True
-        if a.hash() != b.hash():
+        # Use hasher cache to avoid duplicate FFI calls
+        cache = self._hasher._cache  # type: ignore[attr-defined]
+        a_id = id(a)
+        b_id = id(b)
+        if a_id not in cache:
+            cache[a_id] = a.hash()
+        if b_id not in cache:
+            cache[b_id] = b.hash()
+        if cache[a_id] != cache[b_id]:
             return False
         try:
             return bool(z3.eq(a, b))
@@ -272,7 +305,9 @@ class IncrementalSolver:
 
     def _make_cache_key(self, constraints: list[z3.BoolRef]) -> int:
         """Create a scope-aware cache key for a constraint set."""
-        return self._mix_cache_context(self._current_cache_context(), structural_hash(constraints))
+        return self._mix_cache_context(
+            self._current_cache_context(), structural_hash(constraints, self._hasher)
+        )
 
     def _make_cache_key_for_constraints(
         self,
@@ -284,7 +319,8 @@ class IncrementalSolver:
         if callable(hash_value_getter):
             try:
                 hv = hash_value_getter()
-            except Exception:
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                logger.debug("Failed to get hash value from constraint chain: %s", exc)
                 hv = None
             if isinstance(hv, int):
                 return self._mix_cache_context(self._current_cache_context(), hv)
@@ -301,7 +337,7 @@ class IncrementalSolver:
         """
         if not constraints:
             return ()
-        return tuple(sorted(c.hash() for c in constraints))
+        return tuple(sorted(hash(c) for c in constraints))
 
     def _constraints_discriminator_for_constraints(
         self,
@@ -313,7 +349,8 @@ class IncrementalSolver:
         if callable(hash_value_getter):
             try:
                 hv = hash_value_getter()
-            except Exception:
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                logger.debug("Failed to get hash value from constraint chain: %s", exc)
                 hv = None
             if isinstance(hv, int):
                 return (len(constraints), hv)
@@ -324,18 +361,16 @@ class IncrementalSolver:
     ) -> list[z3.BoolRef]:
         """Perform robust Constraint Slicing (Independence) using the optimizer."""
         import z3
+
         q_list = [query] if isinstance(query, z3.ExprRef) else list(query)
         if not q_list:
             return prefix
 
-        # Ensure prefix constraints are registered dynamically without re-walking AST
-        # (var extracted ASTs are cached in independence.py, making this fast)
         for c in prefix:
             self._optimizer.register_constraint(c)
-        
-        # We query the optimizer against the combined query
+
         combined_query = z3.And(*q_list) if len(q_list) > 1 else q_list[0]
-        
+
         sliced = self._optimizer.slice_for_query(prefix, combined_query)
         return sliced
 
@@ -400,7 +435,9 @@ class IncrementalSolver:
         self._solver.add(*constraints)
         if constraints:
             updated_context = self._current_cache_context()
-            constraint_hashes = sorted(structural_hash([constraint]) for constraint in constraints)
+            constraint_hashes = sorted(
+                structural_hash([constraint], self._hasher) for constraint in constraints
+            )
             for constraint_hash in constraint_hashes:
                 updated_context = self._mix_cache_context(updated_context, constraint_hash)
             self._cache_context_stack[-1] = updated_context
@@ -428,55 +465,60 @@ class IncrementalSolver:
             SolverResult indicating sat/unsat/unknown with optional model.
         """
         self._query_count += 1
+
+        num_clauses = len(self._active_path) + len(assumptions)
+        _emit_event(EventType.SOLVER_QUERY, 0.0, {"clauses": num_clauses})
+
+        self._solver.set("timeout", self._timeout_ms)
+        rlimit = int(self._timeout_ms * 2500)
+        self._solver.set("rlimit", rlimit)
         start = time.perf_counter()
-        result = self._solver.check(*assumptions)
+
+        future = self._executor_pool.submit(self._solver.check, *assumptions)
+        result: z3.CheckSatResult = z3.unknown
+        try:
+            result = future.result(timeout=self._timeout_ms / 1000.0 + 1.0)
+        except concurrent.futures.TimeoutError:
+            logger.error("Z3 solver completely hung. Abandoning solver instance.")
+            result = z3.unknown
+
+            self._abandoned_solvers.append(self._solver)
+
+            old_path = list(self._active_path)
+            self._solver = z3.Solver()
+            self._solver.set("timeout", self._timeout_ms)
+            try:
+                import os
+
+                threads = max(1, os.cpu_count() or 1)
+                self._solver.set("threads", threads)
+            except Exception as exc:
+                logger.debug("Failed to configure threads on rebuilt solver: %s", exc)
+            self._scope_depth = 0
+            self._cache_context_stack = [0]
+            self._active_path = []
+            self._sync_path(old_path)
+        except Exception:
+            result = z3.unknown
+        finally:
+            if result != z3.unknown:
+                self._solver.set("rlimit", 0)
+
         elapsed_ms = (time.perf_counter() - start) * 1000
         self._solver_time_ms += elapsed_ms
 
         if result == z3.sat:
+            _emit_event(EventType.SOLVER_SAT, 1.0)
             model = self._solver.model()
             if self._warm_start:
                 self._last_models.append(model)
             return SolverResult.sat(model)
         elif result == z3.unsat:
+            _emit_event(EventType.SOLVER_UNSAT, 1.0)
             return SolverResult.unsat()
         else:
+            _emit_event(EventType.SOLVER_UNKNOWN, 1.0)
             return SolverResult.unknown()
-
-    def _get_independent_clusters(self, constraints: list[z3.BoolRef]) -> list[list[z3.BoolRef]]:
-        """Partition constraints into independent clusters using the optimizer.
-
-        KNOWN LIMITATION: Ambient constraints added via ``add()`` are already
-        internalized in the Z3 solver but are NOT included in the partition.
-        This means a cluster may be reported SAT even though the conjunction
-        with ambient constraints is UNSAT.  In practice this is safe because
-        ``is_sat()`` calls ``self._solver.push(); self._solver.add(cluster)``
-        which stacks the cluster ON TOP of the ambient assertions — so Z3
-        still sees the full ambient + cluster conjunction.  However, the
-        variable-overlap heuristic may place constraints in separate clusters
-        when an ambient constraint links their variables, potentially missing
-        an early-UNSAT shortcut.  This is a performance concern, not a
-        soundness bug, because each cluster is checked against the full
-        ambient context.
-        """
-
-        constraint_vars: list[frozenset[str]] = []
-        for c in constraints:
-            var_names = self._optimizer.register_constraint(c)
-            constraint_vars.append(var_names)
-
-        clusters: dict[str, list[z3.BoolRef]] = {}
-        for c, var_names in zip(constraints, constraint_vars, strict=False):
-            if not var_names:
-                root = "CONST"
-            else:
-                root = self._optimizer._uf.find(next(iter(var_names)))  # type: ignore[protected-access]
-
-            if root not in clusters:
-                clusters[root] = []
-            clusters[root].append(c)
-
-        return list(clusters.values())
 
     def is_sat(
         self,
@@ -485,9 +527,8 @@ class IncrementalSolver:
     ) -> bool:
         """Check if constraints are satisfiable, with caching.
 
-        Uses constraint independence optimization: when constraints can be
-        partitioned into independent clusters, each cluster is checked
-        separately against the cache, enabling sub-query reuse.
+        Uses constraint independence optimization to slice the constraints
+        down to only what is necessary for the current suffix.
 
         Args:
             constraints: List of Z3 boolean constraints.
@@ -507,102 +548,71 @@ class IncrementalSolver:
             if z3.is_false(c):
                 return False
 
-        cache_key = self._make_cache_key_for_constraints(constraints, constraint_list)
-        cache_disc = self._constraints_discriminator_for_constraints(constraints, constraint_list)
+        from pysymex.core.solver.constraints import structural_hash
+
+        cache_hv = structural_hash(constraint_list, self._hasher)
+        cache_key = self._mix_cache_context(0, cache_hv)
+        cache_disc = (
+            ()
+            if len(constraint_list) <= 5
+            else self._constraints_discriminator_for_constraints(constraints, constraint_list)
+        )
+
         cached = self._cache_lookup(cache_key, cache_disc)
         if cached is not None:
             return cached.is_sat
 
-        if known_sat_prefix_len is not None and 0 < known_sat_prefix_len <= len(constraint_list):
+        if known_sat_prefix_len is not None and 0 <= known_sat_prefix_len <= len(constraint_list):
             prefix = constraint_list[:known_sat_prefix_len]
             suffix = constraint_list[known_sat_prefix_len:]
+        else:
+            prefix = []
+            suffix = constraint_list
 
-            sliced_prefix = self._slice_prefix_for_suffix(prefix, suffix)
+        for c in suffix:
+            if z3.is_false(c):
+                self._cache_store(cache_key, cache_disc, SolverResult.unsat())
+                return False
 
-            self._sync_path(sliced_prefix)
+        is_aligned = known_sat_prefix_len is not None and known_sat_prefix_len == len(
+            self._active_path
+        )
+        if is_aligned:
+            sliced_prefix = prefix
+        else:
+            sliced_prefix = (
+                prefix
+                if not prefix
+                else (self._slice_prefix_for_suffix(prefix, suffix) if suffix else prefix)
+            )
 
-            if not suffix:
-                result = SolverResult.sat(None)
-                self._cache_store(cache_key, cache_disc, result)
-                return True
+        self._sync_path(sliced_prefix)
 
-            self._solver.push()
-            try:
-                for c in suffix:
-                    self._solver.add(c)
-                result_check = self.check()
-            finally:
-                self._solver.pop()
-
-            self._cache_store(cache_key, cache_disc, result_check)
-            if result_check.is_unknown:
-                return True
-            return result_check.is_sat
-
-        if len(constraint_list) <= 3:
-            self._solver.push()
-            try:
-                for c in constraint_list:
-                    self._solver.add(c)
-                result = self.check()
-            finally:
-                self._solver.pop()
-            if result.is_unknown:
-                return True
+        if not suffix:
+            result = SolverResult.sat(None)
             self._cache_store(cache_key, cache_disc, result)
-            return result.is_sat
+            return True
 
-        if len(constraint_list) >= 2:
-            clusters = self._get_independent_clusters(constraint_list)
-            if len(clusters) > 1:
-                for cluster in clusters:
-                    cluster_key = self._make_cache_key(cluster)
-                    cluster_disc = self._constraints_discriminator(cluster)
-                    cached_cluster = self._cache_lookup(cluster_key, cluster_disc)
-                    if cached_cluster is not None:
-                        if not cached_cluster.is_sat:
-                            result = SolverResult.unsat()
-                            self._cache_store(cache_key, cache_disc, result)
-                            return False
-                    else:
-                        self._solver.push()
-                        try:
-                            for c in cluster:
-                                self._solver.add(c)
-                            cluster_result = self.check()
-                        finally:
-                            self._solver.pop()
-                        self._cache_store(cluster_key, cluster_disc, cluster_result)
-                        if not cluster_result.is_sat:
-                            result = SolverResult.unsat()
-                            self._cache_store(cache_key, cache_disc, result)
-                            return False
+        use_push_pop = known_sat_prefix_len is not None or len(self._active_path) > 0
 
-                result = SolverResult.sat(None)
-                self._cache_store(cache_key, cache_disc, result)
-                return True
+        if use_push_pop:
+            self._solver.push()
 
-        theory = self._detect_theory(constraint_list)
-        self._configure_for_theory(theory)
-
-        self._solver.push()
         start_ns = time.perf_counter()
         try:
-            for c in constraint_list:
-                self._solver.add(c)
+            self._solver.add(*suffix)
             result = self.check()
         finally:
-            self._solver.pop()
-            self._reset_theory_config()
+            if use_push_pop:
+                self._solver.pop()
         elapsed_ms = (time.perf_counter() - start_ns) * 1000
 
         if result.is_unknown:
-            escalated = self._try_escalate(constraint_list, elapsed_ms, force=True)
+            escalated_constraints = sliced_prefix + suffix
+            escalated = self._try_escalate(escalated_constraints, elapsed_ms, force=True)
             if escalated is not None and not escalated.is_unknown:
                 self._cache_store(cache_key, cache_disc, escalated)
                 return escalated.is_sat
-
-        if result.is_unknown:
             return True
 
         self._cache_store(cache_key, cache_disc, result)
@@ -705,19 +715,19 @@ class IncrementalSolver:
         for var, info in result.items():
             if isinstance(info, dict):
                 info_d = cast("dict[str, object]", info)
-                if info_d.get("is_int") == z3.BoolVal(True) or str(info_d.get("is_int")) == "True":
-                    formatted[var] = {"type": "int", "value": info_d.get("int")}
-                elif (
-                    info_d.get("is_bool") == z3.BoolVal(True)
-                    or str(info_d.get("is_bool")) == "True"
-                ):
-                    formatted[var] = {"type": "bool", "value": info_d.get("bool")}
-                elif "str" in info_d:
-                    formatted[var] = {"type": "str", "value": info_d.get("str")}
-                elif "int" in info_d:
+                is_int_val = info_d.get("is_int")
+                if z3.is_true(is_int_val) or str(is_int_val) == "True":
                     formatted[var] = {"type": "int", "value": info_d.get("int")}
                 else:
-                    formatted[var] = {"type": "unknown", "value": info_d}
+                    is_bool_val = info_d.get("is_bool")
+                    if z3.is_true(is_bool_val) or str(is_bool_val) == "True":
+                        formatted[var] = {"type": "bool", "value": info_d.get("bool")}
+                    elif "str" in info_d:
+                        formatted[var] = {"type": "str", "value": info_d.get("str")}
+                    elif "int" in info_d:
+                        formatted[var] = {"type": "int", "value": info_d.get("int")}
+                    else:
+                        formatted[var] = {"type": "unknown", "value": info_d}
             else:
                 formatted[var] = {"type": "unknown", "value": info}
         if variables is not None:
@@ -761,114 +771,6 @@ class IncrementalSolver:
             UnsatCoreResult with the minimal core, or None if not UNSAT.
         """
         return extract_unsat_core(constraints, timeout_ms=self._timeout_ms)
-
-    @staticmethod
-    def _detect_theory(constraints: list[z3.BoolRef]) -> str:
-        """Classify the dominant SMT theory of *constraints*.
-
-        Walks the Z3 AST (depth-limited) and returns one of:
-
-        - ``"qflia"`` – quantifier-free linear integer arithmetic only
-        - ``"qfs"``   – string / sequence theory present
-        - ``"qfbv"``  – bit-vector operations present
-        - ``"mixed"``  – multiple theories or unrecognisable ops
-
-        The result drives :meth:`_configure_for_theory` which sets
-        theory-specific Z3 parameters before solving.
-        """
-        has_string = False
-        has_bv = False
-        has_nonlinear = False
-
-        budget = 2000
-        stack: list[z3.ExprRef] = list(constraints)
-        visited: set[int] = set()
-
-        while stack and budget > 0:
-            expr = stack.pop()
-            eid = expr.get_id()
-            if eid in visited:
-                continue
-            visited.add(eid)
-            budget -= 1
-
-            sort = expr.sort()
-            sort_kind = sort.kind()
-            if sort_kind == z3.Z3_SEQ_SORT or sort_kind == z3.Z3_RE_SORT:
-                has_string = True
-            elif sort_kind == z3.Z3_BV_SORT:
-                has_bv = True
-
-            if sum([has_string, has_bv, has_nonlinear]) >= 2:
-                break
-
-            if z3.is_app(expr):
-                decl = expr.decl()
-                dk = decl.kind()
-
-                if dk in (z3.Z3_OP_MOD, z3.Z3_OP_REM, z3.Z3_OP_IDIV):
-                    has_nonlinear = True
-
-                if dk == z3.Z3_OP_MUL and expr.num_args() >= 2:
-                    non_const = sum(
-                        1
-                        for i in range(expr.num_args())
-                        if not z3.is_int_value(expr.arg(i))
-                        and not z3.is_rational_value(expr.arg(i))
-                    )
-                    if non_const >= 2:
-                        has_nonlinear = True
-
-                for i in range(expr.num_args()):
-                    child = expr.arg(i)
-                    if child.get_id() not in visited:
-                        stack.append(child)
-
-        theory_count = sum([has_string, has_bv, has_nonlinear])
-        if theory_count > 1 or has_nonlinear:
-            return "mixed"
-        if has_string:
-            return "qfs"
-        if has_bv:
-            return "qfbv"
-        if has_nonlinear:
-            return "mixed"
-        return "qflia"
-
-    def _configure_for_theory(self, theory: str) -> None:
-        """Set Z3 solver parameters optimal for *theory*.
-
-        Called once per query (not per constraint) — cheap because
-        Z3 parameter changes on an existing Solver are O(1).
-        """
-        self._theory_hits[theory] = self._theory_hits.get(theory, 0) + 1
-
-        if theory == "qflia":
-            try:
-                self._solver.set("smt.arith.solver", 6)
-            except z3.Z3Exception:
-                pass
-        elif theory == "qfs":
-            try:
-                self._solver.set("smt.string_solver", "seq")
-            except z3.Z3Exception:
-                pass
-        else:
-            try:
-                self._solver.set("smt.arith.solver", 2)
-            except z3.Z3Exception:
-                pass
-
-    def _reset_theory_config(self) -> None:
-        """Reset solver params to defaults after a theory-specific solve."""
-        try:
-            self._solver.set("smt.arith.solver", 2)
-        except z3.Z3Exception:
-            pass
-        try:
-            self._solver.set("smt.string_solver", "auto")
-        except z3.Z3Exception:
-            pass
 
     def _try_escalate(
         self,
@@ -917,7 +819,6 @@ class IncrementalSolver:
             "scope_depth": self._scope_depth,
             "solver_time_ms": round(self._solver_time_ms, 2),
             "warm_start_models": len(self._last_models),
-            "theory_hits": dict(self._theory_hits),
             "escalations": self._escalations,
         }
 
@@ -928,45 +829,10 @@ class IncrementalSolver:
         )
 
 
-class ShadowSolver(IncrementalSolver):
-    """Deprecated alias for IncrementalSolver.
-
-    The name ``ShadowSolver`` is misleading in a symbolic execution
-    context. Use ``IncrementalSolver`` directly instead.
-    """
-
-    def __init__(
-        self,
-        timeout_ms: int = 5000,
-        cache_size: int = 10000,
-        warm_start: bool = True,
-        use_cache: bool = True,
-    ) -> None:
-        import warnings
-
-        warnings.warn(
-            "ShadowSolver is deprecated, use IncrementalSolver directly",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(
-            timeout_ms=timeout_ms,
-            cache_size=cache_size,
-            warm_start=warm_start,
-            use_cache=use_cache,
-        )
-
-
 class PortfolioSolver:
-    """Parallel portfolio solver for hard queries.
+    """Parallel portfolio solver with active process termination and true Cube-and-Conquer."""
 
-    Runs multiple Z3 tactics in parallel and returns the first result.
-    Uses ProcessPoolExecutor to bypass the GIL for CPU-bound Z3 work.
-
-    Only triggered for queries that exceed the fast timeout threshold.
-    """
-
-    TACTICS = ["smt", "qflia", "qfnra", "default", "cube-and-conquer"]
+    TACTICS = ["smt", "qflia", "qfnra", "default", "cube_and_conquer"]
 
     def __init__(
         self,
@@ -976,104 +842,180 @@ class PortfolioSolver:
     ) -> None:
         self._timeout_ms = timeout_ms
         self._fast_timeout_ms = fast_timeout_ms
-        self._max_workers = max_workers or min(len(self.TACTICS), os.cpu_count() or 2)
+        self._available_tactics = self._get_available_tactics()
+        self._max_workers = max_workers or min(len(self._available_tactics), os.cpu_count() or 2)
+
+    def _get_available_tactics(self) -> list[str]:
+        """Check which tactics are actually available in the installed Z3 build."""
+        available: list[str] = []
+        for tactic in self.TACTICS:
+            if tactic == "cube_and_conquer":
+                try:
+                    goal = z3.Goal()
+                    z3.Then("simplify", "propagate-values", "cube")(goal)
+                    available.append(tactic)
+                except z3.Z3Exception as exc:
+                    logger.debug("Skipping unavailable tactic %s: %s", tactic, exc)
+            else:
+                available.append(tactic)
+        return available
 
     def check_hard(self, constraints: list[z3.BoolRef]) -> SolverResult:
-        """Solve a hard query using parallel tactics.
-
-        Serializes constraints to SMT-LIB format (since Z3 objects
-        can't be pickled), reconstructs in each worker process.
-
-        Args:
-            constraints: List of Z3 boolean constraints.
-
-        Returns:
-            First SolverResult from any tactic that succeeds.
-        """
-
         smt_str = self._serialize_constraints(constraints)
         if smt_str is None:
             return SolverResult.unknown()
 
-        try:
-            with ProcessPoolExecutor(max_workers=self._max_workers) as pool:
-                futures = {
-                    pool.submit(_portfolio_worker, smt_str, tactic, self._timeout_ms): tactic
-                    for tactic in self.TACTICS
-                }
-                for future in as_completed(futures, timeout=self._timeout_ms / 1000):
-                    try:
-                        result = future.result(timeout=1)
-                        if result is not None and not result.is_unknown:
-                            for f in futures:
-                                f.cancel()
-                            if result.is_sat:
-                                return self._materialize_sat_result(constraints)
-                            return result
-                    except (TimeoutError, z3.Z3Exception, OSError, RuntimeError):
-                        logger.debug("Portfolio future failed", exc_info=True)
-                        continue
-        except (OSError, RuntimeError, z3.Z3Exception, TimeoutError):
-            logger.debug("Portfolio solving failed", exc_info=True)
+        ctx = mp.get_context("spawn")
+        out_queue: MpQueue[tuple[str, str]] = ctx.Queue()
+        processes: list[BaseProcess] = []
 
-        return SolverResult.unknown()
+        for tactic in self._available_tactics[: self._max_workers]:
+            p = ctx.Process(
+                target=_portfolio_worker,
+                args=(smt_str, tactic, self._timeout_ms, out_queue),
+                daemon=True,
+            )
+            p.start()
+            processes.append(p)
+
+        result = SolverResult.unknown()
+        start_time = time.time()
+        timeout_sec = self._timeout_ms / 1000.0
+
+        finished_workers = 0
+        while finished_workers < len(processes):
+            remaining_time = timeout_sec - (time.time() - start_time)
+            if remaining_time <= 0:
+                break
+            try:
+                status, tactic = out_queue.get(timeout=remaining_time)
+                finished_workers += 1
+                if status == "sat":
+                    result = self._materialize_sat_result(constraints)
+                    break
+                elif status == "unsat":
+                    result = SolverResult.unsat()
+                    break
+            except queue.Empty:
+                break
+
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=0.1)
+
+        return result
 
     def _serialize_constraints(self, constraints: list[z3.BoolRef]) -> str | None:
-        """Serialize constraints to SMT-LIB format for cross-process transfer."""
         try:
             solver = z3.Solver()
             solver.add(constraints)
             return solver.to_smt2()
         except (z3.Z3Exception, TypeError):
-            logger.debug("Constraint serialization failed", exc_info=True)
             return None
 
     def _materialize_sat_result(self, constraints: list[z3.BoolRef]) -> SolverResult:
-        """Rebuild a SAT result with a local model in the parent process."""
         solver = z3.Solver()
         solver.set("timeout", self._timeout_ms)
         solver.add(constraints)
         result = solver.check()
         if result == z3.sat:
             return SolverResult.sat(solver.model())
-        if result == z3.unsat:
-            return SolverResult.unsat()
         return SolverResult.unknown()
 
 
-def _portfolio_worker(smt_str: str, tactic_name: str, timeout_ms: int) -> SolverResult | None:
-    """Worker function for portfolio solving. Must be top-level for pickling."""
+def _portfolio_worker(
+    smt_str: str, tactic_name: str, timeout_ms: int, out_queue: MpQueue[tuple[str, str]]
+) -> None:
+    """Isolated worker function for portfolio solving, enabling forceful termination."""
     try:
+        import z3
+
         solver = z3.Solver()
         solver.set("timeout", timeout_ms)
         solver.from_string(smt_str)
 
-        if tactic_name != "default":
+        if tactic_name == "cube_and_conquer":
             try:
-                tactic = z3.Tactic(tactic_name)
                 goal = z3.Goal()
                 for a in solver.assertions():
                     goal.add(cast("z3.BoolRef", a))
-                result_goals = tactic(goal)
-
-                solver = z3.Solver()
-                solver.set("timeout", timeout_ms)
-                for subgoal in result_goals:
-                    expr = subgoal.as_expr()
-                    solver.add(expr)
+                cube_tactic = z3.Then("simplify", "propagate-values", "cube")
+                subgoals = cube_tactic(goal)
             except z3.Z3Exception:
-                logger.debug("Z3 tactic %s failed", tactic_name, exc_info=True)
+                res = solver.check()
+                status = "sat" if res == z3.sat else "unsat" if res == z3.unsat else "unknown"
+                out_queue.put((status, tactic_name))
+                return
 
-        result = solver.check()
-        if result == z3.sat:
-            return SolverResult(is_sat=True, is_unsat=False, is_unknown=False)
-        elif result == z3.unsat:
-            return SolverResult.unsat()
+            if len(subgoals) <= 1:
+                res = solver.check()
+                status = "sat" if res == z3.sat else "unsat" if res == z3.unsat else "unknown"
+            else:
+                import concurrent.futures
+                import os
+
+                is_sat = False
+                any_unknown = False
+
+                def check_cube(cube: z3.Goal) -> z3.CheckSatResult:
+                    sub_solver = z3.Solver()
+                    sub_solver.set("timeout", timeout_ms)
+                    sub_solver.add(cube.as_expr())
+                    return sub_solver.check()
+
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=os.cpu_count() or 4
+                ) as executor:
+                    futures: list[concurrent.futures.Future[z3.CheckSatResult]] = [
+                        executor.submit(check_cube, cube) for cube in subgoals
+                    ]
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            sub_res = future.result()
+                            if sub_res == z3.sat:
+                                is_sat = True
+                                for f in futures:
+                                    f.cancel()
+                                break
+                            elif sub_res == z3.unknown:
+                                any_unknown = True
+                        except Exception:
+                            any_unknown = True
+
+                if is_sat:
+                    status = "sat"
+                elif any_unknown:
+                    status = "unknown"
+                else:
+                    status = "unsat"
+
+            out_queue.put((status, tactic_name))
+            return
+
+        elif tactic_name != "default":
+            tactic = z3.Tactic(tactic_name)
+            goal = z3.Goal()
+            for a in solver.assertions():
+                goal.add(cast("z3.BoolRef", a))
+            try:
+                res_goals = tactic(goal)
+                sub_solver = z3.Solver()
+                sub_solver.set("timeout", timeout_ms)
+                for r in res_goals:
+                    sub_solver.add(r.as_expr())
+                res = sub_solver.check()
+            except z3.Z3Exception:
+                res = z3.unknown
         else:
-            return SolverResult.unknown()
-    except z3.Z3Exception:
-        logger.debug("Portfolio worker failed for tactic %s", tactic_name, exc_info=True)
-        return None
+            res = solver.check()
+
+        status = "sat" if res == z3.sat else "unsat" if res == z3.unsat else "unknown"
+        out_queue.put((status, tactic_name))
+
+    except Exception as exc:
+        logger.error("Portfolio solver worker error for tactic %s: %s", tactic_name, exc)
+        out_queue.put(("error", tactic_name))
 
 
 DEFAULT_SOLVER_TIMEOUT_MS: int = 5000
@@ -1126,12 +1068,10 @@ def is_satisfiable(
     solver = _active_solver_var.get()
     if solver is not None:
         return solver.is_sat(constraints, known_sat_prefix_len=known_sat_prefix_len)
-    if not isinstance(constraints, tuple):
-        constraints = tuple(constraints)
     return _is_satisfiable_cached(constraints)
 
 
-def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
+def _is_satisfiable_cached(constraints: Iterable[z3.BoolRef]) -> bool:
     """Standalone (non-incremental) satisfiability check.
 
     BUG-011 note: The previous docstring said ``(DISABLED)`` — it was never
@@ -1155,24 +1095,32 @@ def _is_satisfiable_cached(constraints: tuple[z3.BoolRef, ...]) -> bool:
     return result
 
 
-def get_model(constraints: Iterable[z3.BoolRef]) -> z3.ModelRef | None:
+def get_model(constraints: Iterable[z3.BoolRef] | object) -> z3.ModelRef | None:
     """Get a Z3 model for satisfiable constraints."""
-    if not isinstance(constraints, (list, tuple)):
-        constraints = tuple(constraints)
-    elif isinstance(constraints, list):
-        constraints = tuple(constraints)
     return _get_model_cached(constraints)
 
 
-def _get_model_cached(constraints: tuple[z3.BoolRef, ...]) -> z3.ModelRef | None:
+def _get_model_cached(constraints: Iterable[z3.BoolRef] | object) -> z3.ModelRef | None:
     """Standalone (non-incremental) model extraction.
 
     Not actually cached: z3.BoolRef is unhashable so functools.lru_cache
     cannot be applied.  Use IncrementalSolver for hot paths.
     """
+    from pysymex.core.memory.cow import ConstraintChain
+
+    if isinstance(constraints, ConstraintChain):
+        constraints = constraints.to_list()
+
+    # Ensure we have a list of BoolRef
+    if not isinstance(constraints, (list, tuple)):
+        try:
+            constraints = list(constraints)  # type: ignore[arg-type]
+        except TypeError:
+            constraints = []
+
     solver = z3.Solver()
     solver.set("timeout", 5000)
-    solver.add(constraints)
+    solver.add(constraints)  # type: ignore[arg-type]
     if solver.check() == z3.sat:
         return solver.model()
     return None

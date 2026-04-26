@@ -57,7 +57,7 @@ Scan a single Python file for potential bugs.
 from pysymex import scan_file
 
 result = scan_file(
-    file_path="path/to/file.py",  # Required: file to scan
+    file_path="example_file.py",  # Required: file to scan
     verbose=False,                 # Print output to console
     max_paths=100,                 # Max paths per function
     timeout=30.0                   # Timeout in seconds
@@ -183,7 +183,7 @@ python -m pysymex.scanner --dir ./src --watch
 Watching for file changes...
 
 ======================================================================
-Scanning: ./src/utils.py
+Scanning: example_utils.py
 ======================================================================
 
 Found 1 potential issues:
@@ -220,7 +220,7 @@ Custom: Use `--log` argument or set in code
   "total_issues": 7,
   "scans": [
     {
-      "file": "./src/utils.py",
+      "file": "example_utils.py",
       "timestamp": "2026-01-17T12:00:05.000000",
       "issues": [
         {
@@ -469,11 +469,6 @@ Tracks all scans in a session with automatic logging.
 
 | Kind | Description | Severity |
 |------|-------------|----------|
-| `SQL_INJECTION` | Untrusted data flows to SQL query execution | High |
-| `COMMAND_INJECTION` | Untrusted data flows to shell execution | High |
-| `PATH_TRAVERSAL` | Untrusted data flows to file system access | High |
-| `CODE_INJECTION` | Untrusted data flows to `eval()` or `exec()` | High |
-| `TAINT_VIOLATION` | Generic untrusted data flow to dangerous sink | High |
 | `DIVISION_BY_ZERO` | Division where denominator can be zero | High |
 | `MODULO_BY_ZERO` | Modulo where divisor can be zero | High |
 | `NULL_DEREFERENCE` | Accessing attribute/method of None | High |

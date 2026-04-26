@@ -1,15 +1,17 @@
 from pysymex.analysis.type_inference.env import TypeEnvironment
 from pysymex.analysis.type_inference.kinds import PyType, TypeKind
 
+
 class TestTypeEnvironment:
     """Test suite for pysymex.analysis.type_inference.env.TypeEnvironment."""
+
     def test_get_type(self) -> None:
         """Test get_type behavior."""
         env = TypeEnvironment()
         assert env.get_type("x").kind == TypeKind.UNKNOWN
         env.set_type("x", PyType.int_())
         assert env.get_type("x").kind == TypeKind.INT
-        
+
         # Test builtin
         assert env.get_type("len").kind == TypeKind.CALLABLE
 
@@ -54,7 +56,7 @@ class TestTypeEnvironment:
         e2.set_type("x", PyType.str_())
         joined = e1.join(e2)
         assert joined.get_type("x").kind == TypeKind.UNION
-        assert joined.get_type("y").kind == TypeKind.UNKNOWN # one is int, other unknown
+        assert joined.get_type("y").kind == TypeKind.UNKNOWN
         assert "x" in joined.definitely_assigned
         assert "y" not in joined.definitely_assigned
 

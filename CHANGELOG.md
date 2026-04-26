@@ -1,6 +1,65 @@
 # Changelog
 
-All notable changes to PySyMex will be documented in this file.
+All notable changes to pysymex will be documented in this file.
+
+
+## [0.1.0-alpha.4] - 2026-04-26
+
+### v2 Core Graduation & Experimental Contracts: Architectural Maturity & Formal Verification
+
+- **v2 Architecture Graduation**: Finalized the transition to the **Constraint Interaction Graph (CIG)** foundation. This release replaces the legacy message-passing logic from `a1` with precise **Activation-Literal MUS Extraction**, enabling the engine to operate as a true "structural hunter" that targets localized constraint bags with mathematical exactness.
+- **Tiered CPU Solver Dispatcher**: Introduced an intelligent routing layer that automatically selects the optimal solver backend (Thread-Local SAT for pure boolean logic, Z3 CDCL for mixed arithmetic, or Reference for ground-truth validation).
+- **Activation-Literal MUS Extraction**: Replaced legacy message-passing with precise structural contradiction detection using Z3's activation literals. This extracts the exact Minimal Unsatisfiable Subset (MUS) in a single query, significantly improving pruning precision.
+- **Asynchronous Core Learning**: Introduced background MUS extraction to prevent "solver stall." The engine now continues optimistic execution on likely feasible paths while a background worker proves structural UNSAT, pruning the search tree asynchronously upon discovery.
+- **Topological Thompson Sampling**: Integrated the Topological Information Yield ($\mathcal{Y}_{\text{topo}}$) equation into the Adaptive Path Manager, allowing the engine to actively hunt for structural bottlenecks and prune redundant paths based on graph-theoretic yield.
+- **Sparse Bitset State Optimization**: Implemented memory-safe structural pruning using Run-Length Encoded (RLE) sparse bitsets (Roaring Bitmaps), allowing sub-millisecond containment checks even for massive program branch counts.
+- **Incremental SMT Slicing**: Introduced true incremental prefix synchronization and chronological Copy-on-Write (COW) chains to minimize Python-to-Z3 FFI overhead.
+
+### Breaking Changes ⚠️
+- **Massive Architectural Refactor**: Reorganized the entire `pysymex` package into a modular sub-package structure. Core modules in `analysis`, `core`, `execution`, `models`, `reporting`, and `sandbox` have been moved into granular sub-directories to improve maintainability.
+- **Removal of GPU Acceleration**: The `h_acceleration` module and CuPy/GPU offloading have been removed due to PCIe latency limitations and state fragmentation. Replaced entirely by the thread-local CPU SAT approach in the `accel` module.
+- **Taint Tracking Removal**: The explicit taint tracking system and related detectors have been removed. Flow-based taint analysis will be handled by abstract interpretation in future versions.
+- **Contract System Overhaul**: Removed the legacy `ContractAnalyzer` and `ContractVerificationExecutor`. Functional verification is now handled through a modernized modular contract system (`compiler`, `decorators`, `injector`, `verifier`) integrated into the `VerifiedExecutor`.
+- **CLI Consolidation**: Removed `pysymex-verify` and `pysymex-trace-analyze` entry points. All functionality is now unified under the main `pysymex` CLI.
+- **Dependency Pinning**: Transitioned to strict pinning for core dependencies (`z3-solver==4.15.3.0`, `pydantic==2.12.5`, `immutables==0.20`, `numba==0.64.0`) to ensure deterministic and stable execution environments.
+- **Optional Dependencies Cleanup**: Removed several legacy optional dependency groups including `accel-cpu`, `accel-gpu`, `accelerate`, `gpu`, and `gpu-cuda`.
+
+### Added ✨
+- **Experimental: Full Formal Verification Lifecycle**: Version `a4` graduates the contract system from basic quantifiers to a complete formal verification engine in `pysymex.contracts`.
+    - **Hoare-Logic-Based Verifier**: Uses Z3 to prove validity of postconditions and satisfiability of preconditions against path constraints.
+    - **Inductive Loop Invariants**: Supports formal verification of loop properties via base-case and inductive-step checks.
+    - **Symbolic Contract Compiler**: A thread-safe, caching compiler that translates Python lambdas into Z3 formulas using specialized combinators (`And_`, `Or_`, `Not_`, `Implies_`) to bypass Python's short-circuiting keywords.
+    - **Decorator-Driven API**: High-level `@requires`, `@ensures`, and `@invariant` decorators for seamless specification of function and loop properties.
+- **Docker Multi-Version Testing Infrastructure**: Introduced a complete Docker-based testing suite in the `docker/` directory.
+    - **Dedicated Environments**: Includes pre-configured `Dockerfile`s for Python 3.11, 3.12, and 3.13.
+    - **Automated Validation**: Integrated a new `tests/docker.py` orchestration script to run the full test suite in parallel across all supported Python versions in isolated containers, ensuring clean-state validation before pushing changes.
+    - **Persistent Development**: Containers are optimized for persistent use with volume mounts for live code editing.
+- **New Mirrored Test Architecture**: Overhauled the `tests/` directory to mirror the `pysymex/` package structure exactly. This provides 1:1 parity between source modules and their corresponding test suites, significantly improving discoverability and maintaining 100% code coverage.
+
+- **New Acceleration Module (`accel`)**: Introduced a high-performance, thread-local CPU-based SAT solver backend (using CaDiCaL fast-path) to replace GPU offloading, providing lower latency and better state management.
+- **Version-Specific Opcode Handlers**: Added dedicated handlers for Python 3.11, 3.12, and 3.13 in `pysymex.execution.opcodes`, ensuring precise symbolic execution across different Python versions.
+- **Metrics Subsystem (`stats`)**: Added a comprehensive statistics collection and reporting module for tracking performance and execution metrics.
+- **Shared Utilities (`utils`)**: Introduced a `pysymex.utils` package for common helper functions and mathematical primitives.
+- **Immutables Integration**: Integrated the `immutables` library for persistent VM state management, significantly reducing memory pressure during path forking.
+- **New Bug Detectors**:
+    - Added `enhanced_index_error` and `enhanced_type_error` detectors with improved diagnostic context.
+    - Added `resource_leak` and `unbound_variable` detectors.
+    - Added `assertion_error` detector to both runtime and static analysis phases.
+- **Fix Suggestions**: `Issue` objects now include a `fix_suggestion` field, providing actionable advice for identified bugs.
+- **Rich Console Support**: Integrated `rich` for improved CLI formatting and diagnostic reporting.
+
+### Changed 🔄
+- **VM State Optimization**: Refactored `State` and `VM` logic to leverage persistent data structures and efficient copy-on-write patterns.
+- **Detector Modularization**: Reorganized all detectors into `logical`, `runtime`, `specialized`, and `static` sub-packages.
+- **Sandbox Modernization**: Refactored sandbox isolation backends into a robust unified harness system.
+- **License Header Standardization**: Standardized all source file headers to use the exact GPL license header format across the entire codebase.
+- **Dev Dependencies**: Updated development tools, adding `psutil` and `rich` while removing `black` and `mypy` from the core dev list.
+
+### Fixed 🐛
+- Fixed a race condition in global opcode handler registration by adding `clear_global_handlers` to `OpcodeDispatcher`.
+- Improved precision of `None` dereference and division-by-zero detection by categorizing them into runtime and static analysis phases.
+- Standardized path sanitization logic across all sandbox backends to prevent edge-case host escapes.
+- **And 100+ other minor improvements, internal refactorings, and stability fixes** to ensure the most robust alpha release to date.
 
 ## [0.1.0-alpha.3] - 2026-04-02
 
@@ -100,7 +159,7 @@ Multiple correctness and stability fixes across the core engine, including:
 
 ### Initial Release
 
-First public alpha release of PySyMex (Python Symbolic Execution Engine).
+First public alpha release of pysymex (Python Symbolic Execution Engine).
 
 #### Core Engine
 - **Symbolic Execution Engine**: Full CPython 3.11–3.13 bytecode-level analysis

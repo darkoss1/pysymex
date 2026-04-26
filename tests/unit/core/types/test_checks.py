@@ -1,4 +1,4 @@
-﻿import pysymex.core.types.checks
+import pysymex.core.types.checks
 from typing import cast
 
 from pysymex.core.types.scalars import SymbolicValue
@@ -7,6 +7,7 @@ from pysymex.core.types.scalars import SymbolicValue
 class _DummyValue:
     def __init__(self, *, name: str) -> None:
         self._name = name
+
 
 def test_is_overloaded_arithmetic() -> None:
     """Scenario: operand name carries z3 marker; expected overloaded arithmetic detection."""

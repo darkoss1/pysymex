@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -124,13 +124,23 @@ class ConstraintEntry(BaseModel):
     causality: str
 
 
+def _new_string_list() -> list[str]:
+    """Create an empty list of strings."""
+    return []
+
+
+def _new_string_dict() -> dict[str, str]:
+    """Create an empty ``dict[str, str]`` mapping."""
+    return {}
+
+
 class StackDiff(BaseModel):
     """Net change to the symbolic stack after one instruction."""
 
     model_config = ConfigDict(frozen=True)
 
     popped: int = Field(default=0, ge=0)
-    pushed: list[str] = Field(default_factory=list)
+    pushed: list[str] = Field(default_factory=_new_string_list)
 
 
 class VarDiff(BaseModel):
@@ -138,12 +148,17 @@ class VarDiff(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    modified: dict[str, str] = Field(default_factory=dict)
-    added: dict[str, str] = Field(default_factory=dict)
-    removed: list[str] = Field(default_factory=list)
+    modified: dict[str, str] = Field(default_factory=_new_string_dict)
+    added: dict[str, str] = Field(default_factory=_new_string_dict)
+    removed: list[str] = Field(default_factory=_new_string_list)
 
 
 _ConfigScalar: TypeAlias = str | int | float | bool | None
+
+
+def _new_config_scalar_dict() -> dict[str, _ConfigScalar]:
+    """Create an empty config snapshot map with scalar values."""
+    return {}
 
 
 def _new_constraint_list() -> list[ConstraintEntry]:
@@ -168,8 +183,8 @@ class SystemContextEvent(BaseModel):
     function_signature: str = ""
     source_file: str = "<unknown>"
     python_version: str = Field(default_factory=lambda: sys.version)
-    initial_symbolic_args: dict[str, str] = Field(default_factory=dict)
-    tracer_config: dict[str, _ConfigScalar] = Field(default_factory=dict)
+    initial_symbolic_args: dict[str, str] = Field(default_factory=_new_string_dict)
+    tracer_config: dict[str, _ConfigScalar] = Field(default_factory=_new_config_scalar_dict)
 
 
 class StepDeltaEvent(BaseModel):
@@ -187,7 +202,7 @@ class StepDeltaEvent(BaseModel):
     source_text: str | None = None
     stack_diff: StackDiff = Field(default_factory=StackDiff)
     var_diff: VarDiff = Field(default_factory=VarDiff)
-    mem_diff: dict[str, str] = Field(default_factory=dict)
+    mem_diff: dict[str, str] = Field(default_factory=_new_string_dict)
     constraint_added: ConstraintEntry | None = None
 
 
@@ -204,9 +219,9 @@ class KeyframeEvent(BaseModel):
     child_path_ids: list[int] | None = None
     pc: int = 0
     depth: int = 0
-    stack: list[str] = Field(default_factory=list)
-    local_vars: dict[str, str] = Field(default_factory=dict)
-    global_vars: dict[str, str] = Field(default_factory=dict)
+    stack: list[str] = Field(default_factory=_new_string_list)
+    local_vars: dict[str, str] = Field(default_factory=_new_string_dict)
+    global_vars: dict[str, str] = Field(default_factory=_new_string_dict)
     path_constraints: list[ConstraintEntry] = Field(default_factory=_new_constraint_list)
     prune_reason: str | None = None
 

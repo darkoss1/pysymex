@@ -26,4 +26,3 @@ def test_scan_directory_async_scans_single_python_file(tmp_path: Path) -> None:
     )
     assert len(results) == 1
     assert results[0].file_path.endswith("x.py")
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.accel.chtd import BagSolution, GPUBagSolver
+from pysymex.accel.chtd import BagSolution, ChtdBagSolver
 from pysymex.accel.dispatcher import reset as reset_dispatcher
 from pysymex.accel.dispatcher import get_dispatcher
 from pysymex.accel.bytecode import compile_constraint
@@ -21,7 +21,7 @@ def test_bag_solution_indices_use_little_endian_bit_order() -> None:
 
 
 def test_solve_bag_returns_nonzero_count_for_satisfiable_bag() -> None:
-    solver = GPUBagSolver(use_gpu=False, warmup=False)
+    solver = ChtdBagSolver(use_sat=False, warmup=False)
     x = z3.Bool("x")
     bag = frozenset({1})
     branch_info = {
@@ -34,7 +34,7 @@ def test_solve_bag_returns_nonzero_count_for_satisfiable_bag() -> None:
 
 
 def test_wide_bag_over_12_vars_does_not_silently_become_unsat() -> None:
-    solver = GPUBagSolver(use_gpu=False, warmup=False)
+    solver = ChtdBagSolver(use_sat=False, warmup=False)
     vars_ = [z3.Bool(f"v{i}") for i in range(13)]
     cond = vars_[0]
     bag = frozenset({100})

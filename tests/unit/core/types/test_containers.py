@@ -32,10 +32,6 @@ class TestSymbolicList:
         s, _ = mod.SymbolicList.symbolic("lst")
         assert z3.is_bool(s.could_be_falsy())
 
-    def test_with_taint(self) -> None:
-        s, _ = mod.SymbolicList.symbolic("lst")
-        assert s.with_taint("user").taint_labels is not None
-
     def test_copy(self) -> None:
         s, _ = mod.SymbolicList.symbolic("lst")
         assert s.copy() is not s
@@ -76,10 +72,6 @@ class TestSymbolicList:
         merged = a.conditional_merge(b, z3.Bool("c"))
         assert merged is not None
 
-    def test_as_unified(self) -> None:
-        s, _ = mod.SymbolicList.symbolic("lst")
-        assert z3.is_bool(s.as_unified().is_list)
-
 
 class TestSymbolicDict:
     def test_name(self) -> None:
@@ -93,10 +85,6 @@ class TestSymbolicDict:
     def test_copy(self) -> None:
         d, _ = mod.SymbolicDict.symbolic("d")
         assert d.copy() is not d
-
-    def test_with_taint(self) -> None:
-        d, _ = mod.SymbolicDict.symbolic("d")
-        assert d.with_taint("k").taint_labels is not None
 
     def test_could_be_truthy(self) -> None:
         d, _ = mod.SymbolicDict.symbolic("d")
@@ -135,10 +123,6 @@ class TestSymbolicDict:
         a, _ = mod.SymbolicDict.symbolic("a")
         b, _ = mod.SymbolicDict.symbolic("b")
         assert a.conditional_merge(b, z3.Bool("c")) is not None
-
-    def test_as_unified(self) -> None:
-        d, _ = mod.SymbolicDict.symbolic("d")
-        assert z3.is_bool(d.as_unified().is_dict)
 
 
 class TestSymbolicObject:
@@ -195,10 +179,6 @@ class TestSymbolicObject:
         b, _ = mod.SymbolicObject.symbolic("b", -1)
         assert a.conditional_merge(b, z3.Bool("c")) is not None
 
-    def test_as_unified(self) -> None:
-        o, _ = mod.SymbolicObject.symbolic("o", -1)
-        assert z3.is_bool(o.as_unified().is_obj)
-
     def test_hash_value(self) -> None:
         o, _ = mod.SymbolicObject.symbolic("o", -1)
         assert isinstance(o.hash_value(), int)
@@ -228,7 +208,3 @@ class TestSymbolicIterator:
     def test_advance(self) -> None:
         it = mod.SymbolicIterator("it", [])
         assert it.advance().index == 1
-
-    def test_as_unified(self) -> None:
-        it = mod.SymbolicIterator("it", [])
-        assert z3.is_expr(it.as_unified().z3_int)

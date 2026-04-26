@@ -1,12 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.execution.types import BRANCH_OPCODES, ExecutionConfig, ExecutionResult
 
+
 class TestExecutionConfig:
     """Test suite for pysymex.execution.types.ExecutionConfig."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         cfg = ExecutionConfig(max_paths=123, enable_chtd=False, deterministic_mode=True)
@@ -19,6 +21,7 @@ class TestExecutionConfig:
 
 class TestExecutionResult:
     """Test suite for pysymex.execution.types.ExecutionResult."""
+
     def test_has_issues(self) -> None:
         """Test has_issues behavior."""
         empty = ExecutionResult()
@@ -94,6 +97,7 @@ class TestExecutionResult:
             total_time_seconds=0.01,
         )
         out = Path(".pytest_cache") / "execution-result.sarif"
+        out.parent.mkdir(parents=True, exist_ok=True)
 
         sarif = result.to_sarif(str(out))
 

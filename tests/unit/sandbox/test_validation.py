@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +12,7 @@ from pysymex.sandbox.validation import (
     validate_config,
     validate_path,
 )
+
 
 class TestPathTraversalError:
     """Test suite for pysymex.sandbox.validation.PathTraversalError."""

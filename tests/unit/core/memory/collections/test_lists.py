@@ -1,8 +1,10 @@
-﻿import pysymex.core.memory.collections.lists
+import pysymex.core.memory.collections.lists
 import z3
+
 
 class TestOpResult:
     """Test suite for pysymex.core.memory.collections.lists.OpResult."""
+
     def test_success(self) -> None:
         """Scenario: no error message is present; expected success flag is true."""
         result = pysymex.core.memory.collections.lists.OpResult(value=1)
@@ -18,6 +20,7 @@ class TestOpResult:
 
 class TestSymbolicListOps:
     """Test suite for pysymex.core.memory.collections.lists.SymbolicListOps."""
+
     def test_length(self) -> None:
         """Scenario: concrete list length; expected exact integer size."""
         result = pysymex.core.memory.collections.lists.SymbolicListOps.length([1, 2, 3])
@@ -91,6 +94,7 @@ class TestSymbolicListOps:
 
 class TestSymbolicStringOps:
     """Test suite for pysymex.core.memory.collections.lists.SymbolicStringOps."""
+
     def test_length(self) -> None:
         """Scenario: concrete string length; expected character count."""
         result = pysymex.core.memory.collections.lists.SymbolicStringOps.length("core")

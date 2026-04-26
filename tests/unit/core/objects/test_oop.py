@@ -77,7 +77,9 @@ class TestEnhancedClass:
 
     def test_set_init_params(self) -> None:
         c = mod.EnhancedClass(base=mod.SymbolicClass("A"))
-        c.set_init_params([mod.InitParameter(name="self", is_self=True), mod.InitParameter(name="x")])
+        c.set_init_params(
+            [mod.InitParameter(name="self", is_self=True), mod.InitParameter(name="x")]
+        )
         assert c.required_init_args == 1
 
     def test_get_method(self) -> None:

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -40,6 +40,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..errors import SandboxSetupError
@@ -53,52 +54,55 @@ if TYPE_CHECKING:
 
 _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
     {
-        0,  # read
-        1,  # write
-        2,  # open
-        3,  # close
-        5,  # fstat
-        8,  # lseek
-        9,  # mmap
-        10,  # mprotect
-        11,  # munmap
-        12,  # brk
-        13,  # rt_sigaction
-        14,  # rt_sigprocmask
-        15,  # rt_sigreturn
-        17,  # pread64
-        21,  # access
-        28,  # madvise
-        35,  # nanosleep
-        60,  # exit
-        72,  # fcntl
-        79,  # getcwd
-        89,  # readlink
-        97,  # getrlimit
-        102,  # getuid
-        104,  # getgid
-        107,  # geteuid
-        108,  # getegid
-        110,  # getppid
-        158,  # arch_prctl
-        202,  # futex
-        204,  # sched_getaffinity
-        217,  # getdents64
-        218,  # set_tid_address
-        228,  # clock_gettime
-        231,  # exit_group
-        234,  # tgkill
-        257,  # openat
-        262,  # fstatat
-        273,  # set_robust_list
-        302,  # prlimit64
-        318,  # getrandom
-        332,  # statx
-        334,  # rseq
-        435,  # clone3
-        439,  # faccessat2
+        0,
+        1,
+        2,
+        3,
+        5,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17,
+        21,
+        28,
+        35,
+        60,
+        72,
+        79,
+        89,
+        97,
+        102,
+        104,
+        107,
+        108,
+        110,
+        158,
+        202,
+        204,
+        217,
+        218,
+        228,
+        231,
+        234,
+        257,
+        262,
+        273,
+        302,
+        318,
+        332,
+        334,
+        435,
+        439,
     }
 )
+
+_SIGKILL = int(getattr(signal, "SIGKILL", getattr(signal, "SIGTERM", 9)))
+_SIGXCPU = int(getattr(signal, "SIGXCPU", _SIGKILL))
 
 
 class LinuxNamespaceBackend(IsolationBackend):
@@ -169,8 +173,8 @@ class LinuxNamespaceBackend(IsolationBackend):
         """Clean up jail and kill any child processes."""
         if self._child_pid is not None:
             try:
-                os.kill(self._child_pid, signal.SIGKILL)  # type: ignore[attr-defined]  # Linux-only
-                os.waitpid(self._child_pid, 0)  # type: ignore[attr-defined]  # Linux-only
+                os.kill(self._child_pid, _SIGKILL)
+                os.waitpid(self._child_pid, 0)
             except (OSError, ChildProcessError):
                 pass
             self._child_pid = None
@@ -332,46 +336,52 @@ class LinuxNamespaceBackend(IsolationBackend):
                 err = ctypes.get_errno()
                 raise OSError(err, "prctl(PR_SET_NO_NEW_PRIVS) failed")
 
+            setrlimit_candidate = getattr(resource, "setrlimit", None)
+            setrlimit_fn: Callable[[int, tuple[int, int]], object] | None = None
+            if callable(setrlimit_candidate):
+                setrlimit_fn = setrlimit_candidate
+
+            def _set_limit(
+                limit_name: str,
+                soft: int,
+                hard: int,
+                *,
+                strict_error: str | None = None,
+            ) -> None:
+                if setrlimit_fn is None:
+                    if strict_error is not None:
+                        raise OSError(strict_error)
+                    return
+
+                limit_value = getattr(resource, limit_name, None)
+                if not isinstance(limit_value, int):
+                    if strict_error is not None:
+                        raise OSError(strict_error)
+                    return
+
+                try:
+                    setrlimit_fn(limit_value, (soft, hard))
+                except (OSError, ValueError) as exc:
+                    if strict_error is not None:
+                        raise OSError(strict_error) from exc
+
             mem_bytes = limits.memory_mb * 1024 * 1024
-            rlimit_as = getattr(resource, "RLIMIT_AS", None)
-            setrlimit = getattr(resource, "setrlimit", None)
-            try:
-                if rlimit_as is not None and callable(setrlimit):
-                    setrlimit(rlimit_as, (mem_bytes, mem_bytes))
-            except (OSError, ValueError):  # type: ignore[attr-defined]
-                pass
-            try:
-                resource.setrlimit(  # type: ignore[attr-defined]
-                    resource.RLIMIT_CPU,  # type: ignore[attr-defined]
-                    (limits.cpu_seconds, limits.cpu_seconds),
-                )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
-                pass
-            try:
-                resource.setrlimit(  # type: ignore[attr-defined]
-                    resource.RLIMIT_NPROC,  # type: ignore[attr-defined]
-                    (limits.max_processes, limits.max_processes),
-                )
-            except (OSError, ValueError) as exc:  # type: ignore[attr-defined]
-                raise OSError(f"Failed to enforce RLIMIT_NPROC={limits.max_processes}") from exc
+            _set_limit("RLIMIT_AS", mem_bytes, mem_bytes)
+            _set_limit("RLIMIT_CPU", limits.cpu_seconds, limits.cpu_seconds)
+            _set_limit(
+                "RLIMIT_NPROC",
+                limits.max_processes,
+                limits.max_processes,
+                strict_error=f"Failed to enforce RLIMIT_NPROC={limits.max_processes}",
+            )
             fsize = limits.max_file_size_mb * 1024 * 1024
-            rlimit_fsize = getattr(resource, "RLIMIT_FSIZE", None)
-            try:
-                if rlimit_fsize is not None and callable(setrlimit):
-                    setrlimit(rlimit_fsize, (fsize, fsize))
-            except (OSError, ValueError):  # type: ignore[attr-defined]
-                pass
-            try:
-                resource.setrlimit(  # type: ignore[attr-defined]
-                    resource.RLIMIT_NOFILE,  # type: ignore[attr-defined]
-                    (limits.max_file_descriptors, limits.max_file_descriptors),
-                )
-            except (OSError, ValueError):  # type: ignore[attr-defined]
-                pass
-            try:
-                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))  # type: ignore[attr-defined]
-            except (OSError, ValueError):  # type: ignore[attr-defined]
-                pass
+            _set_limit("RLIMIT_FSIZE", fsize, fsize)
+            _set_limit(
+                "RLIMIT_NOFILE",
+                limits.max_file_descriptors,
+                limits.max_file_descriptors,
+            )
+            _set_limit("RLIMIT_CORE", 0, 0)
 
         return _apply_restrictions
 
@@ -380,9 +390,9 @@ class LinuxNamespaceBackend(IsolationBackend):
         """Map child exit code / signal to an ExecutionStatus."""
         if returncode == 0:
             return ExecutionStatus.SUCCESS
-        if returncode == -signal.SIGKILL:  # type: ignore[attr-defined]  # Linux-only
+        if returncode == -_SIGKILL:
             return ExecutionStatus.MEMORY_EXCEEDED
-        if returncode == -signal.SIGXCPU:  # type: ignore[attr-defined]  # Linux-only
+        if returncode == -_SIGXCPU:
             return ExecutionStatus.CPU_EXCEEDED
         return ExecutionStatus.FAILED
 

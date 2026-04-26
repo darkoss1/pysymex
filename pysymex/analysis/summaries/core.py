@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -58,7 +58,6 @@ class SummaryBuilder:
     def set_initial_args(self, args: list[object]) -> SummaryBuilder:
         self._initial_args = list(args)
         return self
-        self._initial_args: list[object] = []
 
     def set_qualname(self, qualname: str) -> SummaryBuilder:
         """Set qualified name."""
@@ -312,7 +311,7 @@ def instantiate_summary(
     Instantiate a summary with concrete/symbolic arguments.
     Returns (precondition, postcondition, return_value).
     """
-    subst = {}
+    subst: dict[z3.ExprRef, z3.ExprRef] = {}
     for i, param in enumerate(summary.parameters):
         if i < len(args):
             old_var = param.to_z3()
@@ -343,18 +342,20 @@ def instantiate_summary(
         fresh_return_var = z3.Const(fresh_name, sort)
         subst[summary.return_var] = fresh_return_var
 
-    subst_items = list(subst.items())
+    subst_items: list[tuple[z3.ExprRef, z3.ExprRef]] = list(subst.items())
 
-    pre_conds: list[z3.ExprRef | z3.BoolRef] = []
+    pre_conds: list[z3.BoolRef] = []
     for cond in summary.preconditions:
         instantiated = z3.substitute(cond, *subst_items) if subst_items else cond
-        pre_conds.append(instantiated)
+        if isinstance(instantiated, z3.BoolRef):
+            pre_conds.append(instantiated)
     precondition = z3.And(*pre_conds) if pre_conds else z3.BoolVal(True)
 
-    post_conds: list[z3.ExprRef | z3.BoolRef] = []
+    post_conds: list[z3.BoolRef] = []
     for cond in summary.postconditions:
         instantiated = z3.substitute(cond, *subst_items) if subst_items else cond
-        post_conds.append(instantiated)
+        if isinstance(instantiated, z3.BoolRef):
+            post_conds.append(instantiated)
 
     if summary.return_constraint is not None:
         instantiated_rc = (
@@ -362,7 +363,8 @@ def instantiate_summary(
             if subst_items
             else summary.return_constraint
         )
-        post_conds.append(instantiated_rc)
+        if isinstance(instantiated_rc, z3.BoolRef):
+            post_conds.append(instantiated_rc)
 
     postcondition = z3.And(*post_conds) if post_conds else z3.BoolVal(True)
     return precondition, postcondition, fresh_return_var

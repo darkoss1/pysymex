@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -32,13 +32,92 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import TypeGuard
 
 CONFIG_FILES = [
     "pysymex.toml",
     ".pysymex.toml",
     "pyproject.toml",
 ]
+
+
+def _new_plugin_dirs() -> list[str]:
+    """Create an empty plugin-directory list with explicit element type."""
+    return []
+
+
+def _new_disabled_plugins() -> set[str]:
+    """Create an empty disabled-plugin set with explicit element type."""
+    return set()
+
+
+def _new_plugin_settings() -> dict[str, dict[str, object]]:
+    """Create an empty per-plugin settings map."""
+    return {}
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """Return True when *value* is a list of runtime objects."""
+    return isinstance(value, list)
+
+
+def _is_object_collection(
+    value: object,
+) -> TypeGuard[list[object] | set[object] | tuple[object, ...]]:
+    """Return True when *value* is a list/set/tuple of runtime objects."""
+    return isinstance(value, (list, set, tuple))
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+    """Return True when *value* is a dictionary."""
+    return isinstance(value, dict)
+
+
+def _normalize_object_dict(value: object) -> dict[str, object] | None:
+    """Normalize dictionaries to a ``dict[str, object]`` shape."""
+    if not _is_object_dict(value):
+        return None
+    normalized: dict[str, object] = {}
+    for key_obj, value_obj in value.items():
+        normalized[str(key_obj)] = value_obj
+    return normalized
+
+
+def _normalize_string_list(value: object) -> list[str] | None:
+    """Normalize an object to a list of strings when it is list-like."""
+    if not _is_object_list(value):
+        return None
+    normalized: list[str] = []
+    for item in value:
+        normalized.append(str(item))
+    return normalized
+
+
+def _normalize_string_set(value: object) -> set[str] | None:
+    """Normalize an object to a set of plugin names when it is collection-like."""
+    if _is_object_collection(value):
+        normalized: set[str] = set()
+        for item in value:
+            normalized.add(str(item))
+        return normalized
+    return None
+
+
+def _normalize_plugin_settings(value: object) -> dict[str, dict[str, object]] | None:
+    """Normalize plugin settings to ``dict[str, dict[str, object]]``."""
+    if not _is_object_dict(value):
+        return None
+    normalized: dict[str, dict[str, object]] = {}
+    for plugin_name_obj, raw_settings in value.items():
+        plugin_name = str(plugin_name_obj)
+        if _is_object_dict(raw_settings):
+            plugin_settings: dict[str, object] = {}
+            for setting_key_obj, setting_val in raw_settings.items():
+                plugin_settings[str(setting_key_obj)] = setting_val
+            normalized[plugin_name] = plugin_settings
+        else:
+            normalized[plugin_name] = {"value": raw_settings}
+    return normalized
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +198,6 @@ class DetectorConfig:
     """Configuration for bug detectors.
 
     Each boolean flag enables or disables the corresponding detector.
-    Taint-related options configure source/sink pairs for flow analysis.
 
     Attributes:
         division_by_zero: Detect division by zero.
@@ -130,9 +208,6 @@ class DetectorConfig:
         attribute_errors: Detect missing attributes.
         overflow: Detect integer overflow (bounded analysis).
         null_pointer: Detect None dereferences.
-        taint_enabled: Enable taint-flow analysis.
-        taint_sources: Names of taint source functions.
-        taint_sinks: Names of dangerous sink functions.
     """
 
     division_by_zero: bool = True
@@ -143,9 +218,6 @@ class DetectorConfig:
     attribute_errors: bool = True
     overflow: bool = False
     null_pointer: bool = True
-    taint_enabled: bool = False
-    taint_sources: list[str] = field(default_factory=lambda: ["input", "request"])
-    taint_sinks: list[str] = field(default_factory=lambda: ["exec", "eval", "sql"])
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary."""
@@ -158,9 +230,6 @@ class DetectorConfig:
             "attribute_errors": self.attribute_errors,
             "overflow": self.overflow,
             "null_pointer": self.null_pointer,
-            "taint_enabled": self.taint_enabled,
-            "taint_sources": self.taint_sources,
-            "taint_sinks": self.taint_sinks,
         }
 
 
@@ -300,9 +369,9 @@ class PluginConfig:
     """
 
     enabled: bool = True
-    plugin_dirs: list[str] = field(default_factory=list)
-    disabled_plugins: set[str] = field(default_factory=set)
-    plugin_settings: dict[str, dict[str, object]] = field(default_factory=dict)
+    plugin_dirs: list[str] = field(default_factory=_new_plugin_dirs)
+    disabled_plugins: set[str] = field(default_factory=_new_disabled_plugins)
+    plugin_settings: dict[str, dict[str, object]] = field(default_factory=_new_plugin_settings)
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary."""
@@ -322,7 +391,7 @@ class PysymexConfig:
     file via :func:`load_config`.
 
     Attributes:
-        detectors: Bug detector toggles and taint settings.
+        detectors: Bug detector toggles.
         limits: Resource limits (paths, depth, time, memory).
         output: Output format and verbosity settings.
         analysis: Exploration strategy and solver options.
@@ -362,8 +431,11 @@ class PysymexConfig:
         for key, value in self.detectors.to_dict().items():
             if isinstance(value, bool):
                 lines.append(f"{key} = {str(value).lower()}")
-            elif isinstance(value, list):
-                items = ", ".join(f'"{v}"' for v in cast("list[str]", value))
+            elif _is_object_list(value):
+                normalized_values: list[str] = []
+                for raw_val in value:
+                    normalized_values.append(str(raw_val))
+                items = ", ".join(f'"{v}"' for v in normalized_values)
                 lines.append(f"{key} = [{items}]")
             else:
                 lines.append(f"{key} = {value}")
@@ -387,8 +459,11 @@ class PysymexConfig:
         for key, value in self.analysis.to_dict().items():
             if isinstance(value, bool):
                 lines.append(f"{key} = {str(value).lower()}")
-            elif isinstance(value, list):
-                items = ", ".join(f'"{v}"' for v in cast("list[str]", value))
+            elif _is_object_list(value):
+                normalized_values: list[str] = []
+                for raw_val in value:
+                    normalized_values.append(str(raw_val))
+                items = ", ".join(f'"{v}"' for v in normalized_values)
                 lines.append(f"{key} = [{items}]")
             elif isinstance(value, str):
                 lines.append(f'{key} = "{value}"')
@@ -450,98 +525,84 @@ def load_config(
 
 def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
     """Apply configuration data to config object."""
-    if "detectors" in data:
-        det_data = data["detectors"]
-        if isinstance(det_data, dict):
-            for key in [
-                "division_by_zero",
-                "assertion_errors",
-                "index_errors",
-                "type_errors",
-                "key_errors",
-                "attribute_errors",
-                "overflow",
-                "null_pointer",
-                "taint_enabled",
-            ]:
-                if key in det_data:
-                    setattr(config.detectors, key, det_data[key])
-            if "taint_sources" in det_data:
-                src = det_data["taint_sources"]
-                if isinstance(src, list):
-                    config.detectors.taint_sources = list(src)
-            if "taint_sinks" in det_data:
-                sinks = det_data["taint_sinks"]
-                if isinstance(sinks, list):
-                    config.detectors.taint_sinks = list(sinks)
-    if "limits" in data:
-        lim_data = data["limits"]
-        if isinstance(lim_data, dict):
-            for key in [
-                "max_paths",
-                "max_depth",
-                "max_iterations",
-                "timeout_seconds",
-                "max_memory_mb",
-                "max_constraint_size",
-                "max_string_length",
-                "max_list_length",
-            ]:
-                if key in lim_data:
-                    setattr(config.limits, key, lim_data[key])
-    if "output" in data:
-        out_data = data["output"]
-        if isinstance(out_data, dict):
-            for key in [
-                "format",
-                "output_dir",
-                "color",
-                "verbose",
-                "quiet",
-                "show_paths",
-                "show_constraints",
-                "show_timing",
-            ]:
-                if key in out_data:
-                    setattr(config.output, key, out_data[key])
-    if "analysis" in data:
-        ana_data = data["analysis"]
-        if isinstance(ana_data, dict):
-            for key in [
-                "strategy",
-                "loop_unroll_limit",
-                "array_size_limit",
-                "string_solver",
-                "incremental_solving",
-                "constraint_caching",
-            ]:
-                if key in ana_data:
-                    setattr(config.analysis, key, ana_data[key])
-            if "include_patterns" in ana_data:
-                inc = ana_data["include_patterns"]
-                if isinstance(inc, list):
-                    config.analysis.include_patterns = list(inc)
-            if "exclude_patterns" in ana_data:
-                exc = ana_data["exclude_patterns"]
-                if isinstance(exc, list):
-                    config.analysis.exclude_patterns = list(exc)
-    if "plugins" in data:
-        plug_data = data["plugins"]
-        if isinstance(plug_data, dict):
-            if "enabled" in plug_data:
-                config.plugins.enabled = bool(plug_data["enabled"])
-            if "plugin_dirs" in plug_data:
-                dirs = plug_data["plugin_dirs"]
-                if isinstance(dirs, list):
-                    config.plugins.plugin_dirs = list(dirs)
-            if "disabled_plugins" in plug_data:
-                disabled = plug_data["disabled_plugins"]
-                if isinstance(disabled, (list, set)):
-                    config.plugins.disabled_plugins = set(disabled)
-            if "plugin_settings" in plug_data:
-                settings = plug_data["plugin_settings"]
-                if isinstance(settings, dict):
-                    config.plugins.plugin_settings = dict(settings)
+    det_data = _normalize_object_dict(data.get("detectors"))
+    if det_data is not None:
+        for key in [
+            "division_by_zero",
+            "assertion_errors",
+            "index_errors",
+            "type_errors",
+            "key_errors",
+            "attribute_errors",
+            "overflow",
+            "null_pointer",
+        ]:
+            if key in det_data:
+                setattr(config.detectors, key, det_data[key])
+
+    lim_data = _normalize_object_dict(data.get("limits"))
+    if lim_data is not None:
+        for key in [
+            "max_paths",
+            "max_depth",
+            "max_iterations",
+            "timeout_seconds",
+            "max_memory_mb",
+            "max_constraint_size",
+            "max_string_length",
+            "max_list_length",
+        ]:
+            if key in lim_data:
+                setattr(config.limits, key, lim_data[key])
+
+    out_data = _normalize_object_dict(data.get("output"))
+    if out_data is not None:
+        for key in [
+            "format",
+            "output_dir",
+            "color",
+            "verbose",
+            "quiet",
+            "show_paths",
+            "show_constraints",
+            "show_timing",
+        ]:
+            if key in out_data:
+                setattr(config.output, key, out_data[key])
+
+    ana_data = _normalize_object_dict(data.get("analysis"))
+    if ana_data is not None:
+        for key in [
+            "strategy",
+            "loop_unroll_limit",
+            "array_size_limit",
+            "string_solver",
+            "incremental_solving",
+            "constraint_caching",
+        ]:
+            if key in ana_data:
+                setattr(config.analysis, key, ana_data[key])
+        normalized_include = _normalize_string_list(ana_data.get("include_patterns"))
+        if normalized_include is not None:
+            config.analysis.include_patterns = normalized_include
+        normalized_exclude = _normalize_string_list(ana_data.get("exclude_patterns"))
+        if normalized_exclude is not None:
+            config.analysis.exclude_patterns = normalized_exclude
+
+    plug_data = _normalize_object_dict(data.get("plugins"))
+    if plug_data is not None:
+        enabled_value = plug_data.get("enabled")
+        if enabled_value is not None:
+            config.plugins.enabled = bool(enabled_value)
+        normalized_dirs = _normalize_string_list(plug_data.get("plugin_dirs"))
+        if normalized_dirs is not None:
+            config.plugins.plugin_dirs = normalized_dirs
+        normalized_disabled = _normalize_string_set(plug_data.get("disabled_plugins"))
+        if normalized_disabled is not None:
+            config.plugins.disabled_plugins = normalized_disabled
+        normalized_settings = _normalize_plugin_settings(plug_data.get("plugin_settings"))
+        if normalized_settings is not None:
+            config.plugins.plugin_settings = normalized_settings
 
 
 def generate_default_config() -> str:

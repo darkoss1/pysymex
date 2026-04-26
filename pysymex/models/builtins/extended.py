@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -63,8 +63,10 @@ class IterModel(FunctionModel):
             result, constraint = SymbolicValue.symbolic(f"iter_{state.pc}")
             return ModelResult(value=result, constraints=[constraint])
         val = args[0]
-        if isinstance(val, (list, tuple, str, SymbolicList, SymbolicString)):
+        if isinstance(val, (str, SymbolicList, SymbolicString)):
             return ModelResult(value=val)
+        if isinstance(val, (list, tuple)):
+            return ModelResult(value=val)  # type: ignore[arg-type]  # val is StackValue, narrowed to list/tuple but still valid
         result, constraint = SymbolicValue.symbolic(f"iter_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -221,7 +223,7 @@ class ReversedModel(FunctionModel):
             result, constraint = SymbolicList.symbolic(f"reversed_{state.pc}")
             return ModelResult(value=result, constraints=[constraint, result.z3_len == val.z3_len])
         if isinstance(val, (list, tuple, str)):
-            return ModelResult(value=list(reversed(val)))
+            return ModelResult(value=list(reversed(val)))  # type: ignore[arg-type]  # val is StackValue, narrowed but still valid for reversed
         result, constraint = SymbolicList.symbolic(f"reversed_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
 
@@ -521,6 +523,59 @@ class SetattrModel(FunctionModel):
         return ModelResult(value=SymbolicNone("none"), side_effects={"mutates_arg": 0})
 
 
+class DelattrModel(FunctionModel):
+    """Model for delattr()."""
+
+    name = "delattr"
+    qualname = "builtins.delattr"
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        return ModelResult(value=SymbolicNone("none"), side_effects={"mutates_arg": 0})
+
+
+class AiterModel(FunctionModel):
+    """Model for aiter() - async iterator."""
+
+    name = "aiter"
+    qualname = "builtins.aiter"
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        if not args:
+            result, constraint = SymbolicValue.symbolic(f"aiter_{state.pc}")
+            return ModelResult(value=result, constraints=[constraint])
+        result, constraint = SymbolicValue.symbolic(f"aiter_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
+
+
+class AnextModel(FunctionModel):
+    """Model for anext() - async next."""
+
+    name = "anext"
+    qualname = "builtins.anext"
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        if not args:
+            result, constraint = SymbolicValue.symbolic(f"anext_{state.pc}")
+            return ModelResult(value=result, constraints=[constraint])
+        result, constraint = SymbolicValue.symbolic(f"anext_{state.pc}")
+        return ModelResult(value=result, constraints=[constraint])
+
+
 class IdModel(FunctionModel):
     """Model for id()."""
 
@@ -665,7 +720,7 @@ class OpenModel(FunctionModel):
 
 
 class ExecModel(FunctionModel):
-    """Model for exec() - code injection taint sink."""
+    """Model for exec() - code injection sink."""
 
     name = "exec"
     qualname = "builtins.exec"
@@ -677,13 +732,11 @@ class ExecModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         side_effects: dict[str, object] = {
-            "code_injection": True,
             "sink_type": "exec",
         }
         if args:
             code_arg: StackValue = args[0]
             if isinstance(code_arg, (SymbolicString, SymbolicValue)):
-                side_effects["tainted_input"] = True
                 side_effects["severity"] = "critical"
         return ModelResult(
             value=SymbolicNone(),
@@ -692,7 +745,7 @@ class ExecModel(FunctionModel):
 
 
 class EvalModel(FunctionModel):
-    """Model for eval() - code injection taint sink."""
+    """Model for eval() - code injection sink."""
 
     name = "eval"
     qualname = "builtins.eval"
@@ -704,13 +757,11 @@ class EvalModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         side_effects: dict[str, object] = {
-            "code_injection": True,
             "sink_type": "eval",
         }
         if args:
             code_arg: StackValue = args[0]
             if isinstance(code_arg, (SymbolicString, SymbolicValue)):
-                side_effects["tainted_input"] = True
                 side_effects["severity"] = "critical"
         result, constraint = SymbolicValue.symbolic(f"eval_{state.pc}")
         return ModelResult(
@@ -732,9 +783,8 @@ class CompileModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        side_effects: dict[str, object] = {"code_injection": True, "sink_type": "compile"}
+        side_effects: dict[str, object] = {"sink_type": "compile"}
         if args and isinstance(args[0], (SymbolicString, SymbolicValue)):
-            side_effects["tainted_input"] = True
             side_effects["severity"] = "critical"
         result, constraint = SymbolicValue.symbolic(f"code_{state.pc}")
         return ModelResult(value=result, constraints=[constraint], side_effects=side_effects)
@@ -1153,6 +1203,7 @@ EXTENDED_MODELS = [
     ChrModel(),
     ClassmethodModel(),
     CompileModel(),
+    DelattrModel(),
     DictModel(),
     DirModel(),
     DivmodModel(),
@@ -1187,6 +1238,8 @@ EXTENDED_MODELS = [
     SuperModel(),
     VarsModel(),
     __import__Model(),
+    AiterModel(),
+    AnextModel(),
     MemoryviewTobytesModel(),
     MemoryviewTolistModel(),
     MemoryviewHexModel(),

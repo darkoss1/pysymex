@@ -1,7 +1,0 @@
-{
-  "typeCheckingMode": "strict",
-  "stubPath": "typings",
-  "exclude": [
-    "tests_backup"
-  ]
-}

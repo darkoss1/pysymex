@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -30,10 +30,14 @@ import logging
 import os
 import sys
 import time
+import re
 import types
 from datetime import datetime
 from pathlib import Path
-from typing import cast
+from typing import TypeGuard
+
+_LIST_VAR_RE = re.compile(r"collection|items|sequence|data|arr|list")
+_DICT_VAR_RE = re.compile(r"mapping|config|settings|dict|map")
 
 from pysymex.analysis.autotuner import AutoTuner
 from pysymex.analysis.detectors import Issue, IssueKind
@@ -42,7 +46,10 @@ from pysymex.analysis.specialized.ranges import ValueRangeChecker
 from pysymex.cli.reporter import ConsoleScanReporter
 from pysymex.core.solver.engine import clear_solver_caches
 from pysymex.execution.executors import ExecutionConfig, SymbolicExecutor
-from pysymex.scanner.types import ScanResult, ScanResultBuilder, ScanSession
+
+# Import opcodes early to ensure @opcode_handler decorators are registered
+from pysymex.execution.opcodes import py_version  # type: ignore  # triggers opcode handler registration
+from pysymex.scanner.types import IssueRecord, ScanResult, ScanResultBuilder, ScanSession
 from pysymex.watch import FileEventType, FileWatcher
 
 logger = logging.getLogger(__name__)
@@ -55,6 +62,32 @@ _session_var: contextvars.ContextVar[ScanSession | None] = contextvars.ContextVa
 
 def _descending_issue_count(item: tuple[str, int]) -> int:
     return -item[1]
+
+
+def _build_symbolic_vars(
+    code: types.CodeType, *, include_collection_heuristics: bool
+) -> dict[str, str]:
+    """Build symbolic argument type hints from code object parameter names."""
+    symbolic_vars: dict[str, str] = {}
+    for i, name in enumerate(code.co_varnames[: code.co_argcount]):
+        if i == 0 and name in {"self", "cls"}:
+            symbolic_vars[name] = "object"
+            continue
+        if include_collection_heuristics:
+            name_lower = name.lower()
+            if _LIST_VAR_RE.search(name_lower):
+                symbolic_vars[name] = "list"
+                continue
+            if _DICT_VAR_RE.search(name_lower):
+                symbolic_vars[name] = "dict"
+                continue
+        symbolic_vars[name] = "int"
+    return symbolic_vars
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+    """Return True if *value* is a plain dictionary."""
+    return isinstance(value, dict)
 
 
 def _auto_worker_count(*, use_sandbox: bool) -> int:
@@ -81,13 +114,13 @@ def _hardware_acceleration_status(*, use_h_acceleration: bool, use_chtd: bool) -
 
         dispatcher = get_dispatcher()
         backends = dispatcher.list_backends()
-        has_gpu = any(b.available and b.backend_type.name == "GPU" for b in backends)
+        has_sat = any(b.available and b.backend_type.name == "SAT" for b in backends)
         has_cpu = any(b.available and b.backend_type.name in {"CPU", "REFERENCE"} for b in backends)
 
-        if has_gpu and has_cpu:
-            availability = "both (GPU+CPU)"
-        elif has_gpu:
-            availability = "gpu"
+        if has_sat and has_cpu:
+            availability = "both (SAT+CPU)"
+        elif has_sat:
+            availability = "sat"
         elif has_cpu:
             availability = "cpu"
         else:
@@ -135,6 +168,7 @@ def analyze_source(
     max_paths: int = 100,
     max_depth: int = 50,
     timeout_seconds: float = 30.0,
+    solver_timeout_ms: int = 10000,
 ) -> ScanResult:
     """Analyse already-loaded source text â€” pure-ish core (no file I/O).
 
@@ -155,21 +189,23 @@ def analyze_source(
             max_depth=max_depth,
             max_iterations=max(50000, max_paths * 100),
             timeout_seconds=timeout_seconds,
+            solver_timeout_ms=solver_timeout_ms,
         )
         executor = SymbolicExecutor(config=config)
         all_issues: list[Issue] = []
         total_paths = 0
+        total_time = 0.0
+        memory_samples: list[float] = []
         module_item = all_code_with_context[0] if all_code_with_context else None
         other_items = all_code_with_context[1:] if len(all_code_with_context) > 1 else []
         module_globals = _get_default_scanner_globals()
+
+        seen_codes: set[int] = set()
+
         if module_item:
             code, class_name, full_path = module_item
-            symbolic_vars = {}
-            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
-                if i == 0 and name in ("self", "cls"):
-                    symbolic_vars[name] = "object"
-                else:
-                    symbolic_vars[name] = "int"
+            seen_codes.add(id(code))
+            symbolic_vars = _build_symbolic_vars(code, include_collection_heuristics=False)
             try:
                 exec_result = executor.execute_code(code, symbolic_vars=symbolic_vars)
                 module_globals = exec_result.final_locals
@@ -182,6 +218,9 @@ def analyze_source(
                     )
                     all_issues.append(issue_with_context)
                 total_paths += exec_result.paths_explored
+                total_time += exec_result.total_time_seconds
+                if exec_result.avg_memory_mb > 0:
+                    memory_samples.append(exec_result.avg_memory_mb)
             except Exception as e:
                 logger.debug("Module execution failed for %s", file_path, exc_info=True)
                 all_issues.append(
@@ -194,12 +233,10 @@ def analyze_source(
                     )
                 )
         for code, class_name, full_path in other_items:
-            symbolic_vars = {}
-            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
-                if i == 0 and name in ("self", "cls"):
-                    symbolic_vars[name] = "object"
-                else:
-                    symbolic_vars[name] = "int"
+            if id(code) in seen_codes:
+                continue
+            seen_codes.add(id(code))
+            symbolic_vars = _build_symbolic_vars(code, include_collection_heuristics=False)
             try:
                 exec_result = executor.execute_code(
                     code,
@@ -215,6 +252,9 @@ def analyze_source(
                     )
                     all_issues.append(issue_ctx)
                 total_paths += exec_result.paths_explored
+                total_time += exec_result.total_time_seconds
+                if exec_result.avg_memory_mb > 0:
+                    memory_samples.append(exec_result.avg_memory_mb)
             except Exception as e:
                 logger.debug(
                     "Execution failed for %s in %s", code.co_name, file_path, exc_info=True
@@ -229,10 +269,16 @@ def analyze_source(
                     )
                 )
         builder.add_paths(total_paths)
+        avg_mem = sum(memory_samples) / len(memory_samples) if memory_samples else 0.0
+        builder.set_performance(total_time, avg_mem)
 
         range_checker = ValueRangeChecker()
         seen: set[str] = set()
+        seen_codes_range: set[int] = set()
         for code, class_name, full_path in all_code_with_context:
+            if id(code) in seen_codes_range:
+                continue
+            seen_codes_range.add(id(code))
             try:
                 range_warnings = range_checker.check_function(code, file_path)
                 for warning in range_warnings:
@@ -286,7 +332,7 @@ def _get_default_scanner_globals() -> dict[str, object]:
 
     from pysymex.core.types.containers import SymbolicObject
 
-    defaults = {}
+    defaults: dict[str, object] = {}
 
     common_modules = [
         "sys",
@@ -315,7 +361,7 @@ def _get_default_scanner_globals() -> dict[str, object]:
 
 
 def analyze_file(file_path: Path) -> ScanResult:
-    """Run PySyMex analysis on a single file (I/O shell).
+    """Run pysymex analysis on a single file (I/O shell).
 
     Reads the file and delegates to :func:`analyze_source` for the
     actual analysis. Handles session tracking and console output.
@@ -343,7 +389,7 @@ def analyze_file(file_path: Path) -> ScanResult:
         for issue in result.issues:
             print(f"   â€¢ [{issue['kind']}] {issue['message']} (Line {issue['line']})")
             counterexample = issue.get("counterexample")
-            if isinstance(counterexample, dict):
+            if _is_object_dict(counterexample):
                 for var, val in counterexample.items():
                     print(f"       â””â”€ {var} = {val}")
     elif result.error:
@@ -397,6 +443,7 @@ def scan_file(
         file_path=str(file_path),
         timestamp=datetime.now().isoformat(),
     )
+    start_time = time.perf_counter()
     tracer = None
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -459,19 +506,22 @@ def scan_file(
 
         seen: set[str] = set()
 
-        def _handle_issue(issue: object) -> None:
+        def _handle_issue(issue: Issue | IssueRecord) -> None:
             """Handle issue."""
             import re
 
-            issue_dict: dict[str, object]
+            issue_dict: IssueRecord
 
-            if isinstance(issue, dict):
-                issue_dict = {str(k): v for k, v in issue.items()}
-                raw_msg_key = (
-                    f"[{issue_dict['kind']}] {issue_dict['message']} (Line {issue_dict['line']})"
-                )
-            else:
-                issue_obj = cast("Issue", issue)
+            if _is_object_dict(issue):
+                issue_dict = {}
+                for key_obj, value_obj in issue.items():
+                    issue_dict[str(key_obj)] = value_obj
+                raw_kind = str(issue_dict.get("kind", "UNKNOWN"))
+                raw_message = str(issue_dict.get("message", ""))
+                raw_line = issue_dict.get("line", "?")
+                raw_msg_key = f"[{raw_kind}] {raw_message} (Line {raw_line})"
+            elif isinstance(issue, Issue):
+                issue_obj = issue
                 raw_msg_key = (
                     f"[{issue_obj.kind.name}] {issue_obj.message} (Line {issue_obj.line_number})"
                 )
@@ -486,6 +536,8 @@ def scan_file(
                     "full_path": getattr(issue_obj, "full_path", None),
                     "counterexample": counterexample,
                 }
+            else:
+                return
 
             msg_key = re.sub(r"(_\d+|@\d+)", "", raw_msg_key)
 
@@ -496,25 +548,18 @@ def scan_file(
                     reporter.on_issue(issue_dict)
 
         total_paths = 0
+        total_time = 0.0
+        memory_samples: list[float] = []
         module_item = all_code_with_context[0] if all_code_with_context else None
         other_items = all_code_with_context[1:] if len(all_code_with_context) > 1 else []
         module_globals = _get_default_scanner_globals()
+
+        seen_codes_scan: set[int] = set()
+
         if module_item:
             code, class_name, full_path = module_item
-            symbolic_vars = {}
-            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
-                name_lower = name.lower()
-                if i == 0 and name in ("self", "cls"):
-                    symbolic_vars[name] = "object"
-                elif any(
-                    p in name_lower
-                    for p in ("collection", "items", "sequence", "data", "arr", "list")
-                ):
-                    symbolic_vars[name] = "list"
-                elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
-                    symbolic_vars[name] = "dict"
-                else:
-                    symbolic_vars[name] = "int"
+            seen_codes_scan.add(id(code))
+            symbolic_vars = _build_symbolic_vars(code, include_collection_heuristics=True)
             try:
                 exec_result = executor.execute_code(
                     code, symbolic_vars=symbolic_vars, initial_globals=module_globals
@@ -529,6 +574,9 @@ def scan_file(
                     )
                     _handle_issue(processed_issue)
                 total_paths += exec_result.paths_explored
+                total_time += exec_result.total_time_seconds
+                if exec_result.avg_memory_mb > 0:
+                    memory_samples.append(exec_result.avg_memory_mb)
             except Exception as e:
                 logger.debug("Module execution failed for %s: %s", str(file_path), e, exc_info=True)
                 _handle_issue(
@@ -542,32 +590,21 @@ def scan_file(
                 )
 
         for code, class_name, full_path in other_items:
+            if id(code) in seen_codes_scan:
+                continue
+            seen_codes_scan.add(id(code))
             if auto_tune:
                 tune_config = AutoTuner.tune(code, base_config)
                 tune_config = dataclasses.replace(
                     tune_config,
                     enable_state_merging=base_config.enable_state_merging,
                     enable_caching=base_config.enable_caching,
-                    enable_taint_tracking=base_config.enable_taint_tracking,
                 )
                 executor = SymbolicExecutor(config=tune_config)
                 if tracer:
                     tracer.install(executor)
 
-            symbolic_vars = {}
-            for i, name in enumerate(code.co_varnames[: code.co_argcount]):
-                name_lower = name.lower()
-                if i == 0 and name in ("self", "cls"):
-                    symbolic_vars[name] = "object"
-                elif any(
-                    p in name_lower
-                    for p in ("collection", "items", "sequence", "data", "arr", "list")
-                ):
-                    symbolic_vars[name] = "list"
-                elif any(p in name_lower for p in ("mapping", "config", "settings", "dict", "map")):
-                    symbolic_vars[name] = "dict"
-                else:
-                    symbolic_vars[name] = "int"
+            symbolic_vars = _build_symbolic_vars(code, include_collection_heuristics=True)
             try:
                 exec_result = executor.execute_code(
                     code, symbolic_vars=symbolic_vars, initial_globals=module_globals
@@ -593,9 +630,15 @@ def scan_file(
                     )
                 )
         result.paths_explored = total_paths
+        result.elapsed_time = time.perf_counter() - start_time
+        result.avg_memory_mb = sum(memory_samples) / len(memory_samples) if memory_samples else 0.0
 
         range_checker = ValueRangeChecker()
+        seen_codes_range_scan: set[int] = set()
         for code, class_name, full_path in all_code_with_context:
+            if id(code) in seen_codes_range_scan:
+                continue
+            seen_codes_range_scan.add(id(code))
             try:
                 range_warnings = range_checker.check_function(code, str(file_path))
                 for warning in range_warnings:
@@ -941,7 +984,7 @@ def _scan_parallel(
                         )
                         future_to_file[fut] = f
                     except StopIteration:
-                        pass
+                        continue
     except KeyboardInterrupt:
         cancelled = True
         if verbose and not reporter:
@@ -953,7 +996,9 @@ def _scan_parallel(
                 "âš ï¸  Parallel scanning unavailable, falling back to sequential mode (workers=1)."
             )
         elif verbose:
-            print("âš ï¸  Parallel scanning unavailable, falling back to sequential mode (workers=1).")
+            print(
+                "âš ï¸  Parallel scanning unavailable, falling back to sequential mode (workers=1)."
+            )
         return _scan_sequential(
             files=files,
             verbose=verbose,
@@ -1067,8 +1112,8 @@ def print_final_summary(reporter: ScanReporter | None = None) -> None:
     print(f"   Files with errors: {summary['files_error']}")
     print(f"   Total issues:      {summary['total_issues']}")
     print()
-    issue_breakdown = summary.get("issue_breakdown")
-    if isinstance(issue_breakdown, dict):
+    issue_breakdown = summary["issue_breakdown"]
+    if issue_breakdown:
         print("   Issue breakdown:")
         for kind, count in sorted(issue_breakdown.items(), key=_descending_issue_count):
             bar = "\u2588" * min(count, 30)
@@ -1185,7 +1230,7 @@ def main() -> None:
     if args.watch:
         reporter.on_status(
             "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
-            "\u2551                   PySyMex Scanner - Watch Mode                     \u2551\n"
+            "\u2551                   pysymex Scanner - Watch Mode                     \u2551\n"
             "\u2551  Press Ctrl+C to stop and see summary.                               \u2551\n"
             "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n"
         )
@@ -1209,7 +1254,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-

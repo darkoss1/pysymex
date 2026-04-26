@@ -1,8 +1,10 @@
-﻿import pysymex.core.memory.cow
+import pysymex.core.memory.cow
 import z3
+
 
 class TestCowDict:
     """Test suite for pysymex.core.memory.cow.CowDict."""
+
     def test_hash_value(self) -> None:
         """Scenario: hash on populated dict; expected integer hash output."""
         d: pysymex.core.memory.cow.CowDict[str, int] = pysymex.core.memory.cow.CowDict({"a": 1})
@@ -46,7 +48,9 @@ class TestCowDict:
 
     def test_cow_fork(self) -> None:
         """Scenario: CoW fork then mutate child; expected parent unchanged."""
-        parent: pysymex.core.memory.cow.CowDict[str, int] = pysymex.core.memory.cow.CowDict({"a": 1})
+        parent: pysymex.core.memory.cow.CowDict[str, int] = pysymex.core.memory.cow.CowDict(
+            {"a": 1}
+        )
         child = parent.cow_fork()
         child["a"] = 2
         assert parent["a"] == 1
@@ -64,6 +68,7 @@ class TestCowDict:
 
 class TestCowSet:
     """Test suite for pysymex.core.memory.cow.CowSet."""
+
     def test_add(self) -> None:
         """Scenario: add value to set; expected membership after insertion."""
         s = pysymex.core.memory.cow.CowSet()
@@ -96,6 +101,7 @@ class TestCowSet:
 
 class TestBranchRecord:
     """Test suite for pysymex.core.memory.cow.BranchRecord."""
+
     def test_initialization(self) -> None:
         """Scenario: branch record stores pc/condition/decision fields."""
         rec = pysymex.core.memory.cow.BranchRecord(1, z3.BoolVal(True), True)
@@ -104,6 +110,7 @@ class TestBranchRecord:
 
 class TestBranchChain:
     """Test suite for pysymex.core.memory.cow.BranchChain."""
+
     def test_append(self) -> None:
         """Scenario: append one record to empty chain; expected length one."""
         chain = pysymex.core.memory.cow.BranchChain.empty()
@@ -123,6 +130,7 @@ class TestBranchChain:
 
 class TestConstraintChain:
     """Test suite for pysymex.core.memory.cow.ConstraintChain."""
+
     def test_append(self) -> None:
         """Scenario: append one constraint; expected chain length one."""
         chain = pysymex.core.memory.cow.ConstraintChain.empty().append(z3.Bool("c"))

@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -14,13 +14,16 @@ class _FakeProcess:
         self._stderr = stderr
         self.pid = 12345
 
-    def communicate(self, input: bytes | None = None, timeout: float | None = None) -> tuple[bytes, bytes]:
+    def communicate(
+        self, input: bytes | None = None, timeout: float | None = None
+    ) -> tuple[bytes, bytes]:
         _ = input
         _ = timeout
         return self._stdout, self._stderr
 
     def kill(self) -> None:
         return None
+
 
 class TestLinuxNamespaceBackend:
     """Test suite for pysymex.sandbox.isolation.linux.LinuxNamespaceBackend."""
@@ -76,7 +79,10 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         with (
             patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=_FakeProcess(0, b"ok\n", b"")),
+            patch(
+                "pysymex.sandbox.isolation.linux.subprocess.Popen",
+                return_value=_FakeProcess(0, b"ok\n", b""),
+            ),
         ):
             backend.setup()
             try:

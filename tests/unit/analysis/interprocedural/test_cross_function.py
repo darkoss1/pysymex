@@ -3,48 +3,62 @@ from unittest.mock import Mock, patch
 import z3
 import types
 from pysymex.analysis.interprocedural.cross_function import (
-    CallType, CallSite, FunctionSummary, CallGraph, InterproceduralAnalyzer,
-    CallContext, ContextSensitiveAnalyzer
+    CallType,
+    CallSite,
+    FunctionSummary,
+    CallGraph,
+    InterproceduralAnalyzer,
+    CallContext,
+    ContextSensitiveAnalyzer,
 )
 from pysymex.execution.executors import ExecutionResult
+
 
 def make_dummy_func() -> types.FunctionType:
     def f() -> int:
         return 1
+
     return f
+
 
 class TestCallType:
     """Test suite for pysymex.analysis.interprocedural.cross_function.CallType."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert CallType.DIRECT.name == "DIRECT"
 
+
 class TestCallSite:
     """Test suite for pysymex.analysis.interprocedural.cross_function.CallSite."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         site = CallSite("caller", "callee", CallType.DIRECT, 10)
         assert site.caller == "caller"
         assert site.call_type == CallType.DIRECT
 
+
 class TestFunctionSummary:
     """Test suite for pysymex.analysis.interprocedural.cross_function.FunctionSummary."""
+
     def test_apply(self) -> None:
         """Test apply behavior."""
         x = z3.Int("x")
         summary = FunctionSummary("f", ["x"], return_expr=x + 1)
-        
-        # We must provide args that mimic SymbolicValue with z3_expr
+
         arg = Mock()
         arg.z3_expr = z3.IntVal(5)
         state = Mock()
-        
+
         res, constraints = summary.apply([arg], state)
         assert res is not None
-        assert z3.simplify(res).eq(z3.IntVal(6)) # 5 + 1
+        assert z3.simplify(res).eq(z3.IntVal(6))
+
 
 class TestCallGraph:
     """Test suite for pysymex.analysis.interprocedural.cross_function.CallGraph."""
+
     def test_add_function(self) -> None:
         """Test add_function behavior."""
         cg = CallGraph()
@@ -115,8 +129,10 @@ class TestCallGraph:
         dot = cg.to_dot()
         assert '"a" -> "b"' in dot
 
+
 class TestInterproceduralAnalyzer:
     """Test suite for pysymex.analysis.interprocedural.cross_function.InterproceduralAnalyzer."""
+
     @patch("pysymex.execution.executors.SymbolicExecutor")
     def test_analyze_module(self, mock_executor) -> None:
         """Test analyze_module behavior."""
@@ -140,9 +156,9 @@ class TestInterproceduralAnalyzer:
         analyzer = InterproceduralAnalyzer(max_inline_depth=2, max_recursion_depth=1)
         assert analyzer.should_inline("f", 3) is False
         assert analyzer.should_inline("f", 1) is True
-        
+
         analyzer.call_graph.add_call("r", "r", CallSite("r", "r", CallType.DIRECT, 10))
-        assert analyzer.should_inline("r", 2) is False # depth > max_recursion_depth
+        assert analyzer.should_inline("r", 2) is False
 
     def test_get_call_graph_dot(self) -> None:
         """Test get_call_graph_dot behavior."""
@@ -151,8 +167,10 @@ class TestInterproceduralAnalyzer:
         dot = analyzer.get_call_graph_dot()
         assert "digraph CallGraph" in dot
 
+
 class TestCallContext:
     """Test suite for pysymex.analysis.interprocedural.cross_function.CallContext."""
+
     def test_extend(self) -> None:
         """Test extend behavior."""
         ctx = CallContext(call_string=("a",), max_length=2)
@@ -161,22 +179,23 @@ class TestCallContext:
         ctx3 = ctx2.extend("c")
         assert ctx3.call_string == ("b", "c")
 
+
 class TestContextSensitiveAnalyzer:
     """Test suite for pysymex.analysis.interprocedural.cross_function.ContextSensitiveAnalyzer."""
+
     @patch("pysymex.execution.executors.SymbolicExecutor")
     def test_analyze_with_context(self, mock_executor) -> None:
         """Test analyze_with_context behavior."""
         mock_instance = Mock()
         mock_instance.execute_function.return_value = "result"
         mock_executor.return_value = mock_instance
-        
+
         analyzer = ContextSensitiveAnalyzer()
         ctx = CallContext(call_string=("caller",))
         f = make_dummy_func()
         res = analyzer.analyze_with_context(f, ctx)
         assert res == "result"
-        
-        # Test caching
+
         res2 = analyzer.analyze_with_context(f, ctx)
         assert res2 == "result"
         assert mock_instance.execute_function.call_count == 1

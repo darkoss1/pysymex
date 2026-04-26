@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,9 +16,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU Bytecode Optimizer - Advanced Optimization Passes.
+"""Bytecode Optimizer - Advanced Optimization Passes.
 
-Provides optimization passes for GPU bytecode:
+Provides optimization passes for bytecode:
 - Constant Folding: Evaluate constant expressions at compile time
 - Copy Propagation: Eliminate redundant COPY instructions
 - Dead Code Elimination: Remove instructions whose results are unused
@@ -489,4 +489,3 @@ def clear_cache() -> None:
     global _opt_cache
     with _opt_lock:
         _opt_cache.clear()
-

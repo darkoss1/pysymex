@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -270,9 +270,9 @@ class SymbolicFilter(SymbolicIterator):
                             passes = None
                     else:
                         passes = bool(passes_obj)
-            except (TypeError, ValueError, AttributeError, z3.Z3Exception):
-                logger.debug("Filter predicate evaluation failed", exc_info=True)
-                passes = True
+            except (TypeError, ValueError, AttributeError, z3.Z3Exception) as e:
+                logger.error("Filter predicate evaluation failed", exc_info=True)
+                raise e
             if passes:
                 if pred_constraint is not None:
                     constraints.append(pred_constraint)
@@ -510,4 +510,3 @@ class LoopBounds:
         if isinstance(self.max_iterations, int):
             return min(self.max_iterations, max_unroll)
         return max_unroll
-

@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -21,16 +21,16 @@ import dis
 import inspect
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
-import z3
-
-from pysymex.analysis.contracts import ContractKind, ContractVerifier, VerificationResult
-from pysymex.analysis.contracts.decorators import get_function_contract
+from pysymex.contracts.types import Contract, ContractKind, VerificationResult
+from pysymex.contracts.verifier import ContractVerifier
+from pysymex.contracts.decorators import get_function_contract
 from pysymex.analysis.detectors import DetectorRegistry, Issue, default_registry
 from pysymex.analysis.properties import ArithmeticVerifier, PropertyProver
 from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.execution.opcodes import py_version  # type: ignore[unused-import]  # triggers opcode handler registration
 from pysymex.execution.strategies.manager import ExplorationStrategy, PathManager
 from pysymex.execution.termination import (
     RankingFunction as _RankingFunction,
@@ -47,6 +47,7 @@ from pysymex.analysis.properties import (
     PropertyKind,
     PropertyProof,
 )
+
 
 @dataclass
 class VerifiedExecutionConfig:
@@ -79,6 +80,37 @@ class VerifiedExecutionConfig:
     verbose: bool = False
     collect_coverage: bool = True
     symbolic_args: dict[str, str] = field(default_factory=dict[str, str])
+
+
+class VerifiedExecutionOverrides(TypedDict, total=False):
+    """Typed keyword overrides accepted by ``verify``."""
+
+    max_paths: int
+    max_depth: int
+    max_iterations: int
+    timeout_seconds: float
+    strategy: ExplorationStrategy
+    max_loop_iterations: int
+    unroll_loops: bool
+    solver_timeout_ms: int
+    check_preconditions: bool
+    check_postconditions: bool
+    check_loop_invariants: bool
+    check_class_invariants: bool
+    check_termination: bool
+    termination_timeout_ms: int
+    check_overflow: bool
+    check_division_safety: bool
+    check_array_bounds: bool
+    integer_bits: int
+    infer_properties: bool
+    detect_division_by_zero: bool
+    detect_assertion_errors: bool
+    detect_index_errors: bool
+    detect_type_errors: bool
+    detect_overflow: bool
+    verbose: bool
+    collect_coverage: bool
 
 
 @dataclass
@@ -213,6 +245,7 @@ class VerifiedExecutionResult:
                 lines.append(f"  {status} {prop.description}")
         return "\n".join(lines)
 
+
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
@@ -234,25 +267,6 @@ def _extract_docstring_contracts(func: Callable[..., object]) -> tuple[int, int]
         elif stripped.startswith(":ensures:"):
             ensures_count += 1
     return requires_count, ensures_count
-
-
-def _to_z3_expr(value: object) -> z3.ExprRef | None:
-    """Best-effort conversion from runtime/symbolic value to a Z3 expression."""
-    if isinstance(value, bool):
-        return z3.BoolVal(value)
-    if isinstance(value, int):
-        return z3.IntVal(value)
-    if isinstance(value, float):
-        return z3.RealVal(value)
-    if isinstance(value, str):
-        return z3.StringVal(value)
-
-    for attr_name in ("z3_int", "z3_bool", "z3_str", "z3_addr"):
-        expr = getattr(value, attr_name, None)
-        if isinstance(expr, z3.ExprRef):
-            return expr
-
-    return None
 
 
 class VerifiedExecutor:
@@ -329,12 +343,13 @@ class VerifiedExecutor:
             verbose=self.config.verbose,
             collect_coverage=self.config.collect_coverage,
             use_loop_analysis=True,
+            enable_contract_verification=True,
         )
         core_executor = SymbolicExecutor(exec_config, self.detector_registry)
 
         func_contract = get_function_contract(func)
-        preconditions = []
-        postconditions = []
+        preconditions: list[Contract] = []
+        postconditions: list[Contract] = []
 
         if func_contract is not None:
             if self.config.check_preconditions:
@@ -347,81 +362,18 @@ class VerifiedExecutor:
 
         contract_issues: list[ContractIssue] = []
 
-        def _check_postconditions_hook(
-            executor: object, state: object, issue: object = None
-        ) -> None:
-            _ = issue
-            if not postconditions:
-                return
-
-            from pysymex.core.state import VMState
-
-            state_typed = state if isinstance(state, VMState) else None
-            if not state_typed:
-                return
-
-            instructions_obj = state_typed.current_instructions or getattr(
-                executor, "_instructions", None
-            )
-            if (
-                not isinstance(instructions_obj, list)
-                or not all(isinstance(ins, dis.Instruction) for ins in instructions_obj)
-                or state_typed.pc >= len(instructions_obj)
-            ):
-                return
-
-            instrs = cast("list[dis.Instruction]", instructions_obj)
-            instr = instrs[state_typed.pc]
-            if instr.opname not in ("RETURN_VALUE", "RETURN_CONST"):
-                return
-
-            symbols: dict[str, z3.ExprRef] = {}
-            for name, value in state_typed.local_vars.items():
-                expr = _to_z3_expr(value)
-                if expr is not None:
-                    symbols[name] = expr
-
-            if state_typed.stack:
-                ret_expr = _to_z3_expr(state_typed.peek())
-                if ret_expr is not None:
-                    symbols["__result__"] = ret_expr
-
-            for post in postconditions:
-                try:
-                    result, counterexample = self.contract_verifier.verify_postcondition(
-                        post,
-                        preconditions,
-                        list(state_typed.path_constraints),
-                        symbols,
-                    )
-                except (AttributeError, RuntimeError, TypeError, z3.Z3Exception):
-                    logger.debug("Failed to verify postcondition %s", post.condition, exc_info=True)
-                    continue
-
-                if result == VerificationResult.VIOLATED:
-                    contract_issues.append(
-                        ContractIssue(
-                            kind=ContractKind.ENSURES,
-                            condition=post.condition,
-                            message=f"Postcondition might not hold: {post.condition}",
-                            line_number=getattr(instr, "starts_line", None),
-                            counterexample=counterexample or {},
-                            result=result,
-                        )
-                    )
-
-        if self.config.check_postconditions:
-            core_executor.register_hook("pre_step", _check_postconditions_hook)
+        # Unwrap the function so the VM traces the actual code, not the decorator wrapper
+        unwrapped_func = inspect.unwrap(func)
 
         try:
-            core_result = core_executor.execute_function(func, symbolic_args)
+            core_result = core_executor.execute_function(unwrapped_func, symbolic_args)
         except Exception:
             logger.error("Core symbolic execution failed", exc_info=True)
             core_result = None
 
         arithmetic_issues: list[ArithmeticIssue] = []
-        issues = []
-        coverage = set()
+        issues: list[Issue] = []
+        coverage: set[int] = set()
         paths_explored = 0
         paths_completed = 0
         paths_pruned = 0
@@ -445,12 +397,24 @@ class VerifiedExecutor:
                             counterexample=(iss.model if isinstance(iss.model, dict) else {}),
                         )
                     )
+                elif iss.kind.name == "CONTRACT_VIOLATION":
+                    # Convert injection-based contract violations to ContractIssue
+                    contract_issues.append(
+                        ContractIssue(
+                            kind=ContractKind.ENSURES,
+                            condition=iss.message,
+                            message=iss.message,
+                            line_number=iss.line_number,
+                            counterexample=(iss.model if isinstance(iss.model, dict) else {}),
+                            result=VerificationResult.VIOLATED,
+                        )
+                    )
                 else:
                     issues.append(iss)
 
         inferred_properties: list[InferredProperty] = []
         if self.config.infer_properties:
-            pass
+            logger.debug("Property inference is not yet implemented in VerifiedExecutor")
 
         return VerifiedExecutionResult(
             issues=issues,
@@ -474,11 +438,10 @@ class VerifiedExecutor:
 def verify(
     func: Callable[..., object],
     symbolic_args: dict[str, str] | None = None,
-    **config_overrides: object,
+    **config_overrides: Unpack[VerifiedExecutionOverrides],
 ) -> VerifiedExecutionResult:
     """Convenience wrapper for verified execution."""
-    config_ctor = cast("Callable[..., VerifiedExecutionConfig]", VerifiedExecutionConfig)
-    config = config_ctor(symbolic_args=symbolic_args or {}, **config_overrides)
+    config = VerifiedExecutionConfig(symbolic_args=symbolic_args or {}, **config_overrides)
     executor = VerifiedExecutor(config)
     return executor.execute_function(func, symbolic_args or {})
 
@@ -518,5 +481,3 @@ def prove_termination(
         status=TerminationStatus.UNKNOWN,
         message="Termination analysis not implemented in this wrapper",
     )
-
-

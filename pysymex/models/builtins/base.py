@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,13 +36,18 @@ if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
 
+def _new_side_effects() -> dict[str, object]:
+    """Create an empty side-effects map."""
+    return {}
+
+
 @dataclass(frozen=True, slots=True)
 class ModelResult:
     """Result of a model application."""
 
     value: StackValue
     constraints: Sequence[z3.ExprRef | z3.BoolRef] = field(default_factory=tuple)
-    side_effects: dict[str, object] = field(default_factory=dict)
+    side_effects: dict[str, object] = field(default_factory=_new_side_effects)
 
 
 class FunctionModel(ABC):

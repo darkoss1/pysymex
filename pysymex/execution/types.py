@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeGuard
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.execution.strategies.manager import ExplorationStrategy
@@ -52,6 +53,21 @@ BRANCH_OPCODES: frozenset[str] = frozenset(
 )
 
 
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """Return True when *value* is a list."""
+    return isinstance(value, list)
+
+
+def _is_dict_list(value: object) -> TypeGuard[list[dict[str, object]]]:
+    """Return True when *value* is a list of dictionaries."""
+    if not _is_object_list(value):
+        return False
+    for item_obj in value:
+        if not isinstance(item_obj, dict):
+            return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionConfig:
     """Configuration for symbolic execution.
@@ -79,7 +95,6 @@ class ExecutionConfig:
         verbose: Print verbose diagnostic output during analysis.
         collect_coverage: Track bytecode instruction coverage.
         use_loop_analysis: Enable CFG-based loop detection and widening.
-        enable_taint_tracking: Enable taint-flow analysis.
         enable_caching: Cache execution results by function signature.
         use_type_hints: Extract type hints to refine symbolic types.
         enable_state_merging: Merge similar states at join points.
@@ -113,7 +128,6 @@ class ExecutionConfig:
     verbose: bool = False
     collect_coverage: bool = True
     use_loop_analysis: bool = True
-    enable_taint_tracking: bool = True
     enable_caching: bool = True
     use_type_hints: bool = True
     enable_state_merging: bool = True
@@ -125,6 +139,7 @@ class ExecutionConfig:
     symbolic_args: dict[str, str] = field(default_factory=dict[str, str])
     lazy_eval_threshold: int = 20
     enable_concurrency_analysis: bool = False
+    enable_contract_verification: bool = False
     max_interleavings: int = 1000
     dpor_enabled: bool = True
     enable_solver_cache: bool = True
@@ -132,7 +147,6 @@ class ExecutionConfig:
     enable_interaction_graph: bool = True
     enable_chtd: bool = True
     enable_h_acceleration: bool = True
-    # Default to deterministic scheduling so CI and API-level checks are reproducible.
     deterministic_mode: bool = True
     random_seed: int = 42
     chtd_max_branch_infos: int = 256
@@ -158,6 +172,7 @@ class ExecutionResult:
         coverage: Set of bytecode instruction offsets executed.
         total_time_seconds: Wall-clock time for the full analysis.
         solver_time_seconds: Cumulative Z3 solver time.
+        avg_memory_mb: Average RSS memory usage during analysis.
         function_name: Name of the analysed function.
         source_file: Source file path of the analysed function.
         final_globals: Global variable state at the last completed path.
@@ -171,10 +186,13 @@ class ExecutionResult:
     coverage: set[int] = field(default_factory=set[int])
     total_time_seconds: float = 0.0
     solver_time_seconds: float = 0.0
+    avg_memory_mb: float = 0.0
     function_name: str = ""
     source_file: str = ""
     final_globals: dict[str, object] = field(default_factory=dict[str, object])
     final_locals: dict[str, object] = field(default_factory=dict[str, object])
+    final_stack: list[object] = field(default_factory=list[object])
+    final_exception: object | None = None
     branches: list[object] = field(default_factory=list[object])
     treewidth_stats: dict[str, object] = field(default_factory=dict[str, object])
     solver_stats: dict[str, object] = field(default_factory=dict[str, object])
@@ -191,12 +209,13 @@ class ExecutionResult:
     def format_summary(self) -> str:
         """Format a summary of results."""
         lines = [
-            "=== PySyMex Execution Results ===",
+            "=== pysymex Execution Results ===",
             f"Function: {self.function_name}",
             f"Paths explored: {self.paths_explored}",
             f"Paths completed: {self.paths_completed}",
             f"Coverage: {len(self.coverage)} bytecode instructions",
             f"Total time: {self.total_time_seconds:.2f}s",
+            f"Avg Memory: {self.avg_memory_mb:.2f} MB",
             "",
         ]
         if self.issues:
@@ -218,6 +237,7 @@ class ExecutionResult:
             "paths_pruned": self.paths_pruned,
             "coverage_size": len(self.coverage),
             "total_time_seconds": self.total_time_seconds,
+            "avg_memory_mb": self.avg_memory_mb,
             "issues": [i.to_dict() for i in self.issues],
         }
 
@@ -258,22 +278,17 @@ class ExecutionResult:
         sarif_dict = sarif_log.to_dict()
 
         runs_obj = sarif_dict.get("runs")
-        if isinstance(runs_obj, list) and runs_obj:
+        if _is_dict_list(runs_obj) and runs_obj:
             run = runs_obj[0]
-            if isinstance(run, dict):
-                invocations = run.get("invocations")
-                if (
-                    isinstance(invocations, list)
-                    and invocations
-                    and isinstance(invocations[0], dict)
-                ):
-                    invocations[0]["properties"] = {
-                        "pathsExplored": self.paths_explored,
-                        "pathsCompleted": self.paths_completed,
-                        "pathsPruned": self.paths_pruned,
-                        "coverageInstructions": len(self.coverage),
-                        "totalTimeSeconds": round(self.total_time_seconds, 3),
-                    }
+            invocations = run.get("invocations")
+            if _is_dict_list(invocations) and invocations:
+                invocations[0]["properties"] = {
+                    "pathsExplored": self.paths_explored,
+                    "pathsCompleted": self.paths_completed,
+                    "pathsPruned": self.paths_pruned,
+                    "coverageInstructions": len(self.coverage),
+                    "totalTimeSeconds": round(self.total_time_seconds, 3),
+                }
 
         if output_path:
             import json

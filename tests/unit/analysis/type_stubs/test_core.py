@@ -2,12 +2,17 @@ import tempfile
 import os
 from unittest.mock import MagicMock
 from pysymex.analysis.type_stubs.core import (
-    StubParser, StubRepository, StubBasedTypeResolver, BuiltinStubs
+    StubParser,
+    StubRepository,
+    StubBasedTypeResolver,
+    BuiltinStubs,
 )
 from pysymex.analysis.type_stubs.types import StubType, FunctionStub
 
+
 class TestStubParser:
     """Test suite for pysymex.analysis.type_stubs.core.StubParser."""
+
     def test_parse_file(self) -> None:
         """Test parse_file behavior."""
         p = StubParser()
@@ -38,13 +43,11 @@ class TestStubParser:
         assert m.classes["MyClass"].methods["meth"].return_type is not None
         assert m.classes["MyClass"].methods["meth"].return_type.name == "bytes"
 
-        # Check union shorthand (BitOr)
         source2 = "x: int | str"
         m2 = p.parse_source(source2, "test_mod2")
         assert "x" in m2.variables
         assert m2.variables["x"].is_union
 
-        # Check type alias
         source3 = "MyAlias = int"
         m3 = p.parse_source(source3, "test_mod3")
         assert "MyAlias" in m3.type_aliases
@@ -52,16 +55,17 @@ class TestStubParser:
 
 class TestStubRepository:
     """Test suite for pysymex.analysis.type_stubs.core.StubRepository."""
+
     def test_add_search_path(self) -> None:
         """Test add_search_path behavior."""
         r = StubRepository()
         r.add_search_path(".")
-        assert any(str(p) == "." for p in r._search_paths)  # type: ignore[reportPrivateUsage]
+        assert any(str(p) == "." for p in r._search_paths)
 
     def test_get_stub(self) -> None:
         """Test get_stub behavior."""
         r = StubRepository()
-        r._load_stub = MagicMock(return_value="mocked") # type: ignore[method-assign]
+        r._load_stub = MagicMock(return_value="mocked")
         assert r.get_stub("m") == "mocked"
         assert r.get_stub("m") == "mocked"
 
@@ -70,7 +74,7 @@ class TestStubRepository:
         r = StubRepository()
         m = MagicMock()
         m.functions = {"func": "func_stub"}
-        r.get_stub = MagicMock(return_value=m) # type: ignore
+        r.get_stub = MagicMock(return_value=m)
         assert r.get_function_type("mod", "func") == "func_stub"
         assert r.get_function_type("mod", "func2") is None
 
@@ -79,7 +83,7 @@ class TestStubRepository:
         r = StubRepository()
         m = MagicMock()
         m.classes = {"cls": "cls_stub"}
-        r.get_stub = MagicMock(return_value=m) # type: ignore
+        r.get_stub = MagicMock(return_value=m)
         assert r.get_class_type("mod", "cls") == "cls_stub"
 
     def test_get_method_type(self) -> None:
@@ -87,11 +91,13 @@ class TestStubRepository:
         r = StubRepository()
         m = MagicMock()
         m.methods = {"meth": "meth_stub"}
-        r.get_class_type = MagicMock(return_value=m) # type: ignore
+        r.get_class_type = MagicMock(return_value=m)
         assert r.get_method_type("mod", "cls", "meth") == "meth_stub"
+
 
 class TestStubBasedTypeResolver:
     """Test suite for pysymex.analysis.type_stubs.core.StubBasedTypeResolver."""
+
     def test_resolve_function_return(self) -> None:
         """Test resolve_function_return behavior."""
         repo = MagicMock()
@@ -132,11 +138,17 @@ class TestStubBasedTypeResolver:
         assert res.check_assignable(StubType.int_type(), StubType.int_type())
         assert not res.check_assignable(StubType.int_type(), StubType.str_type())
         assert res.check_assignable(StubType.none_type(), StubType.optional(StubType.int_type()))
-        assert res.check_assignable(StubType.list_of(StubType.int_type()), StubType.list_of(StubType.int_type()))
-        assert res.check_assignable(StubType.int_type(), StubType.union(StubType.int_type(), StubType.str_type()))
+        assert res.check_assignable(
+            StubType.list_of(StubType.int_type()), StubType.list_of(StubType.int_type())
+        )
+        assert res.check_assignable(
+            StubType.int_type(), StubType.union(StubType.int_type(), StubType.str_type())
+        )
+
 
 class TestBuiltinStubs:
     """Test suite for pysymex.analysis.type_stubs.core.BuiltinStubs."""
+
     def test_get_builtin_module(self) -> None:
         """Test get_builtin_module behavior."""
         m = BuiltinStubs.get_builtin_module()

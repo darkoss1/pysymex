@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -24,7 +24,7 @@ including coroutines, tasks, events, and synchronization primitives.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Generator
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar, cast
 
@@ -283,7 +283,7 @@ class QueueModel(Generic[T]):
     """Model for asyncio.Queue - a FIFO queue for async tasks."""
 
     maxsize: int = 0
-    _queue: list[T] = field(default_factory=list)
+    _queue: list[T] = field(default_factory=list)  # type: ignore[assignment]  # Generic T, default_factory=list is safe
     _unfinished_tasks: int = 0
 
     def empty(self) -> bool:
@@ -422,7 +422,7 @@ class FutureModel(Generic[T]):
 class _SleepCoro:
     """Stub class for sleep coroutine."""
 
-    def __await__(self) -> object:
+    def __await__(self) -> Generator[None, None, None]:
         return (yield None)
 
 
@@ -438,7 +438,7 @@ def _stub_gather(*coros: object) -> list[None]:
 
 def _stub_wait(coros: object) -> tuple[dict[str, set[object]], None]:
     """Stub wait."""
-    _c: set[object] = set() if not isinstance(coros, set) else coros
+    _c: set[object] = set() if not isinstance(coros, set) else cast("set[object]", coros)
     return ({"done": set(), "pending": _c}, None)
 
 
@@ -461,10 +461,10 @@ class _LoopStub:
     """Stub class for event loop."""
 
     def run_until_complete(self, coro: object) -> None:
-        pass
+        """Stub run_until_complete."""
 
     def close(self) -> None:
-        pass
+        """Stub close."""
 
 
 def _make_loop() -> _LoopStub:

@@ -252,7 +252,7 @@ Human-readable output printed to stdout.
 
 ```
 ══════════════════════════════════════════════════════════════════════
- PySyMex — Formal Verification Report
+ pysymex — Formal Verification Report
 ══════════════════════════════════════════════════════════════════════
 
 CRASHES PROVEN POSSIBLE (Z3 found counterexamples):

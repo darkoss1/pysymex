@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -29,7 +29,7 @@ Intelligent, interprocedural symbolic execution engine that:
 Architecture:
 - CallGraph: Maps function relationships
 - FunctionSummary: Cached analysis results
-- SymbolicState: Rich state tracking with taint analysis
+- SymbolicState: Rich state tracking
 - FunctionAnalyzer: Individual function verification
 - Z3Engine: Main intelligent prover
 
@@ -40,7 +40,6 @@ Bug Types:
 - None dereference
 - Type confusion
 - Unreachable code paths
-- Tainted data flows
 
 Version: 2.0.0
 
@@ -59,7 +58,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from types import CodeType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeGuard, cast
 
 if TYPE_CHECKING:
     from z3 import BoolRef, ExprRef
@@ -81,14 +80,18 @@ from pysymex.analysis.solver.types import (
     Severity,
     SymType,
     SymValue,
-    TaintInfo,
-    TaintSource,
     VerificationResult,
     z3,
 )
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
+
+
+def _is_dict_of_objects(value: object) -> TypeGuard[dict[object, object]]:
+    """Type guard to narrow a value to dict[object, object]."""
+    return isinstance(value, dict)
+
 
 __all__ = [
     "Z3_AVAILABLE",
@@ -104,8 +107,6 @@ __all__ = [
     "SymType",
     "SymValue",
     "SymbolicState",
-    "TaintInfo",
-    "TaintSource",
     "VerificationResult",
     "Z3Engine",
     "estimate_complexity",
@@ -124,7 +125,6 @@ class Z3Engine:
     - Call graph analysis
     - Function summaries with caching
     - Priority-based path exploration
-    - Taint tracking
     - Cross-function verification
     """
 
@@ -133,7 +133,6 @@ class Z3Engine:
         timeout_ms: int = 5000,
         max_depth: int = 50,
         interprocedural: bool = True,
-        track_taint: bool = True,
         max_workers: int | None = None,
     ) -> None:
         if not Z3_AVAILABLE:
@@ -143,7 +142,6 @@ class Z3Engine:
         self.timeout = timeout_ms
         self.max_depth = max_depth
         self.interprocedural = interprocedural
-        self.track_taint = track_taint
         self.max_workers = max_workers or min(os.cpu_count() or 2, 8)
         self.call_graph = CallGraph()
         self.function_summaries: dict[str, FunctionSummary] = {}
@@ -517,9 +515,12 @@ def _deserialize_worker_results(
             file_path_value = file_path_raw if isinstance(file_path_raw, str) else ""
 
             counterexample_raw = entry.get("counterexample")
-            counterexample_value = (
-                counterexample_raw if isinstance(counterexample_raw, dict) else None
-            )
+            counterexample_value: dict[str, str] | None = None
+            if _is_dict_of_objects(counterexample_raw):
+                counterexample_value = {
+                    str(raw_key): str(raw_value)
+                    for raw_key, raw_value in counterexample_raw.items()
+                }
 
             z3_status_raw = entry.get("z3_status")
             z3_status_value = z3_status_raw if isinstance(z3_status_raw, str) else ""
@@ -617,4 +618,3 @@ def _verify_file_worker(
 
 
 Z3Prover = Z3Engine
-

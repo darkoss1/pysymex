@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import pytest
 import z3
 
 from pysymex.execution.termination import (
@@ -9,8 +10,10 @@ from pysymex.execution.termination import (
     TerminationStatus,
 )
 
+
 class TestTerminationStatus:
     """Test suite for pysymex.execution.termination.TerminationStatus."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         names = {item.name for item in TerminationStatus}
@@ -23,6 +26,7 @@ class TestTerminationStatus:
 
 class TestRankingFunction:
     """Test suite for pysymex.execution.termination.RankingFunction."""
+
     def test_compile(self) -> None:
         """Test compile behavior."""
         x = z3.Int("x")
@@ -36,6 +40,7 @@ class TestRankingFunction:
 
 class TestTerminationProof:
     """Test suite for pysymex.execution.termination.TerminationProof."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         proof = TerminationProof(
@@ -51,6 +56,7 @@ class TestTerminationProof:
 
 class TestTerminationAnalyzer:
     """Test suite for pysymex.execution.termination.TerminationAnalyzer."""
+
     def test_check_termination(self) -> None:
         """Test check_termination behavior."""
         x = z3.Int("x")

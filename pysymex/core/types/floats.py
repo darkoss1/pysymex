@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -216,13 +216,13 @@ class SymbolicFloat:
         other_expr = self._to_fp(other)
         return z3.fpGEQ(self._expr, other_expr)
 
-    def __eq__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
+    def __eq__(self, other: object) -> z3.BoolRef:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.fpEQ(self._expr, other_expr)
         return NotImplemented
 
-    def __ne__(self, other: object) -> z3.BoolRef:  # type: ignore[override]
+    def __ne__(self, other: object) -> z3.BoolRef:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
         if isinstance(other, (SymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.Not(z3.fpEQ(self._expr, other_expr))
@@ -320,23 +320,6 @@ class SymbolicFloat:
                 z3_expr=z3.If(condition, self._expr, other_fp),
                 config=self.config,
             ),
-        )
-
-    def as_unified(self) -> object:
-        """Convert to unified SymbolicValue."""
-        from pysymex.core.types.scalars import Z3_FALSE, Z3_TRUE, SymbolicValue
-
-        return SymbolicValue(
-            _name=self.name,
-            z3_int=self.to_int(),
-            is_int=Z3_FALSE,
-            z3_bool=Z3_FALSE,
-            is_bool=Z3_FALSE,
-            z3_float=self._expr,
-            is_float=Z3_TRUE,
-            is_path=Z3_FALSE,
-            is_none=Z3_FALSE,
-            taint_labels=getattr(self, "taint_labels", None),
         )
 
     def _to_fp(self, value: SymbolicFloat | float | int) -> z3.FPRef:

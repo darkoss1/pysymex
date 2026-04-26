@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -68,7 +68,7 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import z3
 from pydantic import BaseModel
@@ -230,8 +230,41 @@ class TracingSolverProxy:
         constraints: Iterable[z3.BoolRef],
         known_sat_prefix_len: int | None = None,
     ) -> bool:
+        """Intercept is_sat calls, record telemetry."""
         inner: SolverProtocol = object.__getattribute__(self, "_inner")
-        return inner.is_sat(constraints, known_sat_prefix_len=known_sat_prefix_len)
+        tracer: ExecutionTracer = object.__getattribute__(self, "_tracer")
+        state_getter = object.__getattribute__(self, "_state_getter")
+
+        cache_hits_before: int = getattr(inner, "_cache_hits", 0)
+        t0 = time.perf_counter()
+
+        result = inner.is_sat(constraints, known_sat_prefix_len=known_sat_prefix_len)
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        cache_hits_after: int = getattr(inner, "_cache_hits", 0)
+        cache_hit = cache_hits_after > cache_hits_before
+
+        try:
+            state: VMState | None = state_getter()
+            path_id = getattr(state, "path_id", 0) if state is not None else 0
+            pc = getattr(state, "pc", 0) if state is not None else 0
+            result_str = "sat" if result else "unsat"
+            model = None
+            tracer.on_solve(
+                constraints=list(constraints),
+                result_str=result_str,
+                latency_ms=latency_ms,
+                cache_hit=cache_hit,
+                model=model,
+                path_id=path_id,
+                pc=pc,
+            )
+        except Exception as exc:
+            print(
+                f"[pysymex.tracing] TracingSolverProxy.is_sat telemetry error: {exc}",
+                file=sys.stderr,
+            )
+
+        return result
 
     def get_stats(self) -> dict[str, object]:
         inner: SolverProtocol = object.__getattribute__(self, "_inner")
@@ -456,7 +489,8 @@ class ExecutionTracer:
         executor.register_hook("on_prune", self.on_prune)
         executor.register_hook("on_issue", self.on_issue)
 
-        def state_getter():
+        def state_getter() -> VMState | None:
+            """Return the current VM state for telemetry context."""
             return self._current_state
 
         executor.solver = TracingSolverProxy(executor.solver, self, state_getter)
@@ -579,21 +613,21 @@ class ExecutionTracer:
                 and prev_constraint_count is not None
                 and current_count > prev_constraint_count
             ):
-                new_constraints = []
+                new_constraints: list[object] = []
                 curr = current_constraints
 
                 for _ in range(current_count - prev_constraint_count):
                     if curr is not None:
-                        new_constraints.append(curr.constraint)
+                        new_constraints.append(cast("object", curr.constraint))  # type: ignore[reportUnknownMemberType]  # constraint type unknown
                         curr = curr.parent
                     else:
                         break
 
                 if new_constraints:
-                    newest = new_constraints[0]
+                    newest = new_constraints[0]  # type: ignore[reportUnknownVariableType]  # element type unknown
                     causality = f"{instr.opname} at PC={state.pc}"
                     constraint_added = ConstraintEntry(
-                        smtlib=self._serializer.safe_sexpr(newest),
+                        smtlib=self._serializer.safe_sexpr(newest),  # type: ignore[reportUnknownArgumentType]  # newest type unknown
                         causality=causality,
                     )
 
@@ -603,10 +637,14 @@ class ExecutionTracer:
         source_line: int | None = None
         try:
             pos = getattr(instr, "positions", None)
-            if pos is not None and getattr(pos, "lineno", None) is not None:
-                source_line = pos.lineno
-            elif getattr(instr, "starts_line", None) is not None:
-                source_line = instr.starts_line
+            if pos is not None:
+                lineno_raw = getattr(pos, "lineno", None)
+                if isinstance(lineno_raw, int):
+                    source_line = lineno_raw
+            if source_line is None:
+                starts_line_raw = getattr(instr, "starts_line", None)
+                if isinstance(starts_line_raw, int):
+                    source_line = starts_line_raw
         except Exception:
             pass
 
@@ -768,8 +806,10 @@ class ExecutionTracer:
         try:
             pc_val = getattr(state, "pc", 0)
             causality_base = f"path constraint at PC={pc_val}"
-            issue_constraints = getattr(issue, "constraints", None) or []
-            raw_dicts = self._serializer.constraints_to_smtlib(issue_constraints, causality_base)
+            issue_constraints: list[object] = cast(
+                "list[object]", getattr(issue, "constraints", None) or []
+            )  # type: ignore[reportUnknownVariableType]  # constraints type unknown
+            raw_dicts = self._serializer.constraints_to_smtlib(issue_constraints, causality_base)  # type: ignore[reportUnknownArgumentType]  # issue_constraints element type unknown
             constraints_at_issue = [
                 ConstraintEntry(smtlib=d["smtlib"], causality=d["causality"])
                 for d in raw_dicts[: self._config.max_constraint_display]
@@ -968,4 +1008,3 @@ def attach_tracer(
     )
     tracer.install(executor)
     return tracer, trace_path
-

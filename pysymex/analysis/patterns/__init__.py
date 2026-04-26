@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Python Pattern Handlers for PySyMex â€” hub module.
+Python Pattern Handlers for pysymex â€” hub module.
 
 Remaining handlers (StringMultiply, OptionalChain, NullCoalesce,
 SafeCollection, TryExcept) plus PatternRegistry, PatternMatcher,
@@ -33,6 +33,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from types import CodeType
+from typing import TypeGuard
 
 from pysymex._compat import get_starts_line
 from pysymex.analysis.patterns.core import (
@@ -53,6 +54,22 @@ from pysymex.core.cache import get_instructions as _cached_get_instructions
 from ..type_inference import PyType, TypeEnvironment, TypeKind
 
 _safe_line = get_starts_line
+
+
+def _is_set_of_objects(value: object) -> TypeGuard[set[object]]:
+    """Type guard to narrow a value to set[object]."""
+    return isinstance(value, set)
+
+
+def _to_string_set(value: object) -> set[str]:
+    """Normalize a dynamic value to a set of strings."""
+    result: set[str] = set()
+    if _is_set_of_objects(value):
+        raw_values: set[object] = value
+        for item in raw_values:
+            if isinstance(item, str):
+                result.add(item)
+    return result
 
 
 class StringMultiplyHandler(PatternHandler):
@@ -324,8 +341,8 @@ class TryExceptHandler(PatternHandler):
 
     def can_raise_error(self, match: PatternMatch, error_type: str) -> bool:
         """Can raise error."""
-        caught_obj = match.variables.get("caught_exceptions", set())
-        caught = caught_obj if isinstance(caught_obj, set) else set()
+        caught_obj = match.variables.get("caught_exceptions", set[str]())
+        caught = _to_string_set(caught_obj)
         if error_type in caught:
             return False
         if "Exception" in caught or "BaseException" in caught:
@@ -498,4 +515,3 @@ class FunctionPatternInfo:
     def get_type_refinements(self, pc: int) -> dict[str, PyType]:
         """Get type refinements at PC."""
         return self.matcher.get_type_refinements_at(pc)
-

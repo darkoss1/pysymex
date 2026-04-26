@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,16 +16,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""GPU Memory Management Utilities.
+"""Dispatcher Memory Management Utilities.
 
 Provides memory budget calculations, device memory monitoring,
-and utilities for efficient GPU utilization.
+and utilities for efficient Dispatcher utilization.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -34,14 +34,14 @@ if TYPE_CHECKING:
     from pysymex.accel.bytecode import CompiledConstraint
 
 __all__ = [
-    "GPUMemoryError",
+    "DispatcherMemoryError",
     "MemoryBudget",
     "calculate_memory_budget",
     "estimate_max_treewidth",
 ]
 
 
-class GPUMemoryError(Exception):
+class DispatcherMemoryError(Exception):
     """Raised when memory requirements exceed available resources."""
 
     pass
@@ -87,11 +87,20 @@ class MemoryBudget:
         )
 
 
+@runtime_checkable
+class _MemoryInfoProvider(Protocol):
+    """Protocol for SAT backend modules that expose memory telemetry."""
+
+    def get_memory_info(self) -> dict[str, bool | int]:
+        """Return backend-specific device memory information."""
+        ...
+
+
 def calculate_memory_budget(
     num_variables: int,
     num_instructions: int,
 ) -> MemoryBudget:
-    """Calculate GPU memory requirements for constraint evaluation.
+    """Calculate SAT memory requirements for constraint evaluation.
 
     Computes the total device memory needed for evaluating a compiled
     constraint with the given number of variables and instructions.
@@ -125,7 +134,7 @@ def calculate_memory_budget(
 
 
 def estimate_max_treewidth(available_memory_mb: int) -> int:
-    """Estimate maximum treewidth that fits in available GPU memory.
+    """Estimate maximum treewidth that fits in available memory.
 
     Conservatively estimates the largest bag width w that can be evaluated
     given available device memory, accounting for 90% utilization headroom.
@@ -135,7 +144,7 @@ def estimate_max_treewidth(available_memory_mb: int) -> int:
     states = 128MB output bitmap). For w > 30, consider batched evaluation.
 
     Args:
-        available_memory_mb: Available GPU memory in megabytes
+        available_memory_mb: Available device memory in megabytes
 
     Returns:
         Maximum treewidth (capped at 30 for memory safety)
@@ -150,20 +159,20 @@ def estimate_max_treewidth(available_memory_mb: int) -> int:
 
 
 def get_device_memory_info() -> dict[str, bool | int]:
-    """Query GPU device memory information.
+    """Query Device memory information.
 
-    Attempts to retrieve CUDA device memory statistics if available.
+    Attempts to retrieve SAT device memory statistics if available.
 
     Returns:
         Dictionary with memory info (free, total bytes) or {"available": False}
     """
     try:
-        from pysymex.accel.backends import gpu as cuda
+        from pysymex.accel.backends import sat
 
-        if cuda.is_available():
-            return cuda.get_memory_info()
+        if sat.is_available() and isinstance(sat, _MemoryInfoProvider):
+            return sat.get_memory_info()
     except ImportError:
-        pass
+        return {"available": False}
 
     return {"available": False}
 
@@ -176,7 +185,7 @@ def evaluate_batched(
 
     Note: True batched evaluation (splitting large constraints into memory-
     efficient chunks) is planned for a future release. Currently this function
-    performs a single full evaluation via the GPU dispatcher.
+    performs a single full evaluation via the Tiered dispatcher.
 
     The batch_size parameter is retained for API stability but is currently
     unused. When batching is implemented, constraints with w > 26 will be
@@ -192,4 +201,3 @@ def evaluate_batched(
     from pysymex.accel.dispatcher import get_dispatcher
 
     return get_dispatcher().evaluate_bag(constraint).bitmap
-

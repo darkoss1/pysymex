@@ -1,4 +1,5 @@
-﻿import pysymex.core.cache
+import pysymex.core.cache
+
 
 def test_get_instructions() -> None:
     """Scenario: identical code object lookup twice; expected same cached tuple object."""

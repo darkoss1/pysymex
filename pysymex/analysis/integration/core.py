@@ -1,7 +1,7 @@
-﻿# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -54,9 +54,6 @@ from ..patterns import (
     PatternKind,
     PatternMatch,
 )
-from ..taint.checker import (
-    TaintChecker,
-)
 from ..type_inference import (
     TypeAnalyzer,
     TypeEnvironment,
@@ -77,14 +74,13 @@ class AnalysisPipeline:
     """Main analysis pipeline integrating all analysis components.
 
     Orchestrates type inference, flow analysis, pattern recognition,
-    taint checking, abstract interpretation, and static detection.
+    abstract interpretation, and static detection.
 
     Attributes:
         config: Pipeline configuration.
         type_analyzer: Type inference engine.
         flow_analyzer: Flow-sensitive analyser (created per function).
         pattern_analyzer: Pattern recognizer.
-        taint_checker: Taint-flow checker.
         abstract_analyzer: Abstract-interpretation engine.
         enhanced_analyzer: Static detector engine.
         function_models: Function summarizer for inter-procedural analysis.
@@ -95,7 +91,6 @@ class AnalysisPipeline:
         self.type_analyzer = TypeAnalyzer()
         self.flow_analyzer: FlowSensitiveAnalyzer | None = None
         self.pattern_analyzer = PatternAnalyzer()
-        self.taint_checker = TaintChecker()
         self.abstract_analyzer = AbstractAnalyzer()
         self.enhanced_analyzer = StaticAnalyzer()
         self.function_models = FunctionSummarizer()
@@ -254,13 +249,6 @@ class AnalysisPipeline:
                     builder.add_issue(issue)
         except (RuntimeError, TypeError, ValueError, AttributeError) as e:
             builder.add_warning(f"Detection error in {func_ctx.name}: {e}")
-        if self.config.taint_analysis:
-            try:
-                violations = self.taint_checker.check_function(code, file_path)
-                for v in violations:
-                    builder.add_taint_violation(v)
-            except (RuntimeError, TypeError, ValueError):
-                logger.debug("Taint analysis failed for %s", func_ctx.name, exc_info=True)
         if self.config.abstract_interpretation:
             try:
                 warnings = self.abstract_analyzer.analyze_function(code, file_path)
@@ -407,8 +395,6 @@ class ReportGenerator:
         lines.append(f"  Low: {self.summary.low_count}")
         lines.append(f"  Info: {self.summary.info_count}")
         lines.append("")
-        lines.append(f"Taint violations: {self.summary.total_taint_violations}")
-        lines.append("")
         if self.summary.by_kind:
             lines.append("ISSUES BY TYPE")
             lines.append("-" * 40)
@@ -436,12 +422,6 @@ class ReportGenerator:
                 lines.append(
                     f"  {severity_symbol} Line {issue.line}: [{issue.kind.name}] {issue.message}"
                 )
-            for violation in result.taint_violations:
-                lines.append(
-                    f"  ðŸ”’ Line {violation.sink_line}: "
-                    f"[TAINT] {violation.sink.kind.name} - "
-                    f"{violation.source.source}"
-                )
         lines.append("")
         lines.append("=" * 70)
         return "\n".join(lines)
@@ -454,7 +434,6 @@ class ReportGenerator:
             "summary": {
                 "total_files": self.summary.total_files,
                 "total_issues": self.summary.total_issues,
-                "total_taint_violations": self.summary.total_taint_violations,
                 "severity_counts": {
                     "critical": self.summary.critical_count,
                     "high": self.summary.high_count,
@@ -481,15 +460,6 @@ class ReportGenerator:
                         "confidence": issue.confidence,
                     }
                     for issue in result.issues
-                ],
-                "taint_violations": [
-                    {
-                        "sink_kind": v.sink.kind.name,
-                        "source": v.source.source,
-                        "line": v.sink_line,
-                        "severity": v.sink.severity,
-                    }
-                    for v in result.taint_violations
                 ],
                 "analysis_time": result.analysis_time,
                 "lines": result.lines_of_code,
@@ -570,4 +540,3 @@ class ReportGenerator:
                     }
                 )
         return results
-

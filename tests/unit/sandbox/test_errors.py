@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from pysymex.sandbox.errors import (
     ResourceExhaustedError,
@@ -8,6 +8,7 @@ from pysymex.sandbox.errors import (
     SandboxTimeoutError,
     SecurityViolationError,
 )
+
 
 class TestSandboxError:
     """Test suite for pysymex.sandbox.errors.SandboxError."""

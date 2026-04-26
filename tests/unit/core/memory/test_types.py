@@ -1,8 +1,10 @@
-﻿import pysymex.core.memory.types
+import pysymex.core.memory.types
 import z3
+
 
 class TestMemoryRegion:
     """Test suite for pysymex.core.memory.types.MemoryRegion."""
+
     def test_initialization(self) -> None:
         """Scenario: enum members exist; expected stable region names."""
         assert [member.name for member in pysymex.core.memory.types.MemoryRegion] == [
@@ -15,6 +17,7 @@ class TestMemoryRegion:
 
 class TestSymbolicAddress:
     """Test suite for pysymex.core.memory.types.SymbolicAddress."""
+
     def test_effective_address(self) -> None:
         """Scenario: base plus offset; expected bit-vector effective address sum."""
         addr = pysymex.core.memory.types.SymbolicAddress(
@@ -71,6 +74,7 @@ class TestSymbolicAddress:
 
 class TestHeapObject:
     """Test suite for pysymex.core.memory.types.HeapObject."""
+
     def test_get_field(self) -> None:
         """Scenario: get existing field; expected exact stored value."""
         addr = pysymex.core.memory.types.SymbolicAddress(
@@ -99,6 +103,7 @@ class TestHeapObject:
 
 class TestStackFrame:
     """Test suite for pysymex.core.memory.types.StackFrame."""
+
     def test_get_local(self) -> None:
         """Scenario: retrieve existing local; expected stored value."""
         frame = pysymex.core.memory.types.StackFrame("f", locals={"x": 3})

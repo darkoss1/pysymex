@@ -51,4 +51,3 @@ def test_tracing_hook_plugin_activate_delegates_to_tracer_install() -> None:
     plugin = TracingHookPlugin(cast("Any", tracer))
     plugin.activate(cast("Any", object()))
     assert tracer.install_called is True
-

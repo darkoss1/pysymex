@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -168,14 +168,14 @@ def asdict_model(obj: object, *, dict_factory: type = dict) -> dict[str, object]
     result = dict_factory()
     dataclass_fields = getattr(obj, "__dataclass_fields__", None)
     if isinstance(dataclass_fields, dict):
-        for name in dataclass_fields:
-            value = getattr(obj, name, None)
+        for name in dataclass_fields:  # type: ignore[misc]  # dataclass_fields keys are strings
+            value = getattr(obj, name, None)  # type: ignore[arg-type]  # name is string from dict keys
             result[name] = value
     else:
-        for name in dir(obj):
+        for name in dir(obj):  # type: ignore[misc]  # dir() returns strings
             if not name.startswith("_"):
                 try:
-                    result[name] = getattr(obj, name)
+                    result[name] = getattr(obj, name)  # type: ignore[arg-type]  # name is string from dir()
                 except AttributeError:
                     logger.debug("Failed to get attribute %s in asdict", name, exc_info=True)
     return result
@@ -186,8 +186,8 @@ def astuple_model(obj: object, *, tuple_factory: type = tuple) -> tuple[object, 
     dataclass_fields = getattr(obj, "__dataclass_fields__", None)
     if isinstance(dataclass_fields, dict):
         values: list[object] = []
-        for name in dataclass_fields:
-            values.append(getattr(obj, name, None))
+        for name in dataclass_fields:  # type: ignore[misc]  # dataclass_fields keys are strings
+            values.append(getattr(obj, name, None))  # type: ignore[arg-type]  # name is string from dict keys
         return tuple_factory(values)
     else:
         return tuple_factory(getattr(obj, attr) for attr in dir(obj) if not attr.startswith("_"))

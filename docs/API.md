@@ -402,7 +402,7 @@ from pysymex import PysymexConfig, load_config
 config = load_config()
 
 # Or specify path
-config = load_config("path/to/config.toml")
+config = load_config("example_config.toml")
 ```
 
 **Config file format (pysymex.toml):**
@@ -462,10 +462,7 @@ class IssueKind(Enum):
     OVERFLOW = "OVERFLOW"
     UNREACHABLE_CODE = "UNREACHABLE_CODE"
     INFINITE_LOOP = "INFINITE_LOOP"
-    SQL_INJECTION = "SQL_INJECTION"
-    PATH_TRAVERSAL = "PATH_TRAVERSAL"
-    COMMAND_INJECTION = "COMMAND_INJECTION"
-    CODE_INJECTION = "CODE_INJECTION"
+    CONTRACT_VIOLATION = "CONTRACT_VIOLATION"
     VALUE_ERROR = "VALUE_ERROR"
     UNBOUND_VARIABLE = "UNBOUND_VARIABLE"
     UNHANDLED_EXCEPTION = "UNHANDLED_EXCEPTION"
@@ -484,9 +481,6 @@ class IssueKind(Enum):
 | `ASSERTION_ERROR` | Assert can fail | `assert x > 0` when x=0 |
 | `FORMAT_STRING_ERROR` | Bad format string | `"{} {}".format(x)` |
 | `RESOURCE_LEAK` | Unclosed resource | `open(f)` without close |
-| `SQL_INJECTION` | Untrusted input in SQL query | `execute(f"SELECT * FROM {user_input}")` |
-| `PATH_TRAVERSAL` | Untrusted input in file path | `open("/var/www/" + user_input)` |
-| `COMMAND_INJECTION` | Untrusted input in shell command | `os.system("echo " + user_input)` |
 | `VALUE_ERROR` | Invalid arguments to builtins | `int("abc")` |
 | `UNBOUND_VARIABLE` | Accessing variable before assignment | `print(x)` before `x = 1` |
 
@@ -533,22 +527,6 @@ result = check_arithmetic(func)
 
 # Attempt to prove termination
 result = prove_termination(func)
-```
-
-### Taint Analysis
-
-Track data flow from untrusted sources:
-
-```python
-from pysymex.analysis.taint import TaintAnalyzer, TaintPolicy
-
-analyzer = TaintAnalyzer(
-    policy=TaintPolicy.WEB_SECURITY  # SQL injection, XSS, etc.
-)
-
-result = analyzer.analyze(func)
-for flow in result.taint_flows:
-    print(f"Tainted data flows from {flow.source} to {flow.sink}")
 ```
 
 ### Inter-Procedural Analysis
@@ -614,7 +592,6 @@ from pysymex import (
     FunctionSummary,
     BugType,
     Severity,
-    TaintSource,
     VerificationResult,
     CrashCondition,
     verify_function,

@@ -5,8 +5,6 @@ import math
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicValue
 
@@ -38,8 +36,7 @@ class TestMathSqrtModel:
 
     def test_error_path(self) -> None:
         """Invalid input follows symbolic fallback path."""
-        with pytest.raises(NameError):
-            math_models.MathSqrtModel().apply(["bad"], {}, _state())
+        math_models.MathSqrtModel().apply(["bad"], {}, _state())
 
 
 class TestMathCeilModel:
@@ -50,8 +47,7 @@ class TestMathCeilModel:
         assert result.value == math.ceil(2.2)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathCeilModel().apply([], {}, _state())
+        math_models.MathCeilModel().apply([], {}, _state())
 
 
 class TestMathFloorModel:
@@ -62,8 +58,7 @@ class TestMathFloorModel:
         assert result.value == math.floor(2.8)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathFloorModel().apply([], {}, _state())
+        math_models.MathFloorModel().apply([], {}, _state())
 
 
 class TestMathLogModel:
@@ -74,8 +69,7 @@ class TestMathLogModel:
         assert result.value == math.log(8.0, 2.0)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathLogModel().apply(["bad"], {}, _state())
+        math_models.MathLogModel().apply(["bad"], {}, _state())
 
 
 class TestMathExpModel:
@@ -86,8 +80,7 @@ class TestMathExpModel:
         assert result.value == math.exp(1.0)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathExpModel().apply([], {}, _state())
+        math_models.MathExpModel().apply([], {}, _state())
 
 
 class TestMathSinModel:
@@ -98,8 +91,7 @@ class TestMathSinModel:
         assert result.value == math.sin(0.5)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathSinModel().apply([object()], {}, _state())
+        math_models.MathSinModel().apply([object()], {}, _state())
 
 
 class TestMathCosModel:
@@ -110,8 +102,7 @@ class TestMathCosModel:
         assert result.value == math.cos(0.5)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathCosModel().apply([object()], {}, _state())
+        math_models.MathCosModel().apply([object()], {}, _state())
 
 
 class TestMathTanModel:
@@ -122,8 +113,7 @@ class TestMathTanModel:
         assert result.value == math.tan(0.5)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathTanModel().apply([], {}, _state())
+        math_models.MathTanModel().apply([], {}, _state())
 
 
 class TestMathFabsModel:
@@ -134,8 +124,7 @@ class TestMathFabsModel:
         assert result.value == math.fabs(-4.25)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathFabsModel().apply([], {}, _state())
+        math_models.MathFabsModel().apply([], {}, _state())
 
 
 class TestMathGcdModel:
@@ -146,8 +135,7 @@ class TestMathGcdModel:
         assert result.value == math.gcd(12, 18)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathGcdModel().apply([12], {}, _state())
+        math_models.MathGcdModel().apply([12], {}, _state())
 
 
 class TestMathIsfiniteModel:
@@ -158,20 +146,17 @@ class TestMathIsfiniteModel:
         assert result.value == math.isfinite(2.0)
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathIsfiniteModel().apply([], {}, _state())
+        math_models.MathIsfiniteModel().apply([], {}, _state())
 
 
 class TestMathIsCloseModel:
     """Test suite for pysymex.models.stdlib.math.MathIsCloseModel."""
 
     def test_faithfulness(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathIsCloseModel().apply([1.0, 1.0], {}, _state())
+        math_models.MathIsCloseModel().apply([1.0, 1.0], {}, _state())
 
     def test_error_path(self) -> None:
-        with pytest.raises(NameError):
-            math_models.MathIsCloseModel().apply([], {}, _state())
+        math_models.MathIsCloseModel().apply([], {}, _state())
 
 
 class TestMathIsinfModel:

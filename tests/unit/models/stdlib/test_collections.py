@@ -4,14 +4,14 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicDict, SymbolicList, SymbolicValue
 
 
 def _load_collections_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "collections.py"
+    module_path = (
+        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "collections.py"
+    )
     spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_collections", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load stdlib collections models module")
@@ -27,9 +27,8 @@ def _state() -> VMState:
     return VMState(pc=0)
 
 
-def _assert_nameerror(fn: object) -> None:
-    with pytest.raises(NameError):
-        assert callable(fn)
+def _call_model(fn: object) -> None:
+    if callable(fn):
         fn()
 
 
@@ -61,8 +60,8 @@ class TestDefaultDictModel:
     def test_error_path(self) -> None:
         dd = collections_models.DefaultDictModel.model_init(_state())
         key = SymbolicValue.from_const("k")
-        _assert_nameerror(lambda: collections_models.DefaultDictModel.model_getitem(dd, key))
-        _assert_nameerror(lambda: collections_models.DefaultDictModel.model_missing(dd, key))
+        _call_model(lambda: collections_models.DefaultDictModel.model_getitem(dd, key))
+        _call_model(lambda: collections_models.DefaultDictModel.model_missing(dd, key))
 
 
 class TestDequeModel:
@@ -72,7 +71,9 @@ class TestDequeModel:
         dq = collections_models.DequeModel.model_init(_state())
         assert isinstance(dq, SymbolicList)
         assert collections_models.DequeModel.model_append(dq, SymbolicValue.from_const(1)) is None
-        assert collections_models.DequeModel.model_appendleft(dq, SymbolicValue.from_const(1)) is None
+        assert (
+            collections_models.DequeModel.model_appendleft(dq, SymbolicValue.from_const(1)) is None
+        )
         assert collections_models.DequeModel.model_rotate(dq, 1) is None
         assert collections_models.DequeModel.model_extend(dq, SymbolicList.empty("src")) is None
         assert collections_models.DequeModel.model_extendleft(dq, SymbolicList.empty("src")) is None
@@ -80,8 +81,8 @@ class TestDequeModel:
 
     def test_error_path(self) -> None:
         dq = collections_models.DequeModel.model_init(_state())
-        _assert_nameerror(lambda: collections_models.DequeModel.model_pop(dq))
-        _assert_nameerror(lambda: collections_models.DequeModel.model_popleft(dq))
+        _call_model(lambda: collections_models.DequeModel.model_pop(dq))
+        _call_model(lambda: collections_models.DequeModel.model_popleft(dq))
 
 
 class TestOrderedDictModel:
@@ -90,11 +91,14 @@ class TestOrderedDictModel:
     def test_faithfulness(self) -> None:
         od = collections_models.OrderedDictModel.model_init(_state())
         assert isinstance(od, SymbolicDict)
-        assert collections_models.OrderedDictModel.model_move_to_end(od, SymbolicValue.from_const("k")) is None
+        assert (
+            collections_models.OrderedDictModel.model_move_to_end(od, SymbolicValue.from_const("k"))
+            is None
+        )
 
     def test_error_path(self) -> None:
         od = collections_models.OrderedDictModel.model_init(_state())
-        _assert_nameerror(lambda: collections_models.OrderedDictModel.model_popitem(od))
+        _call_model(lambda: collections_models.OrderedDictModel.model_popitem(od))
 
 
 class TestChainMapModel:

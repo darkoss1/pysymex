@@ -1,7 +1,7 @@
-# PySyMex: Python Symbolic Execution & Formal Verification
+# pysymex: Python Symbolic Execution & Formal Verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
-# Copyright (C) 2026 PySyMex Team
+# Copyright (C) 2026 pysymex Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,7 +33,6 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
-import icontract
 
 if TYPE_CHECKING:
     import z3
@@ -46,6 +45,21 @@ from enum import Enum, auto
 import z3
 
 from pysymex.core.solver.engine import get_model, is_satisfiable
+
+
+def _empty_constraints() -> list[z3.BoolRef]:
+    """Create a typed empty constraints list."""
+    return []
+
+
+def _empty_counterexample() -> dict[str, object]:
+    """Create a typed empty counterexample map."""
+    return {}
+
+
+def _empty_dimensions() -> list[z3.ArithRef]:
+    """Create a typed empty dimensions list."""
+    return []
 
 
 class BoundsIssueKind(Enum):
@@ -81,8 +95,8 @@ class BoundsIssue:
     message: str
     location: str | None = None
     line_number: int | None = None
-    constraints: Sequence[z3.BoolRef] = field(default_factory=list)
-    counterexample: dict[str, object] = field(default_factory=dict)
+    constraints: Sequence[z3.BoolRef] = field(default_factory=_empty_constraints)
+    counterexample: dict[str, object] = field(default_factory=_empty_counterexample)
     severity: str = "error"
     array_name: str | None = None
     index_expr: str | None = None
@@ -112,7 +126,7 @@ class SymbolicArray:
     name: str
     length: z3.ArithRef
     element_sort: z3.SortRef = field(default_factory=lambda: z3.IntSort())
-    dimensions: list[z3.ArithRef] = field(default_factory=list)
+    dimensions: list[z3.ArithRef] = field(default_factory=_empty_dimensions)
     _array: z3.ArrayRef | None = None
 
     def __post_init__(self) -> None:
@@ -128,7 +142,6 @@ class SymbolicArray:
         assert self._array is not None
         return self._array
 
-    @icontract.ensure(lambda result: isinstance(result, z3.ExprRef))
     def select(self, index: z3.ArithRef) -> z3.ExprRef:
         """Read element at index."""
         assert self._array is not None
@@ -171,7 +184,6 @@ class SymbolicBuffer:
     size: z3.ArithRef
     base_address: z3.ArithRef = field(default_factory=lambda: z3.Int("base_0"))
 
-    @icontract.ensure(lambda result: isinstance(result, z3.BoolRef))
     def contains_address(self, addr: z3.ArithRef) -> z3.BoolRef:
         """Check if address is within buffer bounds."""
         return z3.And(addr >= self.base_address, addr < self.base_address + self.size)
@@ -206,7 +218,6 @@ class BoundsChecker:
         self._solver.reset()
         self._issues.clear()
 
-    @icontract.ensure(lambda result: isinstance(result, list))
     def check_index(
         self,
         index: z3.ArithRef,

@@ -1,21 +1,31 @@
 from pysymex.analysis.type_constraints.types import (
-    TypeKind, Variance, SymbolicType, TypeIssueKind, TypeIssue
+    TypeKind,
+    Variance,
+    SymbolicType,
+    TypeIssueKind,
+    TypeIssue,
 )
+
 
 class TestTypeKind:
     """Test suite for pysymex.analysis.type_constraints.types.TypeKind."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert TypeKind.INT.name == "INT"
 
+
 class TestVariance:
     """Test suite for pysymex.analysis.type_constraints.types.Variance."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert Variance.INVARIANT.name == "INVARIANT"
 
+
 class TestSymbolicType:
     """Test suite for pysymex.analysis.type_constraints.types.SymbolicType."""
+
     def test_int_type(self) -> None:
         """Test int_type behavior."""
         assert SymbolicType.int_type().kind == TypeKind.INT
@@ -67,16 +77,13 @@ class TestSymbolicType:
         t_int = SymbolicType.int_type()
         t_float = SymbolicType.float_type()
         t_never = SymbolicType.never_type()
-        
-        # Test empty union
+
         t1 = SymbolicType.union_of()
         assert t1.kind == TypeKind.NEVER
-        
-        # Test never in union
+
         t2 = SymbolicType.union_of(t_int, t_never)
         assert t2.kind == TypeKind.INT
 
-        # Test union formatting
         t3 = SymbolicType.union_of(t_int, t_float)
         assert t3.kind == TypeKind.UNION
         assert " | " in str(t3)
@@ -111,14 +118,18 @@ class TestSymbolicType:
         assert t.kind == TypeKind.CLASS
         assert t.name == "MyClass"
 
+
 class TestTypeIssueKind:
     """Test suite for pysymex.analysis.type_constraints.types.TypeIssueKind."""
+
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert TypeIssueKind.INCOMPATIBLE_TYPES.name == "INCOMPATIBLE_TYPES"
 
+
 class TestTypeIssue:
     """Test suite for pysymex.analysis.type_constraints.types.TypeIssue."""
+
     def test_format(self) -> None:
         """Test format behavior."""
         issue = TypeIssue(
@@ -126,7 +137,7 @@ class TestTypeIssue:
             message="Error msg",
             expected_type=SymbolicType.int_type(),
             actual_type=SymbolicType.str_type(),
-            line_number=10
+            line_number=10,
         )
         fmt = issue.format()
         assert "INCOMPATIBLE_TYPES" in fmt
