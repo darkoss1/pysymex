@@ -16,13 +16,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Math helpers for analysis modules."""
 
-def wilson_upper_95(k: int, n: int) -> float:
-    if n <= 0:
-        return 0.0
-    z = 1.96
-    p = k / n
-    denom = 1.0 + (z * z / n)
-    center = p + (z * z) / (2 * n)
-    spread = z * ((p * (1 - p) + (z * z) / (4 * n)) / n) ** 0.5
-    return min(1.0, (center + spread) / denom)
+from pysymex.utils.math import wilson_upper_95
+
+__all__ = ["wilson_upper_95"]

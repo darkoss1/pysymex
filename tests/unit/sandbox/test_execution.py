@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import sys
+import threading
 
 import pytest
 
 from pysymex.sandbox.execution import (
-    ExecutionTimeout,
     ResourceLimitError,
     SecurityError,
-    _check_attr_name,
-    _safe_delattr,
-    _safe_getattr,
-    _safe_hasattr,
-    _safe_setattr,
+    _check_attr_name,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _safe_delattr,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _safe_getattr,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _safe_hasattr,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _safe_setattr,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
     create_sandbox_namespace,
     get_hardened_builtins,
     get_safe_builtins,
+    hardened_exec,
     make_restricted_import,
     resource_limits,
     safe_exec,
@@ -89,6 +89,15 @@ class TestMakeRestrictedImport:
         restricted = make_restricted_import(frozenset({"math"}))
         with pytest.raises(SecurityError):
             restricted("os.path")
+
+    def test_future_annotations_import_succeeds_when_allowed(self) -> None:
+        """Future-feature imports are allowed only when explicitly permitted."""
+        restricted = make_restricted_import(frozenset({"__future__"}))
+        result = restricted("__future__", fromlist=("annotations",))
+
+        import __future__
+
+        assert result is __future__
 
 
 class TestSafeExec:
@@ -246,6 +255,84 @@ class TestGetHardenedBuiltins:
 
         if hasattr(builtins, "__build_class__"):
             assert "__build_class__" in hardened
+
+
+class TestHardenedExecImports:
+    """Test hardened_exec import policy."""
+
+    def test_future_annotations_succeeds_with_default_allowlist(self) -> None:
+        """Sandboxed contract loading supports normal annotated Python modules."""
+        ns = hardened_exec(
+            "from __future__ import annotations\n"
+            "def identity(value: list[int]) -> list[int]:\n"
+            "    return value\n",
+            "future_annotations.py",
+        )
+
+        assert callable(ns["identity"])
+
+    def test_weakref_succeeds_with_default_allowlist(self) -> None:
+        """Sandboxed production contract modules can load weakref-backed caches."""
+        ns = hardened_exec(
+            "import weakref\ncache = weakref.WeakValueDictionary()\n",
+            "weakref_cache.py",
+        )
+
+        assert "cache" in ns
+
+    def test_warnings_succeeds_with_default_allowlist(self) -> None:
+        """Sandboxed production contract modules can load warnings."""
+        ns = hardened_exec(
+            "import warnings\nemit_warning = warnings.warn\n",
+            "warnings_case.py",
+        )
+
+        assert callable(ns["emit_warning"])
+
+    def test_time_succeeds_with_default_allowlist(self) -> None:
+        """Sandboxed production contract modules can use monotonic timestamps."""
+        ns = hardened_exec(
+            "import time\nstamp = time.monotonic()\n",
+            "time_case.py",
+        )
+
+        assert isinstance(ns["stamp"], float)
+
+    def test_safe_internal_accel_import_succeeds_with_default_allowlist(self) -> None:
+        """Sandboxed production contract modules can load safe accel dependencies."""
+        ns = hardened_exec(
+            "from pysymex.accel.core_index import CoreIndex\nloaded = CoreIndex\n",
+            "accel_import_case.py",
+        )
+
+        assert callable(ns["loaded"])
+
+    def test_logging_import_still_fails(self) -> None:
+        """The sandbox does not allow logging's file-capable handler surface."""
+        with pytest.raises(SecurityError, match="not permitted"):
+            hardened_exec("import logging\n", "blocked_logging.py")
+
+    def test_threading_import_only_exposes_thread_local_storage(self) -> None:
+        """The sandbox allows thread-local storage without thread creation."""
+        ns = hardened_exec(
+            "import threading\n"
+            "local_type = threading.local\n"
+            "has_thread = hasattr(threading, 'Thread')\n",
+            "restricted_threading.py",
+        )
+
+        assert ns["local_type"] is threading.local
+        assert ns["has_thread"] is False
+
+    def test_threading_thread_import_still_fails(self) -> None:
+        """The restricted threading proxy does not expose thread creation."""
+        with pytest.raises(ImportError):
+            hardened_exec("from threading import Thread\n", "blocked_thread.py")
+
+    def test_forbidden_import_still_fails(self) -> None:
+        """Allowing future features does not permit unsafe imports."""
+        with pytest.raises(SecurityError, match="not permitted"):
+            hardened_exec("import os\n", "blocked_import.py")
 
 
 class TestTimeoutContext:

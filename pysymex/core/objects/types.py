@@ -77,9 +77,9 @@ class ObjectId:
     def to_z3(self) -> z3.ArithRef:
         """Get Z3 representation for identity comparisons."""
         if self._z3_id is None:
-            with self._z3_lock:
-                if self._z3_id is None:
-                    self._z3_id = z3.Int(f"id_{self._name}")
+            from pysymex.core.solver.constraints import get_int_val
+
+            self._z3_id = get_int_val(self._id)
         return self._z3_id
 
     def __eq__(self, other: object) -> bool:

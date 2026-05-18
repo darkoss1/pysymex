@@ -256,6 +256,28 @@ class TestSymbolicArray:
         arr = mod.SymbolicArray("a")
         assert z3.is_bool(arr.in_bounds(0))
 
+    def test_negative_index_in_bounds_matches_python_list_range(self) -> None:
+        arr = mod.SymbolicArray("a")
+        arr.length = z3.IntVal(3)
+        solver = z3.Solver()
+
+        solver.push()
+        solver.add(arr.in_bounds(-1))
+        assert solver.check() == z3.sat
+        solver.pop()
+
+        solver.add(arr.in_bounds(-4))
+        assert solver.check() == z3.unsat
+
+    def test_get_and_set_normalize_negative_index(self) -> None:
+        arr = mod.SymbolicArray("a")
+        arr.length = z3.IntVal(3)
+        updated = arr.set(-1, z3.IntVal(42))
+
+        solver = z3.Solver()
+        solver.add(updated.get(2) != 42)
+        assert solver.check() == z3.unsat
+
 
 class TestSymbolicMap:
     def test_get(self) -> None:

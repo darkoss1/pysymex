@@ -42,7 +42,7 @@ class PostAssignmentContradictionRule(LogicRule):
                 continue
 
             assigned = next(iter(values))
-            if assigned in disequalities.get(var, set()):
+            if assigned in disequalities.get(var, ()):
                 return True
 
             vbounds = bounds.get(var)

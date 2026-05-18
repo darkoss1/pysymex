@@ -1,9 +1,6 @@
 """Tests for pysymex/analysis/detectors/logical/utils.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
 from pysymex.analysis.detectors.logical.utils import (
     get_variables,
     get_variables_for_core,
@@ -11,6 +8,8 @@ from pysymex.analysis.detectors.logical.utils import (
     iter_subexpressions,
     extract_var_const_comparisons,
     extract_var_var_comparisons,
+    extract_product_const_comparisons,
+    extract_sum_const_comparisons,
     extract_var_const_equalities,
     extract_var_const_disequalities,
     extract_bounds,
@@ -77,6 +76,24 @@ def test_extract_var_const_comparisons_exists() -> None:
 def test_extract_var_var_comparisons_exists() -> None:
     """Test extract_var_var_comparisons behavior."""
     assert callable(extract_var_var_comparisons)
+
+
+def test_extract_sum_const_comparisons_extracts_unit_sum() -> None:
+    """Extract unit-coefficient symbolic sums compared to constants."""
+    import z3
+
+    x = z3.Int("x")
+    y = z3.Int("y")
+    assert extract_sum_const_comparisons([x + y <= 4]) == [(("x", "y"), "<=", 4)]
+
+
+def test_extract_product_const_comparisons_extracts_binary_product() -> None:
+    """Extract binary symbolic products compared to constants."""
+    import z3
+
+    x = z3.Int("x")
+    y = z3.Int("y")
+    assert extract_product_const_comparisons([x * y < 0]) == [("x", "y", "<", 0)]
 
 
 def test_extract_var_const_equalities_exists() -> None:

@@ -136,11 +136,11 @@ class ResourceLimits:
     cpu_seconds: int = 30
     """CPU time limit in seconds (may exceed wall time for I/O-bound code)."""
 
-    memory_mb: int = 256
+    memory_mb: int = 512
     """Maximum memory (address space) in megabytes."""
 
-    max_processes: int = 1
-    """Maximum number of processes/threads. Set to 1 to prevent fork bombs."""
+    max_processes: int = 4
+    """Maximum number of processes/threads. Allows for venv trampolines and helper threads."""
 
     max_file_descriptors: int = 32
     """Maximum open file descriptors."""

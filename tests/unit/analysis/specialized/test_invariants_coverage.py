@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import z3
+from typing import cast
 
 from pysymex.analysis.specialized.invariants import (
     ClassInvariant,
@@ -52,7 +53,7 @@ class TestInvariantDecorator:
             pass
 
         assert hasattr(Foo, "__invariants__")
-        inv_list = Foo.__invariants__  # type: ignore[attr-defined]
+        inv_list = cast(list[ClassInvariant], Foo.__invariants__)  # type: ignore[attr-defined]
         assert len(inv_list) == 1
         assert inv_list[0].condition == "self.x > 0"
         assert inv_list[0].class_name == "Foo"
@@ -65,7 +66,8 @@ class TestInvariantDecorator:
         class Bar:
             pass
 
-        assert len(Bar.__invariants__) == 2  # type: ignore[attr-defined]
+        bar_invariants = cast(list[ClassInvariant], Bar.__invariants__)  # type: ignore[attr-defined]
+        assert len(bar_invariants) == 2
 
 
 class TestGetInvariants:
@@ -197,10 +199,10 @@ class TestInvariantChecker:
         s = z3.Solver()
         x = z3.Int("x_ce")
         b = z3.Bool("b_ce")
-        s.add(x == 42, b == True)
+        s.add(x == 42, b)
         assert s.check() == z3.sat
         model = s.model()
-        ce = checker._extract_counterexample(model)
+        ce = checker._extract_counterexample(model)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert ce["x_ce"] == 42
         assert ce["b_ce"] is True
 

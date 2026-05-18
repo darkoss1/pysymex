@@ -23,23 +23,23 @@ class TestSmtCollector:
             Event(type=EventType.SOLVER_UNKNOWN, value=0.0),
         ]
         collector.process(events)
-        assert collector._sat_count == 2
-        assert collector._unsat_count == 1
-        assert collector._unknown_count == 1
+        assert collector._sat_count == 2  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert collector._unsat_count == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert collector._unknown_count == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_process_query_int_clauses(self) -> None:
         """Verify that SOLVER_QUERY with int clauses updates total clauses."""
         collector = SmtCollector()
         events = [Event(type=EventType.SOLVER_QUERY, value=0.0, metadata={"clauses": 5})]
         collector.process(events)
-        assert collector._total_clauses == 5
+        assert collector._total_clauses == 5  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_process_query_float_clauses(self) -> None:
         """Verify that SOLVER_QUERY with float clauses updates total clauses."""
         collector = SmtCollector()
         events = [Event(type=EventType.SOLVER_QUERY, value=0.0, metadata={"clauses": 3.14})]
         collector.process(events)
-        assert collector._total_clauses == 3
+        assert collector._total_clauses == 3  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_metrics_ratio_gt_zero(self) -> None:
         """Verify that sat_unsat_ratio is correctly computed."""

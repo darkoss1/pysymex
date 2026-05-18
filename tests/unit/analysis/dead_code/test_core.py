@@ -1,6 +1,6 @@
-import pytest
-import dis
-from unittest.mock import patch, Mock
+from types import CodeType
+from unittest.mock import Mock, patch
+
 from pysymex.analysis.dead_code.core import (
     UnreachableCodeDetector,
     UnusedVariableDetector,
@@ -14,16 +14,18 @@ from pysymex.analysis.cross_function.core import CallGraph
 from pysymex.analysis.dead_code.types import DeadCodeKind
 
 
-def make_unused_var_code() -> object:
-    def f() -> None:
-        x = 1
-        y = 2
-        print(x)
+def make_unused_var_code() -> CodeType:
+    module_code = compile(
+        "def f():\n    x = 1\n    y = 2\n    print(x)\n",
+        "<dead-code-test>",
+        "exec",
+    )
+    code_objects = [const for const in module_code.co_consts if isinstance(const, CodeType)]
+    assert len(code_objects) == 1
+    return code_objects[0]
 
-    return f.__code__
 
-
-def make_dead_store_code() -> object:
+def make_dead_store_code() -> CodeType:
     def f() -> None:
         x = 1
         x = 2
@@ -32,7 +34,7 @@ def make_dead_store_code() -> object:
     return f.__code__
 
 
-def make_unused_param_code() -> object:
+def make_unused_param_code() -> CodeType:
     def f(a: int, b: int) -> int:
         return a
 
@@ -60,7 +62,7 @@ class TestUnreachableCodeDetector:
     """Test suite for pysymex.analysis.dead_code.core.UnreachableCodeDetector."""
 
     @patch("pysymex.analysis.dead_code.core._cached_get_instructions")
-    def test_detect(self, mock_get_instr) -> None:
+    def test_detect(self, mock_get_instr: Mock) -> None:
         """Test detect behavior."""
         mock_get_instr.return_value = [
             MockInstr("LOAD_CONST", 0, 1, starts_line=10),
@@ -102,6 +104,8 @@ class TestUnusedVariableDetector:
 
             def g() -> None:
                 print(x)
+
+            _ = g
 
         uses = UnusedVariableDetector.collect_nested_uses(f.__code__)
         assert "x" in uses
@@ -172,7 +176,7 @@ class TestRedundantConditionDetector:
     """Test suite for pysymex.analysis.dead_code.core.RedundantConditionDetector."""
 
     @patch("pysymex.analysis.dead_code.core._cached_get_instructions")
-    def test_detect(self, mock_get_instr) -> None:
+    def test_detect(self, mock_get_instr: Mock) -> None:
         """Test detect behavior."""
         mock_get_instr.return_value = [
             MockInstr("LOAD_CONST", 0, True, starts_line=10),

@@ -62,8 +62,9 @@ class LogicalContradictionDetector(Detector):
         }
     )
 
-    def __init__(self) -> None:
+    def __init__(self, *, report_infeasible_branches: bool = False) -> None:
         self.rules: list[LogicRule] = []
+        self.report_infeasible_branches = report_infeasible_branches
 
     def register_rule(self, rule: LogicRule) -> None:
         self.rules.append(rule)
@@ -85,11 +86,14 @@ class LogicalContradictionDetector(Detector):
     def check(
         self, state: VMState, instruction: dis.Instruction, _solver_check: IsSatFn
     ) -> Issue | None:
+        if not self.report_infeasible_branches:
+            return None
         if not state.stack:
             return None
 
-        from pysymex.execution.opcodes import py_version
+        from pysymex.execution.opcodes import load_opcode_handlers
 
+        py_version = load_opcode_handlers()
         control_module = getattr(py_version, "control")
         get_truthy_expr = getattr(control_module, "get_truthy_expr")
         cond = state.peek()
@@ -111,16 +115,16 @@ class LogicalContradictionDetector(Detector):
                 core_result = extract_unsat_core(branch_path)
 
                 if not core_result or not core_result.core:
-                    core = [branch_cond]
-                else:
-                    core = core_result.core
+                    continue
+                core = core_result.core
 
                 ctx = ContradictionContext(core, branch_cond, path_constraints)
 
                 classification = "Unknown Logical Contradiction"
                 chosen = self.select_rule(ctx)
-                if chosen is not None:
-                    classification = f"Tier {chosen.tier}: {chosen.name}"
+                if chosen is None:
+                    continue
+                classification = f"Tier {chosen.tier}: {chosen.name}"
 
                 return Issue(
                     kind=self.issue_kind,

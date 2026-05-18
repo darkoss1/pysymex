@@ -43,7 +43,7 @@ from pysymex.analysis.types.inference import (
 )
 from pysymex.analysis.types.kinds import PyType
 from pysymex.analysis.types.patterns import PatternRecognizer, TypeState, TypeStateMachine
-from pysymex.analysis.types.stubs import (
+from pysymex.analysis.type_stubs import (
     BuiltinStubs,
     ClassStub,
     FunctionStub,

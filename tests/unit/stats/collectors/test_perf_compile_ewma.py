@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pysymex.stats.collectors.perf import _compile_ewma
+from pysymex.stats.collectors.perf import _compile_ewma  # type: ignore[reportPrivateUsage]  # White-box test validates the optional compilation fallback.
 
 
 class TestCompileEwmaFallback:

@@ -1,7 +1,10 @@
 from pathlib import Path
 from unittest.mock import MagicMock
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from pysymex.analysis.detectors.base import Detector
+from pysymex.execution.dispatcher import OpcodeResult
 from pysymex.plugins.base import (
     PluginType,
     PluginPriority,
@@ -41,9 +44,9 @@ class DummyDetectorPlugin(DetectorPlugin):
         super().__init__()
         self.metadata = PluginMetadata(name="detector", version="1.0")
 
-    def get_detector(self) -> object:
+    def get_detector(self) -> Detector:
         """Get the dummy detector."""
-        return "dummy_detector"
+        return cast(Detector, "dummy_detector")
 
 
 class DummyHandlerPlugin(HandlerPlugin):
@@ -53,9 +56,9 @@ class DummyHandlerPlugin(HandlerPlugin):
         super().__init__()
         self.metadata = PluginMetadata(name="handler", version="1.0")
 
-    def get_handlers(self) -> dict[str, object]:
+    def get_handlers(self) -> dict[str, Callable[..., OpcodeResult]]:
         """Get the dummy handlers."""
-        return {"OPCODE": "dummy_handler"}
+        return {"OPCODE": cast(Callable[..., OpcodeResult], "dummy_handler")}
 
 
 class DummyHookPlugin(HookPlugin):
@@ -65,9 +68,9 @@ class DummyHookPlugin(HookPlugin):
         super().__init__()
         self.metadata = PluginMetadata(name="hook", version="1.0")
 
-    def get_hooks(self) -> dict[str, object]:
+    def get_hooks(self) -> dict[str, Callable[..., object | None]]:
         """Get the dummy hooks."""
-        return {"hook_name": "dummy_hook"}
+        return {"hook_name": cast(Callable[..., object | None], "dummy_hook")}
 
 
 class TestPluginType:
@@ -287,8 +290,8 @@ class TestPluginRegistry:
         registry = PluginRegistry()
         handler = MagicMock()
         registry.register_hook("custom_hook", handler)
-        assert "custom_hook" in registry._hooks
-        assert registry._hooks["custom_hook"] == [handler]
+        assert "custom_hook" in registry._hooks  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert registry._hooks["custom_hook"] == [handler]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_trigger_hook(self) -> None:
         """Test trigger_hook behavior."""
@@ -312,7 +315,7 @@ class TestPluginLoader:
         loader = PluginLoader(registry)
         p = Path("/tmp")
         loader.add_search_path(p)
-        assert p in loader._search_paths
+        assert p in loader._search_paths  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_load_from_module(self) -> None:
         """Test load_from_module behavior."""

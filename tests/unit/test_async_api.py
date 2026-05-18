@@ -14,17 +14,17 @@ class TestTimeoutFromKwargs:
 
     def test_default_timeout(self) -> None:
         """Empty kwargs yields default 60.0 seconds."""
-        result = mod._timeout_from_kwargs({})
+        result = mod._timeout_from_kwargs({})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == 60.0
 
     def test_custom_timeout(self) -> None:
         """Custom timeout value is extracted."""
-        result = mod._timeout_from_kwargs({"timeout": 30.0})
+        result = mod._timeout_from_kwargs({"timeout": 30.0})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == 30.0
 
     def test_int_timeout_converted(self) -> None:
         """Integer timeout is converted to float."""
-        result = mod._timeout_from_kwargs({"timeout": 10})
+        result = mod._timeout_from_kwargs({"timeout": 10})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == 10.0
         assert isinstance(result, float)
 

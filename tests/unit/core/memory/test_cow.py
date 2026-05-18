@@ -71,13 +71,13 @@ class TestCowSet:
 
     def test_add(self) -> None:
         """Scenario: add value to set; expected membership after insertion."""
-        s = pysymex.core.memory.cow.CowSet()
+        s: pysymex.core.memory.cow.CowSet[int] = pysymex.core.memory.cow.CowSet()
         s.add(3)
         assert 3 in s
 
     def test_discard(self) -> None:
         """Scenario: discard existing value; expected value no longer present."""
-        s = pysymex.core.memory.cow.CowSet({2})
+        s: pysymex.core.memory.cow.CowSet[int] = pysymex.core.memory.cow.CowSet({2})
         s.discard(2)
         assert 2 not in s
 

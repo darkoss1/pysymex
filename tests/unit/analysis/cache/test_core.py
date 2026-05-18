@@ -1,8 +1,6 @@
 import pytest
 from pathlib import Path
 import time
-import os
-import tempfile
 from pysymex.analysis.cache.core import (
     CacheKeyType,
     CacheKey,
@@ -171,7 +169,7 @@ class TestPersistentCache:
         """Test close behavior."""
         cache = PersistentCache(db_path=tmp_path / "cache.db")
         cache.close()
-        assert cache._conn is None
+        assert cache._conn is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get(self, tmp_path: Path) -> None:
         """Test get behavior."""
@@ -308,7 +306,7 @@ class TestTieredCache:
         """Test close behavior."""
         cache = TieredCache(db_path=tmp_path / "cache.db")
         cache.close()
-        assert cache.persistent._conn is None
+        assert cache.persistent._conn is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_stats(self, tmp_path: Path) -> None:
         """Test stats behavior."""

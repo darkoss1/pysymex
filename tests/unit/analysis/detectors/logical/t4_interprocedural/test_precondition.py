@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t4_interprocedural/precondition.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t4_interprocedural.precondition import (
     PreconditionImpossibilityRule,
 )
@@ -35,3 +34,17 @@ class TestPreconditionImpossibilityRule:
         """Test basic initialization and properties."""
         assert PreconditionImpossibilityRule is not None
         assert PreconditionImpossibilityRule.__name__ == "PreconditionImpossibilityRule"
+
+    def test_matches_argument_bound_contradiction(self) -> None:
+        """Classify inconsistent precondition bounds on argument-like symbols."""
+        user_arg = z3.Int("user_arg")
+        core = [user_arg >= 10, user_arg < 10]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert PreconditionImpossibilityRule().matches(ctx)
+
+    def test_does_not_match_unrelated_bounds(self) -> None:
+        """Do not classify non-argument variable contradictions as precondition issues."""
+        local_value = z3.Int("local_value")
+        core = [local_value >= 10, local_value < 10]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not PreconditionImpossibilityRule().matches(ctx)

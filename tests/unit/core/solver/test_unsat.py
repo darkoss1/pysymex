@@ -18,6 +18,17 @@ def test_extract_unsat_core() -> None:
     assert core is not None
 
 
+def test_extract_unsat_core_translates_cross_context_constraints() -> None:
+    """Scenario: cross-context contradiction; expected core extraction still succeeds."""
+    ctx = z3.Context()
+    x = z3.Int("x_cross_context_unsat_core", ctx=ctx)
+
+    core = pysymex.core.solver.unsat.extract_unsat_core([x > 0, x <= 0])
+
+    assert core is not None
+    assert set(core.core_indices) == {0, 1}
+
+
 def test_prune_with_core() -> None:
     """Scenario: prune by selected indices; expected only indexed constraints kept."""
     constraints = [z3.Bool("a"), z3.Bool("b"), z3.Bool("c")]

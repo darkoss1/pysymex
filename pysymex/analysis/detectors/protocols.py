@@ -126,10 +126,3 @@ class ExecutionContextLike(TypingProtocol):
     """Minimal hook-registration protocol used by executor integration tests."""
 
     def register_hook(self, hook_name: str, callback: object) -> None: ...
-
-
-__all__ = [
-    "Protocol",
-    "ProtocolChecker",
-    "ScanReporter",
-]

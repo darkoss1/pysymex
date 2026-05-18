@@ -30,8 +30,6 @@ from types import CodeType
 from pysymex.execution.executors.core import SymbolicExecutor
 from pysymex.execution.types import ExecutionConfig, ExecutionResult
 
-__all__ = ["SymbolicExecutor", "execute_function", "execute_code"]
-
 
 def _create_executor(config: ExecutionConfig | None = None) -> SymbolicExecutor:
     """Helper to create a SymbolicExecutor with optional config."""

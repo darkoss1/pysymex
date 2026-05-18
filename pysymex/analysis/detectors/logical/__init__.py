@@ -16,18 +16,57 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Logical contradiction detectors."""
+
+from __future__ import annotations
+
 from pysymex.analysis.detectors.logical.base import LogicalContradictionDetector
-from pysymex.analysis.detectors.logical.t1_local import *
-from pysymex.analysis.detectors.logical.t2_multivar import *
-from pysymex.analysis.detectors.logical.t3_path import *
-from pysymex.analysis.detectors.logical.t4_interprocedural import *
-from pysymex.analysis.detectors.logical.t5_temporal import *
+from pysymex.analysis.detectors.logical.t1_local import (
+    ArithmeticImpossibilityRule,
+    ComplementContradictionRule,
+    EqualityContradictionRule,
+    ModularContradictionRule,
+    ParityContradictionRule,
+    RangeContradictionRule,
+    SelfContradictionRule,
+)
+from pysymex.analysis.detectors.logical.t2_multivar import (
+    AntisymmetryRule,
+    GcdImpossibilityRule,
+    ProductSignContradictionRule,
+    SumImpossibilityRule,
+    TriangleImpossibilityRule,
+)
+from pysymex.analysis.detectors.logical.t3_path import (
+    LoopInvariantViolationRule,
+    NarrowingContradictionRule,
+    PostAssignmentContradictionRule,
+    ReturnTypeContradictionRule,
+    SequentialModularRule,
+)
+from pysymex.analysis.detectors.logical.t4_interprocedural import (
+    ApiContractViolationRule,
+    NumericRangePropagationRule,
+    PostconditionContradictionRule,
+    PreconditionImpossibilityRule,
+)
+from pysymex.analysis.detectors.logical.t5_temporal import (
+    ConcurrencyContradictionRule,
+    ResourceStateContradictionRule,
+    StateImpossibilityRule,
+)
 
 
-def create_logic_detector() -> LogicalContradictionDetector:
-    detector = LogicalContradictionDetector()
+def create_logic_detector(
+    *, report_infeasible_branches: bool = False
+) -> LogicalContradictionDetector:
+    """Create a standard logical detector with all tiers registered.
 
-    # Tier 1
+    Infeasible branch alternatives are normal symbolic-execution pruning facts.
+    They are exposed only for targeted audit runs to avoid user-facing false positives.
+    """
+    detector = LogicalContradictionDetector(report_infeasible_branches=report_infeasible_branches)
+
     detector.register_rule(RangeContradictionRule())
     detector.register_rule(ParityContradictionRule())
     detector.register_rule(ModularContradictionRule())

@@ -37,7 +37,6 @@ from ..abstract.interpreter import (
     AbstractAnalyzer,
     DivisionByZeroWarning,
 )
-from ..detectors.static import StaticAnalyzer
 from ..detectors.types import (
     Issue,
     IssueKind,
@@ -51,8 +50,6 @@ from pysymex.models.builtins.functions import FunctionSummarizer
 from ..patterns import (
     FunctionPatternInfo,
     PatternAnalyzer,
-    PatternKind,
-    PatternMatch,
 )
 from ..type_inference import (
     TypeAnalyzer,
@@ -82,7 +79,6 @@ class AnalysisPipeline:
         flow_analyzer: Flow-sensitive analyser (created per function).
         pattern_analyzer: Pattern recognizer.
         abstract_analyzer: Abstract-interpretation engine.
-        enhanced_analyzer: Static detector engine.
         function_models: Function summarizer for inter-procedural analysis.
     """
 
@@ -92,7 +88,6 @@ class AnalysisPipeline:
         self.flow_analyzer: FlowSensitiveAnalyzer | None = None
         self.pattern_analyzer = PatternAnalyzer()
         self.abstract_analyzer = AbstractAnalyzer()
-        self.enhanced_analyzer = StaticAnalyzer()
         self.function_models = FunctionSummarizer()
         self._setup_patterns()
 
@@ -235,20 +230,6 @@ class AnalysisPipeline:
                 func_ctx.patterns = list(pattern_info.patterns)
             except (ValueError, TypeError, AttributeError):
                 logger.debug("Pattern recognition failed for %s", func_ctx.name, exc_info=True)
-        try:
-            raw_issues = self.enhanced_analyzer.analyze_function(
-                code=code,
-                file_path=file_path,
-                type_env=func_ctx.type_env or TypeEnvironment(),
-                pattern_info=pattern_info,
-                flow_analyzer=self._get_flow_analyzer(code) if self.config.flow_analysis else None,
-            )
-            issues = self._filter_issues(raw_issues, func_ctx.patterns)
-            for issue in issues:
-                if not self._is_duplicate(issue, builder.issues):
-                    builder.add_issue(issue)
-        except (RuntimeError, TypeError, ValueError, AttributeError) as e:
-            builder.add_warning(f"Detection error in {func_ctx.name}: {e}")
         if self.config.abstract_interpretation:
             try:
                 warnings = self.abstract_analyzer.analyze_function(code, file_path)
@@ -278,49 +259,6 @@ class AnalysisPipeline:
                     func_ctx.name,
                     exc_info=True,
                 )
-
-    def _filter_issues(
-        self,
-        issues: list[Issue],
-        patterns: list[PatternMatch],
-    ) -> list[Issue]:
-        """Filter issues based on patterns and config."""
-        filtered: list[Issue] = []
-        pattern_kinds = {(p.kind, p.line) for p in patterns}
-        for issue in issues:
-            if issue.confidence < self.config.min_confidence:
-                continue
-            if issue.severity == Severity.INFO and not self.config.include_info:
-                continue
-            should_suppress = False
-            if (
-                self.config.suppress_dict_int_key
-                and issue.kind == IssueKind.TYPE_ERROR
-                and "dict" in issue.message.lower()
-                and (PatternKind.DICT_INT_KEY, issue.line) in pattern_kinds
-            ):
-                should_suppress = True
-            if (
-                self.config.suppress_defaultdict
-                and issue.kind == IssueKind.KEY_ERROR
-                and (PatternKind.DEFAULTDICT_ACCESS, issue.line) in pattern_kinds
-            ):
-                should_suppress = True
-            if (
-                self.config.suppress_counter
-                and issue.kind == IssueKind.KEY_ERROR
-                and (PatternKind.COUNTER_ACCESS, issue.line) in pattern_kinds
-            ):
-                should_suppress = True
-            if (
-                self.config.suppress_safe_iteration
-                and issue.kind == IssueKind.INDEX_ERROR
-                and (PatternKind.ENUMERATE_ITER, issue.line) in pattern_kinds
-            ):
-                should_suppress = True
-            if not should_suppress:
-                filtered.append(issue)
-        return filtered[: self.config.max_issues_per_file]
 
     def _is_duplicate(self, issue: Issue, existing: list[Issue]) -> bool:
         """Check if issue is a duplicate."""

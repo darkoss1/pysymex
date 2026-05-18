@@ -30,9 +30,8 @@ if TYPE_CHECKING:
 class InfiniteLoopDetector(Detector):
     """Detects potential infinite loops via iteration counting and condition analysis.
 
-    Attributes:
-        _loop_counters: Per-PC iteration count.
-        _max_iterations: Threshold that triggers an infinite-loop report.
+    Uses path-local state in VMState.loop_counters to ensure isolation
+    between different execution paths.
     """
 
     name = "infinite-loop"
@@ -43,8 +42,7 @@ class InfiniteLoopDetector(Detector):
     )
 
     def __init__(self) -> None:
-        self._loop_counters: dict[int, int] = {}
-        self._max_iterations = 1000
+        self._max_iterations = 128
 
     def check(
         self,
@@ -53,40 +51,52 @@ class InfiniteLoopDetector(Detector):
         is_satisfiable_fn: IsSatFn,
     ) -> Issue | None:
         """Check for infinite loop patterns."""
+        _ = is_satisfiable_fn
         if instruction.opname in ("JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT"):
             pc = state.pc
-            self._loop_counters[pc] = self._loop_counters.get(pc, 0) + 1
-            if self._loop_counters[pc] > self._max_iterations:
+            prev_count: int = state.loop_counters.get(pc, 0) or 0
+            state.loop_counters[pc] = prev_count + 1
+            target_pc = instruction.argval if isinstance(instruction.argval, int) else None
+            if target_pc is not None and target_pc == instruction.offset:
+                return Issue(
+                    kind=IssueKind.INFINITE_LOOP,
+                    message="Potential infinite loop detected (self-looping backward jump)",
+                    pc=state.pc,
+                    confidence=0.8,
+                )
+            if state.loop_counters[pc] > self._max_iterations:
                 return Issue(
                     kind=IssueKind.INFINITE_LOOP,
                     message=f"Potential infinite loop detected (>{self._max_iterations} iterations)",
                     pc=state.pc,
                 )
         if instruction.opname in ("POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"):
+            if not isinstance(instruction.argval, int):
+                return None
+            if instruction.argval >= instruction.offset:
+                return None
             if state.stack:
-                from pysymex.core.types.scalars import SymbolicValue
+                from pysymex.core.types import SymbolicValue
 
                 cond = state.peek()
-                if isinstance(cond, SymbolicValue):
-                    always_true = [
-                        *state.path_constraints,
-                        cond.could_be_truthy(),
-                    ]
-                    can_be_false = [
-                        *state.path_constraints,
-                        z3.Not(cond.could_be_truthy()),
-                    ]
-
-                    if is_satisfiable_fn(always_true) and not is_satisfiable_fn(can_be_false):
-                        target_pc = instruction.argval if instruction.argval is not None else 0
-                        is_backward = target_pc < state.pc
-
-                        if is_backward:
-                            return Issue(
-                                kind=IssueKind.INFINITE_LOOP,
-                                message="Potential infinite loop detected (condition always true)",
-                                pc=state.pc,
-                            )
-                        else:
-                            return None
+                if isinstance(cond, bool):
+                    if cond:
+                        return Issue(
+                            kind=IssueKind.INFINITE_LOOP,
+                            message="Potential infinite loop detected (condition always true)",
+                            pc=state.pc,
+                        )
+                    return None
+                if isinstance(cond, z3.BoolRef) and z3.is_true(cond):
+                    return Issue(
+                        kind=IssueKind.INFINITE_LOOP,
+                        message="Potential infinite loop detected (condition always true)",
+                        pc=state.pc,
+                    )
+                if isinstance(cond, SymbolicValue) and z3.is_true(cond.could_be_truthy()):
+                    return Issue(
+                        kind=IssueKind.INFINITE_LOOP,
+                        message="Potential infinite loop detected (condition always true)",
+                        pc=state.pc,
+                    )
         return None

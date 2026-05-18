@@ -163,16 +163,16 @@ class TestSymbolicDescriptor:
         descriptor = objects.SymbolicDescriptor()
         cls = objects.SymbolicClass(name="A")
         inst = objects.SymbolicInstance(cls=cls, instance_id=0)
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(AttributeError):
             descriptor.__get__(inst, cls)
 
     def test_error_path(self) -> None:
         descriptor = objects.SymbolicDescriptor()
         cls = objects.SymbolicClass(name="A")
         inst = objects.SymbolicInstance(cls=cls, instance_id=0)
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(AttributeError):
             descriptor.__set__(inst, 1)
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(AttributeError):
             descriptor.__delete__(inst)
 
 

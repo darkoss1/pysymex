@@ -35,6 +35,7 @@ from pysymex.core.iterators.base import (
     SymbolicIterator,
     SymbolicRange,
 )
+from pysymex.core.solver.constraints import simplify_expr
 from pysymex.core.types import (
     SymbolicInt,
     SymbolicList,
@@ -107,7 +108,7 @@ class SymbolicZip(SymbolicIterator):
 
     def __next__(self) -> IterationResult:
         """Return the next item from the iterator."""
-        values: list[SymbolicType] = []
+        values: list[object] = []
         constraints: list[z3.BoolRef] = []
         new_iterators: list[SymbolicIterator] = []
         for it in self.iterators:
@@ -150,7 +151,8 @@ class SymbolicZip(SymbolicIterator):
             return 0
         bounds = [it.remaining_bound() for it in self.iterators]
         if all(isinstance(b, int) for b in bounds):
-            return min(bounds)
+            int_bounds = [b for b in bounds if isinstance(b, int)]
+            return min(int_bounds)
         result = bounds[0]
         for b in bounds[1:]:
             if isinstance(result, int) and isinstance(b, int):
@@ -250,7 +252,7 @@ class SymbolicFilter(SymbolicIterator):
                 passes_obj = self.predicate(inner_result.value)
                 if isinstance(passes_obj, z3.BoolRef):
                     pred_constraint = passes_obj
-                    simplified = z3.simplify(passes_obj)
+                    simplified = simplify_expr(passes_obj)
                     if z3.is_true(simplified):
                         passes = True
                     elif z3.is_false(simplified):
@@ -261,7 +263,7 @@ class SymbolicFilter(SymbolicIterator):
                     z3_bool_candidate = getattr(passes_obj, "z3_bool", None)
                     if isinstance(z3_bool_candidate, z3.BoolRef):
                         pred_constraint = z3_bool_candidate
-                        simplified = z3.simplify(pred_constraint)
+                        simplified = simplify_expr(pred_constraint)
                         if z3.is_true(simplified):
                             passes = True
                         elif z3.is_false(simplified):

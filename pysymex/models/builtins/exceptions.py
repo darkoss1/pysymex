@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pysymex.core.exceptions.analyzer import BUILTIN_EXCEPTIONS
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.types import SymbolicValue
 from pysymex.models.builtins.types import TypeModel, TypeModelResult
 
 if TYPE_CHECKING:

@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t1_local/range.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t1_local.range import RangeContradictionRule
 
 
@@ -33,3 +32,17 @@ class TestRangeContradictionRule:
         """Test basic initialization and properties."""
         assert RangeContradictionRule is not None
         assert RangeContradictionRule.__name__ == "RangeContradictionRule"
+
+    def test_matches_inconsistent_bounds(self) -> None:
+        """Classify only impossible same-variable interval bounds."""
+        x = z3.Int("x")
+        core = [x > 5, x <= 5]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert RangeContradictionRule().matches(ctx)
+
+    def test_does_not_match_satisfiable_bounds(self) -> None:
+        """Do not classify ordinary lower and upper bounds as contradictions."""
+        x = z3.Int("x")
+        core = [x > 0, x < 10]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not RangeContradictionRule().matches(ctx)

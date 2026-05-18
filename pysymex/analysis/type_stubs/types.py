@@ -25,8 +25,6 @@ from dataclasses import dataclass, field
 
 from pysymex.analysis.type_inference.kinds import TypeKind, PyType
 
-__all__ = ["ClassStub", "FunctionStub", "ModuleStub", "StubType"]
-
 
 @dataclass(frozen=True)
 class StubType:

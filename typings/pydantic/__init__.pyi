@@ -5,13 +5,11 @@ from typing import ClassVar, Generic, TypeVar, TypedDict, overload
 
 _T = TypeVar("_T")
 
-
 class ConfigDict(TypedDict, total=False):
     frozen: bool
     extra: str
     validate_assignment: bool
     populate_by_name: bool
-
 
 class BaseModel:
     model_config: ClassVar[ConfigDict]
@@ -19,7 +17,6 @@ class BaseModel:
     def __init__(self, **data: object) -> None: ...
     def model_dump(self) -> dict[str, object]: ...
     def model_dump_json(self) -> str: ...
-
 
 @overload
 def Field(
@@ -47,7 +44,6 @@ def Field(
     *,
     discriminator: str,
 ) -> object: ...
-
 
 class TypeAdapter(Generic[_T]):
     def __init__(self, annotated_type: object, /) -> None: ...

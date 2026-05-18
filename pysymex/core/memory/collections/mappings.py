@@ -31,8 +31,8 @@ import z3
 
 from pysymex.core.memory.addressing import next_address
 from pysymex.core.memory.heap import SymbolicMap
-from pysymex.core.types.numeric import SymbolicBool, SymbolicInt
-from pysymex.core.types.symbolic_containers import SymbolicDict, SymbolicSet, SymbolicTuple
+from pysymex.core.types import SymbolicDict, SymbolicSet, SymbolicTuple
+from pysymex.core.types import SymbolicBool, SymbolicInt
 
 from .lists import OpResult
 
@@ -71,9 +71,8 @@ class SymbolicDictOps:
             sym_key = (
                 key if isinstance(key, SymbolicInt) else SymbolicInt(z3.IntVal(cast("int", key)))
             )
-            result = d[sym_key]
-            has_key = d.contains(sym_key)
-            return OpResult(value=result, constraints=[has_key])
+            value_obj, has_key = d[sym_key]
+            return OpResult(value=value_obj, constraints=[has_key])
         else:
             assert isinstance(d, SymbolicMap)
             z3_key = cast(

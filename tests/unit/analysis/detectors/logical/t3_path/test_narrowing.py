@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t3_path/narrowing.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t3_path.narrowing import NarrowingContradictionRule
 
 
@@ -33,3 +32,17 @@ class TestNarrowingContradictionRule:
         """Test basic initialization and properties."""
         assert NarrowingContradictionRule is not None
         assert NarrowingContradictionRule.__name__ == "NarrowingContradictionRule"
+
+    def test_matches_inconsistent_narrowed_bounds(self) -> None:
+        """Classify contradictions introduced by multiple narrowing facts."""
+        x = z3.Int("x")
+        core = [x >= 0, x <= 10, x > 10]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert NarrowingContradictionRule().matches(ctx)
+
+    def test_does_not_match_consistent_narrowing(self) -> None:
+        """Do not classify compatible narrowing facts."""
+        x = z3.Int("x")
+        core = [x >= 0, x <= 10, x > 3]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not NarrowingContradictionRule().matches(ctx)

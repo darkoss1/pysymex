@@ -140,7 +140,9 @@ class SymbolicAddress:
 
     def __hash__(self) -> int:
         """Return the hash value of the object."""
-        return hash((self.region, str(self.base), str(self.offset)))
+        base_h = self.base.hash() if hasattr(self.base, "hash") else hash(self.base)
+        offset_h = self.offset.hash() if hasattr(self.offset, "hash") else hash(self.offset)
+        return hash((self.region, base_h, offset_h))
 
 
 @dataclass(slots=True)
@@ -200,11 +202,3 @@ class StackFrame:
         """Delete a local variable."""
         if name in self.locals:
             del self.locals[name]
-
-
-__all__ = [
-    "HeapObject",
-    "MemoryRegion",
-    "StackFrame",
-    "SymbolicAddress",
-]

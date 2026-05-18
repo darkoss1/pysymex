@@ -25,8 +25,9 @@ Provides performance benchmarking, regression testing, and profiling.
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import TYPE_CHECKING
+
+from pysymex._lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
     from pysymex.benchmarks.suite import (
@@ -58,19 +59,12 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 def __getattr__(name: str) -> object:
     """Getattr."""
-    target = _EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module 'pysymex.benchmarks' has no attribute {name!r}")
-    module_path, attr_name = target
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """Dir."""
-    return list(_EXPORTS.keys())
+    return lazy_dir(_EXPORTS, globals(), include_namespace=False)
 
 
 __all__: list[str] = [

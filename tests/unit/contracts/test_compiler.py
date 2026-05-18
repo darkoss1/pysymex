@@ -8,9 +8,9 @@ from pysymex.contracts.compiler import (
     Implies_,
     Not_,
     Or_,
-    _FormulaCache,
+    _FormulaCache,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
     ContractCompiler,
-    _formula_cache,
+    _formula_cache,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 )
 
 
@@ -26,7 +26,7 @@ class TestAndCombinator:
         """Verify that And_(x) returns x."""
         x = z3.Bool("x")
         result = And_(x)
-        assert result.eq(x)
+        assert z3.eq(result, x)
 
     def test_multiple_args_returns_z3_and(self) -> None:
         """Verify that And_(x, y) returns z3.And(x, y)."""
@@ -54,7 +54,7 @@ class TestOrCombinator:
         """Verify that Or_(x) returns x."""
         x = z3.Bool("x")
         result = Or_(x)
-        assert result.eq(x)
+        assert z3.eq(result, x)
 
     def test_multiple_args_returns_z3_or(self) -> None:
         """Verify that Or_(x, y) returns z3.Or(x, y)."""
@@ -101,7 +101,7 @@ class TestFormulaCache:
     def test_get_put_clear(self) -> None:
         """Verify get, put, and clear operations."""
         cache = _FormulaCache()
-        key = (1, 2)
+        key = (1, (2,))
         val = z3.BoolVal(True)
         cache.put(key, val)
         assert cache.get(key) is not None
@@ -111,10 +111,10 @@ class TestFormulaCache:
     def test_eviction_when_full(self) -> None:
         """Verify eviction occurs when max_size is reached."""
         cache = _FormulaCache(max_size=2)
-        cache.put((1, 1), z3.BoolVal(True))
-        cache.put((2, 2), z3.BoolVal(True))
-        cache.put((3, 3), z3.BoolVal(True))
-        assert len(cache._cache) <= 2
+        cache.put((1, (1,)), z3.BoolVal(True))
+        cache.put((2, (2,)), z3.BoolVal(True))
+        cache.put((3, (3,)), z3.BoolVal(True))
+        assert len(cache._cache) <= 2  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestContractCompiler:
@@ -164,26 +164,26 @@ class TestContractCompiler:
         def pred(z: z3.ArithRef) -> z3.BoolRef:
             return z == 0
 
-        ContractCompiler._trace_callable(pred, symbols)
-        assert len(_formula_cache._cache) > 0
+        ContractCompiler._trace_callable(pred, symbols)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert len(_formula_cache._cache) > 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
-    def test_trace_callable_fallback_on_exception(self) -> None:
-        """Verify tracing falls back to True on exception."""
+    def test_trace_callable_reports_exception(self) -> None:
+        """Verify tracing exceptions are explicit instead of weakening to True."""
         symbols = {"z": z3.Int("z")}
 
         def pred(z: z3.ArithRef) -> z3.BoolRef:
             raise ValueError("Tracing failed")
 
-        result = ContractCompiler._trace_callable(pred, symbols)
-        assert z3.is_true(result)
+        with pytest.raises(ValueError, match="could not be symbolically traced"):
+            ContractCompiler._trace_callable(pred, symbols)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_coerce_to_bool_ref(self) -> None:
         """Verify coercion logic for different types."""
-        res_boolref = ContractCompiler._coerce_to_bool_ref(z3.BoolVal(False), "src")
+        res_boolref = ContractCompiler._coerce_to_bool_ref(z3.BoolVal(False), "src")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert isinstance(res_boolref, z3.BoolRef)
-        res_bool = ContractCompiler._coerce_to_bool_ref(True, "src")
+        res_bool = ContractCompiler._coerce_to_bool_ref(True, "src")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert z3.is_true(res_bool)
-        res_arith = ContractCompiler._coerce_to_bool_ref(z3.IntVal(1), "src")
+        res_arith = ContractCompiler._coerce_to_bool_ref(z3.IntVal(1), "src")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert isinstance(res_arith, z3.BoolRef)
-        res_unknown = ContractCompiler._coerce_to_bool_ref("unknown", "src")
-        assert z3.is_true(res_unknown)
+        with pytest.raises(ValueError, match="unsupported result type"):
+            ContractCompiler._coerce_to_bool_ref("unknown", "src")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state

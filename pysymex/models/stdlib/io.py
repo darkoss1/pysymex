@@ -31,13 +31,13 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types.scalars import (
-    SymbolicNone,
+from pysymex.core.types import (
     SymbolicString,
     SymbolicValue,
 )
-from pysymex.core.types.containers import SymbolicList
+from pysymex.core.types import SymbolicList
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.builtins.base import none_model_result
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -178,10 +178,7 @@ class HeappushModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 class HeappopModel(FunctionModel):
@@ -210,10 +207,7 @@ class HeapifyModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 class HeapreplaceModel(FunctionModel):
@@ -349,10 +343,7 @@ class InsortLeftModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 class InsortRightModel(FunctionModel):
@@ -364,10 +355,7 @@ class InsortRightModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 class InsortModel(FunctionModel):
@@ -379,10 +367,7 @@ class InsortModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 copy_models = [

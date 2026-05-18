@@ -33,7 +33,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, cast
 
-from pysymex.core.types.scalars import SymbolicList
+from pysymex.core.types import SymbolicList
 
 
 class _LRUCacheWrapper(Protocol):
@@ -72,7 +72,7 @@ class PartialModel:
         """Call the partial function with remaining arguments."""
         _ = self.args + args
 
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic("partial_result")
         return result
@@ -106,7 +106,7 @@ def model_reduce(
     Raises:
         TypeError: If iterable is empty and no initial value
     """
-    from pysymex.core.types.scalars import SymbolicValue
+    from pysymex.core.types import SymbolicValue
 
     result, _ = SymbolicValue.symbolic("reduce_result")
     return result
@@ -134,7 +134,7 @@ class LRUCacheModel:
         """Decorate a function with caching."""
 
         def wrapper(*args: object, **kwargs: object) -> object:
-            from pysymex.core.types.scalars import SymbolicValue
+            from pysymex.core.types import SymbolicValue
 
             result, _ = SymbolicValue.symbolic(f"lru_cached_{func.__name__}")
             return result
@@ -175,7 +175,7 @@ class CachedPropertyModel:
         if obj is None:
             return self
 
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic(f"cached_property_{self.func.__name__}")
         return result

@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.analysis.resources.types import (
     ResourceIssue,
     ResourceIssueKind,
@@ -257,8 +258,7 @@ class ResourceLifecycleChecker:
 
     def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
         self._resources: dict[str, TrackedResource] = {}
         self._issues: list[ResourceIssue] = []
         self.StateSort = z3.DeclareSort("ResourceState")
@@ -283,7 +283,7 @@ class ResourceLifecycleChecker:
         self._solver.push()
         try:
             self._solver.add(*path_constraints)
-            return self._solver.check() == z3.sat
+            return self._solver.check().is_sat
         finally:
             self._solver.pop()
 
@@ -569,7 +569,7 @@ class ResourceLifecycleChecker:
             """Has cycle."""
             visited.add(lock)
             rec_stack.add(lock)
-            for dep in lock_dependencies.get(lock, set()):
+            for dep in lock_dependencies.get(lock, ()):
                 if dep not in visited:
                     if has_cycle(dep):
                         return True
@@ -667,7 +667,7 @@ class ResourceLifecycleChecker:
         self._solver.add(z3.Not(safety_property))
         result = self._solver.check()
         self._solver.pop()
-        if result == z3.unsat:
+        if result.is_unsat:
             return (True, None)
         else:
             return (False, "Resource may not be properly closed/released")
@@ -821,17 +821,3 @@ class LockResourceChecker(ResourceLifecycleChecker):
             self._lock_order,
             line_number,
         )
-
-
-__all__ = [
-    "FileResourceChecker",
-    "LockResourceChecker",
-    "ResourceIssue",
-    "ResourceIssueKind",
-    "ResourceKind",
-    "ResourceLifecycleChecker",
-    "ResourceState",
-    "ResourceStateMachine",
-    "StateTransition",
-    "TrackedResource",
-]

@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import logging
 
-
 logger = logging.getLogger(__name__)
 
 import dis
@@ -41,6 +40,7 @@ from dataclasses import dataclass, field
 
 from pysymex._compat import get_starts_line
 
+from pysymex.analysis.control.cfg import EdgeKind
 from pysymex.analysis.specialized.flow import BasicBlock, CFGBuilder, ControlFlowGraph
 
 
@@ -498,11 +498,15 @@ class RangeAnalyzer:
             all_warnings.extend(block_warnings)
             for succ_id in block.successors:
                 old_state = states.get(succ_id, RangeState.bottom())
+                edge_kind = block.successor_edges.get(succ_id)
+                succ_out_state = self._refine_successor_state(block, out_state, edge_kind)
+                if succ_out_state.is_bottom:
+                    continue
                 iterations[succ_id] += 1
                 if iterations[succ_id] > 3:
-                    new_state = old_state.widen(out_state)
+                    new_state = old_state.widen(succ_out_state)
                 else:
-                    new_state = old_state.join(out_state)
+                    new_state = old_state.join(succ_out_state)
                 if not new_state.subset_of(old_state):
                     states[succ_id] = new_state
                     succ_block = cfg.blocks.get(succ_id)
@@ -557,6 +561,126 @@ class RangeAnalyzer:
             )
             block_warnings.extend(instr_warnings)
         return state, block_warnings
+
+    def _refine_successor_state(
+        self,
+        block: BasicBlock,
+        out_state: RangeState,
+        edge_kind: EdgeKind | None,
+    ) -> RangeState:
+        if edge_kind not in {EdgeKind.BRANCH_TRUE, EdgeKind.BRANCH_FALSE}:
+            return out_state
+        comparison = self._simple_numeric_branch_comparison(block)
+        if comparison is None:
+            return out_state
+        variable, op, constant = comparison
+        return self._refine_variable_comparison(
+            out_state,
+            variable,
+            op,
+            constant,
+            assume_true=edge_kind == EdgeKind.BRANCH_TRUE,
+        )
+
+    def _simple_numeric_branch_comparison(self, block: BasicBlock) -> tuple[str, str, int] | None:
+        instructions = block.instructions
+        if len(instructions) < 4:
+            return None
+        load_left, load_right, compare, jump = instructions[-4:]
+        if not self._is_conditional_jump(jump.opname) or compare.opname != "COMPARE_OP":
+            return None
+        op = str(compare.argval)
+        left_is_var = load_left.opname in {"LOAD_FAST", "LOAD_NAME", "LOAD_DEREF"}
+        right_is_var = load_right.opname in {"LOAD_FAST", "LOAD_NAME", "LOAD_DEREF"}
+        left_is_const = load_left.opname == "LOAD_CONST" and isinstance(load_left.argval, int)
+        right_is_const = load_right.opname == "LOAD_CONST" and isinstance(load_right.argval, int)
+        if left_is_var and right_is_const:
+            return str(load_left.argval), op, int(load_right.argval)
+        if left_is_const and right_is_var:
+            reversed_op = self._reverse_comparison_op(op)
+            if reversed_op is None:
+                return None
+            return str(load_right.argval), reversed_op, int(load_left.argval)
+        return None
+
+    @staticmethod
+    def _is_conditional_jump(opname: str) -> bool:
+        return (
+            opname.startswith("POP_JUMP_")
+            or opname.startswith("JUMP_IF_")
+            or opname in {"FOR_ITER", "SEND"}
+        )
+
+    @staticmethod
+    def _reverse_comparison_op(op: str) -> str | None:
+        return {
+            "<": ">",
+            "<=": ">=",
+            ">": "<",
+            ">=": "<=",
+            "==": "==",
+            "!=": "!=",
+        }.get(op)
+
+    def _refine_variable_comparison(
+        self,
+        state: RangeState,
+        variable: str,
+        op: str,
+        constant: int,
+        *,
+        assume_true: bool,
+    ) -> RangeState:
+        refined_range = self._comparison_range(op, constant, assume_true=assume_true)
+        if refined_range is None:
+            current = state.get(variable)
+            if self._comparison_excludes_singleton(current, op, constant, assume_true=assume_true):
+                return RangeState.bottom()
+            return state
+        result = state.copy()
+        refined_value = result.get(variable).intersect(refined_range)
+        if refined_value.is_empty:
+            return RangeState.bottom()
+        result.set(variable, refined_value)
+        return result
+
+    @staticmethod
+    def _comparison_range(op: str, constant: int, *, assume_true: bool) -> Range | None:
+        if not assume_true:
+            inverted = {
+                "<": ">=",
+                "<=": ">",
+                ">": "<=",
+                ">=": "<",
+                "==": "!=",
+                "!=": "==",
+            }.get(op)
+            if inverted is None:
+                return None
+            return RangeAnalyzer._comparison_range(inverted, constant, assume_true=True)
+        if op == "<":
+            return Range.at_most(constant - 1)
+        if op == "<=":
+            return Range.at_most(constant)
+        if op == ">":
+            return Range.at_least(constant + 1)
+        if op == ">=":
+            return Range.at_least(constant)
+        if op == "==":
+            return Range.exact(constant)
+        return None
+
+    @staticmethod
+    def _comparison_excludes_singleton(
+        current: Range,
+        op: str,
+        constant: int,
+        *,
+        assume_true: bool,
+    ) -> bool:
+        if not current.is_exact or current.exact_value != constant:
+            return False
+        return (op == "==" and not assume_true) or (op == "!=" and assume_true)
 
     def _transfer_instruction(
         self,

@@ -85,12 +85,12 @@ class TestThreadModel:
     def test_kwargs_default(self) -> None:
         """kwargs defaults to empty dict."""
         t = ThreadModel()
-        assert t._kwargs == {}
+        assert t._kwargs == {}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_args_stored(self) -> None:
         """args tuple is stored."""
         t = ThreadModel(args=(1, 2, 3))
-        assert t._args == (1, 2, 3)
+        assert t._args == (1, 2, 3)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestLockModel:
@@ -190,12 +190,12 @@ class TestSemaphoreModel:
     def test_init_default_value(self) -> None:
         """Default semaphore value is 1."""
         sem = SemaphoreModel()
-        assert sem._value == 1
+        assert sem._value == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_init_custom_value(self) -> None:
         """Custom initial value is stored."""
         sem = SemaphoreModel(5)
-        assert sem._value == 5
+        assert sem._value == 5  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_init_negative_raises(self) -> None:
         """Negative initial value raises ValueError."""
@@ -206,7 +206,7 @@ class TestSemaphoreModel:
         """acquire() decrements the value."""
         sem = SemaphoreModel(2)
         assert sem.acquire() is True
-        assert sem._value == 1
+        assert sem._value == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_acquire_at_zero_nonblocking(self) -> None:
         """Non-blocking acquire at zero returns False."""
@@ -218,20 +218,20 @@ class TestSemaphoreModel:
         sem = SemaphoreModel(1)
         sem.acquire()
         sem.release()
-        assert sem._value == 1
+        assert sem._value == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_release_multiple(self) -> None:
         """release(n) increments by n."""
         sem = SemaphoreModel(0)
         sem.release(3)
-        assert sem._value == 3
+        assert sem._value == 3  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_context_manager(self) -> None:
         """Semaphore works as context manager."""
         sem = SemaphoreModel(1)
         with sem:
-            assert sem._value == 0
-        assert sem._value == 1
+            assert sem._value == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert sem._value == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_repr(self) -> None:
         """repr shows current value."""
@@ -253,7 +253,7 @@ class TestBoundedSemaphoreModel:
         bsem = BoundedSemaphoreModel(1)
         bsem.acquire()
         bsem.release()
-        assert bsem._value == 1
+        assert bsem._value == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestEventModel:
@@ -303,13 +303,13 @@ class TestConditionModel:
     def test_init_default_lock(self) -> None:
         """ConditionModel creates its own lock by default."""
         cond = ConditionModel()
-        assert isinstance(cond._lock, LockModel)
+        assert isinstance(cond._lock, LockModel)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_init_custom_lock(self) -> None:
         """ConditionModel accepts a custom lock."""
         lock = LockModel()
         cond = ConditionModel(lock=lock)
-        assert cond._lock is lock
+        assert cond._lock is lock  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_acquire_release(self) -> None:
         """acquire and release delegate to underlying lock."""
@@ -336,16 +336,16 @@ class TestConditionModel:
     def test_notify(self) -> None:
         """notify() clears waiters."""
         cond = ConditionModel()
-        cond._waiters.append("waiter1")
+        cond._waiters.append("waiter1")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         cond.notify()
-        assert len(cond._waiters) == 0
+        assert len(cond._waiters) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_notify_all(self) -> None:
         """notify_all() clears all waiters."""
         cond = ConditionModel()
-        cond._waiters.extend(["w1", "w2", "w3"])
+        cond._waiters.extend(["w1", "w2", "w3"])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         cond.notify_all()
-        assert len(cond._waiters) == 0
+        assert len(cond._waiters) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_context_manager(self) -> None:
         """ConditionModel works as context manager."""

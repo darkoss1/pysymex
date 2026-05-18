@@ -18,14 +18,21 @@
 
 from __future__ import annotations
 
-import z3
 from typing import TYPE_CHECKING
 
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
-from pysymex.core.types.havoc import is_havoc
+import z3
+
+from pysymex.analysis.detectors.base import DisInstruction, IsSatFn, Issue
+from pysymex.analysis.detectors.runtime.none_dereference import (
+    NoneDereferenceDetector as RuntimeNoneDereferenceDetector,
+    normalize_attr_name,
+    pure_check_none_deref,
+)
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
+
+_normalize_attr_name = normalize_attr_name
 
 
 def pure_check_null_deref(
@@ -34,65 +41,58 @@ def pure_check_null_deref(
     path_constraints: list[z3.BoolRef],
     pc: int,
     is_satisfiable_fn: IsSatFn,
+    *,
+    attr_name: object | None = None,
+    skip_names: frozenset[str] | set[str] = frozenset(),
+    skip_prefixes: tuple[str, ...] = (),
 ) -> Issue | None:
-    """Pure: check whether *top* could be None for the given *opname*."""
-    from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
-
-    if is_havoc(top):
+    """Pure check for None dereference that delegates to runtime detection logic."""
+    if opname not in {"LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR", "BINARY_SUBSCR"}:
         return None
-    if isinstance(top, SymbolicNone):
-        return Issue(
-            kind=IssueKind.NULL_DEREFERENCE,
-            message=f"Definite None dereference at {opname}",
-            pc=pc,
-        )
-    if isinstance(top, SymbolicValue):
-        none_check = [*path_constraints, top.is_none]
-        if is_satisfiable_fn(none_check):
-            must_be_none = not is_satisfiable_fn([*path_constraints, z3.Not(top.is_none)])
-            is_unconstrained = (
-                z3.is_const(top.is_none) and top.is_none.decl().kind() == z3.Z3_OP_UNINTERPRETED
-            )
-            if must_be_none or not is_unconstrained:
-                from pysymex.core.solver.engine import get_model
-
-                return Issue(
-                    kind=IssueKind.NULL_DEREFERENCE,
-                    message=f"Possible None dereference at {opname}",
-                    constraints=none_check,
-                    model=get_model(none_check),
-                    pc=pc,
-                )
-    return None
+    normalized_attr_name = (
+        "__getitem__" if opname == "BINARY_SUBSCR" else _normalize_attr_name(attr_name)
+    )
+    if not normalized_attr_name:
+        return None
+    return pure_check_none_deref(
+        obj=top,
+        attr_name=normalized_attr_name,
+        path_constraints=path_constraints,
+        pc=pc,
+        skip_names=skip_names,
+        skip_prefixes=skip_prefixes,
+        is_satisfiable_fn=is_satisfiable_fn,
+    )
 
 
-class NullDereferenceDetector(Detector):
-    """Detects potential null/None dereference on attribute access and subscript.
-
-    Checks ``LOAD_ATTR``, ``LOAD_METHOD``, and ``BINARY_SUBSCR`` opcodes
-    to determine if the top-of-stack value could be ``None``.
-    """
+class NullDereferenceDetector(RuntimeNoneDereferenceDetector):
+    """Specialized None dereference detector with optional subscript coverage."""
 
     name = "null-dereference"
     description = "Detects potential None dereference"
-    issue_kind = IssueKind.NULL_DEREFERENCE
-    relevant_opcodes = frozenset({"LOAD_ATTR", "LOAD_METHOD", "BINARY_SUBSCR"})
+    relevant_opcodes = frozenset({"LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR", "BINARY_SUBSCR"})
 
     def check(
         self,
         state: VMState,
         instruction: DisInstruction,
-        is_satisfiable_fn: IsSatFn,
+        _solver_check: IsSatFn,
     ) -> Issue | None:
-        """Check for None dereference at attribute access or method calls."""
-        if instruction.opname not in ("LOAD_ATTR", "LOAD_METHOD", "BINARY_SUBSCR"):
+        """Check for None dereference on attribute/method/subscript operations."""
+        if instruction.opname not in self.relevant_opcodes or len(state.stack) < 1:
             return None
-        if not state.stack:
-            return None
+        target_obj = state.stack[-1]
+        if instruction.opname == "BINARY_SUBSCR":
+            if len(state.stack) < 2:
+                return None
+            target_obj = state.stack[-2]
         return pure_check_null_deref(
-            state.peek(),
+            target_obj,
             instruction.opname,
             list(state.path_constraints),
             state.pc,
-            is_satisfiable_fn,
+            _solver_check,
+            attr_name=instruction.argval,
+            skip_names=self.SKIP_NAMES,
+            skip_prefixes=self.INTERNAL_PREFIXES,
         )

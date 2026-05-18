@@ -28,6 +28,7 @@ from pysymex.execution.opcodes.py311 import (
     control,
     exceptions,
     functions,
+    formatting,
     locals,
     stack,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "control",
     "exceptions",
     "functions",
+    "formatting",
     "locals",
     "stack",
 ]

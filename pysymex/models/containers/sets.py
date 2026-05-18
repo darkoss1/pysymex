@@ -24,16 +24,20 @@ It tracks set size, membership constraints, and length mutations.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import z3
 
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicList,
     SymbolicNone,
     SymbolicValue,
 )
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.typed_results import (
+    symbolic_bool_result,
+    symbolic_int_result,
+)
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -45,6 +49,42 @@ def _get_symbolic_set(arg: object) -> SymbolicValue | None:
     if isinstance(arg, SymbolicValue):
         return arg
     return None
+
+
+def _set_length_expr(value: SymbolicValue) -> z3.ArithRef | None:
+    """Return the Int expression that represents symbolic set cardinality."""
+    for attr_name in ("z3_len", "z3_int"):
+        candidate = getattr(value, attr_name, None)
+        if isinstance(candidate, z3.ArithRef) and z3.is_int(candidate):
+            return candidate
+    return None
+
+
+def _set_absence_condition(set_value: SymbolicValue, needle: object) -> z3.BoolRef | None:
+    concrete = set_value.value
+    if not isinstance(concrete, set):
+        return None
+    concrete_set = cast("set[object]", concrete)
+    if not concrete_set:
+        return z3.BoolVal(True)
+    if isinstance(needle, SymbolicValue):
+        clauses: list[z3.BoolRef] = []
+        for value in concrete_set:
+            if isinstance(value, SymbolicValue):
+                value = value.value
+            if isinstance(value, bool):
+                clauses.append(needle.z3_int != int(value))
+            elif isinstance(value, int):
+                clauses.append(needle.z3_int != value)
+            elif isinstance(value, str):
+                clauses.append(needle.z3_str != z3.StringVal(value))
+        if clauses:
+            return z3.And(*clauses)
+        return None
+    try:
+        return z3.BoolVal(needle not in concrete)
+    except TypeError:
+        return None
 
 
 class SetModel(FunctionModel):
@@ -85,7 +125,7 @@ class SetAddModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(z3.And(new_len >= z3_len, new_len <= z3_len + 1))
@@ -123,14 +163,16 @@ class SetRemoveModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(z3_len >= 1)
-                side_effects["potential_exception"] = {
-                    "type": "KeyError",
-                    "message": "set.remove(x): x not in set",
-                    "condition": z3_len == 0,
-                }
+                missing_condition = _set_absence_condition(s, args[1] if len(args) > 1 else None)
+                if missing_condition is not None:
+                    side_effects["potential_exception"] = {
+                        "type": "KeyError",
+                        "message": "set.remove(x): x not in set",
+                        "condition": missing_condition,
+                    }
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len == z3_len - 1)
                 s.z3_int = new_len
@@ -167,7 +209,7 @@ class SetDiscardModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(z3.And(new_len >= z3_len - 1, new_len <= z3_len))
@@ -203,7 +245,7 @@ class SetPopModel(FunctionModel):
         result, constraint = SymbolicValue.symbolic(f"set_pop_{state.pc}")
         constraints: list[z3.BoolRef | z3.ExprRef] = [constraint]
         side_effects: dict[str, object] = {}
-        z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None)) if s else None
+        z3_len = _set_length_expr(s) if s else None
         if s is not None and z3_len is not None:
             constraints.append(z3_len >= 1)
             side_effects["potential_exception"] = {
@@ -247,7 +289,7 @@ class SetClearModel(FunctionModel):
             side_effects["set_mutation"] = {
                 "operation": "clear",
                 "set_name": getattr(s, "_name", "set"),
-                "old_length": getattr(s, "z3_len", getattr(s, "z3_int", None)),
+                "old_length": _set_length_expr(s),
                 "new_length": 0,
             }
         return ModelResult(
@@ -274,7 +316,7 @@ class SetCopyModel(FunctionModel):
         setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(result.z3_len == z3_len)
         return ModelResult(value=result, constraints=constraints)
@@ -298,7 +340,7 @@ class SetUnionModel(FunctionModel):
         setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(result.z3_len >= z3_len)
         return ModelResult(value=result, constraints=constraints)
@@ -322,7 +364,7 @@ class SetIntersectionModel(FunctionModel):
         setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(result.z3_len <= z3_len)
                 constraints.append(result.z3_len >= 0)
@@ -343,10 +385,9 @@ class SetContainsModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.__contains__ method."""
         s = _get_symbolic_set(args[0]) if args else None
-        result, constraint = SymbolicValue.symbolic(f"set_contains_{state.pc}")
-        constraints = [constraint, result.is_bool]
+        result, constraints = symbolic_bool_result(f"set_contains_{state.pc}")
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(z3.Implies(z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
@@ -366,16 +407,21 @@ class SetLenModel(FunctionModel):
     ) -> ModelResult:
         """Apply set.__len__ method."""
         s = _get_symbolic_set(args[0]) if args else None
-        z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None)) if s else None
+        z3_len = _set_length_expr(s) if s else None
         if s is not None and z3_len is not None:
-            result_val, result_const = SymbolicValue.symbolic(f"len_{getattr(s, '_name', 'set')}")
-            return ModelResult(
-                value=result_val, constraints=[result_const, result_val.z3_int == z3_len]
+            result_val, result_constraints = symbolic_int_result(
+                f"len_{getattr(s, '_name', 'set')}"
             )
-        result, constraint = SymbolicValue.symbolic(f"set_len_{state.pc}")
+            result_constraints.append(result_val.z3_int == z3_len)
+            return ModelResult(
+                value=result_val,
+                constraints=result_constraints,
+            )
+        result, constraints = symbolic_int_result(f"set_len_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= 0],
+            constraints=constraints,
         )
 
 
@@ -397,7 +443,7 @@ class SetDifferenceModel(FunctionModel):
         setattr(result, "_type", "set")
         constraints = [constraint]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(result.z3_len <= z3_len)
                 constraints.append(result.z3_len >= 0)
@@ -423,7 +469,7 @@ class SetSymmetricDifferenceModel(FunctionModel):
         setattr(result, "_type", "set")
         constraints = [constraint, result.z3_len >= 0]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None and other is not None:
                 other_len = getattr(other, "z3_len", getattr(other, "z3_int", None))
                 if other_len is not None:
@@ -449,12 +495,12 @@ class SetIssubsetModel(FunctionModel):
         result, constraint = SymbolicValue.symbolic(f"set_issubset_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None and other is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             other_len = getattr(other, "z3_len", getattr(other, "z3_int", None))
             if z3_len is not None and other_len is not None:
                 constraints.append(z3.Implies(result.z3_bool, z3_len <= other_len))
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(z3.Implies(z3_len == 0, result.z3_bool))
         return ModelResult(value=result, constraints=constraints)
@@ -478,7 +524,7 @@ class SetIssupersetModel(FunctionModel):
         result, constraint = SymbolicValue.symbolic(f"set_issuperset_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None and other is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             other_len = getattr(other, "z3_len", getattr(other, "z3_int", None))
             if z3_len is not None and other_len is not None:
                 constraints.append(z3.Implies(result.z3_bool, z3_len >= other_len))
@@ -507,7 +553,7 @@ class SetIsdisjointModel(FunctionModel):
         result, constraint = SymbolicValue.symbolic(f"set_isdisjoint_{state.pc}")
         constraints = [constraint, result.is_bool]
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 constraints.append(z3.Implies(z3_len == 0, result.z3_bool))
         if other is not None:
@@ -534,7 +580,7 @@ class SetUpdateModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len >= z3_len)
@@ -567,7 +613,7 @@ class SetIntersectionUpdateModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len <= z3_len)
@@ -601,7 +647,7 @@ class SetDifferenceUpdateModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len <= z3_len)
@@ -635,7 +681,7 @@ class SetSymmetricDifferenceUpdateModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if s is not None:
-            z3_len = getattr(s, "z3_len", getattr(s, "z3_int", None))
+            z3_len = _set_length_expr(s)
             if z3_len is not None:
                 new_len = z3.Int(f"set_len_{state.pc}")
                 constraints.append(new_len >= 0)

@@ -16,28 +16,37 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Local and global variable opcodes."""
+"""Local and global variable opcodes (Python 3.11)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-import z3
-
-from pysymex._typing import StackValue
-from pysymex.core.state import is_bound
-from pysymex.core.types.scalars import SymbolicNone, SymbolicString, SymbolicValue
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.execution.opcodes.common.locals import (
+    handle_common_cell_ops,
+    handle_common_copy_free_vars,
+    handle_common_delete_deref,
+    handle_common_delete_fast,
+    handle_common_delete_global,
+    handle_common_delete_name,
+    handle_common_load_closure,
+    handle_common_load_const,
+    handle_common_load_deref,
+    handle_common_load_fast,
+    handle_common_load_global,
+    handle_common_load_name,
+    handle_common_store_deref,
+    handle_common_store_fast,
+    handle_common_store_global,
+    handle_common_store_name,
+    handle_common_setup_annotations,
+)
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
     from pysymex.execution.dispatcher import OpcodeDispatcher
-
-
-def _global_name_from_argval(argval: object) -> str:
-    """Extract LOAD_GLOBAL name across CPython argval tuple variants."""
-    return str(argval)
 
 
 @opcode_handler("LOAD_CONST")
@@ -45,35 +54,13 @@ def handle_load_const(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load a constant onto the stack."""
-    value = instr.argval
-    if value is None:
-        sym_val = SymbolicNone("load_const_None")
-    elif isinstance(value, str):
-        sym_val = SymbolicString.from_const(value)
-    else:
-        sym_val = SymbolicValue.from_const(value)
-
-    state = state.push(sym_val)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_const(instr, state, ctx)
 
 
 @opcode_handler("LOAD_FAST")
 def handle_load_fast(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Load a local variable onto the stack."""
-    name = str(instr.argval)
-    raw_value = state.get_local(name)
-    if is_bound(raw_value):
-        value = raw_value
-    else:
-        sym_val, type_constraint = SymbolicValue.symbolic(name)
-        state = state.set_local(name, sym_val)
-        state = state.add_constraint(type_constraint)
-        value = sym_val
-
-    state = state.push(value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_fast(instr, state, ctx)
 
 
 @opcode_handler("STORE_FAST")
@@ -81,11 +68,7 @@ def handle_store_fast(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store top of stack into local variable."""
-    name = str(instr.argval)
-    value: StackValue = state.pop()
-    state = state.set_local(name, value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_store_fast(instr, state, ctx)
 
 
 @opcode_handler("DELETE_FAST")
@@ -93,11 +76,7 @@ def handle_delete_fast(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Delete a local variable."""
-    name = str(instr.argval)
-    if name in state.local_vars:
-        del state.local_vars[name]
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_delete_fast(instr, state, ctx)
 
 
 @opcode_handler("LOAD_GLOBAL")
@@ -105,29 +84,7 @@ def handle_load_global(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load a global variable onto the stack."""
-    from pysymex.execution.opcodes.common import BUILTIN_TYPES
-
-    name = _global_name_from_argval(instr.argval)
-    push_null = False
-    if hasattr(instr, "arg") and instr.arg is not None:
-        if instr.arg & 1:
-            push_null = True
-    value = state.get_global(name)
-    if value is None:
-        sym_val, type_constraint = SymbolicValue.symbolic(f"global_{name}")
-        sym_val.model_name = name
-        if name in BUILTIN_TYPES:
-            object.__setattr__(sym_val, "affinity_type", BUILTIN_TYPES[name])
-        state = state.add_constraint(z3.Not(sym_val.is_none))
-
-        state = state.set_global(name, sym_val)
-        state = state.add_constraint(type_constraint)
-        value = sym_val
-    state = state.push(value)
-    if push_null:
-        state = state.push(SymbolicNone())
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_global(instr, state, ctx)
 
 
 @opcode_handler("STORE_GLOBAL")
@@ -135,11 +92,7 @@ def handle_store_global(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store top of stack into a global variable."""
-    name = str(instr.argval)
-    value = state.pop()
-    state = state.set_global(name, value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_store_global(instr, state, ctx)
 
 
 @opcode_handler("DELETE_GLOBAL")
@@ -147,35 +100,13 @@ def handle_delete_global(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Delete a global variable."""
-    name = str(instr.argval)
-    if name in state.global_vars:
-        del state.global_vars[name]
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_delete_global(instr, state, ctx)
 
 
 @opcode_handler("LOAD_NAME")
 def handle_load_name(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Load name from locals or globals."""
-    name = str(instr.argval)
-    raw_value = state.get_local(name)
-    if is_bound(raw_value) and raw_value is not None:
-        value = raw_value
-    else:
-        value = state.get_global(name)
-    if value is None:
-        sym_val, type_constraint = SymbolicValue.symbolic(name)
-
-        import z3 as _z3
-
-        state = state.add_constraint(_z3.Not(sym_val.is_none))
-
-        state = state.set_local(name, sym_val)
-        state = state.add_constraint(type_constraint)
-        value = sym_val
-    state = state.push(value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_name(instr, state, ctx)
 
 
 @opcode_handler("STORE_NAME")
@@ -183,11 +114,7 @@ def handle_store_name(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Store name in locals."""
-    name = str(instr.argval)
-    value = state.pop()
-    state = state.set_local(name, value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_store_name(instr, state, ctx)
 
 
 @opcode_handler("DELETE_NAME")
@@ -195,119 +122,23 @@ def handle_delete_name(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Delete a name."""
-    name = str(instr.argval)
-    if name in state.local_vars:
-        del state.local_vars[name]
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_delete_name(instr, state, ctx)
 
 
-@opcode_handler("LOAD_DEREF", "LOAD_CLOSURE")
+@opcode_handler("LOAD_DEREF", "LOAD_CLOSURE", "LOAD_CLASSDEREF")
 def handle_load_deref(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load from closure/free variable."""
-    name = str(instr.argval)
-    raw_value = state.get_local(name)
-    if is_bound(raw_value) and raw_value is not None:
-        value = raw_value
-    else:
-        value = state.get_global(name)
-    if value is None:
-        sym_val, type_constraint = SymbolicValue.symbolic(f"closure_{name}")
-
-        import z3 as _z3
-
-        state = state.add_constraint(_z3.Not(sym_val.is_none))
-
-        state = state.set_local(name, sym_val)
-        state = state.add_constraint(type_constraint)
-        value = sym_val
-    state = state.push(value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("STORE_DEREF")
-def handle_store_deref(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Store into closure variable."""
-    name = str(instr.argval)
-    value = state.pop()
-    state = state.set_local(name, value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("MAKE_CELL", "COPY_FREE_VARS")
-def handle_cell_ops(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Cell creation - mostly no-op for symbolic execution."""
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("DELETE_DEREF")
-def handle_delete_deref(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Delete closure variable."""
-    name = str(instr.argval)
-    if name in state.local_vars:
-        del state.local_vars[name]
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_deref(instr, state, ctx)
 
 
 @opcode_handler("LOAD_CLASSDEREF")
 def handle_load_classderef(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Load variable in class body that closes over an enclosing scope.
-
-    Semantics (CPython 3.12+): first look in the class namespace dict
-    (``__locals__``), then fall back to the cell/free variable.  For
-    symbolic execution we unify this into a single lookup through
-    locals → globals → fresh symbolic, which mirrors LOAD_DEREF but is
-    also reachable from class-level expressions.
-    """
-    name = str(instr.argval)
-    raw_value = state.get_local(name)
-    if is_bound(raw_value) and raw_value is not None:
-        value = raw_value
-    else:
-        value = state.get_global(name)
-    if value is None:
-        sym_val, type_constraint = SymbolicValue.symbolic(f"classderef_{name}")
-
-        import z3 as _z3
-
-        state = state.add_constraint(_z3.Not(sym_val.is_none))
-
-        state = state.set_local(name, sym_val)
-        state = state.add_constraint(type_constraint)
-        value = sym_val
-    state = state.push(value)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("SETUP_ANNOTATIONS")
-def handle_setup_annotations(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Set up __annotations__ dict (class/module level annotations)."""
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
-
-
-@opcode_handler("COPY_FREE_VARS")
-def handle_copy_free_vars(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Copy free variables."""
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    """Load class deref."""
+    return handle_common_load_deref(instr, state, ctx)
 
 
 @opcode_handler("LOAD_CLOSURE")
@@ -315,12 +146,42 @@ def handle_load_closure(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
     """Load closure cell."""
-    name = str(instr.argval)
-    val = state.get_local(name)
-    if not is_bound(val):
-        val, constraint = SymbolicValue.symbolic(f"closure_{name}_{state.pc}")
-        state = state.set_local(name, val)
-        state = state.add_constraint(constraint)
-    state = state.push(val)
-    state = state.advance_pc()
-    return OpcodeResult.continue_with(state)
+    return handle_common_load_closure(instr, state, ctx)
+
+
+@opcode_handler("COPY_FREE_VARS")
+def handle_copy_free_vars(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Copy free variables."""
+    return handle_common_copy_free_vars(instr, state, ctx)
+
+
+@opcode_handler("SETUP_ANNOTATIONS")
+def handle_setup_annotations(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Setup annotations."""
+    return handle_common_setup_annotations(instr, state, ctx)
+
+
+@opcode_handler("STORE_DEREF")
+def handle_store_deref(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Store into closure variable."""
+    return handle_common_store_deref(instr, state, ctx)
+
+
+@opcode_handler("MAKE_CELL", "COPY_FREE_VARS")
+def handle_cell_ops(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
+    """Cell creation - mostly no-op for symbolic execution."""
+    return handle_common_cell_ops(instr, state, ctx)
+
+
+@opcode_handler("DELETE_DEREF")
+def handle_delete_deref(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Delete closure variable."""
+    return handle_common_delete_deref(instr, state, ctx)

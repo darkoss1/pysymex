@@ -1,6 +1,5 @@
-import pytest
 import z3
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from pysymex.analysis.specialized.arithmetic import (
     ArithmeticMode,
     IntegerWidth,
@@ -94,9 +93,9 @@ class TestArithmeticSafetyAnalyzer:
     def test_reset(self) -> None:
         """Test reset behavior."""
         a = ArithmeticSafetyAnalyzer()
-        a._issues.append(Mock())
+        a._issues.append(Mock())  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         a.reset()
-        assert len(a._issues) == 0
+        assert len(a._issues) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_check_addition_overflow(self) -> None:
         """Test check_addition_overflow behavior."""
@@ -212,27 +211,27 @@ class TestSafeArithmetic:
     def test_safe_add(self) -> None:
         """Test safe_add behavior."""
         sa = SafeArithmetic()
-        res, is_safe, issue = sa.safe_add(z3.IntVal(1), z3.IntVal(2))
+        _res, is_safe, issue = sa.safe_add(z3.IntVal(1), z3.IntVal(2))
         assert is_safe is True
         assert issue is None
 
     def test_safe_sub(self) -> None:
         """Test safe_sub behavior."""
         sa = SafeArithmetic()
-        res, is_safe, issue = sa.safe_sub(z3.IntVal(1), z3.IntVal(2))
+        _res, is_safe, issue = sa.safe_sub(z3.IntVal(1), z3.IntVal(2))
         assert is_safe is True
         assert issue is None
 
     def test_safe_mul(self) -> None:
         """Test safe_mul behavior."""
         sa = SafeArithmetic()
-        res, is_safe, issue = sa.safe_mul(z3.IntVal(1), z3.IntVal(2))
+        _res, is_safe, issue = sa.safe_mul(z3.IntVal(1), z3.IntVal(2))
         assert is_safe is True
         assert issue is None
 
     def test_safe_div(self) -> None:
         """Test safe_div behavior."""
         sa = SafeArithmetic()
-        res, is_safe, issues = sa.safe_div(z3.IntVal(1), z3.IntVal(0))
+        _res, is_safe, issues = sa.safe_div(z3.IntVal(1), z3.IntVal(0))
         assert is_safe is False
         assert len(issues) > 0

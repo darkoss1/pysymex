@@ -60,12 +60,12 @@ class TestStubRepository:
         """Test add_search_path behavior."""
         r = StubRepository()
         r.add_search_path(".")
-        assert any(str(p) == "." for p in r._search_paths)
+        assert any(str(p) == "." for p in r._search_paths)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_stub(self) -> None:
         """Test get_stub behavior."""
         r = StubRepository()
-        r._load_stub = MagicMock(return_value="mocked")
+        r._load_stub = MagicMock(return_value="mocked")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert r.get_stub("m") == "mocked"
         assert r.get_stub("m") == "mocked"
 

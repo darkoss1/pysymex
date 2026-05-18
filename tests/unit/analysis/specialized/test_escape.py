@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from pysymex.analysis.specialized.escape import EscapeState, EscapeInfo, EscapeAnalyzer
 
 
@@ -25,7 +24,7 @@ class TestEscapeAnalyzer:
     """Test suite for pysymex.analysis.specialized.escape.EscapeAnalyzer."""
 
     @patch("pysymex.analysis.specialized.escape._cached_get_instructions")
-    def test_analyze_function(self, mock_instrs) -> None:
+    def test_analyze_function(self, mock_instrs: MagicMock) -> None:
         """Test analyze_function behavior."""
         mock_instrs.return_value = []
         analyzer = EscapeAnalyzer()

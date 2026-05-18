@@ -118,11 +118,3 @@ class PropertyProof:
         if self.conditions:
             result += f"\n  Conditions: {len(self.conditions)} additional constraints"
         return result
-
-
-__all__ = [
-    "ProofStatus",
-    "PropertyKind",
-    "PropertyProof",
-    "PropertySpec",
-]

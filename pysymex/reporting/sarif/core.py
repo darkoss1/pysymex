@@ -39,6 +39,7 @@ from pysymex.reporting.sarif.types import (
     ToolDriver,
     VulnerabilityReport,
 )
+from pysymex.config import VERSION
 
 
 def severity_to_level(severity: Severity) -> str:
@@ -383,7 +384,7 @@ class SARIFGenerator:
     def __init__(
         self,
         tool_name: str = "pysymex",
-        tool_version: str = "1.0.0",
+        tool_version: str = VERSION,
     ) -> None:
         self.tool_name = tool_name
         self.tool_version = tool_version
@@ -496,15 +497,3 @@ def generate_sarif(
     if output_path:
         sarif_log.save(output_path)
     return sarif_log
-
-
-__all__ = [
-    "SECURITY_RULES",
-    "SARIFGenerator",
-    "generate_sarif",
-    "issue_to_sarif_result",
-    "severity_to_level",
-    "severity_to_security_severity",
-    "vuln_type_to_rule_id",
-    "vulnerability_to_sarif_result",
-]

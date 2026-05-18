@@ -51,8 +51,9 @@ import signal
 import sys
 import threading
 import warnings
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from types import ModuleType
 from typing import cast
 
 from pysymex._constants import (
@@ -132,7 +133,7 @@ def create_sandbox_namespace(
 
 def make_restricted_import(
     allowlist: frozenset[str] | None = None,
-) -> object:
+) -> Callable[..., object]:
     """Create a restricted ``__import__`` that only permits allowlisted modules.
 
     Args:
@@ -147,6 +148,11 @@ def make_restricted_import(
     permitted = allowlist if allowlist is not None else SANDBOX_IMPORT_ALLOWLIST
     real_import = builtins.__import__
 
+    def _restricted_threading_module() -> ModuleType:
+        module = ModuleType("threading")
+        setattr(module, "local", threading.local)
+        return module
+
     def _restricted_import(
         name: str,
         globals: dict[str, object] | None = None,
@@ -156,6 +162,8 @@ def make_restricted_import(
     ) -> object:
         """Restricted import with support for granular submodule allowlisting."""
         top_level = name.split(".", maxsplit=1)[0]
+        if name == "threading":
+            return _restricted_threading_module()
         # Check if the full import path is explicitly allowed
         if name in permitted:
             return real_import(name, globals, locals, fromlist, level)
@@ -546,18 +554,3 @@ def hardened_exec(
     exec(compiled, namespace)
 
     return namespace
-
-
-__all__ = [
-    "ExecutionTimeout",
-    "ResourceLimitError",
-    "SecurityError",
-    "create_sandbox_namespace",
-    "get_hardened_builtins",
-    "get_safe_builtins",
-    "hardened_exec",
-    "make_restricted_import",
-    "resource_limits",
-    "safe_exec",
-    "timeout_context",
-]

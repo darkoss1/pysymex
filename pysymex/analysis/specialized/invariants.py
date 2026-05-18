@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import (
-    Protocol,
-    TypeGuard,
-)
+from typing import Protocol, TypeGuard, TypeVar
 
 import z3
 
-from pysymex.core.solver.engine import create_solver
+from pysymex._typing import is_list_of_objects
+from pysymex.core.solver.engine import IncrementalSolver
+
+_ClassT = TypeVar("_ClassT", bound=type)
 
 
 @dataclass
@@ -72,9 +72,7 @@ class _InvariantOwner(Protocol):
     __invariants__: list[ClassInvariant]
 
 
-def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """Type guard to narrow a value to list[object]."""
-    return isinstance(value, list)
+_is_list_of_objects = is_list_of_objects
 
 
 def _is_invariant_owner(value: object) -> TypeGuard[_InvariantOwner]:
@@ -121,7 +119,7 @@ class InvariantViolation:
 def invariant(
     condition: str,
     message: str | None = None,
-) -> Callable[[type], type]:
+) -> Callable[[_ClassT], _ClassT]:
     """
     Decorator to declare a class invariant.
     Usage:
@@ -134,7 +132,7 @@ def invariant(
     - Before and after every public method (not starting with _)
     """
 
-    def decorator(cls: type) -> type:
+    def decorator(cls: _ClassT) -> _ClassT:
         """Decorator."""
         invariant_list = _ensure_invariant_list(cls)
         invariant_list.append(
@@ -174,8 +172,8 @@ class InvariantChecker:
     3. Report violations with counterexamples
     """
 
-    def __init__(self, solver: z3.Solver | None = None) -> None:
-        self.solver = solver or create_solver()
+    def __init__(self, solver: IncrementalSolver | None = None) -> None:
+        self.solver = solver or IncrementalSolver()
         self._violations: list[InvariantViolation] = []
         self._checked_invariants: set[tuple[str, str, str, str]] = set()
 
@@ -209,9 +207,9 @@ class InvariantChecker:
             for pc in path_constraints:
                 self.solver.add(pc)
         self.solver.add(z3.Not(z3_condition))
-        result = self.solver.check()
-        if result == z3.sat:
-            model = self.solver.model()
+        result = self.solver.check(need_model=True)
+        if result.is_sat and result.model is not None:
+            model = result.model
             counterexample = self._extract_counterexample(model)
             self._violations.append(
                 InvariantViolation(

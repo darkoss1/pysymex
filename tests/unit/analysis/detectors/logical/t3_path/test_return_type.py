@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t3_path/return_type.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t3_path.return_type import ReturnTypeContradictionRule
 
 
@@ -33,3 +32,27 @@ class TestReturnTypeContradictionRule:
         """Test basic initialization and properties."""
         assert ReturnTypeContradictionRule is not None
         assert ReturnTypeContradictionRule.__name__ == "ReturnTypeContradictionRule"
+
+    def test_matches_same_result_conflicting_true_type_markers(self) -> None:
+        """Classify return type markers only with an explicit exclusivity proof."""
+        result_is_int = z3.Bool("result_is_int")
+        result_is_str = z3.Bool("result_is_str")
+        core = [result_is_int, result_is_str, z3.Not(z3.And(result_is_int, result_is_str))]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert ReturnTypeContradictionRule().matches(ctx)
+
+    def test_does_not_match_type_markers_without_exclusivity_proof(self) -> None:
+        """Do not classify multiple type markers unless the core proves exclusivity."""
+        result_is_int = z3.Bool("result_is_int")
+        result_is_str = z3.Bool("result_is_str")
+        core = [result_is_int, result_is_str]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not ReturnTypeContradictionRule().matches(ctx)
+
+    def test_does_not_match_unassigned_type_marker_names(self) -> None:
+        """Do not classify type-looking names without contradictory marker values."""
+        result_is_int = z3.Bool("result_is_int")
+        result_is_str = z3.Bool("result_is_str")
+        core = [result_is_int == result_is_str]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        assert not ReturnTypeContradictionRule().matches(ctx)

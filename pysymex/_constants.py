@@ -52,6 +52,7 @@ DANGEROUS_BUILTINS: Final[tuple[str, ...]] = (
 
 SANDBOX_IMPORT_ALLOWLIST: Final[frozenset[str]] = frozenset(
     {
+        "__future__",
         "math",
         "typing",
         "collections",
@@ -63,14 +64,19 @@ SANDBOX_IMPORT_ALLOWLIST: Final[frozenset[str]] = frozenset(
         "operator",
         "re",
         "string",
+        "time",
         "decimal",
         "fractions",
         "statistics",
         "copy",
-        "types",
+        "weakref",
+        "warnings",
+        "pysymex.accel.types",
+        "pysymex.accel.core_index",
         "pysymex.contracts",  # Only allow contracts module for contract verification
         "pysymex.contracts.types",
         "pysymex.contracts.decorators",
+        "pysymex.core.solver.constraints",
         "pysymex.execution.executors.verified",
         "pysymex.execution.opcodes",
         "z3",
@@ -84,7 +90,6 @@ INSTRUCTION_CACHE_LIMIT: Final[int] = 2048
 HMAC_KEY_SIZE: Final[int] = 32
 HMAC_DIGEST: Final[str] = "sha256"
 HMAC_TAG_SIZE: Final[int] = 32
-
 
 SANDBOX_BLOCKED_MODULES: Final[frozenset[str]] = frozenset(
     {
@@ -171,7 +176,6 @@ SANDBOX_SUSPICIOUS_PATTERNS: Final[tuple[str, ...]] = (
     "codecs.open",
 )
 
-
 HARDENED_DANGEROUS_BUILTINS: Final[frozenset[str]] = frozenset(
     {
         "exec",
@@ -254,27 +258,3 @@ DANGEROUS_STRING_PATTERNS: Final[frozenset[str]] = frozenset(
         "subprocess",
     }
 )
-
-__all__ = [
-    "DANGEROUS_ATTR_NAMES",
-    "DANGEROUS_BUILTINS",
-    "DANGEROUS_STRING_PATTERNS",
-    "FORBIDDEN_PATH_PATTERNS",
-    "FROM_CONST_CACHE_LIMIT",
-    "HARDENED_DANGEROUS_BUILTINS",
-    "HMAC_DIGEST",
-    "HMAC_KEY_SIZE",
-    "HMAC_TAG_SIZE",
-    "INSTRUCTION_CACHE_LIMIT",
-    "MAX_CODE_SIZE",
-    "MAX_DEPTH",
-    "MAX_FILE_SIZE",
-    "MAX_ITERATIONS",
-    "MAX_PATHS",
-    "MAX_TIMEOUT",
-    "SANDBOX_BLOCKED_MODULES",
-    "SANDBOX_DANGEROUS_BUILTINS",
-    "SANDBOX_IMPORT_ALLOWLIST",
-    "SANDBOX_SUSPICIOUS_PATTERNS",
-    "SYMBOLIC_CACHE_LIMIT",
-]

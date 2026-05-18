@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.cross_function.types import (
     Effect,
     EffectSummary,
@@ -7,7 +6,6 @@ from pysymex.analysis.cross_function.types import (
     CallContext,
     ContextSensitiveSummary,
 )
-from pysymex.analysis.type_inference import PyType
 
 
 class TestEffect:

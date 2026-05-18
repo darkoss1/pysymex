@@ -49,7 +49,6 @@ from .harness import HARNESS_FILENAME, generate_harness_script
 if TYPE_CHECKING:
     from ..types import SandboxConfig
 
-
 _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: int = 0x00002000
 _JOB_OBJECT_LIMIT_PROCESS_MEMORY: int = 0x00000100
 _JOB_OBJECT_LIMIT_JOB_MEMORY: int = 0x00000200
@@ -64,6 +63,7 @@ _JOB_OBJECT_UILIMIT_GLOBALATOMS: int = 0x00000020
 _JOB_OBJECT_UILIMIT_DESKTOP: int = 0x00000040
 _JOB_OBJECT_UILIMIT_EXITWINDOWS: int = 0x00000080
 _CREATE_SUSPENDED: int = 0x00000004
+_CREATE_BREAKAWAY_FROM_JOB: int = 0x01000000
 _TH32CS_SNAPTHREAD: int = 0x00000004
 _THREAD_SUSPEND_RESUME: int = 0x0002
 
@@ -87,7 +87,6 @@ class WindowsJobBackend(IsolationBackend):
     def __init__(self, config: SandboxConfig) -> None:
         super().__init__(config)
         self._job_handle: int | None = None
-        self._process: subprocess.Popen[bytes] | None = None
 
     @property
     def is_available(self) -> bool:
@@ -118,23 +117,15 @@ class WindowsJobBackend(IsolationBackend):
         if not self.is_available:
             raise SandboxSetupError("Windows Job Objects not available")
         try:
-            self._jail_path = self._create_jail()
+            super().setup()
             self._job_handle = self._create_configured_job_object()
-            self._is_setup = True
         except Exception as exc:
             self.cleanup()
             raise SandboxSetupError(f"Failed to set up sandbox: {exc}") from exc
 
     def cleanup(self) -> None:
         """Clean up Job Object and jail directory."""
-        if self._process is not None:
-            try:
-                self._process.kill()
-                self._process.wait(timeout=5.0)
-            except Exception:
-                pass
-            self._process = None
-
+        super().cleanup()
         if self._job_handle is not None:
             try:
                 if sys.platform == "win32":
@@ -142,9 +133,6 @@ class WindowsJobBackend(IsolationBackend):
             except Exception:
                 pass
             self._job_handle = None
-
-        self._destroy_jail()
-        self._is_setup = False
 
     def execute(
         self,
@@ -184,27 +172,33 @@ class WindowsJobBackend(IsolationBackend):
             started_suspended = False
             if sys.platform == "win32":
                 base_flags = subprocess.CREATE_NEW_PROCESS_GROUP
-                try:
-                    self._process = subprocess.Popen(
-                        cmd,
-                        stdin=(subprocess.PIPE if input_data else subprocess.DEVNULL),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=str(self._jail_path),
-                        env=env,
-                        creationflags=(base_flags | _CREATE_SUSPENDED),
-                    )
-                    started_suspended = True
-                except OSError:
-                    self._process = subprocess.Popen(
-                        cmd,
-                        stdin=(subprocess.PIPE if input_data else subprocess.DEVNULL),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=str(self._jail_path),
-                        env=env,
-                        creationflags=base_flags,
-                    )
+                # Prefer breakaway so we can attach a new job even if the parent is already in one.
+                flag_variants = (
+                    base_flags | _CREATE_BREAKAWAY_FROM_JOB | _CREATE_SUSPENDED,
+                    base_flags | _CREATE_SUSPENDED,
+                    base_flags | _CREATE_BREAKAWAY_FROM_JOB,
+                    base_flags,
+                )
+                last_error: OSError | None = None
+                for flags in flag_variants:
+                    try:
+                        self._process = subprocess.Popen(
+                            cmd,
+                            stdin=(subprocess.PIPE if input_data else subprocess.DEVNULL),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=str(self._jail_path),
+                            env=env,
+                            creationflags=flags,
+                        )
+                        started_suspended = bool(flags & _CREATE_SUSPENDED)
+                        last_error = None
+                        break
+                    except OSError as exc:
+                        last_error = exc
+                        self._process = None
+                if self._process is None and last_error is not None:
+                    raise last_error
             else:
                 self._process = subprocess.Popen(
                     cmd,
@@ -216,23 +210,25 @@ class WindowsJobBackend(IsolationBackend):
                     creationflags=creation_flags,
                 )
 
+            process = self._process
+            if process is None:  # type: ignore[reportUnnecessaryComparison]
+                raise SandboxSetupError("Failed to create sandbox process")
+
             self._assign_to_job()
             if started_suspended:
                 self._resume_process_main_thread()
 
-            stdout, stderr = self._process.communicate(
+            stdout, stderr = process.communicate(
                 input=input_data or None,
                 timeout=timeout,
             )
 
             wall_time = (time.perf_counter() - start_time) * 1000
-            status = (
-                ExecutionStatus.SUCCESS if self._process.returncode == 0 else ExecutionStatus.FAILED
-            )
+            status = ExecutionStatus.SUCCESS if process.returncode == 0 else ExecutionStatus.FAILED
 
             return SandboxResult(
                 status=status,
-                exit_code=self._process.returncode,
+                exit_code=process.returncode,
                 stdout=stdout[: self.config.limits.max_output_bytes],
                 stderr=stderr[: self.config.limits.max_output_bytes],
                 wall_time_ms=wall_time,
@@ -332,7 +328,9 @@ class WindowsJobBackend(IsolationBackend):
             info.BasicLimitInformation.PerJobUserTimeLimit = per_job_time
 
         info.BasicLimitInformation.LimitFlags = limit_flags
-        info.BasicLimitInformation.ActiveProcessLimit = limits.max_processes
+        info.BasicLimitInformation.ActiveProcessLimit = (
+            WindowsJobBackend.effective_active_process_limit(limits.max_processes)
+        )
         info.ProcessMemoryLimit = memory_bytes
         info.JobMemoryLimit = memory_bytes
 
@@ -377,6 +375,14 @@ class WindowsJobBackend(IsolationBackend):
                 raise SandboxSetupError("Failed to configure Job Object UI restrictions")
 
         return job
+
+    @staticmethod
+    def effective_active_process_limit(max_processes: int) -> int:
+        """Clamp max_processes to a minimum of 1 for Job Object enforcement.
+
+        Negative or zero values default to 1; positive values are preserved.
+        """
+        return max(1, max_processes)
 
     def _assign_to_job(self) -> None:
         """Assign the child process to the Job Object."""
@@ -440,12 +446,3 @@ class WindowsJobBackend(IsolationBackend):
 
         if not found:
             raise SandboxSetupError("No suspended thread found for child process")
-
-    def _kill_and_drain(self) -> tuple[bytes, bytes]:
-        if self._process is not None:
-            self._process.kill()
-            return self._process.communicate()
-        return b"", b""
-
-
-__all__ = ["WindowsJobBackend"]

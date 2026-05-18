@@ -2,7 +2,7 @@
 
 from typing import FrozenSet, Hashable
 
-from pysymex.core.graph.cig import ConstraintInteractionGraph
+from pysymex.core.graph.treewidth import ConstraintInteractionGraph
 
 
 class TestConstraintInteractionGraph:

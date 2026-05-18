@@ -1,10 +1,7 @@
 """Tests for pysymex/analysis/detectors/__init__.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
-from pysymex.analysis.detectors import __all__
+from pysymex.analysis.detectors import __all__, default_registry
 
 
 def MockInstr(
@@ -30,3 +27,23 @@ def test_exports() -> None:
     """Test module exports."""
     assert len(__all__) >= 0
     assert isinstance(__all__, list)
+
+
+def test_default_registry_excludes_runtime_unreachable_detector() -> None:
+    """Default detector registry should not include runtime unreachable-code checks."""
+    available = default_registry.list_available()
+    assert "unreachable-code" not in available
+
+
+def test_default_registry_uses_canonical_detector_names() -> None:
+    """Default registry should avoid legacy enhanced detector names."""
+    available = default_registry.list_available()
+    assert "enhanced-index-error" not in available
+    assert "enhanced-type-error" not in available
+    assert "bounded-overflow" not in available
+
+
+def test_default_registry_excludes_logical_contradiction_detector() -> None:
+    """Logical contradiction detector stays opt-in until precision is improved."""
+    available = default_registry.list_available()
+    assert "logical-contradiction" not in available

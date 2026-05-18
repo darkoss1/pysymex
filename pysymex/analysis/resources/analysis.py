@@ -36,6 +36,7 @@ from enum import Enum, auto
 from types import CodeType
 
 from pysymex._compat import get_starts_line
+from pysymex.analysis.exceptions.analyzer import analyze_nested_code_objects
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
@@ -531,20 +532,8 @@ class ResourceAnalyzer:
         """Analyze all functions in a module."""
         warnings: list[ResourceWarning] = []
         warnings.extend(self.analyze_function(module_code, file_path))
-        self._analyze_nested(module_code, file_path, warnings)
+        analyze_nested_code_objects(module_code, file_path, warnings, self.analyze_function)
         return warnings
-
-    def _analyze_nested(
-        self,
-        code: CodeType,
-        file_path: str,
-        warnings: list[ResourceWarning],
-    ) -> None:
-        """Recursively analyze nested functions."""
-        for const in code.co_consts:
-            if hasattr(const, "co_code"):
-                warnings.extend(self.analyze_function(const, file_path))
-                self._analyze_nested(const, file_path, warnings)
 
     def analyze_file(self, file_path: str) -> list[ResourceWarning]:
         """Analyze a file for resource issues."""

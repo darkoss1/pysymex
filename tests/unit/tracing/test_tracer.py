@@ -7,11 +7,12 @@ from typing import Any, cast
 
 import z3
 
+from pysymex.core.solver.engine import SolverResult
 from pysymex.tracing.tracer import (
     ExecutionTracer,
     TracingSolverProxy,
-    _normalise_config_snapshot,
-    _to_config_scalar,
+    _normalise_config_snapshot,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _to_config_scalar,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 )
 from pysymex.tracing.schemas import TracerConfig
 
@@ -23,7 +24,7 @@ class _InnerSolver:
         self._cache_hits = 0
         self.pushed = 0
 
-    def check(self, *_: object) -> z3.CheckSatResult:
+    def check(self, *_: object, **kwargs: object) -> z3.CheckSatResult:
         self._cache_hits += 1
         return z3.sat
 
@@ -41,6 +42,24 @@ class _InnerSolver:
 
     def is_sat(self, constraints: object, known_sat_prefix_len: int | None = None) -> bool:
         return bool(constraints) or known_sat_prefix_len is None
+
+    def check_sat_result(
+        self,
+        constraints: object,
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
+        return (
+            SolverResult.sat(None)
+            if self.is_sat(constraints, known_sat_prefix_len)
+            else SolverResult.unsat()
+        )
+
+    def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
+        solver = z3.Solver()
+        solver.add(*constraints)
+        if solver.check() != z3.sat:
+            return None
+        return solver.model()
 
     def get_stats(self) -> dict[str, object]:
         return {"hits": self._cache_hits}
@@ -234,6 +253,20 @@ class TestTracingSolverProxy:
         assert result is True
         assert tracer.calls == 1
 
+    def test_check_sat_result_delegates(self) -> None:
+        """check_sat_result() delegates and preserves the structured solver result."""
+        inner = _InnerSolver()
+        tracer = _Tracer()
+        proxy = TracingSolverProxy(
+            cast("Any", inner),
+            cast("Any", tracer),
+            cast("Any", (lambda: _State())),
+        )
+        result = proxy.check_sat_result([z3.BoolVal(True)])
+        assert result.is_sat is True
+        assert tracer.calls == 1
+        assert tracer.last_result == "sat"
+
     def test_getattr_delegates(self) -> None:
         """Unknown attributes are delegated to inner solver."""
         inner = _InnerSolver()
@@ -265,15 +298,15 @@ class TestExecutionTracer:
     def test_init_default_config(self) -> None:
         """ExecutionTracer initializes with default config."""
         tracer = ExecutionTracer()
-        assert tracer._config is not None
-        assert tracer._seq == 0
-        assert tracer._file is None
+        assert tracer._config is not None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert tracer._seq == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert tracer._file is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_init_custom_config(self) -> None:
         """ExecutionTracer accepts custom config."""
         config = TracerConfig(enabled=False)
         tracer = ExecutionTracer(config=config)
-        assert tracer._config.enabled is False
+        assert tracer._config.enabled is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_registry_property(self) -> None:
         """registry property returns Z3SemanticRegistry."""
@@ -290,4 +323,4 @@ class TestExecutionTracer:
         """ExecutionTracer works as context manager."""
         config = TracerConfig(enabled=False)
         with ExecutionTracer(config=config) as tracer:
-            assert tracer._file is None
+            assert tracer._file is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state

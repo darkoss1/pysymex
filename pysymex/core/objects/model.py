@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 
 import z3
 
+from pysymex.core.constants import Z3_FALSE, Z3_TRUE
 from pysymex.core.objects.types import (
     ObjectId,
     SymbolicClass,
@@ -172,8 +173,8 @@ class ObjectState:
     ) -> z3.BoolRef:
         """Generate Z3 constraint for isinstance check."""
         if obj.isinstance_of(cls):
-            return z3.BoolVal(True)
-        return z3.BoolVal(False)
+            return Z3_TRUE
+        return Z3_FALSE
 
     def identity_equal(
         self,
@@ -269,8 +270,8 @@ def hasattr_symbolic(
     Returns Z3 boolean for whether attribute exists.
     """
     if obj.has_attribute(name):
-        return z3.BoolVal(True)
-    return z3.BoolVal(False)
+        return Z3_TRUE
+    return Z3_FALSE
 
 
 def isinstance_symbolic(
@@ -284,8 +285,8 @@ def isinstance_symbolic(
         classes = classinfo
     for cls in classes:
         if obj.isinstance_of(cls):
-            return z3.BoolVal(True)
-    return z3.BoolVal(False)
+            return Z3_TRUE
+    return Z3_FALSE
 
 
 def issubclass_symbolic(
@@ -299,8 +300,8 @@ def issubclass_symbolic(
         classes = classinfo
     for parent in classes:
         if cls.is_subclass_of(parent):
-            return z3.BoolVal(True)
-    return z3.BoolVal(False)
+            return Z3_TRUE
+    return Z3_FALSE
 
 
 def type_of(obj: SymbolicObject) -> SymbolicClass:

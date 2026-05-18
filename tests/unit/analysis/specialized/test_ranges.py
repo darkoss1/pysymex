@@ -1,17 +1,22 @@
-import pytest
+from types import FunctionType
 from unittest.mock import Mock, patch
+
 from pysymex.analysis.specialized.ranges import (
     Range,
+    RangeAnalyzer,
     RangeState,
     RangeWarning,
-    RangeAnalyzer,
     ValueRangeChecker,
 )
-from pysymex.analysis.control.cfg import CFGBuilder
 
 
 def make_dummy_code() -> object:
     return compile("pass", "<string>", "exec")
+
+
+def _range_warnings_for(function: FunctionType) -> list[RangeWarning]:
+    _, warnings = RangeAnalyzer().analyze(function.__code__, "range_branch_refinement.py")
+    return warnings
 
 
 class TestRange:
@@ -151,12 +156,12 @@ class TestRange:
 
     def test_div(self) -> None:
         """Test div behavior."""
-        res, may_raise = Range.exact(6).div(Range.exact(2))
+        res, _may_raise = Range.exact(6).div(Range.exact(2))
         assert res.exact_value == 3
 
     def test_mod(self) -> None:
         """Test mod behavior."""
-        res, may_raise = Range.exact(7).mod(Range.exact(2))
+        res, _may_raise = Range.exact(7).mod(Range.exact(2))
         assert res.low == 0 and res.high == 1
 
 
@@ -248,7 +253,7 @@ class TestRangeAnalyzer:
     """Test suite for pysymex.analysis.specialized.ranges.RangeAnalyzer."""
 
     @patch("pysymex.analysis.specialized.ranges.CFGBuilder")
-    def test_analyze(self, mock_cfg_builder) -> None:
+    def test_analyze(self, mock_cfg_builder: Mock) -> None:
         """Test analyze behavior."""
         # Create a proper mock CFG with blocks containing instructions
         mock_instruction = Mock()
@@ -267,12 +272,37 @@ class TestRangeAnalyzer:
         warnings = analyzer.analyze(code)
         assert isinstance(warnings, tuple)
 
+    def test_branch_refinement_prunes_infeasible_negative_floor_division_zero(self) -> None:
+        def target(x: int) -> int:
+            if x < 0 and x > -4:
+                q = x // 2
+                if q == 0:
+                    return 1 // 0
+            return 0
+
+        warnings = _range_warnings_for(target)
+
+        assert warnings == []
+
+    def test_branch_refinement_keeps_feasible_floor_division_zero_warning(self) -> None:
+        def target(x: int) -> int:
+            if x > -2 and x < 2:
+                q = x // 2
+                if q == 0:
+                    return 1 // 0
+            return 0
+
+        warnings = _range_warnings_for(target)
+
+        assert len(warnings) == 1
+        assert warnings[0].kind == "DIVISION_BY_ZERO"
+
 
 class TestValueRangeChecker:
     """Test suite for pysymex.analysis.specialized.ranges.ValueRangeChecker."""
 
     @patch("pysymex.analysis.specialized.ranges.CFGBuilder")
-    def test_check_function(self, mock_cfg_builder) -> None:
+    def test_check_function(self, mock_cfg_builder: Mock) -> None:
         """Test check_function behavior."""
         # Create a proper mock CFG with blocks containing instructions
         mock_instruction = Mock()

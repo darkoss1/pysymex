@@ -1,15 +1,15 @@
-import pytest
-import z3
 from unittest.mock import Mock, patch
+
+import z3
 from pysymex.analysis.specialized.invariants import (
     ClassInvariant,
-    InvariantViolation,
-    invariant,
-    get_invariants,
     InvariantChecker,
     InvariantState,
-    parse_invariant_condition,
+    InvariantViolation,
     check_object_invariants,
+    get_invariants,
+    invariant,
+    parse_invariant_condition,
 )
 
 
@@ -72,14 +72,14 @@ class TestInvariantChecker:
         assert len(checker.violations) == 0
 
     @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
-    def test_check_invariant(self, mock_check) -> None:
+    def test_check_invariant(self, mock_check: Mock) -> None:
         """Test check_invariant behavior."""
         checker = InvariantChecker()
         inv = ClassInvariant("self.x > 0", class_name="cls")
         assert checker.check_invariant(inv, z3.BoolVal(True), "entry", "meth", []) is True
 
     @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
-    def test_check_all_invariants(self, mock_check) -> None:
+    def test_check_all_invariants(self, mock_check: Mock) -> None:
         """Test check_all_invariants behavior."""
         checker = InvariantChecker()
         invs = [ClassInvariant("self.x > 0", class_name="cls")]
@@ -87,7 +87,7 @@ class TestInvariantChecker:
         assert len(res) == 0
 
     @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
-    def test_check_init_exit(self, mock_check) -> None:
+    def test_check_init_exit(self, mock_check: Mock) -> None:
         """Test check_init_exit behavior."""
         checker = InvariantChecker()
         checker.check_init_exit(
@@ -96,7 +96,7 @@ class TestInvariantChecker:
         assert len(checker.violations) == 0
 
     @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
-    def test_check_method_entry(self, mock_check) -> None:
+    def test_check_method_entry(self, mock_check: Mock) -> None:
         """Test check_method_entry behavior."""
         checker = InvariantChecker()
         checker.check_method_entry(
@@ -105,7 +105,7 @@ class TestInvariantChecker:
         assert len(checker.violations) == 0
 
     @patch("pysymex.analysis.specialized.invariants.z3.Solver.check", return_value=z3.unsat)
-    def test_check_method_exit(self, mock_check) -> None:
+    def test_check_method_exit(self, mock_check: Mock) -> None:
         """Test check_method_exit behavior."""
         checker = InvariantChecker()
         checker.check_method_exit(
@@ -188,8 +188,15 @@ def test_check_object_invariants() -> None:
     obj2 = Dummy(-5)
     state2 = InvariantState()
 
-    def mock_check(self, inv, cond, cp, m, pc):
-        self._violations.append(InvariantViolation(inv, cp, m))
+    def mock_check(
+        self: InvariantChecker,
+        inv: ClassInvariant,
+        cond: z3.BoolRef,
+        cp: str,
+        m: str,
+        pc: list[z3.BoolRef] | None,
+    ) -> bool:
+        self.violations.append(InvariantViolation(inv, cp, m))
         return False
 
     with patch.object(InvariantChecker, "check_invariant", side_effect=mock_check, autospec=True):

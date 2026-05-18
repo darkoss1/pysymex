@@ -34,6 +34,8 @@ from typing import cast
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,8 +97,7 @@ class TerminationAnalyzer:
 
     def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
 
     def check_termination(
         self,
@@ -142,9 +143,9 @@ class TerminationAnalyzer:
         self._solver.push()
         self._solver.add(loop_condition)
         self._solver.add(r < 0)
-        result = self._solver.check()
-        if result == z3.sat:
-            model = self._solver.model()
+        result = self._solver.check(need_model=True)
+        if result.is_sat and result.model is not None:
+            model = result.model
             counterexample = self._extract_values(model, symbols)
             self._solver.pop()
             return TerminationProof(
@@ -154,13 +155,13 @@ class TerminationAnalyzer:
                 message=f"Ranking function can be negative: {ranking.expression}",
             )
         self._solver.pop()
-        check1_proved = result == z3.unsat
+        check1_proved = result.is_unsat
         self._solver.push()
         self._solver.add(loop_condition)
         self._solver.add(r_prime >= r)
-        result = self._solver.check()
-        if result == z3.sat:
-            model = self._solver.model()
+        result = self._solver.check(need_model=True)
+        if result.is_sat and result.model is not None:
+            model = result.model
             counterexample = self._extract_values(model, symbols)
             self._solver.pop()
             return TerminationProof(
@@ -170,7 +171,7 @@ class TerminationAnalyzer:
                 message="Ranking function not strictly decreasing",
             )
         self._solver.pop()
-        if result == z3.unsat and check1_proved:
+        if result.is_unsat and check1_proved:
             return TerminationProof(
                 status=TerminationStatus.TERMINATES,
                 ranking_function=ranking,
@@ -197,11 +198,11 @@ class TerminationAnalyzer:
                 self._solver.reset()
                 self._solver.add(loop_condition)
                 self._solver.add(new_val >= var)
-                if self._solver.check() == z3.unsat:
+                if self._solver.check().is_unsat:
                     self._solver.reset()
                     self._solver.add(loop_condition)
                     self._solver.add(var < 0)
-                    if self._solver.check() == z3.unsat:
+                    if self._solver.check().is_unsat:
                         ranking = RankingFunction(
                             name=f"rank_{name}",
                             expression=name,

@@ -23,7 +23,7 @@ All public symbols are loaded on first access via ``__getattr__``.
 
 from __future__ import annotations
 
-from importlib import import_module
+from pysymex._lazy import lazy_dir, lazy_getattr
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "ASYNCIO_MODELS": ("pysymex.models.concurrency.asyncio", "ASYNCIO_MODELS"),
@@ -230,16 +230,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 def __getattr__(name: str) -> object:
     """Lazy-load model exports to prevent eager side-effect imports."""
-    target = _EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-    module_name, attr_name = target
-    module = import_module(module_name)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """Dir."""
-    return sorted(set(_EXPORTS.keys()) | set(globals()))
+    return lazy_dir(_EXPORTS, globals())

@@ -25,12 +25,28 @@ union of possible Z3 types with type discriminators.
 from __future__ import annotations
 
 import threading
-from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, cast
 
 import z3
 
+from pysymex._guards import is_dict_of_objects as _is_dict_of_objects
+from pysymex._guards import is_list_of_objects
+from pysymex.core.constants import (
+    Z3_EMPTY_STRING,
+    Z3_FALSE,
+    Z3_FLOAT_ZERO,
+    Z3_ONE,
+    Z3_TRUE,
+    Z3_ZERO,
+)
+from pysymex.core.types.base import (
+    SymbolicNoneType as SymbolicNone,
+    SymbolicType,
+    fresh_name as _base_fresh_name,
+    safe_z3_eq,
+)
 
 if TYPE_CHECKING:
     from typing import Union
@@ -52,28 +68,20 @@ if TYPE_CHECKING:
 else:
     AnySymbolic = object
 
-
 _FROM_CONST_CACHE_LOCK = threading.Lock()
-
-
-Z3_TRUE: z3.BoolRef = z3.BoolVal(True)
-Z3_FALSE: z3.BoolRef = z3.BoolVal(False)
-Z3_ZERO: z3.ArithRef = z3.IntVal(0)
-
 
 _BV_WIDTH: int = 64
 _Z3_OP_BV2INT: int = int(getattr(z3, "Z3_OP_BV2INT", -1))
 _Z3_OP_BXOR: int = int(getattr(z3, "Z3_OP_BXOR", -1))
 
-
-def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """Type guard to narrow a value to list[object]."""
-    return isinstance(value, list)
+_is_list_of_objects = is_list_of_objects
+fresh_name = _base_fresh_name
 
 
-def _is_dict_of_objects(value: object) -> TypeGuard[dict[object, object]]:
-    """Type guard to narrow a value to dict[object, object]."""
-    return isinstance(value, dict)
+def exactly_one_bool(type_vars: list[z3.BoolRef]) -> z3.BoolRef:
+    """Encode a symbolic union discriminator without quadratic AST construction."""
+    pb_eq = getattr(z3, "PbEq")
+    return cast(z3.BoolRef, pb_eq([(type_var, 1) for type_var in type_vars], 1))
 
 
 def _int_to_bv(expr: z3.ArithRef) -> z3.BitVecRef:
@@ -100,17 +108,26 @@ def _bv_to_int(expr: z3.ExprRef) -> z3.ArithRef:
     return z3.BV2Int(expr, is_signed=True)
 
 
-FROM_CONST_CACHE: dict[str | tuple[str, int], SymbolicValue] = {}
+FROM_CONST_CACHE: dict[str | tuple[str, int] | tuple[str, float], SymbolicValue] = {}
 FROM_CONST_CACHE_LIMIT: int = 512
 
+STRING_CONST_CACHE: dict[str, SymbolicString] = {}
+STRING_CONST_CACHE_LOCK = threading.Lock()
+STRING_CONST_CACHE_LIMIT: int = 2048
 
 SYMBOLIC_CACHE: dict[str, tuple[SymbolicValue, z3.BoolRef]] = {}
 SYMBOLIC_CACHE_LIMIT: int = 1024
 
-
 int_to_bv = _int_to_bv
 bv_to_int = _bv_to_int
 BV_WIDTH: int = _BV_WIDTH
+
+
+def _cached_int_value_is_usable(value: SymbolicValue) -> bool:
+    try:
+        return value.z3_int.sort().kind() == z3.Z3_INT_SORT
+    except z3.Z3Exception:
+        return False
 
 
 def _next_address() -> int:
@@ -118,16 +135,6 @@ def _next_address() -> int:
     from pysymex.core.memory.addressing import next_address
 
     return next_address()
-
-
-def fresh_name(prefix: str) -> str:
-    """Generate a unique symbolic variable name.
-
-    Delegates to :func:`pysymex.core.memory.addressing.next_address` which uses a
-    ``contextvars.ContextVar`` counter, giving each async session its own
-    isolated namespace and eliminating cross-session Z3 variable collisions.
-    """
-    return f"{prefix}_{_next_address()}"
 
 
 def _guarded_nonzero_divisor(divisor: z3.ArithRef) -> z3.ArithRef:
@@ -160,96 +167,72 @@ def _py_mod(a: z3.ArithRef, b: z3.ArithRef) -> z3.ArithRef:
     return a - (b * q)
 
 
-class SymbolicType(ABC):
-    """Abstract base class for the pysymex symbolic type system.
-
-    Defines the interface for bridge types that translate between Python's
-    dynamic, late-bound objects and Z3's static, strongly-typed SMT
-    expressions.
-
-    **Core Design Principle:**
-    Every symbolic value in the engine must be able to express its
-    potential truthiness/falsiness as a Z3 boolean expression to allow
-    the Explorer to make branch-splitting decisions based on solver SAT results.
-    """
-
-    __slots__ = ()
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """A stable debugging name for the symbolic expression."""
-
-    @abstractmethod
-    def to_z3(self) -> z3.ExprRef:
-        """The primary Z3 expression representation of this value."""
-
-    @abstractmethod
-    def could_be_truthy(self) -> z3.BoolRef:
-        """Z3 expression for when the Python value would be considered True."""
-
-    @abstractmethod
-    def could_be_falsy(self) -> z3.BoolRef:
-        """Z3 expression for when the Python value would be considered False."""
-
-    @abstractmethod
-    def hash_value(self) -> int:
-        """Stable, order-independent hash based on Z3 symbolic content."""
-
-
-@dataclass(slots=True)
-class SymbolicNone(SymbolicType):
-    """Symbolic representation of Python ``None``.
-
-    Always falsy, always ``is_none``.  Merging with another value
-    produces a :class:`SymbolicValue` with an ``is_none`` discriminator.
-    """
-
-    _name: str = "None"
-    _h_active: bool = field(default=False)
-
-    def __post_init__(self) -> None:
-        if self._name:
-            if len(self._name) > 256:
-                self._name = self._name[:128] + "..." + self._name[-125:]
-            ln = self._name.lower()
-            if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
-                object.__setattr__(self, "_h_active", True)
-
-    @property
-    def name(self) -> str:
-        return "None"
-
-    @property
-    def type_tag(self) -> str:
-        return "NoneType"
-
-    def to_z3(self) -> z3.ExprRef:
-        return Z3_FALSE
-
-    def could_be_truthy(self) -> z3.BoolRef:
-        return Z3_FALSE
-
-    def could_be_falsy(self) -> z3.BoolRef:
-        return Z3_TRUE
-
-    def hash_value(self) -> int:
-        return hash("SymbolicNone")
-
-    def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
-        """Merge with another value based on a condition."""
-        if isinstance(other, SymbolicNone):
-            return self
-        return SymbolicValue.from_specialized(self).conditional_merge(other, condition)
-
-    def __repr__(self) -> str:
-        return "SymbolicNone()"
+py_floor_div = _py_floor_div
+py_mod = _py_mod
 
 
 def is_concrete_val(v: object) -> bool:
     if isinstance(v, (SymbolicValue, SymbolicString)):
         return getattr(v, "_constant_value", None) is not None
     return True
+
+
+def _extract_concrete_numeric(value: object) -> int | float | bool | None:
+    """Extract a concrete numeric payload when available."""
+    if isinstance(value, SymbolicValue):
+        payload = value.value
+    else:
+        payload = value
+    if isinstance(payload, (int, float, bool)):
+        return payload
+    return None
+
+
+def _extract_concrete_integral(value: object) -> int | None:
+    """Extract a concrete integral payload for bitwise Python operations."""
+    payload = _extract_concrete_numeric(value)
+    if isinstance(payload, float):
+        return None
+    if isinstance(payload, bool):
+        return int(payload)
+    return payload
+
+
+def _apply_concrete_numeric_binary_op(
+    left: SymbolicValue,
+    right: object,
+    op: Callable[[int | float | bool, int | float | bool], object],
+) -> SymbolicValue | None:
+    """Execute concrete numeric operation eagerly using Python semantics."""
+    left_num = _extract_concrete_numeric(left)
+    right_num = _extract_concrete_numeric(right)
+    if left_num is None or right_num is None:
+        return None
+    return SymbolicValue.from_const(op(left_num, right_num))
+
+
+def _apply_concrete_integral_binary_op(
+    left: SymbolicValue,
+    right: object,
+    op: Callable[[int, int], object],
+) -> SymbolicValue | None:
+    """Execute a concrete integral operation eagerly using Python semantics."""
+    left_num = _extract_concrete_integral(left)
+    right_num = _extract_concrete_integral(right)
+    if left_num is None or right_num is None:
+        return None
+    return SymbolicValue.from_const(op(left_num, right_num))
+
+
+def _apply_concrete_integral_unary_op(
+    value: SymbolicValue,
+    op: Callable[[int], object],
+) -> SymbolicValue | None:
+    """Execute a unary concrete integral operation eagerly."""
+    payload = _extract_concrete_integral(value)
+    if payload is None:
+        return None
+    return SymbolicValue.from_const(op(payload))
 
 
 @dataclass(slots=True)
@@ -283,20 +266,20 @@ class SymbolicValue(SymbolicType):
     is_int: z3.BoolRef
     z3_bool: z3.BoolRef
     is_bool: z3.BoolRef
-    z3_float: z3.FPRef = field(default_factory=lambda: z3.FPVal(0.0, z3.Float64()))
-    is_float: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
-    z3_str: z3.SeqRef = field(default_factory=lambda: z3.StringVal(""))
-    is_str: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
-    z3_addr: z3.ArithRef = field(default_factory=lambda: Z3_ZERO)
-    is_obj: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
+    z3_float: z3.FPRef = field(default=Z3_FLOAT_ZERO)
+    is_float: z3.BoolRef = field(default=Z3_FALSE)
+    z3_str: z3.SeqRef = field(default=Z3_EMPTY_STRING)
+    is_str: z3.BoolRef = field(default=Z3_FALSE)
+    z3_addr: z3.ArithRef = field(default=Z3_ZERO)
+    is_obj: z3.BoolRef = field(default=Z3_FALSE)
 
     z3_array: z3.ArrayRef | None = field(default=None)
-    is_list: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
-    is_dict: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
+    is_list: z3.BoolRef = field(default=Z3_FALSE)
+    is_dict: z3.BoolRef = field(default=Z3_FALSE)
 
     _name: str = ""
-    is_path: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
-    is_none: z3.BoolRef = field(default_factory=lambda: Z3_FALSE)
+    is_path: z3.BoolRef = field(default=Z3_FALSE)
+    is_none: z3.BoolRef = field(default=Z3_FALSE)
     _constant_value: object = field(default=None, compare=False, repr=False)
     _bv_cache: z3.BitVecRef | None = field(default=None, init=False, repr=False, compare=False)
 
@@ -309,7 +292,7 @@ class SymbolicValue(SymbolicType):
                 self._name = self._name[:128] + "..." + self._name[-125:]
             ln = self._name.lower()
             if ln in ("self", "cls") or ln.startswith(("self_", "cls_")):
-                object.__setattr__(self, "_h_active", True)
+                self._h_active = True
 
     min_val: int | float | None = field(default=None, compare=False)
     max_val: int | float | None = field(default=None, compare=False)
@@ -326,6 +309,18 @@ class SymbolicValue(SymbolicType):
     _enhanced_object: object | None = field(default=None, init=False, repr=False, compare=False)
     _type: str | None = field(default=None, init=False, repr=False, compare=False)
     pattern: str | None = field(default=None, init=False, repr=False, compare=False)
+    annotations: Mapping[str, object] | SymbolicDict | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def attach_enhanced_object(self, value: object) -> None:
+        self._enhanced_object = value
+
+    def set_runtime_type(self, type_name: str) -> None:
+        self._type = type_name
+
+    def set_annotations(self, annotations: Mapping[str, object] | SymbolicDict) -> None:
+        self.annotations = annotations
 
     @property
     def name(self) -> str:
@@ -494,28 +489,36 @@ class SymbolicValue(SymbolicType):
             return self
 
         def merge_arith(self_val: z3.ArithRef, other_val: z3.ArithRef) -> z3.ArithRef:
-            if z3.eq(self_val, other_val):
+            if self_val is other_val:
+                return self_val
+            if safe_z3_eq(self_val, other_val):
                 return self_val
             return z3.If(condition, self_val, other_val)
 
         def merge_bool(self_val: z3.BoolRef, other_val: z3.BoolRef) -> z3.BoolRef:
-            if z3.eq(self_val, other_val):
+            if self_val is other_val:
+                return self_val
+            if safe_z3_eq(self_val, other_val):
                 return self_val
             return z3.If(condition, self_val, other_val)
 
         def merge_str(self_val: z3.SeqRef, other_val: z3.SeqRef) -> z3.SeqRef:
-            if z3.eq(self_val, other_val):
+            if self_val is other_val:
+                return self_val
+            if safe_z3_eq(self_val, other_val):
                 return self_val
             return z3.If(condition, self_val, other_val)
 
         def merge_float(self_val: z3.FPRef, other_val: z3.FPRef) -> z3.FPRef:
-            if z3.eq(self_val, other_val):
+            if self_val is other_val:
+                return self_val
+            if safe_z3_eq(self_val, other_val):
                 return self_val
             return z3.If(condition, self_val, other_val)
 
         merged_array: z3.ArrayRef | None = None
         if self.z3_array is not None and other_sv.z3_array is not None:
-            if z3.eq(self.z3_array, other_sv.z3_array):
+            if self.z3_array is other_sv.z3_array or safe_z3_eq(self.z3_array, other_sv.z3_array):
                 merged_array = self.z3_array
             else:
                 array_expr = z3.If(condition, self.z3_array, other_sv.z3_array)
@@ -547,7 +550,7 @@ class SymbolicValue(SymbolicType):
 
     def as_string(self) -> SymbolicString:
         """Downcast this unified value back to a SymbolicString."""
-        from pysymex.core.types.scalars import SymbolicString
+        from pysymex.core.types import SymbolicString
 
         return SymbolicString(
             _z3_str=self.z3_str,
@@ -576,7 +579,7 @@ class SymbolicValue(SymbolicType):
         is_dict = z3.Bool(f"{name}_{id_suffix}_is_dict")
 
         type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
-        type_constraint = z3.Or(*type_vars)
+        type_constraint = exactly_one_bool(type_vars)
 
         result = (
             SymbolicValue(
@@ -614,7 +617,7 @@ class SymbolicValue(SymbolicType):
             affinity_type="int",
         )
         if name.lower().startswith(("self", "cls")):
-            object.__setattr__(sv, "_h_active", True)
+            sv._h_active = True
         return sv, Z3_TRUE
 
     @staticmethod
@@ -623,7 +626,7 @@ class SymbolicValue(SymbolicType):
         z3_bool = z3.Bool(f"{name}_bool")
         sv = SymbolicValue(
             _name=name,
-            z3_int=z3.If(z3_bool, z3.IntVal(1), Z3_ZERO),
+            z3_int=z3.If(z3_bool, Z3_ONE, Z3_ZERO),
             is_int=Z3_FALSE,
             z3_bool=z3_bool,
             is_bool=Z3_TRUE,
@@ -631,21 +634,23 @@ class SymbolicValue(SymbolicType):
             affinity_type="bool",
         )
         if name.lower().startswith(("self", "cls")):
-            object.__setattr__(sv, "_h_active", True)
+            sv._h_active = True
         return sv, Z3_TRUE
 
     @staticmethod
     def from_specialized(value: object) -> SymbolicValue:
         """Convert a specialized SymbolicType to a unified SymbolicValue with optimized affinity_type."""
-        from pysymex.core.types.numeric import SymbolicBool, SymbolicInt, SymbolicFloat
-        from pysymex.core.types.containers import SymbolicList, SymbolicDict, SymbolicObject
-        from pysymex.core.types.symbolic_containers import (
+        from pysymex.core.types import SymbolicBool, SymbolicInt, SymbolicFloat
+        from pysymex.core.types.containers import (
+            SymbolicDict,
+            SymbolicList,
+            SymbolicObject,
             SymbolicString,
             SymbolicBytes,
             SymbolicTuple,
             SymbolicSet,
         )
-        from pysymex.core.types.base import SymbolicNoneType
+        from pysymex.core.types import SymbolicNoneType
 
         if isinstance(value, SymbolicValue):
             return value
@@ -667,7 +672,7 @@ class SymbolicValue(SymbolicType):
         if isinstance(value, SymbolicBool):
             return SymbolicValue(
                 _name=name,
-                z3_int=z3.If(value.z3_bool, z3.IntVal(1), Z3_ZERO),
+                z3_int=z3.If(value.z3_bool, Z3_ONE, Z3_ZERO),
                 is_int=Z3_FALSE,
                 z3_bool=value.z3_bool,
                 is_bool=Z3_TRUE,
@@ -854,13 +859,15 @@ class SymbolicValue(SymbolicType):
         if isinstance(value, bool):
             key = "True" if value else "False"
             cached = FROM_CONST_CACHE.get(key)
-            if cached is not None:
+            if cached is not None and _cached_int_value_is_usable(cached):
                 return cached
+            if cached is not None:
+                FROM_CONST_CACHE.pop(key, None)
 
             if value:
                 sv = SymbolicValue(
                     _name="True",
-                    z3_int=z3.IntVal(1),
+                    z3_int=Z3_ONE,
                     is_int=Z3_FALSE,
                     z3_bool=Z3_TRUE,
                     is_bool=Z3_TRUE,
@@ -890,8 +897,10 @@ class SymbolicValue(SymbolicType):
         if isinstance(value, int):
             key = ("int", value)
             cached = FROM_CONST_CACHE.get(key)
-            if cached is not None:
+            if cached is not None and _cached_int_value_is_usable(cached):
                 return cached
+            if cached is not None:
+                FROM_CONST_CACHE.pop(key, None)
             sv = SymbolicValue(
                 _name=str(value),
                 z3_int=z3.IntVal(value),
@@ -913,6 +922,10 @@ class SymbolicValue(SymbolicType):
             return sv
 
         if isinstance(value, float):
+            key = ("float", value)
+            cached = FROM_CONST_CACHE.get(key)
+            if cached is not None:
+                return cached
             try:
                 int_val = int(value)
                 z3_int = z3.IntVal(int_val)
@@ -933,13 +946,16 @@ class SymbolicValue(SymbolicType):
                 min_val=value,
                 max_val=value,
             )
+            with _FROM_CONST_CACHE_LOCK:
+                if len(FROM_CONST_CACHE) < FROM_CONST_CACHE_LIMIT:
+                    FROM_CONST_CACHE[key] = sv
             return sv
 
         if hasattr(value, "type_tag"):
             return SymbolicValue.from_specialized(value)
 
         if isinstance(value, str):
-            from pysymex.core.types.scalars import SymbolicString
+            from pysymex.core.types import SymbolicString
 
             return SymbolicValue.from_specialized(SymbolicString.from_const(value))
 
@@ -982,7 +998,7 @@ class SymbolicValue(SymbolicType):
         if isinstance(expr, z3.BoolRef):
             return SymbolicValue(
                 _name=name,
-                z3_int=z3.If(expr, z3.IntVal(1), Z3_ZERO),
+                z3_int=z3.If(expr, Z3_ONE, Z3_ZERO),
                 is_int=Z3_FALSE,
                 z3_bool=expr,
                 is_bool=Z3_TRUE,
@@ -1015,7 +1031,7 @@ class SymbolicValue(SymbolicType):
 
         if not val._h_active and name:
             if name.lower().startswith(("self", "cls")):
-                object.__setattr__(val, "_h_active", True)
+                val._h_active = True
 
         return val, path_constraint
 
@@ -1040,13 +1056,13 @@ class SymbolicValue(SymbolicType):
                 is_dict=Z3_FALSE,
                 is_path=Z3_FALSE,
                 is_none=Z3_FALSE,
+                affinity_type="int",
             )
 
         if self_affinity == "bool" and other_affinity == "bool":
             return SymbolicValue(
                 _name=f"({self._name}+{other._name})",
-                z3_int=z3.If(self.z3_bool, z3.IntVal(1), Z3_ZERO)
-                + z3.If(other.z3_bool, z3.IntVal(1), Z3_ZERO),
+                z3_int=z3.If(self.z3_bool, Z3_ONE, Z3_ZERO) + z3.If(other.z3_bool, Z3_ONE, Z3_ZERO),
                 is_int=Z3_TRUE,
                 z3_bool=Z3_FALSE,
                 is_bool=Z3_FALSE,
@@ -1131,6 +1147,7 @@ class SymbolicValue(SymbolicType):
                 is_dict=Z3_FALSE,
                 is_path=Z3_FALSE,
                 is_none=Z3_FALSE,
+                affinity_type="int",
             )
 
         res_int = self.z3_int - other.z3_int
@@ -1190,6 +1207,7 @@ class SymbolicValue(SymbolicType):
                 is_dict=Z3_FALSE,
                 is_path=Z3_FALSE,
                 is_none=Z3_FALSE,
+                affinity_type="int",
             )
 
         res_int = self.z3_int * other.z3_int
@@ -1526,6 +1544,9 @@ class SymbolicValue(SymbolicType):
 
     def __and__(self, other: object) -> SymbolicValue:
         """Python bitwise/logical AND operator with optimized type checking."""
+        concrete = _apply_concrete_integral_binary_op(self, other, lambda a, b: a & b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
 
         self_affinity = self.affinity_type
@@ -1588,6 +1609,9 @@ class SymbolicValue(SymbolicType):
 
     def __or__(self, other: object) -> SymbolicValue:
         """Python bitwise/logical OR operator with optimized type checking."""
+        concrete = _apply_concrete_integral_binary_op(self, other, lambda a, b: a | b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
 
         self_affinity = self.affinity_type
@@ -1650,6 +1674,9 @@ class SymbolicValue(SymbolicType):
 
     def __xor__(self, other: object) -> SymbolicValue:
         """Python bitwise XOR operator with optimized type checking."""
+        concrete = _apply_concrete_integral_binary_op(self, other, lambda a, b: a ^ b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
 
         self_affinity = self.affinity_type
@@ -1754,6 +1781,9 @@ class SymbolicValue(SymbolicType):
 
     def __invert__(self) -> SymbolicValue:
         """Python bitwise inversion operator with optimized type checking."""
+        concrete = _apply_concrete_integral_unary_op(self, lambda a: ~a)
+        if concrete is not None:
+            return concrete
         self_affinity = self.affinity_type
 
         if self_affinity == "int":
@@ -1797,7 +1827,13 @@ class SymbolicValue(SymbolicType):
         We model this symbolically using Z3's bitvector left shift which
         handles shifts >= bit width by returning 0.
         """
+        concrete = _apply_concrete_integral_binary_op(self, other, lambda a, b: a << b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
+        other_num = _extract_concrete_numeric(other)
+        if isinstance(other_num, int) and other_num < 0:
+            raise ValueError("negative shift count")
 
         self_affinity = self.affinity_type
         other_affinity = other.affinity_type
@@ -1853,7 +1889,13 @@ class SymbolicValue(SymbolicType):
         Note: Python raises ValueError for negative shift amounts at runtime.
         We use Z3's arithmetic right shift (bvashr) which preserves the sign bit.
         """
+        concrete = _apply_concrete_integral_binary_op(self, other, lambda a, b: a >> b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
+        other_num = _extract_concrete_numeric(other)
+        if isinstance(other_num, int) and other_num < 0:
+            raise ValueError("negative shift count")
 
         self_affinity = self.affinity_type
         other_affinity = other.affinity_type
@@ -1902,6 +1944,9 @@ class SymbolicValue(SymbolicType):
 
     def __pow__(self, other: object) -> SymbolicValue:
         """Python exponentiation operator with optimized type checking."""
+        concrete = _apply_concrete_numeric_binary_op(self, other, lambda a, b: a**b)
+        if concrete is not None:
+            return concrete
         other = SymbolicValue.from_const(other)
 
         self_affinity = self.affinity_type
@@ -2211,6 +2256,10 @@ class SymbolicString(SymbolicType):
     def type_tag(self) -> str:
         return "str"
 
+    @property
+    def is_str(self) -> z3.BoolRef:
+        return Z3_TRUE
+
     def to_z3(self) -> z3.ExprRef:
         return self.z3_str
 
@@ -2251,9 +2300,21 @@ class SymbolicString(SymbolicType):
     @staticmethod
     def from_const(value: str) -> SymbolicString:
         """Create a concrete symbolic string."""
+        cached = STRING_CONST_CACHE.get(value)
+        if cached is not None:
+            return cached
         z3_str = z3.StringVal(value)
         z3_len = z3.IntVal(len(value))
-        return SymbolicString(_z3_str=z3_str, _z3_len=z3_len, _name=repr(value))
+        sv = SymbolicString(_z3_str=z3_str, _z3_len=z3_len, _name=repr(value))
+        with STRING_CONST_CACHE_LOCK:
+            if len(STRING_CONST_CACHE) < STRING_CONST_CACHE_LIMIT:
+                STRING_CONST_CACHE[value] = sv
+        return sv
+
+    @staticmethod
+    def concrete(value: str) -> SymbolicString:
+        """Compatibility alias for container-style constructors."""
+        return SymbolicString.from_const(value)
 
     def __repr__(self) -> str:
         return f"SymbolicString(name={self._name})"
@@ -2343,7 +2404,7 @@ class SymbolicString(SymbolicType):
 
 def __getattr__(name: str) -> type:
     if name in ("SymbolicDict", "SymbolicList", "SymbolicObject"):
-        from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicObject
+        from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicObject
 
         if name == "SymbolicDict":
             return SymbolicDict

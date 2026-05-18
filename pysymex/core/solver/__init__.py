@@ -16,4 +16,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .engine import *
+"""Public exports for core solver utilities."""
+
+from __future__ import annotations
+
+from pysymex.core.solver.engine import (
+    DEFAULT_SOLVER_TIMEOUT_MS,
+    IncrementalSolver,
+    SolverResult,
+    clear_solver_caches,
+    create_solver,
+    get_model,
+    get_model_string,
+    is_satisfiable,
+    prove,
+)
+
+__all__ = [
+    "DEFAULT_SOLVER_TIMEOUT_MS",
+    "IncrementalSolver",
+    "SolverResult",
+    "clear_solver_caches",
+    "create_solver",
+    "get_model",
+    "get_model_string",
+    "is_satisfiable",
+    "prove",
+]

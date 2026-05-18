@@ -1,4 +1,3 @@
-import pytest
 import z3
 from pysymex.analysis.solver.types import (
     BugType,

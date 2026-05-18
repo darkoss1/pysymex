@@ -31,11 +31,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from pysymex.core.solver.engine import IncrementalSolver
-
-__all__ = [
-    "ExecutionContext",
-]
+    from pysymex._typing import SolverProtocol
 
 
 @runtime_checkable
@@ -52,7 +48,7 @@ class ExecutionContext(Protocol):
 
     _instructions: Sequence[dis.Instruction]
 
-    solver: IncrementalSolver
+    solver: SolverProtocol
 
     _paths_explored: int
 

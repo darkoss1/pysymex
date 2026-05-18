@@ -33,13 +33,8 @@ from pysymex.core.exceptions.types import (
     RaisesContract,
     SymbolicException,
 )
-from pysymex.core.solver.engine import create_solver
-
-
-class _ToZ3Protocol(Protocol):
-    """Protocol for symbolic values that can expose a Z3 expression."""
-
-    def to_z3(self) -> z3.ExprRef: ...
+from pysymex.core.solver.engine import IncrementalSolver
+from pysymex.core.solver.independence import has_to_z3
 
 
 class _HasLengthProtocol(Protocol):
@@ -66,8 +61,7 @@ class _CouldBeFalsyProtocol(Protocol):
     def could_be_falsy(self) -> z3.BoolRef: ...
 
 
-def _has_to_z3(value: object) -> TypeGuard[_ToZ3Protocol]:
-    return hasattr(value, "to_z3") and callable(getattr(value, "to_z3", None))
+_has_to_z3 = has_to_z3
 
 
 def _has_length(value: object) -> TypeGuard[_HasLengthProtocol]:
@@ -95,8 +89,8 @@ class ExceptionAnalyzer:
     - Whether exceptions are properly handled
     """
 
-    def __init__(self, solver: z3.Solver | None = None) -> None:
-        self.solver = solver or create_solver()
+    def __init__(self, solver: IncrementalSolver | None = None) -> None:
+        self.solver = solver or IncrementalSolver()
         self._exception_paths: list[ExceptionPath] = []
         self._potential_exceptions: list[SymbolicException] = []
 
@@ -165,7 +159,7 @@ class ExceptionAnalyzer:
                 for c in context_constraints:
                     self.solver.add(c)
                 self.solver.add(exc.condition)
-                if self.solver.check() == z3.sat:
+                if self.solver.check().is_sat:
                     feasible.append(exc)
             finally:
                 self.solver.pop()

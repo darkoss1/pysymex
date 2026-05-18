@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import pytest
 
 from pysymex.execution.executors.concurrent import (
     ConcurrentSymbolicExecutor,
@@ -52,8 +50,6 @@ class TestConcurrentSymbolicExecutor:
 
         def sample(x: int) -> int:
             return x + 1
-
-        import pysymex.execution.opcodes  # Ensure opcodes are registered
 
         executor = ConcurrentSymbolicExecutor(
             ExecutionConfig(max_paths=4, max_iterations=40, enable_concurrency_analysis=True)

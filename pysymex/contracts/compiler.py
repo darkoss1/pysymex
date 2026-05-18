@@ -44,7 +44,7 @@ from __future__ import annotations
 import inspect
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import z3
 
@@ -184,7 +184,7 @@ class ContractCompiler:
     @staticmethod
     def compile_predicate(
         predicate: ContractPredicate,
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
         """Compile a contract predicate to a Z3 boolean formula.
 
@@ -210,7 +210,7 @@ class ContractCompiler:
     @staticmethod
     def compile_expression(
         condition: str,
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
         """Compile a string condition to a Z3 expression.
 
@@ -231,7 +231,7 @@ class ContractCompiler:
     @staticmethod
     def _trace_callable(
         predicate: Callable[..., z3.BoolRef | bool],
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
         """Compile a callable predicate via symbolic tracing.
 
@@ -268,13 +268,9 @@ class ContractCompiler:
         try:
             result = predicate(*args)
         except Exception as exc:
-            logger.warning(
-                "Symbolic tracing failed for predicate %r: %s",
-                predicate,
-                exc,
-                exc_info=True,
-            )
-            return z3.BoolVal(True)
+            raise ValueError(
+                f"Contract predicate {predicate!r} could not be symbolically traced: {exc}"
+            ) from exc
 
         formula = ContractCompiler._coerce_to_bool_ref(result, predicate)
 
@@ -284,7 +280,7 @@ class ContractCompiler:
     @staticmethod
     def _compile_string(
         condition: str,
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
         """Compile a string condition via ConditionTranslator."""
         from pysymex.contracts.quantifiers.core import parse_condition_to_z3
@@ -302,7 +298,7 @@ class ContractCompiler:
           - ``z3.BoolRef`` → pass through
           - ``bool`` → ``z3.BoolVal``
           - ``z3.ArithRef`` → ``expr != 0`` (truthy semantics)
-          - Other → ``z3.BoolVal(True)`` with a warning
+          - unsupported result types raise ``ValueError``
         """
         if isinstance(result, z3.BoolRef):
             return result
@@ -310,19 +306,7 @@ class ContractCompiler:
             return z3.BoolVal(result)
         if isinstance(result, z3.ArithRef):
             return result != z3.IntVal(0)
-        logger.warning(
-            "Contract predicate %r returned non-boolean result of type %s; "
-            "treating as unconstrained (True).",
-            source,
-            type(result).__name__,
+        raise ValueError(
+            f"Contract predicate {source!r} returned unsupported result type "
+            f"{type(result).__name__}; expected z3.BoolRef, z3.ExprRef, or bool"
         )
-        return z3.BoolVal(True)
-
-
-__all__ = [
-    "And_",
-    "ContractCompiler",
-    "Implies_",
-    "Not_",
-    "Or_",
-]

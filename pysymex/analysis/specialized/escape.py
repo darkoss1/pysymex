@@ -178,10 +178,3 @@ class EscapeAnalyzer:
                     stack.append(stack[-1])
 
         return allocations
-
-
-__all__ = [
-    "EscapeAnalyzer",
-    "EscapeInfo",
-    "EscapeState",
-]

@@ -1,11 +1,10 @@
-from pysymex.analysis.detectors.types import TypeEnvironment, DetectionContext
-from pysymex.analysis.detectors.base import IssueKind
 from unittest.mock import Mock
+
 from pysymex.analysis.detectors.types import (
+    DetectionContext,
     IssueKind,
     Severity,
     Issue,
-    DetectionContext,
     StaticDetector,
 )
 from pysymex.analysis.type_inference import PyType, TypeKind, TypeEnvironment

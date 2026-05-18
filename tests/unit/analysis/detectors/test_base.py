@@ -2,12 +2,13 @@ from pysymex.analysis.detectors.base import IssueKind
 import dis
 from unittest.mock import Mock
 from pysymex.analysis.detectors.base import (
-    IssueKind,
     Issue,
     DetectorInfo,
     Detector,
     DetectorRegistry,
+    IsSatFn,
 )
+from pysymex.core.state import VMState
 
 
 def MockInstr(
@@ -34,7 +35,9 @@ class DummyDetector(Detector):
     description = "dummy description"
     issue_kind = IssueKind.UNKNOWN
 
-    def check(self, state, instruction, _solver_check):
+    def check(
+        self, state: VMState, instruction: dis.Instruction, _solver_check: IsSatFn
+    ) -> Issue | None:
         return None
 
 
@@ -54,7 +57,7 @@ class TestIssue:
         issue1 = Issue(IssueKind.UNKNOWN, "msg")
         assert issue1.get_counterexample() == {}
 
-        issue2 = Issue(IssueKind.UNKNOWN, "msg", model={"x": 1})
+        issue2 = Issue(IssueKind.UNKNOWN, "msg", counterexample={"x": 1})
         assert issue2.get_counterexample() == {"x": 1}
 
     def test_format(self) -> None:
@@ -112,21 +115,34 @@ class TestDetectorRegistry:
         """Test register behavior."""
         r = DetectorRegistry()
         r.register(DummyDetector)
-        assert "dummy" in r._detectors
+        assert "dummy" in r._detectors  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_register_fn(self) -> None:
         """Test register_fn behavior."""
         r = DetectorRegistry()
 
-        def dummy_fn(s: object, i: object, c: object) -> None:
-            pass
+        def dummy_fn(
+            _state: VMState, _instruction: dis.Instruction, _is_satisfiable: IsSatFn
+        ) -> Issue | None:
+            return None
 
         info = DetectorInfo("dfn", "desc", IssueKind.UNKNOWN)
         r.register_fn(dummy_fn, info)
-        assert "dfn" in r._fn_detectors
+        assert "dfn" in r._fn_detectors  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_all_fns(self) -> None:
         """Test get_all_fns behavior."""
         r = DetectorRegistry()
+
+        def dummy_fn(
+            _state: VMState, _instruction: dis.Instruction, _is_satisfiable: IsSatFn
+        ) -> Issue | None:
+            return None
+
+        info = DetectorInfo("test_fn", "test description", IssueKind.UNKNOWN)
+        r.register_fn(dummy_fn, info)
+
         fns = r.get_all_fns()
         assert len(fns) > 0
+        assert fns[0][0] is dummy_fn
+        assert fns[0][1] is info

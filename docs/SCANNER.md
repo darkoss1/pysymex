@@ -1,4 +1,4 @@
-# pysymex Scanner - Complete Guide
+# pysymex scanner - complete guide
 
 Detailed documentation for the pysymex Scanner module.
 
@@ -8,7 +8,7 @@ Detailed documentation for the pysymex Scanner module.
 
 1. [Overview](#overview)
 2. [Python API](#python-api)
-3. [Watch Mode](#watch-mode)
+3. [Scanner Validation](#scanner-validation)
 4. [Session Logging](#session-logging)
 5. [Integration Examples](#integration-examples)
 6. [API Reference](#api-reference)
@@ -21,12 +21,13 @@ pysymex provides two ways to scan Python files:
 
 | Method | Use Case |
 |--------|----------|
-| **CLI** (`pysymex scan PATH`) | Primary interface — scan files and directories |
+| **CLI** (`pysymex scan PATH`) | Primary interface - scan files and directories |
 | **Python API** (`scan_file` / `scan_directory`) | Programmatic use in your own scripts |
 
 Both provide identical scanning capabilities:
 - Single file and directory scanning
-- Watch mode for continuous monitoring
+- Recursive and async directory scanning
+- Alpha-5 experiment corpus validation
 - JSON session logging
 - Detailed issue reporting with counterexamples
 
@@ -156,47 +157,37 @@ Each issue in `ScanResult.issues` is a dictionary:
 
 ---
 
-## Watch Mode
+## Scanner Validation
 
-Watch mode continuously monitors for file changes and re-scans modified files.
+The scanner runs as a one-shot command or API call. Alpha 5 also added a curated
+experiment corpus for milestone validation.
 
-### Starting Watch Mode
+### CLI Scans
 
 ```bash
-# CLI (primary)
-pysymex scan ./src --watch
+# Scan one file
+pysymex scan path/to/file.py
 
-# Or via module
-python -m pysymex.scanner --dir ./src --watch
+# Scan a directory recursively
+pysymex scan path/to/src -r
+
+# Use the async scanner for directory work
+pysymex scan path/to/src -r --async
 ```
 
-### Watch Mode Output
+### Regression Checks
 
-```
-╔══════════════════════════════════════════════════════════════════════╗
-║                   pysymex Scanner - Watch Mode                     ║
-╠══════════════════════════════════════════════════════════════════════╣
-║  Watching: ./src                                                     ║
-║  Press Ctrl+C to stop and see summary.                               ║
-╚══════════════════════════════════════════════════════════════════════╝
+Use pytest targets that match the scanner behavior being changed:
 
-Watching for file changes...
-
-======================================================================
-Scanning: example_utils.py
-======================================================================
-
-Found 1 potential issues:
-
-   • [DIVISION_BY_ZERO] Division by zero possible (Line 15)
-       └─ y = 0
-
-   Stats: 5 code objects | 42 paths explored
+```bash
+uv run pytest tests/unit/scanner
 ```
 
-### Stopping Watch Mode
+For the Alpha-5 experiment corpus, run:
 
-Press `Ctrl+C` to stop. The session summary will be displayed.
+```bash
+uv run python experiments/runner.py
+```
 
 ---
 
@@ -208,7 +199,9 @@ Every scan session automatically saves results to a JSON log file.
 
 Default: `scan_log_YYYYMMDD_HHMMSS.json` in current directory
 
-Custom: Use `--log` argument or set in code
+Custom: pass a `Path` to `ScanSession(log_file=...)`. The top-level `pysymex scan`
+command does not expose a `--log` option; emit JSON with `--format json -o report.json`
+when you need a command-line report artifact.
 
 ### Log File Structure
 
@@ -242,7 +235,7 @@ Custom: Use `--log` argument or set in code
 ### Using ScanSession in Code
 
 ```python
-from pysymex.scanner import ScanSession, analyze_file
+from pysymex.scanner import ScanSession, scan_file
 from pathlib import Path
 
 # Create session with custom log file
@@ -250,7 +243,7 @@ session = ScanSession(log_file=Path("my_scan.json"))
 
 # Scan files and track in session
 for file_path in Path("./src").glob("**/*.py"):
-    result = analyze_file(file_path)
+    result = scan_file(file_path)
     session.add_result(result)  # Auto-saves to log file
 
 # Get summary
@@ -488,11 +481,11 @@ Tracks all scans in a session with automatic logging.
 
 ## Best Practices
 
-1. **Start with default settings** — They work well for most codebases
-2. **Review counterexamples** — They show the inputs that cause issues
-3. **Use watch mode during development** — Catch issues early
-4. **Integrate with CI/CD** — Prevent issues from reaching production
-5. **Handle timeouts gracefully** — Large functions may need more time
+1. **Start with default settings** - They work well for most codebases
+2. **Review counterexamples** - They show the inputs that cause issues
+3. **Use focused scans during development** - Catch issues early
+4. **Integrate with CI/CD** - Prevent issues from reaching production
+5. **Handle timeouts gracefully** - Large functions may need more time
 
 ---
 

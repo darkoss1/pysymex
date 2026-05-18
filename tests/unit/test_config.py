@@ -19,7 +19,7 @@ class TestNewPluginDirs:
 
     def test_returns_empty_list(self) -> None:
         """Factory produces a fresh empty list."""
-        result = mod._new_plugin_dirs()
+        result = mod._new_plugin_dirs()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == []
         assert isinstance(result, list)
 
@@ -29,7 +29,7 @@ class TestNewDisabledPlugins:
 
     def test_returns_empty_set(self) -> None:
         """Factory produces a fresh empty set."""
-        result = mod._new_disabled_plugins()
+        result = mod._new_disabled_plugins()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == set()
         assert isinstance(result, set)
 
@@ -39,7 +39,7 @@ class TestNewPluginSettings:
 
     def test_returns_empty_dict(self) -> None:
         """Factory produces a fresh empty dict."""
-        result = mod._new_plugin_settings()
+        result = mod._new_plugin_settings()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {}
         assert isinstance(result, dict)
 
@@ -49,15 +49,15 @@ class TestIsObjectList:
 
     def test_list_returns_true(self) -> None:
         """A list returns True."""
-        assert mod._is_object_list([1, 2, 3]) is True
+        assert mod._is_object_list([1, 2, 3]) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_tuple_returns_false(self) -> None:
         """A tuple is not a list."""
-        assert mod._is_object_list((1, 2)) is False
+        assert mod._is_object_list((1, 2)) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_string_returns_false(self) -> None:
         """A string is not a list."""
-        assert mod._is_object_list("abc") is False
+        assert mod._is_object_list("abc") is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestIsObjectCollection:
@@ -65,23 +65,23 @@ class TestIsObjectCollection:
 
     def test_list_returns_true(self) -> None:
         """A list is a collection."""
-        assert mod._is_object_collection([1]) is True
+        assert mod._is_object_collection([1]) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_set_returns_true(self) -> None:
         """A set is a collection."""
-        assert mod._is_object_collection({1, 2}) is True
+        assert mod._is_object_collection({1, 2}) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_tuple_returns_true(self) -> None:
         """A tuple is a collection."""
-        assert mod._is_object_collection((1,)) is True
+        assert mod._is_object_collection((1,)) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_dict_returns_false(self) -> None:
         """A dict is not in the collection TypeGuard."""
-        assert mod._is_object_collection({"a": 1}) is False
+        assert mod._is_object_collection({"a": 1}) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_string_returns_false(self) -> None:
         """A string is not a collection."""
-        assert mod._is_object_collection("abc") is False
+        assert mod._is_object_collection("abc") is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestIsObjectDict:
@@ -89,11 +89,11 @@ class TestIsObjectDict:
 
     def test_dict_returns_true(self) -> None:
         """A dict returns True."""
-        assert mod._is_object_dict({"a": 1}) is True
+        assert mod._is_object_dict({"a": 1}) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_list_returns_false(self) -> None:
         """A list is not a dict."""
-        assert mod._is_object_dict([1, 2]) is False
+        assert mod._is_object_dict([1, 2]) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestNormalizeObjectDict:
@@ -101,17 +101,17 @@ class TestNormalizeObjectDict:
 
     def test_valid_dict(self) -> None:
         """A dict with mixed keys is normalized to str keys."""
-        result = mod._normalize_object_dict({1: "a", "b": 2})
+        result = mod._normalize_object_dict({1: "a", "b": 2})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {"1": "a", "b": 2}
 
     def test_non_dict_returns_none(self) -> None:
         """Non-dict input returns None."""
-        result = mod._normalize_object_dict([1, 2])
+        result = mod._normalize_object_dict([1, 2])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None
 
     def test_empty_dict(self) -> None:
         """Empty dict normalizes to empty dict."""
-        result = mod._normalize_object_dict({})
+        result = mod._normalize_object_dict({})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {}
 
 
@@ -120,12 +120,12 @@ class TestNormalizeStringList:
 
     def test_valid_list(self) -> None:
         """A list of mixed types is stringified."""
-        result = mod._normalize_string_list([1, "two", 3.0])
+        result = mod._normalize_string_list([1, "two", 3.0])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == ["1", "two", "3.0"]
 
     def test_non_list_returns_none(self) -> None:
         """Non-list input returns None."""
-        result = mod._normalize_string_list("abc")
+        result = mod._normalize_string_list("abc")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None
 
 
@@ -134,22 +134,22 @@ class TestNormalizeStringSet:
 
     def test_from_list(self) -> None:
         """A list is normalized to a set of strings."""
-        result = mod._normalize_string_set([1, "two"])
+        result = mod._normalize_string_set([1, "two"])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {"1", "two"}
 
     def test_from_set(self) -> None:
         """A set is normalized to a set of strings."""
-        result = mod._normalize_string_set({"a", "b"})
+        result = mod._normalize_string_set({"a", "b"})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {"a", "b"}
 
     def test_from_tuple(self) -> None:
         """A tuple is normalized to a set of strings."""
-        result = mod._normalize_string_set(("x",))
+        result = mod._normalize_string_set(("x",))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result == {"x"}
 
     def test_non_collection_returns_none(self) -> None:
         """A non-collection returns None."""
-        result = mod._normalize_string_set(42)
+        result = mod._normalize_string_set(42)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None
 
 
@@ -159,20 +159,20 @@ class TestNormalizePluginSettings:
     def test_valid_nested_dicts(self) -> None:
         """Nested dicts are normalized with stringified keys."""
         raw: dict[str, dict[str, object]] = {"my_plugin": {"opt": True}}
-        result = mod._normalize_plugin_settings(raw)
+        result = mod._normalize_plugin_settings(raw)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is not None
         assert result["my_plugin"]["opt"] is True
 
     def test_non_dict_value_wrapped(self) -> None:
         """Non-dict plugin settings get wrapped in {'value': ...}."""
         raw: dict[str, object] = {"plug": 42}
-        result = mod._normalize_plugin_settings(raw)
+        result = mod._normalize_plugin_settings(raw)  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is not None
         assert result["plug"] == {"value": 42}
 
     def test_non_dict_returns_none(self) -> None:
         """Non-dict input returns None."""
-        result = mod._normalize_plugin_settings("abc")
+        result = mod._normalize_plugin_settings("abc")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None
 
 
@@ -387,7 +387,7 @@ def test_find_config_file_walks_up(tmp_path: Path) -> None:
 
 def test_load_config_defaults(tmp_path: Path) -> None:
     """load_config returns defaults when no config file exists."""
-    cfg = mod.load_config(start_dir=tmp_path)
+    cfg = mod.load_config(config_path=tmp_path / "missing.toml")
     assert isinstance(cfg, mod.PysymexConfig)
     assert cfg.config_file is None
 

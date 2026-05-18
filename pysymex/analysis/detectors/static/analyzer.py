@@ -33,12 +33,6 @@ from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from pysymex.analysis.detectors.types import DetectionContext, Issue, StaticDetector
 
-from .division_by_zero import StaticDivisionByZeroDetector
-from .key_error import StaticKeyErrorDetector
-from .index_error import StaticIndexErrorDetector
-from .type_error import StaticTypeErrorDetector
-from .attribute_error import StaticAttributeErrorDetector
-from .assertion_error import StaticAssertionErrorDetector
 from .dead_code import DeadCodeDetector
 
 
@@ -54,12 +48,6 @@ class DetectorRegistry:
 
     def _register_default_detectors(self) -> None:
         """Register all default detectors."""
-        self.register(StaticDivisionByZeroDetector())
-        self.register(StaticKeyErrorDetector())
-        self.register(StaticIndexErrorDetector())
-        self.register(StaticTypeErrorDetector())
-        self.register(StaticAttributeErrorDetector())
-        self.register(StaticAssertionErrorDetector())
         self.register(DeadCodeDetector())
 
     def register(self, detector: StaticDetector) -> None:

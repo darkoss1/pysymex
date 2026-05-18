@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -27,7 +28,7 @@ def _state() -> VMState:
     return VMState(pc=0)
 
 
-def _call_model(fn: object) -> None:
+def _call_model(fn: Callable[[], object]) -> None:
     fn()
 
 

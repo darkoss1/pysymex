@@ -27,6 +27,24 @@ from pysymex.analysis.detectors.logical.utils import (
 )
 
 
+def _is_interprocedural_name(name: str) -> bool:
+    lname = name.lower()
+    return any(
+        token in lname
+        for token in (
+            "arg",
+            "param",
+            "input",
+            "ret",
+            "result",
+            "caller",
+            "callee",
+            "api",
+            "contract",
+        )
+    )
+
+
 class NumericRangePropagationRule(LogicRule):
     name = "Numeric Range Propagation Contradiction"
     tier = 4
@@ -66,6 +84,8 @@ class NumericRangePropagationRule(LogicRule):
         rel = {(a, op, b) for a, op, b in relations}
 
         for a, op, b in relations:
+            if not (_is_interprocedural_name(a) and _is_interprocedural_name(b)):
+                continue
             if op == "<" and ((b, "<", a) in rel or (b, "<=", a) in rel):
                 return True
             if op == "<=" and (b, "<", a) in rel:

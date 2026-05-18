@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import Mock, patch
+from typing import cast
 from pysymex.analysis.specialized.flow import FlowSensitiveAnalyzer, FlowContext
 from pysymex.analysis.control.cfg import BasicBlock, ControlFlowGraph
 from pysymex.analysis.dataflow.types import Definition, NullInfo, NullState
@@ -190,6 +190,6 @@ class TestFlowContext:
     def test_is_in_loop(self) -> None:
         """Test is_in_loop behavior."""
         analyzer = self.setup_analyzer()
-        analyzer.is_in_loop.return_value = True
+        cast(Mock, analyzer.is_in_loop).return_value = True
         ctx = FlowContext.create(analyzer, 10)
         assert ctx.is_in_loop() is True

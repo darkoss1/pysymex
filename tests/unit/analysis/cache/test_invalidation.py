@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from pysymex.analysis.cache.core import CacheKey, CacheKeyType, TieredCache
 from pysymex.analysis.cache.invalidation import (
@@ -95,7 +94,7 @@ class TestFileCache:
         cache = TieredCache(db_path=tmp_path / "cache.db")
         fc = FileCache(cache)
         fc.close()
-        assert cache.persistent._conn is None
+        assert cache.persistent._conn is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_or_analyze(self, tmp_path: Path) -> None:
         """Test get_or_analyze behavior."""

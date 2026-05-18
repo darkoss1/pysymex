@@ -1,4 +1,3 @@
-import pytest
 import pysymex.analysis.abstract.interpreter.state
 from pysymex.analysis.abstract.interpreter.values import Interval, SignValue, Congruence
 

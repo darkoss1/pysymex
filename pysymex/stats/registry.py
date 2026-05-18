@@ -19,13 +19,14 @@
 from __future__ import annotations
 
 import collections
+import logging
+import os
 import threading
 import time
-import logging
 
-from .types import Event, EventType, Metadata, MetricValue
 from .collectors.base import MetricCollector
 from .sinks.base import StatsSink
+from .types import Event, EventType, Metadata, MetricValue
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class StatsRegistry:
         self._running = False
         self._flusher_thread: threading.Thread | None = None
         self._flush_interval = 0.5
+        self._last_inline_flush = 0.0
         self._global_metrics: dict[str, MetricValue] = {}
 
     def _get_buffer(self) -> collections.deque[Event]:
@@ -76,16 +78,37 @@ class StatsRegistry:
         """Lock-free, thread-local event emission for zero-impact instrumentation."""
         buffer = self._get_buffer()
         buffer.append(Event(event_type, value, metadata=metadata or {}))
+        if self._running and self._flusher_thread is None:
+            now = time.monotonic()
+            if now - self._last_inline_flush >= self._flush_interval:
+                self._last_inline_flush = now
+                self.flush()
 
     def start(self) -> None:
-        """Start the background flusher thread."""
+        """Start statistics collection and the background flusher thread.
+
+        On Windows, keep collection single-threaded and flush at stop. Z3 can
+        execute long native checks while releasing the GIL; running the stats
+        flusher in a parallel Python thread during those checks has triggered
+        process-fatal access violations in stress scans.
+        """
         with self._lock:
-            if not self._running:
-                self._running = True
-                self._flusher_thread = threading.Thread(
-                    target=self._flush_loop, daemon=True, name="StatsFlusher"
-                )
-                self._flusher_thread.start()
+            if self._running:
+                return
+            self._running = True
+            self._last_inline_flush = 0.0
+            for sink in self._sinks:
+                try:
+                    sink.start()
+                except Exception as e:
+                    logger.error(f"Sink {sink} failed to start: {e}")
+            if os.name == "nt":
+                self._flusher_thread = None
+                return
+            self._flusher_thread = threading.Thread(
+                target=self._flush_loop, daemon=True, name="StatsFlusher"
+            )
+            self._flusher_thread.start()
 
     def stop(self) -> None:
         """Stop the background flusher thread and flush remaining events."""
@@ -94,12 +117,12 @@ class StatsRegistry:
                 self._running = False
                 if self._flusher_thread:
                     self._flusher_thread.join(timeout=2.0)
-                self.flush()
+                self.flush(force_write=True)
                 for sink in self._sinks:
                     try:
-                        sink.write(self._global_metrics)
+                        sink.stop()
                     except Exception as e:
-                        logger.error(f"Sink {sink} failed to write final metrics: {e}")
+                        logger.error(f"Sink {sink} failed to stop: {e}")
 
     def _flush_loop(self) -> None:
         """Periodic loop to flush events from thread-local buffers."""
@@ -107,7 +130,7 @@ class StatsRegistry:
             time.sleep(self._flush_interval)
             self.flush()
 
-    def flush(self) -> None:
+    def flush(self, force_write: bool = False) -> None:
         """Manually flush all events across thread-local buffers, passing them to collectors and sinks."""
         events_to_process: list[Event] = []
 
@@ -119,12 +142,13 @@ class StatsRegistry:
                     except IndexError:
                         break
 
-        if not events_to_process:
+        if not events_to_process and not force_write:
             return
 
-        for collector in self._collectors:
-            collector.process(events_to_process)
-            self._global_metrics.update(collector.get_metrics())
+        if events_to_process:
+            for collector in self._collectors:
+                collector.process(events_to_process)
+                self._global_metrics.update(collector.get_metrics())
 
         for sink in self._sinks:
             try:

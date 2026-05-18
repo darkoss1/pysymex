@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pysymex.core.types.havoc import is_havoc
 from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
 
 if TYPE_CHECKING:
@@ -41,4 +42,15 @@ class FormatStringDetector(Detector):
         is_satisfiable_fn: IsSatFn,
     ) -> Issue | None:
         """Check for format string issues."""
+        if instruction.opname in self.relevant_opcodes:
+            if not state.stack:
+                return None
+            val = state.stack[-1]
+            if is_havoc(val):
+                return Issue(
+                    kind=IssueKind.INVALID_ARGUMENT,
+                    message="Potential format string vulnerability: unconstrained input used in string formatting",
+                    pc=state.pc,
+                    confidence=0.5,
+                )
         return None

@@ -33,7 +33,8 @@ import z3
 logger = logging.getLogger(__name__)
 
 from pysymex.core.memory.addressing import next_address
-from pysymex.core.solver.engine import create_solver
+from pysymex.core.solver.constraints import simplify_bool_expr
+from pysymex.core.solver.engine import is_satisfiable
 from pysymex.core.memory.types import (
     HeapObject,
     MemoryRegion,
@@ -41,7 +42,8 @@ from pysymex.core.memory.types import (
     SymbolicAddress,
 )
 
-from pysymex.core.types.scalars import Z3_FALSE, Z3_TRUE, SymbolicValue
+from pysymex.core.constants import Z3_FALSE, Z3_TRUE
+from pysymex.core.types import SymbolicValue
 
 
 class SymbolicHeap:
@@ -60,7 +62,6 @@ class SymbolicHeap:
         self._address_map: dict[int, SymbolicAddress] = {}
         self._references: dict[int, set[str]] = {}
         self._freed: set[int] = set()
-        self._solver = create_solver()
         self._symbolic_candidate_cache: dict[tuple[MemoryRegion, str], list[int]] = {}
 
         self._z3_memory: dict[tuple[MemoryRegion, str], z3.ArrayRef] = {}
@@ -150,7 +151,7 @@ class SymbolicHeap:
                 cond = address.effective_address == obj.address.effective_address
                 if not self._may_alias(cond):
                     continue
-                obj.is_alive = z3.simplify(z3.And(obj.is_alive, z3.Not(cond)))
+                obj.is_alive = simplify_bool_expr(z3.And(obj.is_alive, z3.Not(cond)))
             return
         if addr in self._freed:
             raise ValueError(f"Double free detected at address {addr}")
@@ -267,15 +268,19 @@ class SymbolicHeap:
         addr = self._get_concrete_address(address)
         if addr is None:
             return set()
-        return self._references.get(addr, set()).copy()
+        return set(self._references.get(addr, ()))
 
     def may_alias(self, addr1: SymbolicAddress, addr2: SymbolicAddress) -> bool:
         """Check if two addresses may refer to the same location."""
-        return addr1.may_alias(addr2, self._solver)
+        if not addr1.same_region(addr2):
+            return False
+        return is_satisfiable([addr1.effective_address == addr2.effective_address])
 
     def must_alias(self, addr1: SymbolicAddress, addr2: SymbolicAddress) -> bool:
         """Check if two addresses must refer to the same location."""
-        return addr1.must_alias(addr2, self._solver)
+        if not addr1.same_region(addr2):
+            return False
+        return not is_satisfiable([addr1.effective_address != addr2.effective_address])
 
     def _get_concrete_address(self, address: SymbolicAddress) -> int | None:
         """
@@ -329,11 +334,7 @@ class SymbolicHeap:
         if active is not None:
             return bool(active.is_sat([condition]))
 
-        self._solver.push()
-        self._solver.add(condition)
-        sat = self._solver.check() == z3.sat
-        self._solver.pop()
-        return sat
+        return is_satisfiable([condition])
 
     def get_concrete_address(self, address: SymbolicAddress) -> int | None:
         """Public access to concrete address resolution."""
@@ -594,7 +595,7 @@ class AliasingAnalyzer:
         """Get all addresses that may alias with the given address."""
         concrete = self.heap.get_concrete_address(addr)
         if concrete is not None:
-            return set(self._alias_sets.get(concrete, set()))
+            return set(self._alias_sets.get(concrete, ()))
 
         result: set[SymbolicAddress] = set()
         for other_set in self._alias_sets.values():
@@ -612,7 +613,7 @@ class AliasingAnalyzer:
         """Get all addresses that must alias with the given address."""
         concrete = self.heap.get_concrete_address(addr)
         if concrete is not None:
-            return set(self._alias_sets.get(concrete, set()))
+            return set(self._alias_sets.get(concrete, ()))
 
         result: set[SymbolicAddress] = set()
         for other_set in self._alias_sets.values():
@@ -670,18 +671,23 @@ class SymbolicArray:
         """Set the underlying Z3 array."""
         self._array = value
 
+    def _index_expr(self, index: int | z3.ArithRef) -> z3.ArithRef:
+        """Return an Int expression for a Python list index."""
+        return z3.IntVal(index) if isinstance(index, int) else index
+
+    def _normalized_index(self, index: int | z3.ArithRef) -> z3.ArithRef:
+        """Normalize negative Python list indices against the current length."""
+        index_expr = self._index_expr(index)
+        return z3.If(index_expr < 0, index_expr + self._length, index_expr)
+
     def get(self, index: int | z3.ArithRef) -> z3.ExprRef:
         """Get element at index (symbolic or concrete)."""
-        if isinstance(index, int):
-            index = z3.IntVal(index)
-        return z3.Select(self._array, index)
+        return z3.Select(self._array, self._normalized_index(index))
 
     def set(self, index: int | z3.ArithRef, value: z3.ExprRef) -> SymbolicArray:
         """Set element at index, returning new array (functional update)."""
-        if isinstance(index, int):
-            index = z3.IntVal(index)
         new_array = SymbolicArray(f"{self.name}_updated", self.element_sort)
-        new_array._array = z3.Store(self._array, index, value)
+        new_array._array = z3.Store(self._array, self._normalized_index(index), value)
         new_array._length = self._length
         new_array._constraints = list(self._constraints)
         return new_array
@@ -704,9 +710,8 @@ class SymbolicArray:
 
     def in_bounds(self, index: int | z3.ArithRef) -> z3.BoolRef:
         """Return a constraint that index is in bounds."""
-        if isinstance(index, int):
-            index = z3.IntVal(index)
-        return z3.And(index >= 0, index < self._length)
+        index_expr = self._index_expr(index)
+        return z3.And(index_expr >= -self._length, index_expr < self._length)
 
 
 class SymbolicMap:
@@ -770,14 +775,3 @@ class SymbolicMap:
     def add_constraint(self, constraint: z3.BoolRef) -> None:
         """Add a constraint on this map."""
         self._constraints.append(constraint)
-
-
-__all__ = [
-    "AliasingAnalyzer",
-    "HeapSnapshot",
-    "MemorySnapshot",
-    "MemoryState",
-    "SymbolicArray",
-    "SymbolicHeap",
-    "SymbolicMap",
-]

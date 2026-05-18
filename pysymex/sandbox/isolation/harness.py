@@ -59,8 +59,6 @@ def generate_harness_script(
     enable_ast_prescreening: bool = True,
     install_audit_hook: bool = True,
     block_ast_imports: bool = False,
-    install_seccomp: bool = False,
-    seccomp_allowlist: tuple[int, ...] | None = None,
 ) -> str:
     """Return a self-contained Python harness script as a string.
 
@@ -98,14 +96,11 @@ def generate_harness_script(
     patterns = (
         suspicious_patterns if suspicious_patterns is not None else SANDBOX_SUSPICIOUS_PATTERNS
     )
-    seccomp_syscalls = seccomp_allowlist if seccomp_allowlist is not None else ()
 
     blocked_repr: str = repr(modules)
     allowed_imports_repr: str = repr(allowed)
     builtins_repr: str = repr(builtins_)
     patterns_repr: str = repr(patterns)
-    seccomp_install_repr: str = repr(install_seccomp)
-    seccomp_allowlist_repr: str = repr(tuple(sorted(seccomp_syscalls)))
 
     return textwrap.dedent(f"""\
         # ===================================================================
@@ -136,97 +131,6 @@ def generate_harness_script(
         )
         if not all(ch in _safe_chars for ch in _target):
             _sys.exit("sandbox-harness: illegal characters in filename")
-
-        # ---------------------------------------------------------------
-        # Phase 0.5 - Install seccomp filter after namespace setup
-        # ---------------------------------------------------------------
-        _INSTALL_SECCOMP: bool = {seccomp_install_repr}
-        _SECCOMP_ALLOWLIST: tuple[int, ...] = {seccomp_allowlist_repr}
-
-        if _INSTALL_SECCOMP:
-            import ctypes as _ctypes
-
-            _PR_SET_SECCOMP = 22
-            _SECCOMP_SET_MODE_FILTER = 1
-            _SECCOMP_RET_KILL_PROCESS = 0x80000000
-            _SECCOMP_RET_ALLOW = 0x7FFF0000
-            _BPF_LD = 0x00
-            _BPF_JMP = 0x05
-            _BPF_RET = 0x06
-            _BPF_W = 0x00
-            _BPF_ABS = 0x20
-            _BPF_JEQ = 0x10
-            _BPF_K = 0x00
-            _AUDIT_ARCH_X86_64 = 0xC000003E
-
-            class _SockFilter(_ctypes.Structure):
-                _fields_ = [
-                    ("code", _ctypes.c_ushort),
-                    ("jt", _ctypes.c_ubyte),
-                    ("jf", _ctypes.c_ubyte),
-                    ("k", _ctypes.c_uint),
-                ]
-
-            class _SockFprog(_ctypes.Structure):
-                _fields_ = [
-                    ("len", _ctypes.c_ushort),
-                    ("filter", _ctypes.POINTER(_SockFilter)),
-                ]
-
-            def _stmt(_code: int, _k: int) -> tuple[int, int, int, int]:
-                return (_code, 0, 0, _k)
-
-            def _jump(
-                _code: int,
-                _k: int,
-                _jt: int,
-                _jf: int,
-            ) -> tuple[int, int, int, int]:
-                return (_code, _jt, _jf, _k)
-
-            _ins: list[tuple[int, int, int, int]] = []
-            _ins.append(_stmt(_BPF_LD | _BPF_W | _BPF_ABS, 4))
-            _ins.append(
-                _jump(
-                    _BPF_JMP | _BPF_JEQ | _BPF_K,
-                    _AUDIT_ARCH_X86_64,
-                    0,
-                    1,
-                )
-            )
-            _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_KILL_PROCESS))
-            _ins.append(_stmt(_BPF_LD | _BPF_W | _BPF_ABS, 0))
-
-            _sorted = sorted(_SECCOMP_ALLOWLIST)
-            _remaining = len(_sorted)
-            for _nr in _sorted:
-                _remaining -= 1
-                _ins.append(
-                    _jump(
-                        _BPF_JMP | _BPF_JEQ | _BPF_K,
-                        int(_nr),
-                        _remaining,
-                        0,
-                    )
-                )
-
-            _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_KILL_PROCESS))
-            _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_ALLOW))
-
-            _libc = _ctypes.CDLL("libc.so.6", use_errno=True)
-            _arr_t = _SockFilter * len(_ins)
-            _arr = _arr_t(*(_SockFilter(_c, _jt, _jf, _k) for _c, _jt, _jf, _k in _ins))
-            _prog = _SockFprog(len(_ins), _arr)
-            _rc = _libc.prctl(
-                _PR_SET_SECCOMP,
-                _SECCOMP_SET_MODE_FILTER,
-                _ctypes.byref(_prog),
-                0,
-                0,
-            )
-            if _rc != 0:
-                _err = _ctypes.get_errno()
-                raise OSError(_err, "prctl(PR_SET_SECCOMP) failed in harness")
 
         # ---------------------------------------------------------------
         # Phase 1 — Scrub sys.modules of blocked modules
@@ -311,6 +215,65 @@ def generate_harness_script(
                     _restricted_builtins[_name] = getattr(_builtins_mod, _name)
             # Re-add __name__ and __doc__ for well-behaved code
             _restricted_builtins["__name__"] = "__main__"
+
+            # Inject safe attribute access functions
+            _DANGEROUS_ATTR_NAMES = frozenset(
+                {{
+                    "__subclasses__",
+                    "__bases__",
+                    "__mro__",
+                    "__globals__",
+                    "__builtins__",
+                    "__loader__",
+                    "__spec__",
+                    "__code__",
+                    "__closure__",
+                    "__func__",
+                    "__self__",
+                    "__wrapped__",
+                    "__getattribute__",
+                    "__reduce__",
+                    "__reduce_ex__",
+                    "__traceback__",
+                    "tb_frame",
+                    "f_globals",
+                    "f_locals",
+                    "f_code",
+                    "f_builtins",
+                    "f_back",
+                    "gi_frame",
+                    "gi_code",
+                    "cr_frame",
+                    "cr_code",
+                    "ag_frame",
+                    "ag_code",
+                }}
+            )
+
+            def _check_attr_name(name: str) -> None:
+                if name in _DANGEROUS_ATTR_NAMES:
+                    raise RuntimeError(f"Access to attribute '{{name}}' is blocked in sandbox mode")
+
+            def _safe_getattr(obj: object, name: str, *default: object) -> object:
+                _check_attr_name(name)
+                return getattr(obj, name, *default)
+
+            def _safe_setattr(obj: object, name: str, value: object) -> None:
+                _check_attr_name(name)
+                setattr(obj, name, value)
+
+            def _safe_delattr(obj: object, name: str) -> None:
+                _check_attr_name(name)
+                delattr(obj, name)
+
+            def _safe_hasattr(obj: object, name: str) -> bool:
+                _check_attr_name(name)
+                return hasattr(obj, name)
+
+            _restricted_builtins["getattr"] = _safe_getattr
+            _restricted_builtins["setattr"] = _safe_setattr
+            _restricted_builtins["delattr"] = _safe_delattr
+            _restricted_builtins["hasattr"] = _safe_hasattr
         else:
             for _name in dir(_builtins_mod):
                 _restricted_builtins[_name] = getattr(_builtins_mod, _name)
@@ -465,7 +428,11 @@ def generate_harness_script(
                                     raise RuntimeError(f"sandbox-harness: blocked write to '{{_path}}' outside jail")
                             else:
                                 # Read access validation
-                                if not (_path.startswith(_LOCAL_JAIL_DIR) or _path.startswith(_LOCAL_PY_PREFIX) or _path.startswith(_LOCAL_PY_BASE_PREFIX) or _LOCAL_WIN_DIR.lower() in _path.lower()):
+                                _path_low = _path.lower()
+                                _is_jail = _path_low.startswith(_LOCAL_JAIL_DIR.lower())
+                                _is_stdlib = (_path_low.startswith(_LOCAL_PY_PREFIX.lower()) or _path_low.startswith(_LOCAL_PY_BASE_PREFIX.lower()))
+                                _is_win = _LOCAL_WIN_DIR.lower() in _path_low
+                                if not (_is_jail or _is_stdlib or _is_win):
                                     raise RuntimeError(f"sandbox-harness: blocked read access to unauthorized path '{{_path}}'")
                         except Exception as e:
                             if "sandbox-harness" in str(e):
@@ -501,8 +468,3 @@ def generate_harness_script(
 
 
 HARNESS_FILENAME: Final[str] = "_sandbox_harness.py"
-
-__all__ = [
-    "HARNESS_FILENAME",
-    "generate_harness_script",
-]

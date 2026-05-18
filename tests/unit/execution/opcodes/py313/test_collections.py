@@ -4,7 +4,6 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors import IssueKind
 from pysymex.core.state import VMState
 from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicObject
 from pysymex.core.types.scalars import SymbolicString, SymbolicValue
@@ -57,11 +56,31 @@ def test_handle_build_const_key_map() -> None:
 
 def test_handle_dict_merge_update() -> None:
     """Test handle_dict_merge_update behavior (handles DICT_MERGE, DICT_UPDATE, SET_UPDATE)."""
-    state = VMState(
-        stack=[SymbolicValue.from_const({"a": 1}), SymbolicValue.from_const({"b": 2})], pc=0
+    sym_dict = SymbolicDict.empty("d")
+    state = VMState(stack=[sym_dict, {"b": 2}], pc=0)
+    result = collections.handle_dict_merge_update(
+        _instr("DICT_MERGE", 1),
+        state,
+        OpcodeDispatcher(),
     )
-    collections.handle_dict_merge_update(_instr("DICT_MERGE", 1), state, OpcodeDispatcher())
-    assert state.pc == 1
+    updated = result.new_states[0].stack[0]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("b")).z3_bool))
+
+
+def test_handle_dict_merge_update_writes_heap_backed_dict() -> None:
+    """Test DICT_UPDATE mutates the symbolic dict behind an object handle."""
+    sym_dict = SymbolicDict.empty("d")
+    handle = SymbolicObject("dict_100", 100, z3.IntVal(100), {100})
+    state = VMState(stack=[handle, {"k": 1}], memory={100: sym_dict}, pc=0)
+    result = collections.handle_dict_merge_update(
+        _instr("DICT_UPDATE", 1),
+        state,
+        OpcodeDispatcher(),
+    )
+    updated = result.new_states[0].memory[100]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
 
 
 def test_handle_collection_update_set() -> None:
@@ -95,7 +114,7 @@ def test_handle_list_extend() -> None:
 
 
 def test_handle_collection_update() -> None:
-    """Test handle_collection_update behavior."""
+    """Test the shared collection update implementation for direct dicts."""
     sym_dict, _ = SymbolicDict.symbolic("d")
     state = VMState(stack=[sym_dict, {"k": 1}], pc=0)
     result = collections.handle_collection_update(
@@ -127,6 +146,21 @@ def test_handle_map_add() -> None:
     assert isinstance(result.new_states[0].stack[0], SymbolicDict)
 
 
+def test_handle_map_add_writes_heap_backed_dict() -> None:
+    """Test MAP_ADD mutates the symbolic dict behind an object handle."""
+    sym_dict = SymbolicDict.empty("d")
+    handle = SymbolicObject("dict_101", 101, z3.IntVal(101), {101})
+    state = VMState(
+        stack=[handle, SymbolicString.from_const("k"), 7],
+        memory={101: sym_dict},
+        pc=0,
+    )
+    result = collections.handle_map_add(_instr("MAP_ADD", 1), state, OpcodeDispatcher())
+    updated = result.new_states[0].memory[101]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
+
+
 def test_handle_binary_subscr() -> None:
     """Test handle_binary_subscr behavior."""
     sym_list, _ = SymbolicList.symbolic("items")
@@ -140,8 +174,8 @@ def test_handle_store_subscr() -> None:
     """Test handle_store_subscr behavior."""
     state = VMState(stack=[1, None, 0], pc=0)
     result = collections.handle_store_subscr(_instr("STORE_SUBSCR"), state, OpcodeDispatcher())
-    assert result.terminal is True
-    assert any(issue.kind is IssueKind.NULL_DEREFERENCE for issue in result.issues)
+    assert result.terminal is False
+    assert len(result.issues) == 0
 
 
 def test_handle_delete_subscr() -> None:

@@ -63,10 +63,14 @@ import argparse
 import collections
 import json
 import sys
-from collections.abc import Callable, Generator, Iterator
-from typing import TypeGuard
+from collections.abc import Callable, Generator, Iterator, Mapping
 
-FilterFn = Callable[[dict[str, object]], bool]
+from pysymex.config import is_object_dict, is_object_list
+
+_is_object_dict = is_object_dict
+_is_object_list = is_object_list
+
+FilterFn = Callable[[Mapping[str, object]], bool]
 """A predicate that accepts a parsed event dict and returns True to keep it."""
 
 
@@ -95,7 +99,7 @@ class FilterPipeline:
         """Append *fn* to the filter chain."""
         self._filters.append(fn)
 
-    def matches(self, event: dict[str, object]) -> bool:
+    def matches(self, event: Mapping[str, object]) -> bool:
         """Return ``True`` iff all registered filters accept *event*."""
         return all(f(event) for f in self._filters)
 
@@ -184,7 +188,7 @@ def _constraints_contain(constraints: list[object] | None, substring: str) -> bo
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
-    if not _is_object_dict(value):
+    if not is_object_dict(value):
         return None
     normalized: dict[str, object] = {}
     for key_obj, value_obj in value.items():
@@ -193,7 +197,7 @@ def _as_dict(value: object) -> dict[str, object] | None:
 
 
 def _as_list(value: object) -> list[object] | None:
-    if not _is_object_list(value):
+    if not is_object_list(value):
         return None
     return value
 
@@ -210,22 +214,12 @@ def _as_float(value: object) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _has_stack_pop(event: dict[str, object]) -> bool:
+def _has_stack_pop(event: Mapping[str, object]) -> bool:
     stack_diff = _as_dict(event.get("stack_diff"))
     if stack_diff is None:
         return False
     popped = _as_int(stack_diff.get("popped"))
     return popped is not None and popped > 0
-
-
-def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
-    """Return True when *value* is a dictionary."""
-    return isinstance(value, dict)
-
-
-def _is_object_list(value: object) -> TypeGuard[list[object]]:
-    """Return True when *value* is a list."""
-    return isinstance(value, list)
 
 
 def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
@@ -482,7 +476,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     if args.touches_var:
         tv: str = args.touches_var
 
-        def _touches_var(e: dict[str, object], needle: str = tv) -> bool:
+        def _touches_var(e: Mapping[str, object], needle: str = tv) -> bool:
             """Touches var."""
 
             for item in _as_list(e.get("stack")) or []:
@@ -507,7 +501,7 @@ def build_pipeline(args: argparse.Namespace) -> FilterPipeline:
     if args.constraint_contains:
         cc: str = args.constraint_contains
 
-        def _any_constraint(e: dict[str, object], needle: str = cc) -> bool:
+        def _any_constraint(e: Mapping[str, object], needle: str = cc) -> bool:
             """Any constraint."""
 
             ca = _as_dict(e.get("constraint_added"))
@@ -1059,7 +1053,6 @@ To reconstruct full symbolic state at any `step` event:
    same `path_id`.
 2. Replay all `step` events from `keyframe.seq + 1` to `target_step.seq` where
    `path_id` matches, applying each `stack_diff`, `var_diff`, and `mem_diff`.
-
 
 **Path tree reconstruction:**
 Each `keyframe` with `trigger=fork` contains `parent_path_id` and

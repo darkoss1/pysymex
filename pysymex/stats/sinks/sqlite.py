@@ -30,6 +30,9 @@ class SQLiteSink(StatsSink):
     def __init__(self, db_path: str = "~/.pysymex/stats.db") -> None:
         self.db_path = Path(db_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        from pysymex.pathing import ensure_pysymex_gitignore
+
+        ensure_pysymex_gitignore(self.db_path.parent)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._setup_schema()

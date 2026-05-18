@@ -8,19 +8,19 @@ from pathlib import Path
 from pysymex.tracing.analyzer import (
     FilterPipeline,
     SummaryAccumulator,
-    _as_dict,
-    _as_float,
-    _as_int,
-    _as_list,
-    _as_str,
-    _constraints_contain,
-    _format_fields,
-    _format_pretty,
-    _has_stack_pop,
-    _is_object_dict,
-    _is_object_list,
-    _list_contains,
-    _str_contains,
+    _as_dict,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _as_float,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _as_int,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _as_list,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _as_str,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _constraints_contain,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _format_fields,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _format_pretty,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _has_stack_pop,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_object_dict,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_object_list,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _list_contains,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _str_contains,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
     build_parser,
     build_pipeline,
     stream_events,

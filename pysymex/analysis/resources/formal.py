@@ -27,14 +27,19 @@ Provides machine-checkable quality gates:
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
 from types import ModuleType
 
 import z3
 
-from pysymex.analysis.utils.math import wilson_upper_95
+from pysymex.analysis.solver.formal import (
+    DifferentialResult,
+    FunctionChecklistItem,
+    MutationResult,
+    build_domain_done_gate_report,
+    build_function_checklist,
+)
+from pysymex.utils.math import wilson_upper_95
 
 from pysymex.analysis.resources.analysis import LockSafetyAnalyzer, ResourceLeakDetector
 from pysymex.analysis.resources.lifecycle import (
@@ -42,33 +47,6 @@ from pysymex.analysis.resources.lifecycle import (
     LockResourceChecker,
     ResourceIssueKind,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class FunctionChecklistItem:
-    module: str
-    qualname: str
-    strict_target: bool
-    status: str
-    note: str
-
-
-@dataclass(frozen=True, slots=True)
-class DifferentialResult:
-    name: str
-    samples: int
-    mismatches: int
-    mismatch_rate: float
-    mismatch_upper_95: float
-
-
-@dataclass(frozen=True, slots=True)
-class MutationResult:
-    name: str
-    total_mutants: int
-    killed_mutants: int
-    mutation_score: float
-
 
 STRICT_TARGETS = {
     "ResourceLeakDetector.detect",
@@ -106,56 +84,9 @@ def _resource_modules() -> list[ModuleType]:
 
 
 def function_checklist() -> list[FunctionChecklistItem]:
-    items: list[FunctionChecklistItem] = []
-    seen: set[tuple[str, str]] = set()
-    for mod in _resource_modules():
-        mod_name = mod.__name__.split(".")[-1]
-
-        for name, _ in inspect.getmembers(mod, inspect.isfunction):
-            if name.startswith("__"):
-                continue
-            key = (mod_name, name)
-            if key in seen:
-                continue
-            seen.add(key)
-            strict = name in STRICT_TARGETS
-            items.append(
-                FunctionChecklistItem(
-                    module=mod_name,
-                    qualname=name,
-                    strict_target=strict,
-                    status="strict-tested" if strict else "inventory-reviewed",
-                    note="module-level function inventoried",
-                )
-            )
-
-        for cls_name, cls in inspect.getmembers(mod, inspect.isclass):
-            if cls.__module__ != mod.__name__:
-                continue
-            for meth_name, _meth in inspect.getmembers(cls, inspect.isfunction):
-                if meth_name.startswith("__"):
-                    continue
-                qualname = f"{cls_name}.{meth_name}"
-                key = (mod_name, qualname)
-                if key in seen:
-                    continue
-                seen.add(key)
-                strict = qualname in STRICT_TARGETS
-                items.append(
-                    FunctionChecklistItem(
-                        module=mod_name,
-                        qualname=qualname,
-                        strict_target=strict,
-                        status="strict-tested" if strict else "inventory-reviewed",
-                        note=(
-                            "critical behavior has strict differential/mutation checks"
-                            if strict
-                            else "function included in full checklist inventory"
-                        ),
-                    )
-                )
-
-    return sorted(items, key=lambda i: (i.module, i.qualname))
+    return build_function_checklist(
+        _resource_modules(), STRICT_TARGETS, include_module_functions=True
+    )
 
 
 def _count_kind(warnings: Sequence[object], kind: str) -> int:
@@ -338,25 +269,13 @@ def build_done_gate_report() -> dict[str, object]:
     checklist = function_checklist()
     differential = run_differential_validation()
     mutations = run_mutation_robustness()
-
-    strict_targets = [i for i in checklist if i.strict_target]
-    strict_covered = [i for i in strict_targets if i.status == "strict-tested"]
-
-    criteria = {
-        "inventory_complete": len(checklist) > 0,
-        "strict_targets_all_covered": len(strict_targets) == len(strict_covered),
-        "differential_upper_bound_pass": all(r.mismatch_upper_95 <= 0.5 for r in differential)
-        and all(r.mismatches == 0 for r in differential),
-        "mutation_floor_pass": all(m.mutation_score >= 0.66 for m in mutations),
-    }
-    return {
-        "function_checklist": [asdict(i) for i in checklist],
-        "differential_validation": [asdict(r) for r in differential],
-        "mutation_robustness": [asdict(m) for m in mutations],
-        "criteria": criteria,
-        "summary": {
-            "strict_targets": len(strict_targets),
-            "strict_targets_covered": len(strict_covered),
-            "done_gate_passed": all(criteria.values()),
-        },
-    }
+    differential_pass = all(result.mismatch_upper_95 <= 0.5 for result in differential) and all(
+        result.mismatches == 0 for result in differential
+    )
+    return build_domain_done_gate_report(
+        checklist,
+        differential,
+        mutations,
+        differential_key="differential_upper_bound_pass",
+        differential_pass=differential_pass,
+    )

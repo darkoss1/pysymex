@@ -34,22 +34,16 @@ import re
 from dataclasses import dataclass
 from enum import Enum, auto
 from types import CodeType
-from typing import TypeGuard
 
+from pysymex._typing import is_list_of_objects, is_tuple_of_objects
 from pysymex._compat import get_starts_line
+from pysymex.analysis.exceptions.analyzer import analyze_nested_code_objects
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 logger = logging.getLogger(__name__)
 
-
-def _is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
-    """Type guard to narrow a value to tuple[object, ...]."""
-    return isinstance(value, tuple)
-
-
-def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """Type guard to narrow a value to list[object]."""
-    return isinstance(value, list)
+_is_tuple_of_objects = is_tuple_of_objects
+_is_list_of_objects = is_list_of_objects
 
 
 class StringWarningKind(Enum):
@@ -285,9 +279,7 @@ class FStringAnalyzer:
                 for value in node.values:
                     if isinstance(value, ast.FormattedValue):
                         if value.format_spec and isinstance(value.format_spec, ast.JoinedStr):
-                            for part in value.format_spec.values:
-                                if isinstance(part, ast.FormattedValue):
-                                    pass
+                            self.generic_visit(value.format_spec)
                 self.generic_visit(node)
 
         visitor = FStringVisitor()
@@ -561,20 +553,8 @@ class StringAnalyzer:
             warnings = self.analyze_source(source, file_path)
             code = compile(source, file_path, "exec")
             warnings.extend(self.analyze_function(code, file_path))
-            self._analyze_nested(code, file_path, warnings)
+            analyze_nested_code_objects(code, file_path, warnings, self.analyze_function)
             return warnings
         except (OSError, SyntaxError):
             logger.debug("String analysis failed for file %s", file_path, exc_info=True)
             return []
-
-    def _analyze_nested(
-        self,
-        code: CodeType,
-        file_path: str,
-        warnings: list[StringWarning],
-    ) -> None:
-        """Analyze nested functions."""
-        for const in code.co_consts:
-            if hasattr(const, "co_code"):
-                warnings.extend(self.analyze_function(const, file_path))
-                self._analyze_nested(const, file_path, warnings)

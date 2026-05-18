@@ -30,13 +30,14 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import (
     cast,
 )
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.contracts.quantifiers.types import (
     BoundSpec,
     Quantifier,
@@ -44,6 +45,12 @@ from pysymex.contracts.quantifiers.types import (
     QuantifierVar,
 )
 from pysymex.core.memory.addressing import next_address
+
+_QUANTIFIER_PATTERN = re.compile(
+    r"(forall|exists|exists!)\s*\(\s*" r"(\w+)\s*,\s*" r"([^,]+)\s*,\s*" r"(.+)\s*\)$"
+)
+_RANGE_PATTERN = re.compile(r"(\d+|\w+)\s*(<=?)\s*(\w+)\s*(<|<=)\s*(\d+|\w+|\w+\([^)]+\))")
+_IN_PATTERN = re.compile(r"(\w+)\s+in\s+(\w+)")
 
 
 class QuantifierParser:
@@ -57,19 +64,13 @@ class QuantifierParser:
         exists!(var, range, condition)   # Unique existence
     """
 
-    QUANTIFIER_PATTERN = re.compile(
-        r"(forall|exists|exists!)\s*\(\s*" r"(\w+)\s*,\s*" r"([^,]+)\s*,\s*" r"(.+)\s*\)$"
-    )
-    RANGE_PATTERN = re.compile(r"(\d+|\w+)\s*(<=?)\s*(\w+)\s*(<|<=)\s*(\d+|\w+|\w+\([^)]+\))")
-    IN_PATTERN = re.compile(r"(\w+)\s+in\s+(\w+)")
-
     def __init__(self, context: dict[str, z3.ExprRef] | None = None) -> None:
         self.context = context or {}
 
     def parse(self, text: str) -> Quantifier | None:
         """Parse a quantifier expression."""
         text = text.strip()
-        match = self.QUANTIFIER_PATTERN.match(text)
+        match = _QUANTIFIER_PATTERN.match(text)
         if not match:
             return None
         kind_str, var_name, range_str, body_str = match.groups()
@@ -95,7 +96,7 @@ class QuantifierParser:
     def _parse_bounds(self, range_str: str, var_name: str) -> BoundSpec:
         """Parse range/bounds specification."""
         range_str = range_str.strip()
-        range_match = self.RANGE_PATTERN.match(range_str)
+        range_match = _RANGE_PATTERN.match(range_str)
         if range_match:
             lower_val, lower_op, _matched_var, upper_op, upper_val = range_match.groups()
             return BoundSpec(
@@ -104,7 +105,7 @@ class QuantifierParser:
                 lower_inclusive=(lower_op == "<="),
                 upper_inclusive=(upper_op == "<="),
             )
-        in_match = self.IN_PATTERN.match(range_str)
+        in_match = _IN_PATTERN.match(range_str)
         if in_match:
             _matched_var, collection = in_match.groups()
             return BoundSpec(in_collection=self.context.get(collection))
@@ -143,7 +144,7 @@ class QuantifierParser:
 
 def parse_condition_to_z3(
     condition: str,
-    context: dict[str, z3.ExprRef],
+    context: Mapping[str, z3.ExprRef],
 ) -> z3.BoolRef:
     """
     Parse a Python-like condition to Z3.
@@ -167,7 +168,7 @@ def parse_condition_to_z3(
 class ConditionTranslator(ast.NodeVisitor):
     """Translates a Python AST condition node to an equivalent Z3 expression."""
 
-    def __init__(self, context: dict[str, z3.ExprRef]) -> None:
+    def __init__(self, context: Mapping[str, z3.ExprRef]) -> None:
         self.context = context
 
     def _visit_expr(self, node: ast.AST) -> z3.ExprRef:
@@ -420,7 +421,7 @@ class QuantifierInstantiator:
     def instantiate_bounded(
         self,
         quantifier: Quantifier,
-        solver: z3.Solver,
+        solver: IncrementalSolver | None = None,
     ) -> list[z3.BoolRef]:
         """
         Instantiate a bounded quantifier by enumeration.
@@ -428,12 +429,13 @@ class QuantifierInstantiator:
         """
         if quantifier.kind not in (QuantifierKind.FORALL, QuantifierKind.EXISTS):
             return []
+        active_solver = solver or IncrementalSolver(timeout_ms=1000)
         instances: list[z3.BoolRef] = []
         for var, bound in zip(quantifier.variables, quantifier.bounds, strict=False):
             if bound.lower is not None and bound.upper is not None:
                 try:
-                    lower = self._get_concrete_value(bound.lower, solver)
-                    upper = self._get_concrete_value(bound.upper, solver)
+                    lower = self._get_concrete_value(bound.lower, active_solver)
+                    upper = self._get_concrete_value(bound.upper, active_solver)
                     if lower is None or upper is None:
                         continue
                     range_size = upper - lower
@@ -452,7 +454,7 @@ class QuantifierInstantiator:
     def _get_concrete_value(
         self,
         expr: z3.ExprRef,
-        solver: z3.Solver,
+        solver: IncrementalSolver,
     ) -> int | None:
         """Try to get concrete value for expression."""
         if z3.is_int_value(expr):
@@ -460,9 +462,9 @@ class QuantifierInstantiator:
         solver.push()
         v = z3.Int("__bound")
         solver.add(v == expr)
-        if solver.check() == z3.sat:
-            model = solver.model()
-            result = model.eval(v)
+        check_result = solver.check()
+        if check_result.is_sat and check_result.model is not None:
+            result = check_result.model.eval(v)
             solver.pop()
             if z3.is_int_value(result):
                 return result.as_long()
@@ -519,18 +521,17 @@ class QuantifierVerifier:
         Returns (valid, counterexample or None).
         """
         assert quantifier.kind == QuantifierKind.FORALL
-        solver = z3.Solver()
-        solver.set("timeout", self.timeout_ms)
+        solver = IncrementalSolver(timeout_ms=self.timeout_ms)
         if context_constraints:
             for c in context_constraints:
                 solver.add(c)
         z3_expr = quantifier.to_z3()
         solver.add(z3.Not(z3_expr))
-        result = solver.check()
-        if result == z3.unsat:
+        result = solver.check(need_model=True)
+        if result.is_unsat:
             return True, None
-        elif result == z3.sat:
-            model = solver.model()
+        elif result.is_sat and result.model is not None:
+            model = result.model
             counterexample: dict[str, object] = {str(d.name()): model[d] for d in model.decls()}
             return False, counterexample
         else:
@@ -546,19 +547,18 @@ class QuantifierVerifier:
         Returns (satisfiable, witness or None).
         """
         assert quantifier.kind == QuantifierKind.EXISTS
-        solver = z3.Solver()
-        solver.set("timeout", self.timeout_ms)
+        solver = IncrementalSolver(timeout_ms=self.timeout_ms)
         if context_constraints:
             for c in context_constraints:
                 solver.add(c)
         z3_expr = quantifier.to_z3()
         solver.add(z3_expr)
-        result = solver.check()
-        if result == z3.sat:
-            model = solver.model()
+        result = solver.check(need_model=True)
+        if result.is_sat and result.model is not None:
+            model = result.model
             witness: dict[str, object] = {str(d.name()): model[d] for d in model.decls()}
             return True, witness
-        elif result == z3.unsat:
+        elif result.is_unsat:
             return False, None
         else:
             return None, None
@@ -661,17 +661,3 @@ def replace_quantifiers_with_z3(
         return z3_parts[0]
     else:
         return z3.And(*z3_parts)
-
-
-__all__ = [
-    "ConditionTranslator",
-    "QuantifierInstantiator",
-    "QuantifierParser",
-    "QuantifierVerifier",
-    "exists",
-    "exists_unique",
-    "extract_quantifiers",
-    "forall",
-    "parse_condition_to_z3",
-    "replace_quantifiers_with_z3",
-]

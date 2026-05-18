@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, cast
 import z3
 
 if TYPE_CHECKING:
-    from pysymex.core.types.scalars import AnySymbolic
+    from pysymex.core.types import AnySymbolic
 
 
 class FloatPrecision(Enum):
@@ -82,7 +82,7 @@ class FloatConfig:
         return modes.get(self.rounding_mode, z3.RNE())
 
 
-class SymbolicFloat:
+class AdvancedSymbolicFloat:
     """A symbolic floating-point value using Z3 FP theory.
     Supports:
     - Arithmetic operations (+, -, *, /)
@@ -105,13 +105,13 @@ class SymbolicFloat:
         self._rm = self.config.get_rounding_mode()
         if z3_expr is not None:
             self._expr = z3_expr
-            self.name = name or f"fp_{SymbolicFloat._counter}"
+            self.name = name or f"fp_{AdvancedSymbolicFloat._counter}"
         elif value is not None:
             self._expr = z3.FPVal(value, self._sort)
             self.name = name or f"fp_const_{value}"
         else:
-            SymbolicFloat._counter += 1
-            self.name = name or f"fp_{SymbolicFloat._counter}"
+            AdvancedSymbolicFloat._counter += 1
+            self.name = name or f"fp_{AdvancedSymbolicFloat._counter}"
             self._expr = z3.FP(self.name, self._sort)
 
     @property
@@ -119,111 +119,111 @@ class SymbolicFloat:
         """Get the underlying Z3 expression."""
         return self._expr
 
-    def __add__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __add__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_expr = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpAdd(self._rm, self._expr, other_expr),
             config=self.config,
         )
 
-    def __radd__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __radd__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         return self.__add__(other)
 
-    def __sub__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __sub__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_expr = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpSub(self._rm, self._expr, other_expr),
             config=self.config,
         )
 
-    def __rsub__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __rsub__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_fp = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpSub(self._rm, other_fp, self._expr),
             config=self.config,
         )
 
-    def __mul__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __mul__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_expr = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpMul(self._rm, self._expr, other_expr),
             config=self.config,
         )
 
-    def __rmul__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __rmul__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         return self.__mul__(other)
 
-    def __truediv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __truediv__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_expr = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpDiv(self._rm, self._expr, other_expr),
             config=self.config,
         )
 
-    def __rtruediv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __rtruediv__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         """Rtruediv."""
         other_fp = self._to_fp(other)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpDiv(self._rm, other_fp, self._expr),
             config=self.config,
         )
 
-    def __floordiv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __floordiv__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_expr = self._to_fp(other)
 
         div_expr = z3.fpDiv(self._rm, self._expr, other_expr)
 
         floored = z3.fpRoundToIntegral(z3.RTN(), div_expr)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=floored,
             config=self.config,
         )
 
-    def __rfloordiv__(self, other: SymbolicFloat | float) -> SymbolicFloat:
+    def __rfloordiv__(self, other: AdvancedSymbolicFloat | float) -> AdvancedSymbolicFloat:
         other_fp = self._to_fp(other)
         div_expr = z3.fpDiv(self._rm, other_fp, self._expr)
         floored = z3.fpRoundToIntegral(z3.RTN(), div_expr)
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=floored,
             config=self.config,
         )
 
-    def __neg__(self) -> SymbolicFloat:
-        return SymbolicFloat(
+    def __neg__(self) -> AdvancedSymbolicFloat:
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpNeg(self._expr),
             config=self.config,
         )
 
-    def __abs__(self) -> SymbolicFloat:
-        return SymbolicFloat(
+    def __abs__(self) -> AdvancedSymbolicFloat:
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpAbs(self._expr),
             config=self.config,
         )
 
-    def __lt__(self, other: SymbolicFloat | float) -> z3.BoolRef:
+    def __lt__(self, other: AdvancedSymbolicFloat | float) -> z3.BoolRef:
         other_expr = self._to_fp(other)
         return z3.fpLT(self._expr, other_expr)
 
-    def __le__(self, other: SymbolicFloat | float) -> z3.BoolRef:
+    def __le__(self, other: AdvancedSymbolicFloat | float) -> z3.BoolRef:
         other_expr = self._to_fp(other)
         return z3.fpLEQ(self._expr, other_expr)
 
-    def __gt__(self, other: SymbolicFloat | float) -> z3.BoolRef:
+    def __gt__(self, other: AdvancedSymbolicFloat | float) -> z3.BoolRef:
         other_expr = self._to_fp(other)
         return z3.fpGT(self._expr, other_expr)
 
-    def __ge__(self, other: SymbolicFloat | float) -> z3.BoolRef:
+    def __ge__(self, other: AdvancedSymbolicFloat | float) -> z3.BoolRef:
         other_expr = self._to_fp(other)
         return z3.fpGEQ(self._expr, other_expr)
 
     def __eq__(self, other: object) -> z3.BoolRef:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
-        if isinstance(other, (SymbolicFloat, float, int)):
+        if isinstance(other, (AdvancedSymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.fpEQ(self._expr, other_expr)
         return NotImplemented
 
     def __ne__(self, other: object) -> z3.BoolRef:  # type: ignore[override]  # Symbolic types return symbolic booleans, not Python bool
-        if isinstance(other, (SymbolicFloat, float, int)):
+        if isinstance(other, (AdvancedSymbolicFloat, float, int)):
             other_expr = self._to_fp(other)
             return z3.Not(z3.fpEQ(self._expr, other_expr))
         return NotImplemented
@@ -272,30 +272,30 @@ class SymbolicFloat:
         """Check if value is negative."""
         return z3.fpIsNegative(self._expr)
 
-    def sqrt(self) -> SymbolicFloat:
+    def sqrt(self) -> AdvancedSymbolicFloat:
         """Square root."""
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpSqrt(self._rm, self._expr),
             config=self.config,
         )
 
-    def fma(self, mul: SymbolicFloat, add: SymbolicFloat) -> SymbolicFloat:
+    def fma(self, mul: AdvancedSymbolicFloat, add: AdvancedSymbolicFloat) -> AdvancedSymbolicFloat:
         """Fused multiply-add: self * mul + add."""
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpFMA(self._rm, self._expr, mul._expr, add._expr),
             config=self.config,
         )
 
-    def min(self, other: SymbolicFloat) -> SymbolicFloat:
+    def min(self, other: AdvancedSymbolicFloat) -> AdvancedSymbolicFloat:
         """Minimum of two values."""
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpMin(self._expr, other._expr),
             config=self.config,
         )
 
-    def max(self, other: SymbolicFloat) -> SymbolicFloat:
+    def max(self, other: AdvancedSymbolicFloat) -> AdvancedSymbolicFloat:
         """Maximum of two values."""
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpMax(self._expr, other._expr),
             config=self.config,
         )
@@ -310,21 +310,21 @@ class SymbolicFloat:
         return self._expr.hash()
 
     def conditional_merge(
-        self, other: SymbolicFloat | float | int, condition: z3.BoolRef
+        self, other: AdvancedSymbolicFloat | float | int, condition: z3.BoolRef
     ) -> AnySymbolic:
         """Merge with another float based on a condition."""
         other_fp = self._to_fp(other)
         return cast(
             "AnySymbolic",
-            SymbolicFloat(
+            AdvancedSymbolicFloat(
                 z3_expr=z3.If(condition, self._expr, other_fp),
                 config=self.config,
             ),
         )
 
-    def _to_fp(self, value: SymbolicFloat | float | int) -> z3.FPRef:
+    def _to_fp(self, value: AdvancedSymbolicFloat | float | int) -> z3.FPRef:
         """Convert value to FP expression in this instance's sort."""
-        if isinstance(value, SymbolicFloat):
+        if isinstance(value, AdvancedSymbolicFloat):
             if value._sort == self._sort:
                 return value._expr
 
@@ -332,7 +332,7 @@ class SymbolicFloat:
         return z3.FPVal(float(value), self._sort)
 
     def __repr__(self) -> str:
-        return f"SymbolicFloat({self.name})"
+        return f"AdvancedSymbolicFloat({self.name})"
 
 
 class FloatAnalyzer:
@@ -345,8 +345,8 @@ class FloatAnalyzer:
     def check_operation(
         self,
         op: str,
-        result: SymbolicFloat,
-        operands: list[SymbolicFloat],
+        result: AdvancedSymbolicFloat,
+        operands: list[AdvancedSymbolicFloat],
         constraints: list[z3.BoolRef],
     ) -> list[dict[str, object]]:
         """Check a floating-point operation for issues."""
@@ -398,8 +398,8 @@ class FloatAnalyzer:
 
     def check_comparison(
         self,
-        left: SymbolicFloat,
-        right: SymbolicFloat,
+        left: AdvancedSymbolicFloat,
+        right: AdvancedSymbolicFloat,
         constraints: list[z3.BoolRef],
     ) -> list[dict[str, object]]:
         """Check for comparison issues (NaN comparisons are always false)."""
@@ -435,8 +435,8 @@ class AccuracyAnalyzer:
 
     def ulp_difference(
         self,
-        computed: SymbolicFloat,
-        exact: SymbolicFloat,
+        computed: AdvancedSymbolicFloat,
+        exact: AdvancedSymbolicFloat,
     ) -> z3.FPRef:
         """Compute absolute floating-point difference between two values.
 
@@ -451,12 +451,12 @@ class AccuracyAnalyzer:
 
     def relative_error(
         self,
-        computed: SymbolicFloat,
-        exact: SymbolicFloat,
-    ) -> SymbolicFloat:
+        computed: AdvancedSymbolicFloat,
+        exact: AdvancedSymbolicFloat,
+    ) -> AdvancedSymbolicFloat:
         """Compute relative error."""
         diff = computed - exact
-        return SymbolicFloat(
+        return AdvancedSymbolicFloat(
             z3_expr=z3.fpDiv(
                 z3.RNE(),
                 z3.fpAbs(diff.z3_expr),
@@ -467,9 +467,9 @@ class AccuracyAnalyzer:
 
     def check_catastrophic_cancellation(
         self,
-        a: SymbolicFloat,
-        b: SymbolicFloat,
-        result: SymbolicFloat,
+        a: AdvancedSymbolicFloat,
+        b: AdvancedSymbolicFloat,
+        result: AdvancedSymbolicFloat,
         constraints: list[z3.BoolRef],
     ) -> bool:
         """Check for catastrophic cancellation in subtraction."""
@@ -487,11 +487,5 @@ class AccuracyAnalyzer:
         return is_satisfiable(ratio_check)
 
 
-__all__ = [
-    "AccuracyAnalyzer",
-    "FloatAnalyzer",
-    "FloatConfig",
-    "FloatPrecision",
-    "SymbolicFloat",
-    "get_fp_sort",
-]
+# Backward-compatible alias used by existing imports.
+SymbolicFloat = AdvancedSymbolicFloat

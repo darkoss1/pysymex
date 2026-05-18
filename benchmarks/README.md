@@ -1,13 +1,13 @@
-# Benchmark Artifacts (`v0.1.0a1`)
+# Benchmark Artifacts
 
-This folder contains reproducible local benchmark artifacts for the `v0.1.0a1` release.
+This folder contains local benchmark artifacts and command examples for the current
+benchmark suite.
 
 ## Files
 
-- `baseline.json`: Baseline benchmark run used for performance regression checks.
 - `v0.1.0a0-results.md`: Benchmark results from the `v0.1.0a0` release.
-- `comparison-v0.3.0a0-v0.4.0a0.md`: Historical comparison from pre-release development
-  (internal versions only, kept for reference).
+- `v0.1.0a4-results.md`: Benchmark results from the `v0.1.0a4` release.
+- `v0.1.0a5-results.md`: Benchmark results from the `v0.1.0a5` release.
 
 ## Running Benchmarks
 
@@ -23,6 +23,9 @@ pysymex benchmark --format json -o benchmarks/baseline.json
 
 # Compare current results against baseline
 pysymex benchmark --baseline benchmarks/baseline.json
+
+# Run one built-in benchmark case
+pysymex benchmark --case executor_core_function
 ```
 
 ## Environment Metadata
@@ -36,4 +39,8 @@ pysymex benchmark --baseline benchmarks/baseline.json
 - Results are local-machine measurements and should be treated as directional.
 - The `incremental_solver` and `constraint_hashing` benchmarks are intentionally slow —
   they test Z3 under heavy constraint load. This is expected for an SMT-based verifier.
-- Benchmark categories: OPCODES, PATHS, SOLVING, MEMORY, CONCURRENCY.
+- Current built-in workloads include engine-level execution, branch-heavy execution,
+  arithmetic, path exploration, linear constraints, incremental solving, state forking,
+  constraint hashing, concurrency, and contract verification.
+- Benchmark categories include OPCODES, PATHS, SOLVING, MEMORY, CONCURRENCY,
+  END_TO_END, and ANALYSIS.

@@ -9,6 +9,7 @@ from pysymex.contracts.injector import (
 )
 from pysymex.core.state import create_initial_state
 from pysymex.contracts.decorators import requires, ensures
+from pysymex.analysis.detectors import IssueKind
 
 
 class MockStackValue:
@@ -87,6 +88,38 @@ class TestInjector:
         issue = inject_postconditions(state, my_func, ret_val, None)  # type: ignore
         assert issue is None
 
+    def test_inject_postconditions_uses_path_constraints(self) -> None:
+        """Postconditions are checked against the current feasible return path."""
+        x = z3.Int("x")
+        state = create_initial_state()
+        state = state.add_constraint(x > 0)
+        ret_val = MockStackValue(x)
+
+        @ensures("__result__ > 0")
+        def my_func(x: int) -> int:
+            return x
+
+        issue = inject_postconditions(state, my_func, ret_val, None)  # type: ignore[arg-type]
+        assert issue is None
+
+    def test_inject_postconditions_compile_failure_is_unknown(self) -> None:
+        """Unsupported postconditions are visible as unknown, not silently verified."""
+        state = create_initial_state()
+        ret_val = MockStackValue(z3.IntVal(1))
+
+        def unsupported(__result__: z3.ArithRef) -> object:
+            _ = __result__
+            return object()
+
+        @ensures(unsupported)  # type: ignore[arg-type]  # invalid predicate exercises UNKNOWN path
+        def my_func() -> int:
+            return 1
+
+        issue = inject_postconditions(state, my_func, ret_val, None)  # type: ignore[arg-type]
+        assert issue is not None
+        assert issue.kind is IssueKind.UNKNOWN
+        assert "could not be checked" in issue.message
+
     def test_inject_call_preconditions_no_contract(self) -> None:
         """Verify inject_call_preconditions returns None if no contract."""
         state = create_initial_state()
@@ -121,3 +154,21 @@ class TestInjector:
 
         issue = inject_call_preconditions(state, my_func, [x_val], {})
         assert issue is None
+
+    def test_inject_call_preconditions_compile_failure_is_unknown(self) -> None:
+        """Unsupported call preconditions are visible as unknown."""
+        state = create_initial_state()
+        x_val = MockStackValue(z3.IntVal(1))
+
+        def unsupported(x: z3.ArithRef) -> object:
+            _ = x
+            return object()
+
+        @requires(unsupported)  # type: ignore[arg-type]  # invalid predicate exercises UNKNOWN path
+        def my_func(x: int) -> None:
+            pass
+
+        issue = inject_call_preconditions(state, my_func, [x_val], {})
+        assert issue is not None
+        assert issue.kind is IssueKind.UNKNOWN
+        assert "could not be checked" in issue.message

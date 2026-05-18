@@ -32,7 +32,17 @@ class UnreachableCodeDetector(Detector):
     name = "unreachable-code"
     description = "Detects unreachable code"
     issue_kind = IssueKind.UNREACHABLE_CODE
-    relevant_opcodes = frozenset()
+    relevant_opcodes = frozenset(
+        {
+            "POP_JUMP_IF_FALSE",
+            "POP_JUMP_IF_TRUE",
+            "JUMP_FORWARD",
+            "JUMP_BACKWARD",
+            "JUMP_BACKWARD_NO_INTERRUPT",
+            "JUMP_IF_TRUE_OR_POP",
+            "JUMP_IF_FALSE_OR_POP",
+        }
+    )
 
     def check(
         self,
@@ -41,4 +51,10 @@ class UnreachableCodeDetector(Detector):
         is_satisfiable_fn: IsSatFn,
     ) -> Issue | None:
         """Check if current code is unreachable."""
+        if not is_satisfiable_fn(list(state.path_constraints)):
+            return Issue(
+                kind=IssueKind.UNREACHABLE_CODE,
+                message="Code path is mathematically unreachable",
+                pc=state.pc,
+            )
         return None

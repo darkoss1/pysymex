@@ -1,465 +1,213 @@
-## pysymex Contract System — Full Design
+# pysymex contract architecture
+
+**Author:** Yassine Lahyani
+**Scope:** symbolic contracts, bytecode-level injection, Z3 verification, and contract-aware
+diagnostics
 
 ---
 
-## 1. Foundational Philosophy
+## Purpose
 
-A contract in pysymex is not a documentation annotation or a runtime assertion. It is a **first-class symbolic constraint** injected directly into the path constraint set at bytecode-level execution points. Every contract clause becomes a Z3 formula that participates in CHTD decomposition, Thompson Sampling reward computation, and logical contradiction detection identically to any other path constraint.
+A pysymex contract is a symbolic constraint, not only a documentation annotation. Contract clauses
+are compiled into Z3 formulas and participate in path feasibility, postcondition checking, logical
+audit classification, and contract verification reports.
 
-The contract system has three guarantees that distinguish it from every existing Python contract library:
+Within configured exploration and solver budgets, the contract system targets:
 
-1. **Soundness** — a contract violation means a mathematically reachable path exists where the constraint is violated, with a concrete witness
-2. **Completeness** — no contract violation is missed if the path is reachable within the exploration budget
-3. **Zero impedance** — contracts live at bytecode level, so there is no translation gap between what the contract says and what the executor reasons about
+- definite violations only when a feasible counterexample exists;
+- definite verification only when the negated obligation is UNSAT;
+- explicit `UNKNOWN` when solver or modeling limits prevent a definite answer;
+- bytecode-level integration so contracts and executed paths share one symbolic state.
 
----
+## Contract Taxonomy
 
-## 2. Contract Taxonomy
+| Contract kind | Meaning in pysymex |
+|---|---|
+| `requires` | Preconditions that constrain valid function entry states. |
+| `ensures` | Postconditions checked against each return path. |
+| `invariant` | State facts that must remain true across configured program points. |
+| `loop_invariant` | Loop facts checked for initialization and preservation. |
+| `assumes` | External facts accepted as path constraints without creating a proof obligation. |
+| `assigns` | Frame conditions describing the memory locations a function may modify. |
+| `pure` | Effect contract marking a function as deterministic and side-effect free for symbolic reuse. |
 
-### 2.1 Preconditions — `@requires`
+The exported contract API lives under `pysymex/contracts`.
 
-Constraints that must hold at function entry. Injected at the first bytecode instruction of the function frame, before any local bindings are established.
+## Symbolic Meaning
 
-```python
-from pysymex.contracts import requires, ensures, invariant, assumes, assigns
+Contracts enter the same constraint universe as branch predicates. A precondition \(P\), path
+constraint set \(\Phi\), and postcondition \(Q\) are interpreted through satisfiability:
 
-@requires(lambda x, y: x > 0, "x must be positive")
-@requires(lambda x, y: y != 0, "y must be nonzero")
-def divide(x: int, y: int) -> float:
-    return x / y
-```
+- \(\Phi \land P\) UNSAT means the call is impossible under the current path.
+- \(\Phi \land P \land \lnot Q\) SAT means a postcondition counterexample exists.
+- \(\Phi \land P \land \lnot Q\) UNSAT means the postcondition holds for the explored symbolic
+  state.
+- `unknown`, timeout, unsupported expressions, or compiler failure produce inconclusive contract
+  results rather than definite success.
 
-At bytecode level, `RESUME` (Python 3.11+) or the first `LOAD_FAST` is the injection point. The precondition formula is added to the path constraint set immediately, before any instruction executes. This means:
+## Hoare-Logic Interpretation
 
-- If the precondition is UNSAT given the caller's path constraints, pysymex reports a **precondition impossibility** — the function can never be called with valid inputs on this path
-- If the precondition is SAT, its constraint strengthens the path state, narrowing the symbolic input space for all subsequent instructions
+pysymex contract verification follows the standard Hoare-triple shape:
 
-### 2.2 Postconditions — `@ensures`
+\[
+\{P\}\ f\ \{Q\}
+\]
 
-Constraints that must hold at function exit. The return value is bound to a special symbolic variable `result` that participates in the constraint.
+For a symbolic execution path \(\pi\), let \(WP_\pi(Q)\) be the weakest precondition of that path
+with respect to postcondition \(Q\). A path satisfies the contract when:
 
-```python
-@ensures(lambda result, x, y: result == x / y, "result matches division")
-@ensures(lambda result, x, y: result > 0, "result is positive given positive inputs")
-def divide(x: int, y: int) -> float:
-    return x / y
-```
+\[
+P \land Path_\pi \Rightarrow Q
+\]
 
-Injection point: every `RETURN_VALUE` and `RETURN_CONST` bytecode instruction. At each return site, the postcondition is checked against the current path constraint set. This is critical — a function with multiple return paths has its postcondition checked independently at each return site, not once at a merged exit point.
+Equivalently, pysymex asks Z3 for a counterexample:
 
-### 2.3 Frame Invariants — `@invariant`
+\[
+P \land Path_\pi \land \lnot Q
+\]
 
-Constraints that must hold at every bytecode instruction boundary within the function. These are the most powerful and most expensive contract type.
+If this formula is SAT, the model is a concrete witness for violation. If it is UNSAT, no
+counterexample exists for that explored path under the supported model. If Z3 returns unknown, the
+truth of the triple is not established.
 
-```python
-@invariant(lambda self: self.size >= 0, "size never negative")
-@invariant(lambda self: len(self.data) == self.size, "data length matches size")
-class BoundedStack:
-    def push(self, item: object) -> None:
-        self.data.append(item)
-        self.size += 1
-```
+## Proof Sketch: Postcondition Verification
 
-Injection point: every instruction boundary — `STORE_FAST`, `STORE_ATTR`, `STORE_SUBSCR`, `CALL`, `RETURN_VALUE`. At each mutation point, the invariant is re-evaluated against the updated symbolic state. Violations are reported with the exact bytecode offset where the invariant first breaks.
+For a return path with constraints \(\Phi_\pi\) and return expression \(r\), a postcondition
+predicate \(Q(result,\vec{x})\) is verified by proving:
 
-### 2.4 Assumption Contracts — `@assumes`
+\[
+\Phi_\pi \Rightarrow Q(r,\vec{x})
+\]
 
-Constraints that are asserted true without proof — they narrow the symbolic input space without generating a verification obligation. Used to encode external guarantees (OS behavior, hardware properties, library postconditions).
+By classical refutation:
 
-```python
-@assumes(lambda n: n >= 0, "os.getpid() always nonneg")
-def get_pid() -> int:
-    return os.getpid()
-```
+\[
+\Phi_\pi \Rightarrow Q
+\quad\text{iff}\quad
+\Phi_\pi \land \lnot Q \models \bot
+\]
 
-These inject constraints into the path constraint set as hard facts, directly strengthening CHTD's decomposition by reducing the symbolic input space. They also enable Tier 4 cross-module contradiction detection — if a caller's path constraints contradict an `@assumes` clause, pysymex reports a **cross-boundary contradiction**.
+This is why pysymex checks the negated postcondition. A SAT model is not merely a failed proof; it
+is an executable witness under the symbolic encoding. An UNKNOWN solver result is neither a proof
+nor a witness.
 
-### 2.5 Frame Assignments — `@assigns`
+## Injection Model
 
-Declares exactly which memory locations a function modifies. Anything not listed is guaranteed unmodified. This integrates directly with the AliasingAnalyzer.
+pysymex ties contract checks to CPython bytecode execution points:
 
-```python
-@assigns("self.size", "self.data")
-def push(self, item: object) -> None:
-    self.data.append(item)
-    self.size += 1
-```
+| Execution point | Contract role |
+|---|---|
+| Function entry | Initial preconditions and refined input constraints. |
+| Calls | Callee preconditions and summarized cross-function obligations. |
+| Returns | Postconditions over the returned symbolic value. |
+| Mutations | Assignment and invariant checks. |
+| Loop boundaries | Loop invariant initialization and preservation checks. |
 
-At bytecode level, every `STORE_ATTR`, `STORE_SUBSCR`, `STORE_FAST` is checked against the assigns set. A write to an unlisted location is a contract violation. This eliminates the O(N²) aliasing queries for functions with `@assigns` — the AliasingAnalyzer can short-circuit to "no alias" for any location not in the assigns set without an SMT query.
+This design avoids a separate source-level interpreter for contracts. The executor observes the
+same bytecode state, stack state, locals, and path constraints that drive ordinary symbolic
+execution.
 
-### 2.6 Temporal Contracts — `@sequence`
+## Compiler And Verifier
 
-Constraints on the *order* of operations — state machine contracts.
+The contract subsystem separates responsibilities:
 
-```python
-@sequence(
-    states=["closed", "open", "reading"],
-    transitions={
-        "closed": ["open"],
-        "open": ["reading", "closed"],
-        "reading": ["closed"],
-    },
-    initial="closed"
-)
-class FileHandle:
-    def open(self) -> None: ...
-    def read(self) -> bytes: ...
-    def close(self) -> None: ...
-```
+| Component | Role |
+|---|---|
+| `decorators.py` | Attaches contract metadata to Python callables. |
+| `types.py` | Owns structured contract, violation, severity, and verification result types. |
+| `compiler.py` | Translates supported predicates into Z3 formulas. |
+| `injector.py` | Adds preconditions and postconditions to symbolic execution paths. |
+| `verifier.py` | Performs direct contract verification and report construction. |
+| `quantifiers/` | Handles supported quantified contract forms. |
 
-At bytecode level, every method call that transitions state is tracked symbolically. The state variable is a symbolic Z3 enumeration sort. Illegal transitions produce UNSAT constraints that pysymex reports as **state machine violations** — Tier 5 contradiction detection.
+Compiler failures and unsupported predicates are correctness-significant. They must surface as
+unknown or failed verification states, not silent success.
 
----
+## Assumptions And Soundness
 
-## 3. Type-Level Contract Integration
+`assumes` clauses are trusted axioms. If \(A\) is an assumption, pysymex reasons over:
 
-### 3.1 Refined Types
+\[
+\Phi' = \Phi \land A
+\]
 
-The type annotation system is extended to carry symbolic constraints inline with types:
+This is sound relative to the environment model only when the external world actually satisfies
+\(A\). The engine can prove properties inside \(\Phi'\), but it cannot prove \(A\) itself unless the
+assumption is separately justified by a model or contract.
 
-```python
-from pysymex.contracts import Refined, Positive, NonZero, Bounded
+This creates a conditional guarantee:
 
-# Refined types — type + constraint in one
-Positive = Refined[int, lambda x: x > 0]
-NonZero = Refined[int, lambda x: x != 0]
-Bounded = Refined[int, lambda x, lo, hi: lo <= x <= hi]
-Percentage = Refined[float, lambda x: 0.0 <= x <= 1.0]
-NonEmpty = Refined[list, lambda x: len(x) > 0]
+\[
+Env \models A \land \Phi' \models Q \Rightarrow \Phi_{real} \models Q
+\]
 
-def divide(x: Positive, y: NonZero) -> Positive:
-    return x / y
-```
+If the environment does not satisfy \(A\), conclusions derived from the assumed path space are not
+globally valid.
 
-At bytecode level, refined type annotations at `LOAD_FAST` injection points automatically generate preconditions. The type annotation becomes a constraint in the path constraint set without the developer writing a separate `@requires`. This enables Pyright/mypy to check type-level contracts statically while pysymex checks them symbolically.
+## Cross-Function Semantics
 
-### 3.2 Dependent Types
+Function summaries let pysymex reason across calls. A caller path can be combined with a callee's
+preconditions, postconditions, assumptions, and frame effects. This supports interprocedural
+contradiction detection when a produced value and a later required value cannot both hold.
 
-Constraints between parameters:
+The soundness boundary is the summary's proof status. A summary can narrow future paths only when
+its underlying obligations were established under compatible symbolic assumptions.
 
-```python
-from pysymex.contracts import Depends
+## Logical Audit Integration
 
-def slice_array(
-    arr: list[int],
-    start: Depends[int, lambda start, arr: 0 <= start < len(arr)],
-    end: Depends[int, lambda end, start, arr: start <= end <= len(arr)]
-) -> list[int]:
-    return arr[start:end]
-```
+Contract constraints can participate in logical contradiction detection. In default execution,
+ordinary UNSAT branch alternatives are path-pruning facts. In explicit logical audit mode, pysymex
+reports a contradiction only when the UNSAT core matches a registered rule shape.
 
-`Depends` creates a cross-parameter constraint in Z3. This is directly expressible as a QF_LIA formula and integrates with constraint independence clustering — `start` and `end` and `arr` are in the same Union-Find cluster by construction.
+This prevents false positives from treating every infeasible branch alternative as a user-facing
+bug.
 
-### 3.3 Effect Types
+## Effect And Frame Semantics
 
-Annotations that declare side effects symbolically:
+`assigns` and `pure` contracts describe memory and effect boundaries:
 
-```python
-from pysymex.contracts import Pure, Reads, Writes
+- `assigns` narrows the set of locations a function may mutate and supports alias analysis.
+- `pure` permits deterministic symbolic reuse because equivalent symbolic inputs imply equivalent
+  symbolic outputs.
 
-@Pure  # no side effects — same inputs always same outputs
-def compute_hash(data: bytes) -> int: ...
+These contracts reduce solver and memory-model ambiguity, but they are also trust boundaries. An
+incorrect effect contract can hide behavior, so pysymex treats unsupported or contradictory effect
+facts explicitly.
 
-@Reads("self.config")  # reads but doesn't write
-def get_setting(self, key: str) -> str: ...
+## Frame-Condition Proof Obligation
 
-@Writes("self.cache")  # writes only to cache
-def update_cache(self, key: str, value: object) -> None: ...
-```
+For an `assigns` set \(W\), the frame condition states that every memory location outside \(W\)
+keeps its pre-state value:
 
-`@Pure` enables aggressive memoization in the symbolic executor — the same symbolic inputs always produce the same symbolic output, so the function is evaluated once and the result is cached in the path constraint set. This directly eliminates redundant solver calls for pure functions called multiple times with the same symbolic arguments.
+\[
+\forall \ell \notin W,\ Mem_{post}(\ell)=Mem_{pre}(\ell)
+\]
 
----
+This lets alias analysis avoid considering writes outside the declared frame. The obligation is
+sound only if the executor can track writes precisely enough to detect violations. Unknown aliasing
+or unsupported mutation must therefore remain visible instead of being treated as frame compliance.
 
-## 4. Bytecode Injection Architecture
+## Result Semantics
 
-### 4.1 Injection Point Classification
+Contract verification results use typed states:
 
-Every CPython bytecode instruction falls into one of five categories for contract injection:
+| State | Meaning |
+|---|---|
+| `VERIFIED` | No counterexample exists under the supported symbolic model and solver result is definite. |
+| `VIOLATED` | A feasible counterexample exists. |
+| `UNKNOWN` | The engine could not establish either verification or violation. |
+| `UNSUPPORTED` | The contract or path used behavior outside the supported model. |
 
-```python
-from enum import Enum
+The architecture rejects ambiguous `None` or boolean-only outcomes for contract trust decisions.
 
-class InjectionPoint(Enum):
-    FRAME_ENTRY    = "RESUME"                          # function entry
-    FRAME_EXIT     = "RETURN_VALUE | RETURN_CONST"    # function exit  
-    STORE_LOCAL    = "STORE_FAST | STORE_DEREF"       # local mutation
-    STORE_ATTR     = "STORE_ATTR | STORE_SUBSCR"      # object mutation
-    CALL_SITE      = "CALL | CALL_FUNCTION_EX"        # function call
-    BRANCH         = "POP_JUMP_IF_* | JUMP_IF_*"      # branch point
-    EXCEPTION      = "PUSH_EXC_INFO | RERAISE"        # exception path
-```
+## Related Components
 
-Each contract type attaches to a subset of injection points. The injection is not monkey-patching or bytecode rewriting — it's hooks in the symbolic executor's instruction dispatch loop, fired at the corresponding opcode.
-
-### 4.2 Contract Compilation
-
-At analysis time, contract lambda expressions are compiled to Z3 formulas once and cached. The compilation pipeline:
-
-```
-Contract lambda
-    ↓
-Python AST (ast.parse on lambda source)
-    ↓  
-Symbolic expression builder
-    ↓
-Z3 formula over symbolic parameter variables
-    ↓
-Cached by (function_id, contract_index)
-```
-
-The Z3 formula is constructed once per contract per function, not once per invocation. At invocation time, the cached formula is instantiated with the current symbolic values of the parameters — a cheap substitution operation rather than a full compilation.
-
-### 4.3 Contract Constraint Integration
-
-When a contract is evaluated at an injection point:
-
-```
-Current path constraints C
-    +
-Contract formula F(symbolic_params)
-    ↓
-slice_for_query(C + F, F)  →  relevant constraints R
-    ↓
-solver.check(R)
-    ↓
-SAT   → contract holds, add F to path constraints
-UNSAT → contract violation, extract witness, report bug
-```
-
-The contract formula becomes a permanent addition to the path constraint set when it holds. This is the crucial integration — a postcondition that proves `result > 0` narrows the symbolic state for all subsequent code that uses the return value. Downstream constraints benefit from this narrowing without any additional solver cost.
-
-### 4.4 CHTD Integration
-
-Contract constraints register in the CIG identically to branch constraints. A `@requires(lambda x, y: x > y)` adds an edge between the CIG nodes for the branch points that share `x` and `y`. This means:
-
-- Contract constraints participate in treewidth estimation
-- They appear in bag evaluations during DP message passing  
-- They contribute to adhesion sets between bags
-- Thompson Sampling's reward computation accounts for contract satisfaction
-
-A function with strong contracts has a lower effective treewidth for its subgraph — the contract constraints reduce the free variable count in each bag, making bag evaluation faster.
-
----
-
-## 5. Cross-Function Contract Propagation — Tier 4
-
-### 5.1 Function Summary Generation
-
-Every function with contracts generates a **symbolic summary** — a pair of (precondition formula, postcondition formula) expressed over symbolic parameter variables:
-
-```python
-@dataclass(frozen=True)
-class FunctionSummary:
-    function_id: str
-    precondition: z3.BoolRef        # constraint on inputs
-    postcondition: z3.BoolRef       # constraint on (inputs, result)
-    assigns: frozenset[str]         # memory locations modified
-    effect_type: EffectType         # Pure | Reads | Writes
-    treewidth_contribution: int     # estimated CIG impact
-```
-
-Summaries are computed once per function and cached. When the symbolic executor encounters a call site, it instantiates the callee's summary with the current symbolic arguments rather than inlining the full function body — a massive reduction in path state size for deep call chains.
-
-### 5.2 Summary Composition
-
-For a call chain `f → g → h`, summaries compose:
-
-```
-f.postcondition ∧ g.precondition  →  check compatibility (Tier 4)
-g.postcondition ∧ h.precondition  →  check compatibility (Tier 4)
-f.postcondition ∧ h.precondition  →  transitive check (Tier 4+)
-```
-
-This is exactly where "bugs hidden for ages" get found. `f` guarantees its output is odd. `h` requires its input to be even. The contradiction `x % 2 == 1 ∧ x % 2 == 0` is UNSAT. pysymex reports a **cross-function constraint contradiction** with the full call chain as evidence.
-
-### 5.3 Summary Cache Architecture
-
-```python
-@dataclass
-class SummaryCache:
-    # Keyed by (function_id, symbolic_input_fingerprint)
-    # fingerprint = hash of symbolic input constraint set
-    _cache: dict[tuple[str, int], FunctionSummary]
-    
-    # Invalidated when contract is modified
-    _version: dict[str, int]
-    
-    # LRU eviction for memory bound
-    _lru: collections.OrderedDict[tuple[str, int], FunctionSummary]
-    _max_size: int = 10_000
-```
-
-Cache hits mean the function body is never re-executed symbolically for the same abstract input class — amortized O(1) per call site for frequently-called functions with stable symbolic inputs.
-
----
-
-## 6. Logical Contradiction Detection Integration
-
-Contract constraints feed directly into the contradiction detection system:
-
-### 6.1 Contract-Induced Contradictions
-
-```python
-@requires(lambda x: x % 2 == 0)   # x is even
-def process(x: int) -> int:
-    if x % 2 == 1:                 # contradicts precondition
-        return x + 1               # LOGICAL_CONTRADICTION: unreachable
-    return x
-```
-
-The `@requires` constraint is in the path constraint set when the branch condition `x % 2 == 1` is evaluated. The contradiction detector fires immediately — no Z3 call needed, the Tier 1 modular contradiction check catches it in O(1).
-
-### 6.2 Pre/Postcondition Contradiction
-
-```python
-@requires(lambda x: x > 0)
-@ensures(lambda result: result < 0)
-def transform(x: int) -> int:
-    return x * 2  # always positive given positive input
-                  # contradicts @ensures result < 0
-```
-
-At `RETURN_VALUE`, the path constraints include `x > 0` (from precondition) and the concrete path constraint from the function body. The postcondition `result < 0` is checked — UNSAT given positive `x` multiplied by 2. pysymex reports **postcondition unreachable** with the witness showing no valid input can satisfy both.
-
----
-
-## 7. Full Type Signature Design
-
-```python
-from __future__ import annotations
-from typing import TypeVar, Generic, Callable, ParamSpec, Concatenate
-from collections.abc import Callable as CallableABC
-import z3
-
-T = TypeVar("T")
-P = ParamSpec("P")
-R = TypeVar("R")
-
-# Refined type with embedded constraint
-class Refined(Generic[T]):
-    """Type T narrowed by predicate P."""
-    __slots__ = ("_type", "_predicate", "_name", "_z3_formula")
-    
-    def __init__(
-        self,
-        base_type: type[T],
-        predicate: Callable[[T], bool],
-        name: str = "",
-    ) -> None:
-        self._type = base_type
-        self._predicate = predicate
-        self._name = name
-        self._z3_formula: z3.BoolRef | None = None
-    
-    def compile(self, symbolic_var: z3.ExprRef) -> z3.BoolRef:
-        """Compile predicate to Z3 formula over symbolic variable."""
-        ...
-
-# Contract decorators with full typing
-def requires(
-    predicate: Callable[..., bool],
-    message: str = "",
-    *,
-    severity: Literal["ERROR", "WARNING"] = "ERROR",
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Precondition contract."""
-    ...
-
-def ensures(
-    predicate: Callable[Concatenate[R, P], bool],
-    message: str = "",
-    *,
-    severity: Literal["ERROR", "WARNING"] = "ERROR",
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Postcondition contract."""
-    ...
-
-def invariant(
-    predicate: Callable[..., bool],
-    message: str = "",
-    *,
-    check_on: frozenset[InjectionPoint] = frozenset({
-        InjectionPoint.STORE_ATTR,
-        InjectionPoint.STORE_LOCAL,
-    }),
-) -> Callable[[type[T]], type[T]]:
-    """Class invariant contract."""
-    ...
-
-def assumes(
-    predicate: Callable[..., bool],
-    message: str = "",
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Assumption — asserted without proof."""
-    ...
-
-def assigns(
-    *locations: str,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Frame condition — declares modifiable locations."""
-    ...
-
-def pure() -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Pure function — no side effects, enables memoization."""
-    ...
-```
-
----
-
-## 8. Report Format
-
-Contract violations produce a distinct report format that traces the full mathematical chain:
-
-```
-[CONTRACT_VIOLATION] divide() — Postcondition unreachable
-  Location:    src/math.py:42 (RETURN_VALUE @ offset 0x18)
-  Contract:    @ensures result > 0
-  Path:        entry → line 38 (x < 0 branch) → line 42
-  Witness:     x = -5, y = 2
-  Derivation:  
-    precondition:   x > 0              [from @requires, line 39]
-    path constraint: x < 0             [from branch at line 38]  
-    contradiction:  x > 0 ∧ x < 0     [UNSAT — Tier 1 range]
-  Confidence:  EXACT (concrete witness available)
-
-[CONTRACT_VIOLATION] process() → transform() — Cross-function contradiction  
-  Location:    src/pipeline.py:87 (CALL @ offset 0x2A)
-  Contract:    process.@ensures x % 2 == 1
-               transform.@requires x % 2 == 0
-  Contradiction: x % 2 == 1 ∧ x % 2 == 0  [UNSAT — Tier 4 modular]
-  Call chain:  main() → process() → transform()
-  Witness:     No valid input exists for this call sequence
-  Confidence:  EXACT (mathematical proof)
-```
-
----
-
-## 9. Performance Properties
-
-| Contract Type | Injection Cost | Solver Impact | Memory Impact |
-|---|---|---|---|
-| `@requires` | O(1) per call | Narrows path — reduces future solve cost | +1 constraint per path |
-| `@ensures` | O(return_sites) | May eliminate UNSAT paths early | +1 constraint per path |
-| `@invariant` | O(mutation_count) | High — checks at every mutation | +K constraints per frame |
-| `@assumes` | O(1) | Reduces symbolic input space — speeds CHTD | +1 constraint permanent |
-| `@assigns` | O(write_count) | Eliminates O(N²) alias queries | None — reduces AliasingAnalyzer state |
-| `@pure` | O(1) | Enables memoization — amortizes to O(1) | +cache entry per call |
-
-The `@assigns` and `@pure` contracts are the ones with the highest performance return — they don't just add constraints, they eliminate entire classes of expensive computation.
-
----
-
-## 10. The Unified Picture
-
-With this contract system fully implemented, pysymex's detection capability becomes:
-
-```
-Without contracts:  finds bugs that are mathematically reachable
-With contracts:     finds bugs that are mathematically reachable
-                  + finds contradictions between what code guarantees
-                    and what code assumes, across any call depth,
-                    without requiring the bug to manifest as a crash
-```
-
-The mathematical foundation doesn't change. The symbolic executor doesn't change. Contracts are just precisely-typed symbolic constraints that happen to carry semantic meaning about what the programmer intended — and pysymex checks that intention against mathematical truth automatically.
+- `pysymex/contracts/decorators.py`
+- `pysymex/contracts/compiler.py`
+- `pysymex/contracts/injector.py`
+- `pysymex/contracts/types.py`
+- `pysymex/contracts/verifier.py`
+- `pysymex/contracts/quantifiers/`
+- `pysymex/execution/executors/verified.py`
+- `pysymex/execution/opcodes/common/functions.py`
+- `pysymex/execution/opcodes/common/control.py`

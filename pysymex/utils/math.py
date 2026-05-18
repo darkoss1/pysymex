@@ -18,6 +18,7 @@
 
 
 def wilson_upper_95(k: int, n: int) -> float:
+    """Compute the Wilson 95% upper confidence bound for k successes in n trials."""
     if n <= 0:
         return 0.0
     z = 1.96

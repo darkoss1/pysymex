@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 from __future__ import annotations
 
 import dis
@@ -25,6 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
+from pysymex.core.state import UNBOUND
 from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, IsSatFn
 
 
@@ -37,7 +37,7 @@ class UnboundVariableDetector(Detector):
     name = "unbound-variable"
     description = "Detects potential NameError from unbound variables"
     issue_kind = IssueKind.UNBOUND_VARIABLE
-    relevant_opcodes = frozenset({"LOAD_FAST", "LOAD_FAST_CHECK"})
+    relevant_opcodes = frozenset({"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_NAME"})
     BUILTIN_NAMES = frozenset(
         {
             "True",
@@ -99,6 +99,16 @@ class UnboundVariableDetector(Detector):
 
     INTERNAL_PREFIXES = ("_", "self.", "cls.", "tpl_", "args_", "kwargs_")
 
+    def _should_skip_name(self, var_name: str) -> bool:
+        """Return True for names intentionally excluded from unbound checks."""
+        if var_name in self.BUILTIN_NAMES:
+            return True
+        if any(var_name.startswith(prefix) for prefix in self.INTERNAL_PREFIXES):
+            return True
+        if len(var_name) <= 2 and var_name[0].isupper():
+            return True
+        return False
+
     def check(
         self,
         state: VMState,
@@ -106,24 +116,37 @@ class UnboundVariableDetector(Detector):
         _solver_check: IsSatFn,
     ) -> Issue | None:
         """Check."""
-        if instruction.opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
-            var_name = instruction.argval
+        if instruction.opname not in self.relevant_opcodes:
+            return None
+        if not isinstance(instruction.argval, str):
+            return None
 
-            if var_name in self.BUILTIN_NAMES:
-                return None
+        var_name = instruction.argval
+        if self._should_skip_name(var_name):
+            return None
 
-            if any(var_name.startswith(p) for p in self.INTERNAL_PREFIXES):
-                return None
+        is_unbound = False
+        if instruction.opname in {"LOAD_FAST", "LOAD_FAST_CHECK"}:
+            is_unbound = state.get_local(var_name) is UNBOUND
+        elif instruction.opname == "LOAD_NAME":
+            if var_name in state.local_vars:
+                is_unbound = False
+            elif var_name in state.global_vars:
+                is_unbound = False
+            else:
+                is_unbound = True
 
-            if len(var_name) <= 2 and var_name[0].isupper():
-                return None
-            from pysymex.core.state import UNBOUND
+        if not is_unbound:
+            return None
 
-            if state.get_local(var_name) is UNBOUND:
-                return Issue(
-                    kind=IssueKind.UNBOUND_VARIABLE,
-                    message=f"Variable '{var_name}' may be unbound (NameError)",
-                    constraints=list(state.path_constraints),
-                    pc=state.pc,
-                )
-        return None
+        constraints = list(state.path_constraints)
+        if not _solver_check(constraints):
+            return None
+
+        error_name = "NameError" if instruction.opname == "LOAD_NAME" else "UnboundLocalError"
+        return Issue(
+            kind=IssueKind.UNBOUND_VARIABLE,
+            message=f"Variable '{var_name}' may be unbound ({error_name})",
+            constraints=constraints,
+            pc=state.pc,
+        )

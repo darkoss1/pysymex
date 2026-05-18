@@ -17,8 +17,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
-import z3
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
+from pysymex.analysis.detectors.logical.utils import (
+    bounds_are_inconsistent,
+    count_variables,
+    extract_bounds,
+)
 
 
 class RangeContradictionRule(LogicRule):
@@ -28,6 +31,4 @@ class RangeContradictionRule(LogicRule):
     def matches(self, ctx: ContradictionContext) -> bool:
         if count_variables(ctx.core) != 1:
             return False
-        has_gt = core_has_operator(ctx.core, {z3.Z3_OP_GT, z3.Z3_OP_GE})
-        has_lt = core_has_operator(ctx.core, {z3.Z3_OP_LT, z3.Z3_OP_LE})
-        return has_gt and has_lt
+        return any(bounds_are_inconsistent(bounds) for bounds in extract_bounds(ctx.core).values())

@@ -8,15 +8,12 @@ from pysymex.analysis.solver import (
     is_z3_available,
     verify_code,
     verify_function,
-    _deserialize_worker_results,
-    _is_dict_of_objects,
+    _deserialize_worker_results,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_dict_of_objects,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 )
 from pysymex.analysis.solver.types import (
     BugType,
-    CrashCondition,
-    FunctionSummary,
     Severity,
-    VerificationResult,
 )
 
 
@@ -158,7 +155,7 @@ class TestZ3Engine:
     def test_build_context_from_callees(self) -> None:
         """_build_context_from_callees returns None by default."""
         engine = Z3Engine()
-        assert engine._build_context_from_callees("func") is None
+        assert engine._build_context_from_callees("func") is None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestVerifyFunction:

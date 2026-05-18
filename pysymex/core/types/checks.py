@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pysymex.core.types.scalars import SymbolicValue
+    from pysymex.core.types import SymbolicValue
 
 _OVERLOAD_NAME_PARTS: frozenset[str] = frozenset(
     {

@@ -27,3 +27,7 @@ dmypy.json
 *~
 .DS_Store
 temp_tests
+.pytest-tmp
+.pytest-tmp/
+.tmp
+.tmp/

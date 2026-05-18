@@ -154,21 +154,21 @@ class TestPysymexLogger:
         stream = StringIO()
         logger = PysymexLogger(level=LogLevel.NORMAL, stream=stream, color=False)
         logger.success("success msg")
-        assert "✓ success msg" in stream.getvalue()
+        assert "[OK] success msg" in stream.getvalue()
 
     def test_warning(self) -> None:
         """Test warning behavior."""
         stream = StringIO()
         logger = PysymexLogger(level=LogLevel.NORMAL, stream=stream, color=False)
         logger.warning("warning msg")
-        assert "⚠ warning msg" in stream.getvalue()
+        assert "[WARN] warning msg" in stream.getvalue()
 
     def test_error(self) -> None:
         """Test error behavior."""
         stream = StringIO()
         logger = PysymexLogger(level=LogLevel.QUIET, stream=stream, color=False)
         logger.error("error msg")
-        assert "✗ error msg" in stream.getvalue()
+        assert "[ERR] error msg" in stream.getvalue()
 
     def test_header(self) -> None:
         """Test header behavior."""
@@ -176,7 +176,7 @@ class TestPysymexLogger:
         logger = PysymexLogger(level=LogLevel.NORMAL, stream=stream, color=False)
         logger.header("head")
         assert "head" in stream.getvalue()
-        assert "────" in stream.getvalue()
+        assert "----" in stream.getvalue()
 
     def test_rule(self) -> None:
         """Test rule behavior."""
@@ -190,7 +190,7 @@ class TestPysymexLogger:
         stream = StringIO()
         logger = PysymexLogger(level=LogLevel.NORMAL, stream=stream, color=False)
         logger.progress(5, 10, "msg")
-        assert "[███████████████░░░░░░░░░░░░░░░]" in stream.getvalue()
+        assert "[===============---------------]" in stream.getvalue()
         assert "msg" in stream.getvalue()
 
     def test_progress_complete(self) -> None:
@@ -294,7 +294,7 @@ class TestPythonLoggingBridge:
         bridge = PythonLoggingBridge(target)
         record = logging.LogRecord("test", logging.ERROR, "", 0, "err", (), None)
         bridge.emit(record)
-        assert "✗ err" in stream.getvalue()
+        assert "[ERR] err" in stream.getvalue()
 
     def test_emit_warning(self) -> None:
         """Test emit behavior for warnings."""
@@ -303,7 +303,7 @@ class TestPythonLoggingBridge:
         bridge = PythonLoggingBridge(target)
         record = logging.LogRecord("test", logging.WARNING, "", 0, "warn", (), None)
         bridge.emit(record)
-        assert "⚠ warn" in stream.getvalue()
+        assert "[WARN] warn" in stream.getvalue()
 
     def test_emit_info(self) -> None:
         """Test emit behavior for info."""

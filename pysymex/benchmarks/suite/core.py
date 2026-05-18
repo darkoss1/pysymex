@@ -16,30 +16,29 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Benchmarking suite logic for pysymex.
-Provides benchmark execution, reporting, comparison, and built-in workloads.
+"""Benchmarking suite core infrastructure for pysymex.
+Provides base classes and decorators for defining symbolic execution benchmarks.
 """
 
 from __future__ import annotations
 
 import gc
-import json
 import statistics
 import time
 import tracemalloc
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
 from pysymex.benchmarks.suite.types import (
     BenchmarkCategory,
     BenchmarkResult,
-    RegressionResult,
 )
 
-if TYPE_CHECKING:
-    from pysymex._typing import StackValue
+
+def _bench_list_factory() -> list[Benchmark]:
+    """Bench list factory."""
+    return []
 
 
 @runtime_checkable
@@ -48,12 +47,17 @@ class _BenchmarkMetricsResult(Protocol):
 
     def get(self, key: str, default: object = 0) -> object:
         """Return value associated with key when present."""
-        ...
+        return default
 
 
-def _bench_list_factory() -> list[Benchmark]:
-    """Bench list factory."""
-    return []
+def _metric_int(payload: object, key: str) -> int:
+    """Extract integer benchmark metric from a generic payload."""
+    if not isinstance(payload, _BenchmarkMetricsResult):
+        return 0
+    raw_value = payload.get(key, 0)
+    if isinstance(raw_value, int):
+        return raw_value
+    return 0
 
 
 @dataclass
@@ -130,31 +134,27 @@ class Benchmark:
         for _ in range(warmup):
             gc.collect()
             self.func()
+
         for _ in range(iterations):
             gc.collect()
-            gc.disable()
-            tracemalloc.start()
             start = time.perf_counter()
             result = self.func()
             elapsed = time.perf_counter() - start
-            current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            gc.enable()
             times.append(elapsed)
-            peak_memory = max(peak_memory, peak / (1024 * 1024))
-            total_allocated += current / (1024 * 1024)
+
+        gc.collect()
+        tracemalloc.start()
+        memory_result = self.func()
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        peak_memory = peak / (1024 * 1024)
+        total_allocated = current / (1024 * 1024)
+        del memory_result
         mean_time = statistics.mean(times)
         stddev_time = statistics.stdev(times) if len(times) > 1 else 0.0
-        paths = 0
-        instructions = 0
-        solver_calls = 0
-        if isinstance(result, _BenchmarkMetricsResult):
-            paths_val = result.get("paths", 0)
-            instructions_val = result.get("instructions", 0)
-            solver_calls_val = result.get("solver_calls", 0)
-            paths = paths_val if isinstance(paths_val, int) else 0
-            instructions = instructions_val if isinstance(instructions_val, int) else 0
-            solver_calls = solver_calls_val if isinstance(solver_calls_val, int) else 0
+        paths = _metric_int(result, "paths")
+        instructions = _metric_int(result, "instructions")
+        solver_calls = _metric_int(result, "solver_calls")
         return BenchmarkResult(
             name=self.name,
             category=self.category,
@@ -164,7 +164,7 @@ class Benchmark:
             mean_seconds=mean_time,
             stddev_seconds=stddev_time,
             peak_memory_mb=peak_memory,
-            allocated_mb=total_allocated / iterations,
+            allocated_mb=total_allocated,
             paths_explored=paths,
             instructions_executed=instructions,
             solver_calls=solver_calls,
@@ -209,426 +209,3 @@ def benchmark(
         return func
 
     return decorator
-
-
-class BenchmarkReporter:
-    """Renders benchmark results in various output formats.
-
-    All methods are ``@staticmethod``; no instance state is needed.
-    """
-
-    @staticmethod
-    def to_console(results: list[BenchmarkResult]) -> None:
-        """Print results to console."""
-        print("\n" + "=" * 70)
-        print("pysymex Benchmark Results")
-        print("=" * 70)
-        for result in results:
-            print(f"\n{result.name} ({result.category.name})")
-            print("-" * 40)
-            print(f"  Mean time:     {result.mean_seconds * 1000:.2f} ms")
-            print(f"  Std dev:       {result.stddev_seconds * 1000:.2f} ms")
-            print(
-                f"  Min/Max:       {result.min_seconds * 1000:.2f}/{result.max_seconds * 1000:.2f} ms"
-            )
-            print(f"  Peak memory:   {result.peak_memory_mb:.2f} MB")
-            print(f"  Throughput:    {result.throughput:.0f} instr/sec")
-            if result.paths_explored > 0:
-                print(f"  Paths/sec:     {result.paths_per_second:.2f}")
-        print("\n" + "=" * 70)
-
-    @staticmethod
-    def to_json(results: list[BenchmarkResult]) -> str:
-        """Convert results to JSON."""
-        return json.dumps(
-            [r.to_dict() for r in results],
-            indent=2,
-        )
-
-    @staticmethod
-    def to_json_file(results: list[BenchmarkResult], path: Path) -> None:
-        """Write results to JSON file."""
-        path.write_text(BenchmarkReporter.to_json(results))
-
-    @staticmethod
-    def to_markdown(results: list[BenchmarkResult]) -> str:
-        """Convert results to Markdown table."""
-        lines = [
-            "| Benchmark | Category | Mean (ms) | Std Dev | Peak Memory (MB) | Throughput |",
-            "|-----------|----------|-----------|---------|------------------|------------|",
-        ]
-        for r in results:
-            lines.append(
-                f"| {r.name} | {r.category.name} | "
-                f"{r.mean_seconds * 1000:.2f} | {r.stddev_seconds * 1000:.2f} | "
-                f"{r.peak_memory_mb:.2f} | {r.throughput:.0f} instr/s |"
-            )
-        return "\n".join(lines)
-
-
-class BenchmarkComparator:
-    """Compare current benchmark results against a baseline for regressions.
-
-    Attributes:
-        threshold_percent: Percentage increase that is flagged as a
-            regression.
-    """
-
-    def __init__(self, threshold_percent: float = 10.0) -> None:
-        """
-        Args:
-            threshold_percent: Percent change that triggers regression.
-        """
-        self.threshold_percent = threshold_percent
-
-    def compare(
-        self,
-        baseline: list[BenchmarkResult],
-        current: list[BenchmarkResult],
-    ) -> list[RegressionResult]:
-        """Compare baseline to current results."""
-        baseline_by_name = {r.name: r for r in baseline}
-        results: list[RegressionResult] = []
-        for curr in current:
-            if curr.name not in baseline_by_name:
-                continue
-            base = baseline_by_name[curr.name]
-            if base.mean_seconds > 0:
-                change = ((curr.mean_seconds - base.mean_seconds) / base.mean_seconds) * 100
-            else:
-                change = 0.0
-            is_regression = change > self.threshold_percent
-            results.append(
-                RegressionResult(
-                    benchmark_name=curr.name,
-                    baseline_mean=base.mean_seconds,
-                    current_mean=curr.mean_seconds,
-                    change_percent=change,
-                    is_regression=is_regression,
-                    threshold_percent=self.threshold_percent,
-                )
-            )
-        return results
-
-    def report_regressions(self, regressions: list[RegressionResult]) -> str:
-        """Generate regression report."""
-        lines = ["# Benchmark Comparison Report\n"]
-        failures = [r for r in regressions if r.is_regression]
-        if failures:
-            lines.append(f"## [WARN] {len(failures)} Regression(s) Detected\n")
-            for r in failures:
-                lines.append(f"- **{r.benchmark_name}**: {r.change_description}")
-                lines.append(f"  - Baseline: {r.baseline_mean * 1000:.2f} ms")
-                lines.append(f"  - Current: {r.current_mean * 1000:.2f} ms\n")
-        else:
-            lines.append("## [OK] No Regressions Detected\n")
-        lines.append("## All Results\n")
-        for r in regressions:
-            status = "[REGRESSION]" if r.is_regression else "[OK]"
-            lines.append(f"{status} {r.benchmark_name}: {r.change_description}")
-        return "\n".join(lines)
-
-
-def create_builtin_benchmarks() -> BenchmarkSuite:
-    """Create the built-in benchmark suite with real Z3 workloads.
-
-    Returns:
-        A :class:`BenchmarkSuite` containing all standard benchmarks.
-    """
-    suite = BenchmarkSuite(
-        name="pysymex_builtin",
-        description="Built-in pysymex benchmarks (real solver workloads)",
-    )
-    suite.add(
-        Benchmark(
-            name="simple_arithmetic",
-            func=bench_simple_arithmetic,
-            category=BenchmarkCategory.OPCODES,
-            description="Basic arithmetic operations with Z3",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="branching",
-            func=bench_branching,
-            category=BenchmarkCategory.PATHS,
-            description="Path exploration with 20-way branch explosion",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="loop_unrolling",
-            func=bench_loop_unrolling,
-            category=BenchmarkCategory.PATHS,
-            description="Loop handling with constraint accumulation",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="linear_constraints",
-            func=bench_linear_constraints,
-            category=BenchmarkCategory.SOLVING,
-            description="100 linear integer constraints",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="incremental_solver",
-            func=bench_incremental_solver,
-            category=BenchmarkCategory.SOLVING,
-            description="Incremental solver push/pop performance",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="state_forking",
-            func=bench_state_forking,
-            category=BenchmarkCategory.MEMORY,
-            description="VMState CoW fork performance",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="constraint_hashing",
-            func=bench_constraint_hashing,
-            category=BenchmarkCategory.SOLVING,
-            description="Structural constraint hashing performance",
-        )
-    )
-    suite.add(
-        Benchmark(
-            name="concurrency_race_detection",
-            func=bench_race_detection,
-            category=BenchmarkCategory.CONCURRENCY,
-            description="Race detection with 10 operations",
-        )
-    )
-    return suite
-
-
-def bench_simple_arithmetic() -> dict[str, int]:
-    """Benchmark: real Z3 arithmetic constraint solving."""
-    import z3
-
-    solver = z3.Solver()
-    x, y = z3.Ints("x y")
-    solver.add(x + y == 10)
-    solver.add(x > 0, y > 0)
-    solver.add(x * y > 15)
-    solver.check()
-
-    return {"instructions": 100, "paths": 1, "solver_calls": 1}
-
-
-def bench_branching() -> dict[str, int]:
-    """Benchmark: 20-way branch explosion with Z3."""
-    import z3
-
-    vars_ = [z3.Int(f"b{i}") for i in range(20)]
-    solver = z3.Solver()
-    solver.set("timeout", 5000)
-    paths = 0
-    for v in vars_:
-        solver.push()
-        solver.add(v > 0)
-        if solver.check() == z3.sat:
-            paths += 1
-        solver.pop()
-        solver.push()
-        solver.add(v <= 0)
-        if solver.check() == z3.sat:
-            paths += 1
-        solver.pop()
-
-    return {"instructions": 200, "paths": paths, "solver_calls": 40}
-
-
-def bench_loop_unrolling() -> dict[str, int]:
-    """Benchmark: loop with accumulating constraints."""
-    import z3
-
-    solver = z3.Solver()
-    solver.set("timeout", 5000)
-    x = z3.Int("x")
-    solver.add(x >= 0, x < 1000)
-    paths = 0
-    for i in range(50):
-        solver.push()
-        solver.add(x > i * 10)
-        if solver.check() == z3.sat:
-            paths += 1
-        solver.pop()
-
-    return {"instructions": 500, "paths": paths, "solver_calls": 50}
-
-
-def bench_linear_constraints() -> dict[str, int]:
-    """Benchmark: 100 linear integer constraints."""
-    import z3
-
-    solver = z3.Solver()
-    solver.set("timeout", 10000)
-    vars_ = [z3.Int(f"v{i}") for i in range(100)]
-    for i in range(99):
-        solver.add(vars_[i] + 1 <= vars_[i + 1])
-    solver.add(vars_[0] >= 0)
-    solver.add(vars_[99] <= 1000)
-    solver.check()
-
-    return {"instructions": 100, "paths": 1, "solver_calls": 1}
-
-
-def bench_incremental_solver() -> dict[str, int]:
-    """Benchmark: IncrementalSolver push/pop performance."""
-    try:
-        from pysymex.core.solver.engine import IncrementalSolver
-    except ImportError:
-        return {"instructions": 0, "paths": 0, "solver_calls": 0}
-
-    import z3
-
-    solver = IncrementalSolver(timeout_ms=5000)
-    x, y = z3.Ints("x y")
-    calls = 0
-
-    for i in range(100):
-        constraints = [x > i, y > i, x + y < i * 3 + 10]
-        solver.is_sat(constraints)
-        calls += 1
-
-    return {"instructions": 300, "paths": 100, "solver_calls": calls}
-
-
-def bench_state_forking() -> dict[str, int]:
-    """Benchmark: VMState CoW fork performance."""
-    try:
-        from pysymex.core.state import VMState
-    except ImportError:
-        return {"instructions": 0, "paths": 0, "solver_calls": 0}
-
-    import z3
-
-    state = VMState()
-    for i in range(50):
-        v = z3.Int(f"var_{i}")
-        state.local_vars[f"var_{i}"] = cast("StackValue", v)
-        state.add_constraint(v >= 0)
-
-    forks = 0
-    for _ in range(1000):
-        state.fork()
-        forks += 1
-
-    return {"instructions": 1000, "paths": forks, "solver_calls": 0}
-
-
-def bench_constraint_hashing() -> dict[str, int]:
-    """Benchmark: structural constraint hashing vs string-based."""
-    try:
-        from pysymex.core.solver.constraints import ConstraintHasher, structural_hash
-    except ImportError:
-        return {"instructions": 0, "paths": 0, "solver_calls": 0}
-
-    import z3
-
-    x, y, z_var = z3.Ints("x y z")
-    constraints = [
-        x + y > 10,
-        y - z_var < 5,
-        x * 2 == z_var,
-        x >= 0,
-        y >= 0,
-        z_var >= 0,
-        x + y + z_var < 100,
-    ]
-
-    hasher = ConstraintHasher()
-
-    hashes = 0
-    for _ in range(10000):
-        structural_hash(constraints, hasher)
-        hashes += 1
-
-    return {"instructions": 10000, "paths": 0, "solver_calls": 0}
-
-
-def bench_race_detection() -> dict[str, int]:
-    """Benchmark: race detection with concurrent operations."""
-    try:
-        from pysymex.analysis.concurrency import ConcurrencyAnalyzer
-    except ImportError:
-        return {"instructions": 0, "paths": 0, "solver_calls": 0}
-
-    analyzer = ConcurrencyAnalyzer(timeout_ms=5000)
-    ops = 0
-
-    for var_idx in range(5):
-        addr = f"shared_var_{var_idx}"
-
-        analyzer.record_write("thread_0", addr, f"val_{ops}")
-        ops += 1
-
-        analyzer.record_read("thread_1", addr)
-        ops += 1
-
-    analyzer.get_all_issues()
-    return {"instructions": ops, "paths": 0, "solver_calls": 0}
-
-
-def run_benchmarks(
-    output_path: Path | None = None,
-    baseline_path: Path | None = None,
-    format: str = "console",
-    iterations: int = 5,
-    case_name: str | None = None,
-) -> int:
-    """Run the built-in benchmarks from the CLI.
-
-    Args:
-        output_path: Optional file path for JSON output.
-        baseline_path: Optional baseline JSON for regression comparison.
-        format: Output format (``console``, ``json``, ``markdown``).
-        iterations: Number of timing iterations per benchmark.
-
-    Returns:
-        ``0`` on success, ``1`` if regressions are detected.
-    """
-    suite = create_builtin_benchmarks()
-    results = suite.run_all(iterations=iterations, case_name=case_name)
-    if format == "json" and output_path:
-        BenchmarkReporter.to_json_file(results, output_path)
-    elif format == "markdown":
-        print(BenchmarkReporter.to_markdown(results))
-    else:
-        BenchmarkReporter.to_console(results)
-    if baseline_path and baseline_path.exists():
-        baseline_data = json.loads(baseline_path.read_text())
-        baseline = [
-            BenchmarkResult(
-                name=d["name"],
-                category=BenchmarkCategory[d["category"]],
-                elapsed_seconds=d["elapsed_seconds"],
-                mean_seconds=d["mean_seconds"],
-                stddev_seconds=d.get("stddev_seconds", 0),
-                min_seconds=d.get("min_seconds", 0),
-                max_seconds=d.get("max_seconds", 0),
-            )
-            for d in baseline_data
-        ]
-        comparator = BenchmarkComparator()
-        regressions = comparator.compare(baseline, results)
-        print(comparator.report_regressions(regressions))
-        if any(r.is_regression for r in regressions):
-            return 1
-    return 0
-
-
-__all__ = [
-    "Benchmark",
-    "BenchmarkComparator",
-    "BenchmarkReporter",
-    "BenchmarkSuite",
-    "benchmark",
-    "create_builtin_benchmarks",
-    "run_benchmarks",
-]

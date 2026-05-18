@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+from pysymex.analysis.detectors import IssueKind
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicString, SymbolicValue
 from pysymex.execution.dispatcher import OpcodeDispatcher
@@ -85,7 +86,8 @@ class TestFormatWithSpec:
         state = VMState().push("string").push("d")
         instr = _get_instr("f'{1:d}'", "FORMAT_WITH_SPEC")
         result = handle_format_with_spec(instr, state, OpcodeDispatcher())
-        assert isinstance(result.new_states[0].stack[0], SymbolicString)
+        assert result.issues[0].kind == IssueKind.RUNTIME_ERROR
+        assert "Formatting error" in result.issues[0].message
 
     def test_unsupported_value(self) -> None:
         """Test FORMAT_WITH_SPEC with an unsupported type."""
@@ -106,42 +108,44 @@ class TestConvertValue:
     def test_symbolic_value(self) -> None:
         """Test CONVERT_VALUE with a symbolic value."""
         sym_val, _ = SymbolicString.symbolic("test")
-        state = VMState().push(sym_val).push(0)
+        state = VMState().push(sym_val)
         instr = _get_instr("f'{1!s}'", "CONVERT_VALUE")
         result = handle_convert_value(instr, state, OpcodeDispatcher())
         assert isinstance(result.new_states[0].stack[0], SymbolicString)
 
     def test_string_conversion(self) -> None:
         """Test CONVERT_VALUE string conversion (!s)."""
-        state = VMState().push("test").push(0)
+        state = VMState().push("test")
         instr = _get_instr("f'{1!s}'", "CONVERT_VALUE")
         result = handle_convert_value(instr, state, OpcodeDispatcher())
         assert result.new_states[0].stack[0] == "test"
 
     def test_repr_conversion(self) -> None:
         """Test CONVERT_VALUE repr conversion (!r)."""
-        state = VMState().push("test").push(1)
+        state = VMState().push("test")
         instr = _get_instr("f'{1!r}'", "CONVERT_VALUE")
         result = handle_convert_value(instr, state, OpcodeDispatcher())
         assert result.new_states[0].stack[0] == "'test'"
 
     def test_ascii_conversion(self) -> None:
         """Test CONVERT_VALUE ascii conversion (!a)."""
-        state = VMState().push("test").push(2)
+        state = VMState().push("test")
         instr = _get_instr("f'{1!a}'", "CONVERT_VALUE")
         result = handle_convert_value(instr, state, OpcodeDispatcher())
         assert result.new_states[0].stack[0] == "'test'"
 
     def test_unknown_conversion(self) -> None:
         """Test CONVERT_VALUE with unknown conversion specifier."""
-        state = VMState().push("test").push(3)
+        state = VMState().push("test")
         instr = _get_instr("f'{1!s}'", "CONVERT_VALUE")
+        instr = instr._replace(arg=0, argval=0)
         result = handle_convert_value(instr, state, OpcodeDispatcher())
-        assert isinstance(result.new_states[0].stack[0], SymbolicString)
+        assert result.issues[0].kind == IssueKind.RUNTIME_ERROR
+        assert "Invalid CONVERT_VALUE operand" in result.issues[0].message
 
     def test_unsupported_value(self) -> None:
         """Test CONVERT_VALUE with an unsupported conversion target."""
-        state = VMState().push("test").push("not int")
+        state = VMState().push(SymbolicValue.from_const(object()))
         instr = _get_instr("f'{1!s}'", "CONVERT_VALUE")
         result = handle_convert_value(instr, state, OpcodeDispatcher())
         assert isinstance(result.new_states[0].stack[0], SymbolicString)

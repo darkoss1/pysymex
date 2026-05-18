@@ -34,7 +34,6 @@ _REQUIRED_Z3_API = ("Int", "Solver", "BoolVal", "sat", "unsat")
 _cached_z3: ModuleType | None = None
 _z3_lock = threading.Lock()
 
-
 if TYPE_CHECKING:
     from typing import TypedDict
 

@@ -19,6 +19,9 @@
 """Command-line interface for pysymex."""
 
 import sys
+import faulthandler
+
+faulthandler.enable()
 
 from pysymex.cli import main
 

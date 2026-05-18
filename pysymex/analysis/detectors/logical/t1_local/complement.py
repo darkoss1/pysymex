@@ -18,7 +18,11 @@
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
+from pysymex.analysis.detectors.logical.utils import (
+    count_variables,
+    core_has_operator,
+    extract_bool_assignments,
+)
 
 
 class ComplementContradictionRule(LogicRule):
@@ -41,4 +45,4 @@ class ComplementContradictionRule(LogicRule):
             },
         ):
             return False
-        return core_has_operator(ctx.core, {z3.Z3_OP_NOT})
+        return any(len(values) > 1 for values in extract_bool_assignments(ctx.core).values())

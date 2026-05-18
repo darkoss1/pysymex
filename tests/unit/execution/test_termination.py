@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 import z3
 
 from pysymex.execution.termination import (

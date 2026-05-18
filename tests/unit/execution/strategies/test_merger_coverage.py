@@ -10,10 +10,10 @@ from pysymex.execution.strategies.merger import (
     MergePolicy,
     MergeStatistics,
     StateMerger,
-    _as_string_object_mapping,
-    _is_any_symbolic,
-    _is_conditional_mergeable,
-    _is_stack_value,
+    _as_string_object_mapping,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_any_symbolic,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_conditional_mergeable,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _is_stack_value,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
     create_state_merger,
 )
 
@@ -94,14 +94,14 @@ class TestStateMerger:
     def test_is_join_point(self) -> None:
         """is_join_point checks membership in _join_points."""
         merger = StateMerger()
-        merger._join_points = {0, 5, 10}
+        merger._join_points = {0, 5, 10}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert merger.is_join_point(5)
         assert not merger.is_join_point(7)
 
     def test_reset(self) -> None:
         """reset clears pending states and statistics."""
         merger = StateMerger()
-        merger._join_points = {1, 2, 3}
+        merger._join_points = {1, 2, 3}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         merger.stats.merge_operations = 5
         merger.reset()
         assert merger.stats.merge_operations == 0
@@ -114,9 +114,9 @@ class TestStateMerger:
     def test_clear_pending(self) -> None:
         """clear_pending removes pending states at given PC."""
         merger = StateMerger()
-        merger._pending_states[5] = {0: []}
+        merger._pending_states[5] = {0: []}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         merger.clear_pending(5)
-        assert 5 not in merger._pending_states
+        assert 5 not in merger._pending_states  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_clear_pending_nonexistent_pc(self) -> None:
         """clear_pending with nonexistent PC does not error."""
@@ -128,7 +128,7 @@ class TestStateMerger:
         merger = StateMerger()
         x = z3.Int("x")
         c = x > 0
-        assert merger._constraints_equal(c, c) is True
+        assert merger._constraints_equal(c, c) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_constraints_equal_structurally(self) -> None:
         """_constraints_equal returns True for structurally equal constraints."""
@@ -136,48 +136,48 @@ class TestStateMerger:
         x = z3.Int("x")
         c1 = x > 0
         c2 = x > 0
-        assert merger._constraints_equal(c1, c2) is True
+        assert merger._constraints_equal(c1, c2) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_values_structurally_equal_same_ref(self) -> None:
         """_values_structurally_equal returns True for same reference."""
         merger = StateMerger()
         obj = object()
-        assert merger._values_structurally_equal(obj, obj) is True
+        assert merger._values_structurally_equal(obj, obj) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_values_structurally_equal_z3(self) -> None:
         """_values_structurally_equal compares Z3 expressions."""
         merger = StateMerger()
         x = z3.Int("x")
-        assert merger._values_structurally_equal(x + 1, x + 1) is True
-        assert merger._values_structurally_equal(x + 1, x + 2) is False
+        assert merger._values_structurally_equal(x + 1, x + 1) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert merger._values_structurally_equal(x + 1, x + 2) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_values_structurally_equal_primitives(self) -> None:
         """_values_structurally_equal compares primitives."""
         merger = StateMerger()
-        assert merger._values_structurally_equal(42, 42) is True
-        assert merger._values_structurally_equal(42, 43) is False
+        assert merger._values_structurally_equal(42, 42) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert merger._values_structurally_equal(42, 43) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_mapping_hash_mismatch_no_hash(self) -> None:
         """_mapping_hash_mismatch returns False for plain dicts."""
         merger = StateMerger()
-        result = merger._mapping_hash_mismatch({"a": 1}, {"a": 1})
+        result = merger._mapping_hash_mismatch({"a": 1}, {"a": 1})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is False
 
     def test_mapping_equal_same_ref(self) -> None:
         """_mapping_equal returns True for same reference."""
         merger = StateMerger()
         d: dict[str, object] = {"a": 1}
-        assert merger._mapping_equal(d, d) is True
+        assert merger._mapping_equal(d, d) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_mapping_equal_different_lengths(self) -> None:
         """_mapping_equal returns False for different lengths."""
         merger = StateMerger()
-        assert merger._mapping_equal({"a": 1}, {"a": 1, "b": 2}) is False
+        assert merger._mapping_equal({"a": 1}, {"a": 1, "b": 2}) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_mapping_equal_different_keys(self) -> None:
         """_mapping_equal returns False for different keys."""
         merger = StateMerger()
-        assert merger._mapping_equal({"a": 1}, {"b": 1}) is False
+        assert merger._mapping_equal({"a": 1}, {"b": 1}) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestIsAnySymbolic:

@@ -17,8 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
-import z3
+from pysymex.analysis.detectors.logical.utils import extract_modulo_equalities
 
 
 class GcdImpossibilityRule(LogicRule):
@@ -26,6 +25,15 @@ class GcdImpossibilityRule(LogicRule):
     tier = 2
 
     def matches(self, ctx: ContradictionContext) -> bool:
-        if count_variables(ctx.core) < 2:
-            return False
-        return core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM})
+        seen: dict[tuple[str, int], int] = {}
+        for var, modulus, remainder in extract_modulo_equalities(ctx.core):
+            normalized_modulus = abs(modulus)
+            if normalized_modulus == 0:
+                continue
+            key = (var, normalized_modulus)
+            normalized_remainder = remainder % normalized_modulus
+            previous = seen.get(key)
+            if previous is not None and previous != normalized_remainder:
+                return True
+            seen[key] = normalized_remainder
+        return False

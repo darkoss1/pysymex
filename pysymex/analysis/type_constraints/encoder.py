@@ -112,8 +112,3 @@ class TypeEncoder:
     def get_axioms(self) -> list[z3.ExprRef]:
         """Get all axioms including those for cached types."""
         return list(self._base_axioms)
-
-
-__all__ = [
-    "TypeEncoder",
-]

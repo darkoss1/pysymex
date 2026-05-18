@@ -23,7 +23,32 @@ Lazy-loaded: symbols are resolved on first access via ``__getattr__``.
 
 from __future__ import annotations
 
-from importlib import import_module
+from typing import TYPE_CHECKING
+from pysymex._lazy import lazy_dir, lazy_getattr
+
+if TYPE_CHECKING:
+    from pysymex.reporting.formatters import (
+        Formatter as Formatter,
+        HTMLFormatter as HTMLFormatter,
+        JSONFormatter as JSONFormatter,
+        MarkdownFormatter as MarkdownFormatter,
+        TextFormatter as TextFormatter,
+        format_result as format_result,
+    )
+    from pysymex.reporting.html import (
+        AnalysisReport as AnalysisReport,
+        IssueReport as IssueReport,
+        create_report_from_result as create_report_from_result,
+        generate_html_report as generate_html_report,
+        save_html_report as save_html_report,
+    )
+    from pysymex.reporting.sarif import (
+        SECURITY_RULES as SECURITY_RULES,
+        SARIFGenerator as SARIFGenerator,
+        SARIFLog as SARIFLog,
+        SARIFResult as SARIFResult,
+        generate_sarif as generate_sarif,
+    )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "Formatter": ("pysymex.reporting.formatters", "Formatter"),
@@ -47,16 +72,29 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 def __getattr__(name: str) -> object:
     """Getattr."""
-    target = _EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module 'pysymex.reporting' has no attribute {name!r}")
-    module_path, attr_name = target
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """Dir."""
-    return list(_EXPORTS.keys())
+    return lazy_dir(_EXPORTS, globals(), include_namespace=False)
+
+
+__all__ = [
+    "AnalysisReport",
+    "Formatter",
+    "HTMLFormatter",
+    "IssueReport",
+    "JSONFormatter",
+    "MarkdownFormatter",
+    "SARIFGenerator",
+    "SARIFLog",
+    "SARIFResult",
+    "SECURITY_RULES",
+    "TextFormatter",
+    "create_report_from_result",
+    "format_result",
+    "generate_html_report",
+    "generate_sarif",
+    "save_html_report",
+]

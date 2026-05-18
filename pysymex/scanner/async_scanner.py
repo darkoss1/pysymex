@@ -43,7 +43,6 @@ from pysymex.scanner.types import ScanResult
 
 logger = logging.getLogger(__name__)
 
-
 _pool: concurrent.futures.ProcessPoolExecutor | None = None
 
 
@@ -83,11 +82,11 @@ async def _scan_file_async(
     )
 
     async with asyncio.timeout(timeout + 10.0):
-        use_process_pool = os.getenv("PYSYMEX_ASYNC_USE_PROCESS_POOL", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
+        use_process_pool = os.getenv("PYSYMEX_ASYNC_USE_PROCESS_POOL", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
         }
         if not use_process_pool:
             return await asyncio.to_thread(task)
@@ -158,18 +157,23 @@ async def scan_directory_async(
 
     if max_concurrency is None or max_concurrency <= 0:
         max_concurrency = max(1, os.cpu_count() or 1)
-
-    semaphore = asyncio.Semaphore(max_concurrency)
+    max_concurrency = max(1, min(max_concurrency, len(files)))
 
     results: list[ScanResult] = []
     errors: list[Exception] = []
     completed = 0
     total = len(files)
+    progress_lock = asyncio.Lock()
+    queue: asyncio.Queue[Path | None] = asyncio.Queue(maxsize=max_concurrency * 2)
 
-    async def _bounded_scan(file_path: Path) -> None:
-        """Acquire semaphore, scan file, record result."""
+    async def _consume_files() -> None:
+        """Consume queued files and scan them with bounded worker parallelism."""
         nonlocal completed
-        async with semaphore:
+        while True:
+            file_path = await queue.get()
+            if file_path is None:
+                queue.task_done()
+                return
             try:
                 result = await _scan_file_async(
                     file_path,
@@ -180,22 +184,26 @@ async def scan_directory_async(
                     trace_output_dir,
                     trace_verbosity,
                 )
-                results.append(result)
-                completed += 1
-                if verbose:
-                    pct = completed * 100 // total
-                    status = (
-                        "ERROR"
-                        if result.error
-                        else (f"{len(result.issues)} issue(s)" if result.issues else "OK")
-                    )
-                    print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
+                async with progress_lock:
+                    results.append(result)
+                    completed += 1
+                    if verbose:
+                        pct = completed * 100 // total
+                        status = (
+                            "ERROR"
+                            if result.error
+                            else (f"{len(result.issues)} issue(s)" if result.issues else "OK")
+                        )
+                        print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
             except asyncio.CancelledError:
                 raise
             except (TimeoutError, Exception) as exc:
-                errors.append(exc)
-                completed += 1
+                async with progress_lock:
+                    errors.append(exc)
+                    completed += 1
                 logger.error("Async scan failed for %s: %s", file_path, exc)
+            finally:
+                queue.task_done()
 
     if verbose:
         print(
@@ -204,8 +212,16 @@ async def scan_directory_async(
         )
 
     async with asyncio.TaskGroup() as tg:
+        for _ in range(max_concurrency):
+            tg.create_task(_consume_files())
+
         for file_path in files:
-            tg.create_task(_bounded_scan(file_path))
+            await queue.put(file_path)
+
+        for _ in range(max_concurrency):
+            await queue.put(None)
+
+        await queue.join()
 
     if errors:
         try:
@@ -237,7 +253,4 @@ async def scan_directory_async(
         else:
             print()
 
-    return results
-
-
-__all__ = ["scan_directory_async"]
+    return sorted(results, key=lambda result: result.file_path)

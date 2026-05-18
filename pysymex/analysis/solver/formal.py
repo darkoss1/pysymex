@@ -36,7 +36,8 @@ from unittest.mock import MagicMock
 
 import z3
 
-from pysymex.analysis.utils.math import wilson_upper_95
+from pysymex.core.solver.engine import IncrementalSolver
+from pysymex.utils.math import wilson_upper_95
 
 import pysymex.analysis.solver as solver_init
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
@@ -51,7 +52,7 @@ class FunctionChecklistItem:
     qualname: str
     strict_target: bool
     status: str
-    note: str
+    note: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,8 +60,8 @@ class DifferentialResult:
     name: str
     samples: int
     mismatches: int
-    mismatch_rate: float
-    mismatch_upper_95: float
+    mismatch_rate: float = 0.0
+    mismatch_upper_95: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,106 @@ class MutationResult:
     total_mutants: int
     killed_mutants: int
     mutation_score: float
+
+
+def build_function_checklist(
+    modules: list[ModuleType],
+    strict_targets: set[str],
+    *,
+    include_module_functions: bool = False,
+) -> list[FunctionChecklistItem]:
+    """Build a sorted formal checklist for modules and strict target names."""
+    items: list[FunctionChecklistItem] = []
+    seen: set[tuple[str, str]] = set()
+    for mod in modules:
+        mod_name = mod.__name__.split(".")[-1]
+
+        if include_module_functions:
+            for name, _ in inspect.getmembers(mod, inspect.isfunction):
+                if name.startswith("__"):
+                    continue
+                key = (mod_name, name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                strict = name in strict_targets
+                items.append(
+                    FunctionChecklistItem(
+                        module=mod_name,
+                        qualname=name,
+                        strict_target=strict,
+                        status="strict-tested" if strict else "inventory-reviewed",
+                        note="module-level function inventoried",
+                    )
+                )
+
+        for cls_name, cls in inspect.getmembers(mod, inspect.isclass):
+            if cls.__module__ != mod.__name__:
+                continue
+            for meth_name, _ in inspect.getmembers(cls, inspect.isfunction):
+                if meth_name.startswith("__"):
+                    continue
+                qualname = f"{cls_name}.{meth_name}"
+                key = (mod_name, qualname)
+                if key in seen:
+                    continue
+                seen.add(key)
+                strict = qualname in strict_targets
+                items.append(
+                    FunctionChecklistItem(
+                        module=mod_name,
+                        qualname=qualname,
+                        strict_target=strict,
+                        status="strict-tested" if strict else "inventory-reviewed",
+                        note=(
+                            "critical behavior has strict differential/mutation checks"
+                            if strict
+                            else "function included in full checklist inventory"
+                        ),
+                    )
+                )
+
+    return sorted(items, key=lambda item: (item.module, item.qualname))
+
+
+def build_domain_done_gate_report(
+    checklist: list[FunctionChecklistItem],
+    differential: list[DifferentialResult],
+    mutations: list[MutationResult],
+    *,
+    differential_key: str = "differential_pass",
+    differential_pass: bool | None = None,
+    mutation_floor: float = 0.66,
+    summary_extra: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Build the common done-gate report shape for formal harnesses."""
+    strict_targets = [item for item in checklist if item.strict_target]
+    strict_targets_marked = [item for item in strict_targets if item.status == "strict-tested"]
+    if differential_pass is None:
+        differential_pass = all(result.mismatches == 0 for result in differential)
+    criteria = {
+        "inventory_complete": len(checklist) > 0,
+        "strict_targets_all_covered": len(strict_targets) == len(strict_targets_marked),
+        differential_key: differential_pass,
+        "mutation_floor_pass": all(
+            mutation.mutation_score >= mutation_floor for mutation in mutations
+        ),
+    }
+    summary: dict[str, object] = {
+        "strict_targets": len(strict_targets),
+        "strict_targets_covered": len(strict_targets_marked),
+        "done_gate_passed": all(criteria.values()),
+    }
+    if summary_extra is not None:
+        summary.update(summary_extra)
+
+    return {
+        "function_checklist": [asdict(item) for item in checklist],
+        "differential_validation": [asdict(result) for result in differential],
+        "mutation_robustness": [asdict(result) for result in mutations],
+        "criteria": criteria,
+        "summary": summary,
+    }
 
 
 STRICT_TARGETS = {
@@ -112,60 +213,9 @@ def _solver_modules() -> list[ModuleType]:
 
 
 def function_checklist() -> list[FunctionChecklistItem]:
-    items: list[FunctionChecklistItem] = []
-    seen: set[tuple[str, str]] = set()
-
-    for mod in _solver_modules():
-        mod_name = mod.__name__.split(".")[-1]
-
-        for name, _ in inspect.getmembers(mod, inspect.isfunction):
-            if name.startswith("__"):
-                continue
-            key = (mod_name, name)
-            if key in seen:
-                continue
-            seen.add(key)
-            qualname = name
-            strict = qualname in STRICT_TARGETS
-            items.append(
-                FunctionChecklistItem(
-                    module=mod_name,
-                    qualname=qualname,
-                    strict_target=strict,
-                    status="strict-tested" if strict else "inventory-reviewed",
-                    note="module-level function inventoried",
-                )
-            )
-
-        for cls_name, cls in inspect.getmembers(mod, inspect.isclass):
-            if cls.__module__ != mod.__name__:
-                continue
-            for meth_name, _ in inspect.getmembers(cls, inspect.isfunction):
-                if meth_name.startswith("__"):
-                    continue
-                qualname = f"{cls_name}.{meth_name}"
-                key = (mod_name, qualname)
-                if key in seen:
-                    continue
-                seen.add(key)
-                strict = qualname in STRICT_TARGETS
-                status = "strict-tested" if strict else "inventory-reviewed"
-                note = (
-                    "critical behavior has strict differential/mutation checks"
-                    if strict
-                    else "function included in full checklist inventory"
-                )
-                items.append(
-                    FunctionChecklistItem(
-                        module=mod_name,
-                        qualname=qualname,
-                        strict_target=strict,
-                        status=status,
-                        note=note,
-                    )
-                )
-
-    return sorted(items, key=lambda i: (i.module, i.qualname))
+    return build_function_checklist(
+        _solver_modules(), STRICT_TARGETS, include_module_functions=True
+    )
 
 
 def _make_analyzer() -> FunctionAnalyzer:
@@ -231,10 +281,11 @@ def _call_op_call_function_ex(
 def _eval_int_expr(expr: object) -> int | None:
     if not isinstance(expr, z3.ArithRef):
         return None
-    model = z3.Solver()
-    if model.check() != z3.sat:
+    solver = IncrementalSolver(timeout_ms=1000)
+    result = solver.check(need_model=True)
+    if not result.is_sat or result.model is None:
         return None
-    out = model.model().eval(expr, model_completion=True)
+    out = result.model.eval(expr, model_completion=True)
     if isinstance(out, z3.IntNumRef):
         return out.as_long()
     if isinstance(out, z3.RatNumRef):
@@ -445,29 +496,12 @@ def build_done_gate_report(samples: int = 320, seed: int = 23) -> dict[str, obje
     differential = run_opcode_differential_validation(samples=samples, seed=seed)
     mutations = run_mutation_robustness()
 
-    strict_targets = [i for i in checklist if i.strict_target]
-    strict_targets_marked = [i for i in strict_targets if i.status == "strict-tested"]
     all_diff_within = all(r.mismatch_upper_95 <= 0.05 for r in differential)
-    mutation_floor = all(m.mutation_score >= 0.66 for m in mutations)
-
-    criteria = {
-        "inventory_complete": len(checklist) > 0,
-        "strict_targets_all_covered": len(strict_targets) == len(strict_targets_marked),
-        "differential_upper_bound_pass": all_diff_within,
-        "mutation_floor_pass": mutation_floor,
-    }
-    done_gate_passed = all(criteria.values())
-
-    return {
-        "function_checklist": [asdict(i) for i in checklist],
-        "differential_validation": [asdict(r) for r in differential],
-        "mutation_robustness": [asdict(r) for r in mutations],
-        "criteria": criteria,
-        "summary": {
-            "strict_targets": len(strict_targets),
-            "strict_targets_covered": len(strict_targets_marked),
-            "done_gate_passed": done_gate_passed,
-            "samples": samples,
-            "seed": seed,
-        },
-    }
+    return build_domain_done_gate_report(
+        checklist,
+        differential,
+        mutations,
+        differential_key="differential_upper_bound_pass",
+        differential_pass=all_diff_within,
+        summary_extra={"samples": samples, "seed": seed},
+    )

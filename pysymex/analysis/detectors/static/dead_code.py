@@ -22,7 +22,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 from pysymex.analysis.detectors.types import DetectionContext, Issue, IssueKind, StaticDetector
 
 

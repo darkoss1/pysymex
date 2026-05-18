@@ -25,8 +25,10 @@ and symbolic execution state management.
 
 from __future__ import annotations
 
+import dis
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 from types import CodeType
 
 from pysymex.analysis.solver.types import BasicBlock, CallSite, SymValue
@@ -55,11 +57,13 @@ class CallGraph:
 
     def get_callees(self, func: str) -> set[str]:
         """Get all functions called by func."""
-        return self.calls.get(func, set())
+        res = self.calls.get(func)
+        return res if res is not None else set()
 
     def get_callers(self, func: str) -> set[str]:
         """Get all functions that call func."""
-        return self.callers.get(func, set())
+        res = self.callers.get(func)
+        return res if res is not None else set()
 
     def find_recursive(self) -> set[str]:
         """Find all recursive functions (direct or indirect)."""
@@ -72,7 +76,7 @@ class CallGraph:
                     recursive.add(start)
                 return
             visited.add(current)
-            for callee in self.calls.get(current, set()):
+            for callee in self.calls.get(current, ()):
                 dfs(start, callee, visited.copy())
 
         for func in self.calls:
@@ -91,7 +95,7 @@ class CallGraph:
         while queue:
             func = queue.pop(0)
             result.append(func)
-            for callee in self.calls.get(func, set()):
+            for callee in self.calls.get(func, ()):
                 in_degree[callee] -= 1
                 if in_degree[callee] == 0:
                     queue.append(callee)
@@ -106,7 +110,7 @@ class CallGraph:
             if current in affected:
                 continue
             affected.add(current)
-            queue.extend(self.callers.get(current, set()))
+            queue.extend(self.callers.get(current, ()))
         return affected
 
 
@@ -161,8 +165,8 @@ class CFGBuilder:
             end = sorted_leaders[i + 1] if i + 1 < len(sorted_leaders) else len(instrs)
             blocks[leader] = BasicBlock(leader, list(instrs[leader:end]))
         self._build_edges(blocks, off_to_idx)
-        self._compute_dominators(blocks)
-        self._detect_loops(blocks)
+
+        self._detect_loops(blocks, instrs)
         return blocks
 
     def _build_edges(self, blocks: dict[int, BasicBlock], off_to_idx: dict[int, int]) -> None:
@@ -213,44 +217,19 @@ class CFGBuilder:
                     block.successors.append((succ_id, "uncond"))
                     blocks[succ_id].predecessors.append(bid)
 
-    def _compute_dominators(self, blocks: dict[int, BasicBlock]) -> None:
-        """Compute dominator sets for each block."""
-        if not blocks:
-            return
-        all_blocks = set(blocks.keys())
-        entry = min(blocks.keys())
-        blocks[entry].dominators = {entry}
-        for bid in blocks:
-            if bid != entry:
-                blocks[bid].dominators = all_blocks.copy()
-        changed = True
-        max_dom_iters = len(blocks) * 3 + 10
-        for _dom_iter in range(max_dom_iters):
-            if not changed:
-                break
-            changed = False
-            for bid, block in blocks.items():
-                if bid == entry:
-                    continue
-                if block.predecessors:
-                    pred_doms: list[set[int]] = [
-                        blocks[p].dominators for p in block.predecessors if p in blocks
-                    ]
-                    new_dom: set[int] = (
-                        pred_doms[0].intersection(*pred_doms[1:]) | {bid} if pred_doms else {bid}
-                    )
-                else:
-                    new_dom = {bid}
-                if new_dom != block.dominators:
-                    block.dominators = new_dom
-                    changed = True
+    def _detect_loops(
+        self, blocks: dict[int, BasicBlock], instrs: Sequence[dis.Instruction]
+    ) -> None:
+        """Detect loop headers using main LoopDetector."""
+        from pysymex.analysis.loops.core import LoopDetector
 
-    def _detect_loops(self, blocks: dict[int, BasicBlock]) -> None:
-        """Detect loop headers using back edges."""
-        for block in blocks.values():
-            for succ_id, _ in block.successors:
-                if succ_id in block.dominators:
-                    blocks[succ_id].loop_header = True
+        detector = LoopDetector()
+        entry_pc = min(blocks.keys()) if blocks else 0
+        loops = detector.analyze_cfg(list(instrs), entry_pc=entry_pc)
+        for loop in loops:
+            for block in blocks.values():
+                if any(loop.header_pc == i.offset for i in block.instructions):
+                    block.loop_header = True
 
 
 class SymbolicState:

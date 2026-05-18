@@ -39,12 +39,13 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicList,
     SymbolicString,
     SymbolicValue,
 )
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.containers.strings import get_symbolic_string
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -297,11 +298,7 @@ def compile_pattern(pattern: str) -> z3.ReRef:
     return _compiler.compile(pattern)
 
 
-def _get_symbolic_string(arg: object) -> SymbolicString | None:
-    """Extract symbolic string from argument."""
-    if isinstance(arg, SymbolicString):
-        return arg
-    return None
+_get_symbolic_string = get_symbolic_string
 
 
 def _get_pattern_string(arg: object) -> str | None:
@@ -634,16 +631,3 @@ REGEX_MODELS: dict[str, FunctionModel] = {
     "re.compile": ReCompileModel(),
     "re.escape": ReEscapeModel(),
 }
-__all__ = [
-    "REGEX_MODELS",
-    "PatternCompiler",
-    "ReCompileModel",
-    "ReEscapeModel",
-    "ReFindallModel",
-    "ReFullmatchModel",
-    "ReMatchModel",
-    "ReSearchModel",
-    "ReSplitModel",
-    "ReSubModel",
-    "compile_pattern",
-]

@@ -15,7 +15,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-yellow.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Status: Alpha-4.0](https://img.shields.io/badge/Status-Alpha-orange.svg)]()
+[![Status: Alpha-5.0](https://img.shields.io/badge/Status-Alpha-orange.svg)]()
 [![Z3 Solver](https://img.shields.io/badge/Solver-Z3-blueviolet.svg)](https://github.com/Z3Prover/z3)
 
 ---
@@ -60,7 +60,7 @@
 |----------|----------|
 | **Engine** | Bytecode-level symbolic execution, CPython 3.13 opcode support, Z3 SMT integration |
 | **Optimization** | CHTD path explosion mitigation, constraint independence (KLEE-style), adaptive path selection |
-| **Analysis** | Interprocedural analysis, abstract interpretation (interval/sign/parity), loop handling |
+| **Analysis** | Interprocedural analysis, abstract interpretation, loop handling |
 | **Output** | Text, JSON, HTML, SARIF 2.1.0 (GitHub Security tab compatible), Rich (colored panels) |
 | **Safety** | 20+ bug types, 40+ detectors, sandbox isolation |
 
@@ -101,9 +101,22 @@ pysymex scan src/ --format sarif -o report.sarif
 # Analyze a specific function
 pysymex analyze mycode.py -f risky_func --args x:int y:str
 
-# Watch mode — re-scan on file changes
-pysymex scan . --watch
+# Run built-in benchmarks
+pysymex benchmark --format markdown
 ```
+
+### Examples
+
+The `examples/` directory contains numbered scenarios for the current tree:
+
+- `01_basic_safety_guards.py`
+- `02_common_runtime_bugs.py`
+- `03_concolic_exploration.py`
+- `04_contract_verification.py`
+- `05_deep_path_loops.py`
+- `06_sandbox_security.py`
+- `07_symbolic_containers.py`
+- `08_exception_handling.py`
 
 ### Python API
 
@@ -125,7 +138,7 @@ for issue in result.issues:
 
 ```text
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│ pysymex - Formal Verification Report                                         │
+│ pysymex - formal verification report                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ISSUES FOUND (1)
@@ -195,7 +208,7 @@ pysymex/
 │   └── opcodes/           # Handlers (3.11-3.13)
 ├── accel/                 # Hardware acceleration
 │   └── backends/          # CPU backends
-├── models/                # Stdlib models (700+)
+├── models/                # Stdlib models
 ├── reporting/             # Output formatters
 └── scanner/               # Static scanner
 ```
@@ -226,22 +239,24 @@ pytest --cov=pysymex tests/ -v
 
 - **Python 3.11+** (tested on 3.11, 3.12, 3.13)
 - `z3-solver` == 4.15.3.0
-- `pydantic` == 2.12.5
-- `immutables` == 0.20
-- `numpy` == 2.0.0
-- `numba` == 0.64.0
+- `pydantic` >= 2.12.0
+- `immutables` == 0.21
+- `rich` >= 13.0.0
 
-**Note**: Dependency versions are pinned to specific known-working versions. Update after verifying compatibility.
+
+**Note**: Dependency versions are carefully constrained to verified compatible versions.
 
 ---
 
 ## 8. Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Formatting and type-check commands
-- Testing expectations
-- Pull request guidelines
+**pysymex is currently an "Open Source, but Closed Contribution" project.**
+
+While the source code is available under the AGPLv3 license, we are not currently accepting external Pull Requests. This ensures the engine's architectural and mathematical integrity during its initial alpha phase.
+
+If you find a bug or have a feature request, please [open an issue](https://github.com/darkoss1/pysymex/issues).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ---
 

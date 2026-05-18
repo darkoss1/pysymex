@@ -45,6 +45,19 @@ class TestEnhancedMethod:
         args, _ = m.get_call_args((1,), {})
         assert args[0] is obj
 
+    def test_get_call_args_does_not_duplicate_explicit_receiver(self) -> None:
+        cls = mod.SymbolicClass("C")
+        obj = mod.SymbolicObject(cls)
+        m = mod.EnhancedMethod(func=_f).bind_to_instance(obj)
+        args, _ = m.get_call_args((obj, 1), {})
+        assert args == (obj, 1)
+
+    def test_get_call_args_does_not_duplicate_explicit_class_receiver(self) -> None:
+        cls = mod.SymbolicClass("C")
+        m = mod.EnhancedMethod(func=_f, method_type=mod.MethodType.CLASS).bind_to_class(cls)
+        args, _ = m.get_call_args((cls, 1), {})
+        assert args == (cls, 1)
+
 
 class TestInitParameter:
     def test_to_symbolic(self) -> None:
@@ -152,6 +165,27 @@ class TestEnhancedClassRegistry:
         reg.register_by_code(3, cls)
         assert reg.get_by_code(3) is cls
 
+    def test_get_by_code_object_rejects_stale_identity(self) -> None:
+        reg = mod.EnhancedClassRegistry()
+        cls = reg.register_class("X")
+        code_obj = compile("class X:\n    pass\n", "<test>", "exec")
+        reg.register_code_object(code_obj, cls)
+        assert reg.get_by_code_object(code_obj) is cls
+
+        other_code = compile("class X:\n    value = 1\n", "<test>", "exec")
+        reg._by_code_object[id(other_code)] = (code_obj, cls)  # type: ignore[reportPrivateUsage]
+        assert reg.get_by_code_object(other_code) is None
+
+    def test_clear_removes_code_object_registrations(self) -> None:
+        reg = mod.EnhancedClassRegistry()
+        cls = reg.register_class("X")
+        code_obj = compile("class X:\n    pass\n", "<test>", "exec")
+        reg.register_code_object(code_obj, cls)
+        reg.clear()
+        assert reg.get_class("X") is None
+        assert reg.get_by_code(id(code_obj)) is None
+        assert reg.get_by_code_object(code_obj) is None
+
     def test_list_classes(self) -> None:
         reg = mod.EnhancedClassRegistry()
         reg.register_class("X")
@@ -172,6 +206,17 @@ def test_extract_init_params() -> None:
 
     params = mod.extract_init_params(f.__code__)
     assert [p.name for p in params[:2]] == ["self", "x"]
+
+
+def test_extract_init_params_ignores_locals_when_mapping_defaults() -> None:
+    def f(self: object, x: int, y: int = 1) -> None:
+        z = x + y
+        _ = z
+
+    params = mod.extract_init_params(f.__code__)
+
+    assert [p.name for p in params] == ["self", "x", "y"]
+    assert [p.has_default for p in params] == [False, False, False]
 
 
 def test_is_dataclass() -> None:

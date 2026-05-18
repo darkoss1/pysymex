@@ -90,6 +90,7 @@ from pysymex.tracing.z3_utils import Z3SemanticRegistry, Z3Serializer
 if TYPE_CHECKING:
     from pysymex._typing import SolverProtocol, StackValue
     from pysymex.analysis.detectors.base import Issue
+    from pysymex.core.solver.engine import SolverResult
     from pysymex.core.state import VMState
     from pysymex.execution.executors.core import SymbolicExecutor
 
@@ -161,7 +162,7 @@ class TracingSolverProxy:
         object.__setattr__(self, "_tracer", tracer)
         object.__setattr__(self, "_state_getter", state_getter)
 
-    def check(self, *assumptions: z3.BoolRef) -> z3.CheckSatResult:
+    def check(self, *assumptions: z3.BoolRef, need_model: bool = True) -> z3.CheckSatResult:
         """Intercept check (used by several internal callers), record telemetry."""
         inner: SolverProtocol = object.__getattribute__(self, "_inner")
         tracer: ExecutionTracer = object.__getattribute__(self, "_tracer")
@@ -170,7 +171,11 @@ class TracingSolverProxy:
         cache_hits_before: int = getattr(inner, "_cache_hits", 0)
         t0 = time.perf_counter()
 
-        result = inner.check(*assumptions) if assumptions else inner.check()
+        result = (
+            inner.check(*assumptions, need_model=need_model)
+            if assumptions
+            else inner.check(need_model=need_model)
+        )
         latency_ms = (time.perf_counter() - t0) * 1000.0
         cache_hits_after: int = getattr(inner, "_cache_hits", 0)
         cache_hit = cache_hits_after > cache_hits_before
@@ -266,6 +271,59 @@ class TracingSolverProxy:
 
         return result
 
+    def check_sat_result(
+        self,
+        constraints: Iterable[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
+        """Intercept result-preserving SAT checks, record telemetry."""
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        tracer: ExecutionTracer = object.__getattribute__(self, "_tracer")
+        state_getter = object.__getattribute__(self, "_state_getter")
+
+        cache_hits_before: int = getattr(inner, "_cache_hits", 0)
+        t0 = time.perf_counter()
+
+        result = inner.check_sat_result(
+            constraints,
+            known_sat_prefix_len=known_sat_prefix_len,
+        )
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        cache_hits_after: int = getattr(inner, "_cache_hits", 0)
+        cache_hit = cache_hits_after > cache_hits_before
+
+        try:
+            state: VMState | None = state_getter()
+            path_id = getattr(state, "path_id", 0) if state is not None else 0
+            pc = getattr(state, "pc", 0) if state is not None else 0
+            if result.is_sat:
+                result_str = "sat"
+            elif result.is_unsat:
+                result_str = "unsat"
+            else:
+                result_str = "unknown"
+            tracer.on_solve(
+                constraints=list(constraints),
+                result_str=result_str,
+                latency_ms=latency_ms,
+                cache_hit=cache_hit,
+                model=result.model,
+                path_id=path_id,
+                pc=pc,
+            )
+        except Exception as exc:
+            print(
+                f"[pysymex.tracing] TracingSolverProxy.check_sat_result telemetry error: {exc}",
+                file=sys.stderr,
+            )
+
+        return result
+
+    def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
+        """Delegate model extraction to the wrapped solver."""
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        return inner.get_model(constraints)
+
     def get_stats(self) -> dict[str, object]:
         inner: SolverProtocol = object.__getattribute__(self, "_inner")
         return inner.get_stats()
@@ -273,6 +331,11 @@ class TracingSolverProxy:
     def constraint_optimizer(self) -> object:
         inner: SolverProtocol = object.__getattribute__(self, "_inner")
         return inner.constraint_optimizer()
+
+    def set_deadline(self, deadline_time: float | None) -> None:
+        """Delegate deadline setting to the inner solver."""
+        inner: SolverProtocol = object.__getattribute__(self, "_inner")
+        inner.set_deadline(deadline_time)
 
     def __getattr__(self, name: str) -> object:
         """Delegate every other attribute look-up to the inner solver."""
@@ -284,7 +347,7 @@ class TracingSolverProxy:
 
 
 class ExecutionTracer:
-    """LLM-optimised observability layer for :class:`~pysymex.execution.executors.core.SymbolicExecutor`.
+    """LLM-optimised observability layer for symbolic executor runs.
 
     Session lifecycle
     ~~~~~~~~~~~~~~~~~
@@ -377,6 +440,9 @@ class ExecutionTracer:
         filename = f"trace_{ts}_{safe_name}.jsonl.gz"
         out_dir = Path(self._config.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        from pysymex.pathing import ensure_pysymex_gitignore
+
+        ensure_pysymex_gitignore(out_dir)
         self._trace_path = out_dir / filename
 
         import gzip
@@ -396,18 +462,9 @@ class ExecutionTracer:
         except Exception:
             pass
 
-        pysymex_version = "unknown"
-        try:
-            from importlib.metadata import version
+        from pysymex.config import VERSION
 
-            pysymex_version = version("pysymex")
-        except Exception:
-            try:
-                import pysymex as _px
-
-                pysymex_version = getattr(_px, "__version__", "unknown")
-            except Exception:
-                pass
+        pysymex_version = VERSION
 
         raw_config = config_snapshot if config_snapshot is not None else self._config.model_dump()
 
@@ -618,16 +675,16 @@ class ExecutionTracer:
 
                 for _ in range(current_count - prev_constraint_count):
                     if curr is not None:
-                        new_constraints.append(cast("object", curr.constraint))  # type: ignore[reportUnknownMemberType]  # constraint type unknown
+                        new_constraints.append(cast("object", curr.constraint))
                         curr = curr.parent
                     else:
                         break
 
                 if new_constraints:
-                    newest = new_constraints[0]  # type: ignore[reportUnknownVariableType]  # element type unknown
+                    newest = new_constraints[0]
                     causality = f"{instr.opname} at PC={state.pc}"
                     constraint_added = ConstraintEntry(
-                        smtlib=self._serializer.safe_sexpr(newest),  # type: ignore[reportUnknownArgumentType]  # newest type unknown
+                        smtlib=self._serializer.safe_sexpr(newest),
                         causality=causality,
                     )
 
@@ -808,8 +865,8 @@ class ExecutionTracer:
             causality_base = f"path constraint at PC={pc_val}"
             issue_constraints: list[object] = cast(
                 "list[object]", getattr(issue, "constraints", None) or []
-            )  # type: ignore[reportUnknownVariableType]  # constraints type unknown
-            raw_dicts = self._serializer.constraints_to_smtlib(issue_constraints, causality_base)  # type: ignore[reportUnknownArgumentType]  # issue_constraints element type unknown
+            )
+            raw_dicts = self._serializer.constraints_to_smtlib(issue_constraints, causality_base)
             constraints_at_issue = [
                 ConstraintEntry(smtlib=d["smtlib"], causality=d["causality"])
                 for d in raw_dicts[: self._config.max_constraint_display]

@@ -557,7 +557,7 @@ def compute_dominators(graph: CallGraph, entry: str) -> dict[str, set[str]]:
                 continue
             new_dom = nodes.copy()
             for caller in callers:
-                new_dom &= dom.get(caller, set())
+                new_dom &= dom.get(caller, nodes)
             new_dom.add(node)
             if new_dom != dom[node]:
                 dom[node] = new_dom

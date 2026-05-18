@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
-from typing import Generator
 
-import pytest
 
 from pysymex.stats.sinks.sqlite import SQLiteSink
 
@@ -15,7 +13,7 @@ class TestSQLiteSink:
     def test_initialization_creates_db_and_schema(self, tmp_path: pathlib.Path) -> None:
         """Verify that SQLiteSink initializes, creates file and schema."""
         db_path = tmp_path / "stats.db"
-        sink = SQLiteSink(str(db_path))
+        SQLiteSink(str(db_path))
 
         assert db_path.exists()
 

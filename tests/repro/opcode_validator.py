@@ -1,7 +1,7 @@
-import dis
 import z3
 import logging
-from typing import Any, Dict, Optional, List, Tuple
+from collections.abc import Callable
+from typing import Any, Dict, Optional, List, Tuple, cast
 from pysymex.execution.executors.core import SymbolicExecutor
 from pysymex.execution.types import ExecutionConfig, ExecutionResult
 from pysymex.core.types.scalars import SymbolicValue
@@ -15,7 +15,7 @@ def run_cpython(code_str: str, initial_locals: Optional[Dict[str, Any]] = None) 
     Executes code via exec() to get ground truth from CPython.
     """
     locs = initial_locals.copy() if initial_locals else {}
-    globs = {}
+    globs: dict[str, object] = {}
     try:
         exec(code_str, globs, locs)
         return {"locals": locs, "globals": globs, "exception": None, "stack": []}
@@ -52,9 +52,9 @@ def run_pysymex(
 
     wrapper_code += "    return\n"
 
-    globs = {}
+    globs: dict[str, object] = {}
     exec(wrapper_code, globs)
-    wrapper_func = globs["wrapper"]
+    wrapper_func = cast(Callable[..., object], globs["wrapper"])
 
     return executor.execute_function(
         wrapper_func, symbolic_args=symbolic_vars, initial_values=initial_values

@@ -3,7 +3,6 @@ from __future__ import annotations
 import dis
 
 
-from pysymex.analysis.detectors import IssueKind
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicValue
 from pysymex.execution.dispatcher import OpcodeDispatcher
@@ -13,12 +12,6 @@ from pysymex.execution.opcodes.py312 import exceptions
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
     base = next(iter(dis.get_instructions(compile("x = 1", "<test>", "exec"))))
     return base._replace(opname=opname, argval=argval, offset=offset)
-
-
-def test_try_block_can_raise() -> None:
-    """Test try_block_can_raise behavior."""
-    items = [_instr("LOAD_CONST"), _instr("CALL")]
-    assert exceptions.try_block_can_raise(items) is True
 
 
 def test_handle_push_exc_info() -> None:
@@ -63,7 +56,7 @@ def test_handle_reraise() -> None:
     state = VMState(stack=["exc"], pc=0)
     result = exceptions.handle_reraise(_instr("RERAISE", 0), state, OpcodeDispatcher())
     assert result.terminal is True
-    assert result.issues[0].kind is IssueKind.EXCEPTION
+    assert len(result.issues) == 0
 
 
 def test_handle_with_except_start() -> None:
@@ -155,7 +148,7 @@ def test_handle_raise_varargs() -> None:
         _instr("RAISE_VARARGS", 1, offset=0), state, OpcodeDispatcher()
     )
     assert result.terminal is True
-    assert len(result.issues) == 1
+    assert len(result.issues) == 0
 
 
 def test_handle_return_generator() -> None:

@@ -26,7 +26,7 @@ Provides efficient state forking via copy-on-write semantics:
 
 from __future__ import annotations
 
-from collections.abc import ItemsView, Iterator, KeysView, ValuesView
+from collections.abc import Hashable, ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -34,7 +34,7 @@ import z3
 
 K = TypeVar("K")
 V = TypeVar("V")
-
+S = TypeVar("S", bound=Hashable)
 
 import immutables
 
@@ -211,21 +211,21 @@ class CowDict(Generic[K, V]):
         return dict(self._data)
 
 
-class CowSet:
+class CowSet(Generic[S]):
     """Copy-on-Write set with caching hash using immutables.Map."""
 
     __slots__ = ("_data", "_hash")
-    _data: immutables.Map[int, None]
+    _data: immutables.Map[S, None]
     _hash: int | None
 
     def __init__(
         self,
-        data: set[int] | frozenset[int] | immutables.Map[int, None] | CowSet | None = None,
+        data: set[S] | frozenset[S] | immutables.Map[S, None] | CowSet[S] | None = None,
         *,
         shared: bool = False,
     ) -> None:
         if isinstance(data, immutables.Map):
-            base_data: immutables.Map[int, None] = data
+            base_data: immutables.Map[S, None] = data
         elif isinstance(data, CowSet):
             base_data = data._data
         elif data is not None:
@@ -235,21 +235,21 @@ class CowSet:
         self._data = base_data
         self._hash: int | None = None
 
-    def _compute_item_hash(self, item: int) -> int:
-        item_h = (item + 0x9E3779B9) & 0xFFFFFFFFFFFFFFFF
+    def _compute_item_hash(self, item: S) -> int:
+        item_h = hash(item) & 0xFFFFFFFFFFFFFFFF
         item_h = (item_h ^ (item_h >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
         item_h = (item_h ^ (item_h >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
         item_h = item_h ^ (item_h >> 31)
         return item_h
 
-    def add(self, item: int) -> None:
+    def add(self, item: S) -> None:
         if item not in self._data:
             if self._hash is not None:
                 self._hash ^= self._compute_item_hash(item)
                 self._hash &= 0xFFFFFFFFFFFFFFFF
             self._data = self._data.set(item, None)
 
-    def discard(self, item: int) -> None:
+    def discard(self, item: S) -> None:
         if item in self._data:
             if self._hash is not None:
                 self._hash ^= self._compute_item_hash(item)
@@ -262,7 +262,7 @@ class CowSet:
     def __len__(self) -> int:
         return len(self._data)
 
-    def __iter__(self) -> Iterator[int]:
+    def __iter__(self) -> Iterator[S]:
         return iter(self._data.keys())
 
     def hash_value(self) -> int:
@@ -274,12 +274,13 @@ class CowSet:
         self._hash = h & 0xFFFFFFFFFFFFFFFF
         return self._hash ^ len(self._data)
 
-    def cow_fork(self) -> "CowSet":
+    def cow_fork(self) -> "CowSet[S]":
         new_copy = CowSet(self._data)
+        new_copy._data = self._data
         new_copy._hash = self._hash
         return new_copy
 
-    def to_set(self) -> set[int]:
+    def to_set(self) -> set[S]:
         return set(self._data.keys())
 
 
@@ -343,7 +344,15 @@ class ConstraintChain:
     New constraints are appended by creating a new head node.
     """
 
-    __slots__ = ("_hash", "_incremental_hash", "_length", "_seen_hashes", "constraint", "parent")
+    __slots__ = (
+        "_hash",
+        "_has_false",
+        "_incremental_hash",
+        "_length",
+        "_seen_hashes",
+        "constraint",
+        "parent",
+    )
 
     def __init__(
         self,
@@ -358,6 +367,7 @@ class ConstraintChain:
             self._seen_hashes: frozenset[int] = (
                 frozenset({constraint.hash()}) if constraint is not None else frozenset()
             )
+            self._has_false = bool(constraint is not None and z3.is_false(constraint))
             h = 0x3456789A
             if constraint is not None:
                 ch = constraint.hash() & 0xFFFFFFFFFFFFFFFF
@@ -372,9 +382,11 @@ class ConstraintChain:
                 ) & 0xFFFFFFFFFFFFFFFF
 
                 self._seen_hashes = parent._seen_hashes | {constraint.hash()}
+                self._has_false = parent._has_false or z3.is_false(constraint)
             else:
                 self._incremental_hash = parent._incremental_hash
                 self._seen_hashes = parent._seen_hashes
+                self._has_false = parent._has_false
 
         self._hash = (self._incremental_hash ^ self._length) & 0xFFFFFFFFFFFFFFFF
 
@@ -431,6 +443,14 @@ class ConstraintChain:
     def hash_value(self) -> int:
         """Return structural hash of the constraint chain. O(1)."""
         return self._hash
+
+    def contains_hash(self, constraint_hash: int) -> bool:
+        """Return whether a constraint with this Z3 hash appears in the chain."""
+        return constraint_hash in self._seen_hashes
+
+    def has_false_literal(self) -> bool:
+        """Return whether the chain contains an explicit Z3 false literal."""
+        return self._has_false
 
     @staticmethod
     def empty() -> ConstraintChain:

@@ -22,7 +22,7 @@ def test_bytes_parametrized_baseline(value: bytes) -> None:
     assert value.lower() == bytes(value).lower()
 
 
-@pytest.mark.parametrize("values", [frozenset(), frozenset({1}), frozenset({1, 2})])
+@pytest.mark.parametrize("values", [frozenset[int](), frozenset({1}), frozenset({1, 2})])
 def test_frozenset_parametrized_baseline(values: frozenset[int]) -> None:
     assert values.union({9}) == frozenset(values).union({9})
 

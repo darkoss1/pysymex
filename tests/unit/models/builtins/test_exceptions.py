@@ -8,6 +8,7 @@ from pysymex.core.exceptions.analyzer import BUILTIN_EXCEPTIONS
 from pysymex.core.state import create_initial_state
 from pysymex.core.types.scalars import SymbolicValue
 from pysymex.models.builtins.exceptions import ExceptionTypeModel, create_exception_models
+from pysymex.models.builtins import get_default_model_registry
 from pysymex.models.builtins.types import TypeModelResult
 
 
@@ -48,3 +49,13 @@ class TestExceptionsModel:
         for model in models:
             assert isinstance(model, ExceptionTypeModel)
             assert model.python_type in BUILTIN_EXCEPTIONS
+
+    def test_default_registry_applies_builtin_exception_constructor(self) -> None:
+        """Builtin exception classes are resolved through the default model registry."""
+        result = get_default_model_registry().apply(
+            RuntimeError, ["boom"], {}, create_initial_state()
+        )
+
+        assert result is not None
+        assert isinstance(result.value, SymbolicValue)
+        assert result.value.name.startswith("RuntimeError_instance_")

@@ -156,14 +156,6 @@ class Quantifier:
             uniqueness = z3.ForAll(y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), eq_all))
             return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body)), uniqueness)
         elif self.kind == QuantifierKind.COUNT:
-            raise NotImplementedError("COUNT quantifier requires special handling")
+            raise ValueError("COUNT quantifier requires dedicated lowering and is unsupported here")
         else:
             raise ValueError(f"Unknown quantifier kind: {self.kind}")
-
-
-__all__ = [
-    "BoundSpec",
-    "Quantifier",
-    "QuantifierKind",
-    "QuantifierVar",
-]

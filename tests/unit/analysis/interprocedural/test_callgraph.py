@@ -1,13 +1,13 @@
-import pytest
 from unittest.mock import Mock, patch
+
 from pysymex.analysis.interprocedural.callgraph import (
-    CallGraphNode,
-    CallGraphEdge,
     CallGraph,
     CallGraphBuilder,
-    get_analysis_order,
-    find_mutual_recursion,
+    CallGraphEdge,
+    CallGraphNode,
     compute_dominators,
+    find_mutual_recursion,
+    get_analysis_order,
 )
 
 
@@ -37,13 +37,13 @@ class TestCallGraphNode:
         """Test add_caller behavior."""
         node = CallGraphNode(name="func")
         node.add_caller("c1")
-        assert "c1" in node._callers
+        assert "c1" in node._callers  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_add_callee(self) -> None:
         """Test add_callee behavior."""
         node = CallGraphNode(name="func")
         node.add_callee("c2")
-        assert "c2" in node._callees
+        assert "c2" in node._callees  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestCallGraphEdge:
@@ -70,7 +70,7 @@ class TestCallGraph:
         cg = CallGraph()
         node = CallGraphNode(name="f")
         cg.add_node(node)
-        assert "f" in cg._nodes
+        assert "f" in cg._nodes  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_node(self) -> None:
         """Test get_node behavior."""
@@ -303,9 +303,8 @@ class TestCallGraphBuilder:
         assert len(b.graph.node_names()) > 0
 
     @patch("pysymex.analysis.interprocedural.callgraph._cached_get_instructions")
-    def test_analyze_function(self, mock_instrs) -> None:
+    def test_analyze_function(self, mock_instrs: Mock) -> None:
         """Test analyze_function behavior."""
-        from unittest.mock import Mock
 
         instr = Mock()
         instr.opname = "CALL_FUNCTION"
@@ -320,15 +319,14 @@ class TestCallGraphBuilder:
         assert "print" in callees
 
     @patch("pysymex.analysis.interprocedural.callgraph._cached_get_instructions")
-    def test_build_from_functions(self, mock_instrs) -> None:
+    def test_build_from_functions(self, mock_instrs: Mock) -> None:
         """Test build_from_functions behavior."""
-        from unittest.mock import Mock
 
         instr = Mock()
         instr.opname = "CALL_FUNCTION"
         instr.argval = "f2"
 
-        def side_effect(code):
+        def side_effect(code: object) -> list[Mock]:
             if "f1" in str(code):
                 return [instr]
             return []
@@ -345,7 +343,6 @@ class TestCallGraphBuilder:
         cg = b.build_from_functions([f1, f2])
         qualnames = list(cg.node_names())
         f1_name = next((n for n in qualnames if "f1" in n), "f1")
-        f2_name = next((n for n in qualnames if "f2" in n), "f2")
         assert cg.has_edge(f1_name, "f2") is True
 
     def test_build(self) -> None:

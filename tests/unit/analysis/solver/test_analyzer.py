@@ -1,12 +1,13 @@
-import pytest
+from types import CodeType
+from unittest.mock import Mock
+
 import z3
-from unittest.mock import Mock, patch
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
 from pysymex.analysis.solver.graph import SymbolicState
-from pysymex.analysis.solver.types import SymValue, SymType, BugType, CrashCondition
+from pysymex.analysis.solver.types import BugType, CallSite, CrashCondition, SymType, SymValue
 
 
-def make_dummy_code() -> object:
+def make_dummy_code() -> CodeType:
     def f(a: int) -> int:
         b = a + 1
         return b
@@ -55,7 +56,7 @@ class TestFunctionAnalyzer:
         state.push(SymValue(z3.Int("f"), "my_func", SymType.CALLABLE))
         state.push(SymValue(z3.IntVal(1), "arg", SymType.INT))
         crashes: list[CrashCondition] = []
-        call_sites = []
+        call_sites: list[CallSite] = []
         analyzer.op_call(1, state, crashes, call_sites)
         assert len(call_sites) == 1
         assert call_sites[0].callee == "my_func"
@@ -80,6 +81,6 @@ class TestFunctionAnalyzer:
         state.push(SymValue(z3.Int("f"), "my_func", SymType.CALLABLE))
         state.push(SymValue(z3.Int("args"), "args", SymType.TUPLE))
         crashes: list[CrashCondition] = []
-        call_sites = []
+        call_sites: list[CallSite] = []
         analyzer.op_call_function_ex(0, state, crashes, call_sites)
         assert len(call_sites) == 1

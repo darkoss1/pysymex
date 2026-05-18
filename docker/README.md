@@ -1,4 +1,4 @@
-# Docker Development Environment
+# pysymex docker development environment
 
 This directory contains Dockerfiles for building persistent development environments for pysymex across multiple Python versions.
 

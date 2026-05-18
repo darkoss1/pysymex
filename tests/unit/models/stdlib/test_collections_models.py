@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
 
 class _FakeState:
     """Minimal VMState-like object for testing model_init calls."""
@@ -177,7 +175,6 @@ class TestOrderedDictModel:
     def test_model_popitem_returns_tuple(self) -> None:
         """OrderedDict.popitem() returns (key, value) tuple."""
         from pysymex.models.stdlib.collections import OrderedDictModel
-        from pysymex.core.types.scalars import SymbolicValue
         from pysymex.core.types.containers import SymbolicDict
 
         od = SymbolicDict.empty("od")

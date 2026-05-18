@@ -1,11 +1,8 @@
-from pysymex.analysis.detectors.static.division_by_zero import StaticDivisionByZeroDetector
-
 """Tests for pysymex/analysis/detectors/static/analyzer.py."""
 
+from typing import Any
 from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
 from pysymex.analysis.detectors.static.analyzer import DetectorRegistry, StaticAnalyzer
 
 
@@ -33,8 +30,10 @@ class TestDetectorRegistry:
 
     def test_register(self) -> None:
         """Test register behavior."""
+        from pysymex.analysis.detectors.static.dead_code import DeadCodeDetector
+
         r = DetectorRegistry()
-        d = StaticDivisionByZeroDetector()
+        d = DeadCodeDetector()
         r.register(d)
         assert d in r.detectors
 
@@ -43,7 +42,6 @@ class TestDetectorRegistry:
         r = DetectorRegistry()
         all_d = r.get_all()
         assert len(all_d) > 0
-        assert any(isinstance(d, StaticDivisionByZeroDetector) for d in all_d)
 
 
 class TestStaticAnalyzer:
@@ -51,7 +49,7 @@ class TestStaticAnalyzer:
 
     @patch("pysymex.analysis.detectors.static.analyzer._cached_get_instructions")
     @patch("pysymex.analysis.detectors.static.analyzer.PatternAnalyzer.analyze_function")
-    def test_analyze_function(self, mock_analyze_func, mock_get_instr) -> None:
+    def test_analyze_function(self, mock_analyze_func: Any, mock_get_instr: Any) -> None:
         """Test analyze_function behavior."""
         analyzer = StaticAnalyzer()
         mock_get_instr.return_value = [MockInstr("BINARY_OP", argrepr="/")]

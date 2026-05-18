@@ -9,6 +9,7 @@ from pysymex.execution.opcodes.py312 import (
     control,
     exceptions,
     functions,
+    formatting,
     locals,
     stack,
 )
@@ -25,6 +26,7 @@ def test_py312_exports_all_base_opcode_groups() -> None:
         "control",
         "exceptions",
         "functions",
+        "formatting",
         "locals",
         "stack",
     }
@@ -38,5 +40,6 @@ def test_py312_routes_to_base_modules() -> None:
     assert py312.control is control
     assert py312.exceptions is exceptions
     assert py312.functions is functions
+    assert py312.formatting is formatting
     assert py312.locals is locals
     assert py312.stack is stack

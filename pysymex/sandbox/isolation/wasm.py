@@ -32,6 +32,7 @@ Requirements:
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 import subprocess
 import time
 from typing import TYPE_CHECKING
@@ -42,7 +43,7 @@ from . import IsolationBackend
 from .harness import HARNESS_FILENAME, generate_harness_script
 
 if TYPE_CHECKING:
-    from ..types import SandboxConfig
+    pass
 
 
 class WasmBackend(IsolationBackend):
@@ -61,19 +62,10 @@ class WasmBackend(IsolationBackend):
     - Deterministic execution
     """
 
-    def __init__(self, config: SandboxConfig) -> None:
-        super().__init__(config)
-        self._process: subprocess.Popen[bytes] | None = None
-
     @property
     def is_available(self) -> bool:
         """Check if wasmtime is available."""
-        try:
-            import wasmtime  # type: ignore[reportUnusedImport]  # Import to check availability
-
-            return True
-        except ImportError:
-            return False
+        return find_spec("wasmtime") is not None
 
     def get_capabilities(self) -> SecurityCapabilities:
         """Report *actually enforced* capabilities (honest)."""
@@ -87,28 +79,6 @@ class WasmBackend(IsolationBackend):
             cpu_limits=False,
             process_limits=False,
         )
-
-    def setup(self) -> None:
-        """Create jail directory."""
-        try:
-            self._jail_path = self._create_jail()
-            self._is_setup = True
-        except Exception as exc:
-            self.cleanup()
-            raise SandboxSetupError(f"Failed to create jail: {exc}") from exc
-
-    def cleanup(self) -> None:
-        """Clean up resources."""
-        if self._process is not None:
-            try:
-                self._process.kill()
-                self._process.wait(timeout=5.0)
-            except Exception:
-                pass
-            self._process = None
-
-        self._destroy_jail()
-        self._is_setup = False
 
     def execute(
         self,
@@ -194,12 +164,3 @@ class WasmBackend(IsolationBackend):
 
         finally:
             self._process = None
-
-    def _kill_and_drain(self) -> tuple[bytes, bytes]:
-        if self._process is not None:
-            self._process.kill()
-            return self._process.communicate()
-        return b"", b""
-
-
-__all__ = ["WasmBackend"]

@@ -85,8 +85,8 @@ class TestResourceLimits:
         limits = ResourceLimits()
         assert limits.timeout_seconds == 30.0
         assert limits.cpu_seconds == 30
-        assert limits.memory_mb == 256
-        assert limits.max_processes == 1
+        assert limits.memory_mb == 512
+        assert limits.max_processes == 4
         assert limits.max_file_descriptors == 32
         assert limits.max_file_size_mb == 16
         assert limits.max_output_bytes == 1024 * 1024

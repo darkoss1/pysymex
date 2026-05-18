@@ -18,14 +18,18 @@
 
 from __future__ import annotations
 
-import z3
 from typing import TYPE_CHECKING
 
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
-from pysymex.core.types.havoc import is_havoc
+import z3
+
+from pysymex.analysis.detectors.base import DisInstruction, IsSatFn, Issue
+from pysymex.analysis.detectors.runtime.overflow import OverflowDetector, as_symbolic_int
+from pysymex.core.solver.engine import get_model
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
+
+_as_symbolic_int = as_symbolic_int
 
 
 def pure_check_bounded_overflow(
@@ -39,59 +43,85 @@ def pure_check_bounded_overflow(
     max_val: int,
     is_satisfiable_fn: IsSatFn,
 ) -> Issue | None:
-    """Pure: check whether arithmetic on *left*/*right* can overflow within *bits*."""
-    from pysymex.core.types.scalars import SymbolicValue
+    """Pure check for bounded integer overflow using runtime overflow semantics."""
+    _ = bits
+    symbolic_left = _as_symbolic_int(left)
+    symbolic_right = _as_symbolic_int(right)
+    if symbolic_left is None or symbolic_right is None:
+        return None
+    op = argrepr[:-1] if argrepr.endswith("=") else argrepr
+    if op not in {"*", "+", "-", "**", "<<"}:
+        return None
+    int_like_left = z3.Or(symbolic_left.is_int, symbolic_left.is_bool)
+    int_like_right = z3.Or(symbolic_right.is_int, symbolic_right.is_bool)
 
-    if is_havoc(left) or is_havoc(right):
+    if op == "<<":
+        constraints = [*path_constraints, int_like_left, int_like_right, symbolic_right.z3_int > 63]
+        if is_satisfiable_fn(constraints):
+            return Issue(
+                kind=IntegerOverflowDetector.issue_kind,
+                message=f"Potential {bits}-bit integer overflow",
+                constraints=constraints,
+                model=get_model(constraints),
+                pc=pc,
+            )
         return None
-    if not (isinstance(left, SymbolicValue) and isinstance(right, SymbolicValue)):
+    if op == "**":
+        constraints = [
+            *path_constraints,
+            int_like_left,
+            int_like_right,
+            symbolic_left.z3_int > 2,
+            symbolic_right.z3_int > 62,
+        ]
+        if is_satisfiable_fn(constraints):
+            return Issue(
+                kind=IntegerOverflowDetector.issue_kind,
+                message=f"Potential {bits}-bit integer overflow",
+                constraints=constraints,
+                model=get_model(constraints),
+                pc=pc,
+            )
         return None
-    if argrepr == "+":
-        result_expr = left.z3_int + right.z3_int
-    elif argrepr == "*":
-        result_expr = left.z3_int * right.z3_int
+
+    result: z3.ArithRef
+    if op == "*":
+        result = symbolic_left.z3_int * symbolic_right.z3_int
+    elif op == "+":
+        result = symbolic_left.z3_int + symbolic_right.z3_int
     else:
-        result_expr = left.z3_int - right.z3_int
-    overflow_check = [
+        result = symbolic_left.z3_int - symbolic_right.z3_int
+    constraints = [
         *path_constraints,
-        left.is_int,
-        right.is_int,
-        z3.Or(result_expr > max_val, result_expr < min_val),
+        int_like_left,
+        int_like_right,
+        z3.Or(result > max_val, result < min_val),
     ]
-    if is_satisfiable_fn(overflow_check):
-        from pysymex.core.solver.engine import get_model
-
-        return Issue(
-            kind=IssueKind.OVERFLOW,
-            message=f"Potential {bits}-bit integer overflow",
-            constraints=overflow_check,
-            model=get_model(overflow_check),
-            pc=pc,
-        )
-    return None
+    if not is_satisfiable_fn(constraints):
+        return None
+    return Issue(
+        kind=IntegerOverflowDetector.issue_kind,
+        message=f"Potential {bits}-bit integer overflow",
+        constraints=constraints,
+        model=get_model(constraints),
+        pc=pc,
+    )
 
 
-class IntegerOverflowDetector(Detector):
-    """Detects potential integer overflow issues.
-    While Python integers don't overflow, this is useful for:
-    - Bounded integer analysis
-    - Interfacing with C extensions
-    - Array index bounds
-    """
+class IntegerOverflowDetector(OverflowDetector):
+    """Compatibility detector for bounded-overflow checks built on runtime OverflowDetector."""
 
     name = "bounded-overflow"
     description = "Detects potential bounded integer overflow"
-    issue_kind = IssueKind.OVERFLOW
     relevant_opcodes = frozenset({"BINARY_OP"})
-    INT32_MIN = -(2**31)
-    INT32_MAX = 2**31 - 1
-    INT64_MIN = -(2**63)
-    INT64_MAX = 2**63 - 1
 
     def __init__(self, bits: int = 64) -> None:
+        """Create detector with explicit signed integer width bounds."""
+        super().__init__(bound_type="32bit" if bits == 32 else "64bit")
         self.bits = bits
-        self.min_val = -(2 ** (bits - 1))
-        self.max_val = 2 ** (bits - 1) - 1
+        if bits not in (32, 64):
+            self.min_val = -(2 ** (bits - 1))
+            self.max_val = 2 ** (bits - 1) - 1
 
     def check(
         self,
@@ -99,21 +129,5 @@ class IntegerOverflowDetector(Detector):
         instruction: DisInstruction,
         is_satisfiable_fn: IsSatFn,
     ) -> Issue | None:
-        """Check for integer overflow using BINARY_OP (Python 3.12+)."""
-        if instruction.opname != "BINARY_OP":
-            return None
-        if instruction.argrepr not in ("+", "*", "-"):
-            return None
-        if len(state.stack) < 2:
-            return None
-        return pure_check_bounded_overflow(
-            state.peek(1),
-            state.peek(),
-            instruction.argrepr,
-            list(state.path_constraints),
-            state.pc,
-            self.bits,
-            self.min_val,
-            self.max_val,
-            is_satisfiable_fn,
-        )
+        """Check for overflow under the configured bit-width bounds."""
+        return super().check(state, instruction, is_satisfiable_fn)

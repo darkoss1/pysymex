@@ -1,11 +1,7 @@
-from pysymex.analysis.detectors.base import IssueKind
-
 """Tests for pysymex/analysis/detectors/static/dead_code.py."""
 
-from unittest.mock import Mock, patch
-import z3
+from unittest.mock import Mock
 import dis
-import pytest
 from pysymex.analysis.detectors.static.dead_code import DeadCodeDetector
 
 
@@ -56,9 +52,7 @@ class TestDeadCodeDetector:
         assert issue.kind.name == "DEAD_CODE"
 
 
-def create_mock_ctx(instr):
-    from unittest.mock import Mock
-
+def create_mock_ctx(instr: dis.Instruction) -> Mock:
     ctx = Mock()
     ctx.instruction = instr
     return ctx

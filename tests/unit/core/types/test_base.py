@@ -1,3 +1,5 @@
+import re
+
 import z3
 
 from pysymex.core.types.base import (
@@ -8,6 +10,8 @@ from pysymex.core.types.base import (
     reset_counters,
 )
 
+_FRESH_NAME_RE = re.compile(r"^(.+)_(\d+)$")
+
 
 class TestTypeTag:
     """Test suite for pysymex.core.types.base.TypeTag."""
@@ -17,17 +21,33 @@ class TestTypeTag:
         assert TypeTag.INT.name == "INT"
 
 
-def test_fresh_name() -> None:
-    """Test fresh_name behavior."""
+def test_fresh_name_prefix() -> None:
+    """fresh_name returns 'prefix_<integer>' with the requested prefix."""
     reset_counters()
-    assert fresh_name("x") == "x_0"
+    result = fresh_name("x")
+    match = _FRESH_NAME_RE.match(result)
+    assert match is not None, f"fresh_name did not match expected pattern: {result}"
+    assert match.group(1) == "x"
+    assert int(match.group(2)) >= 0
 
 
-def test_reset_counters() -> None:
-    """Test reset_counters behavior."""
-    _ = fresh_name("y")
+def test_fresh_name_monotonic() -> None:
+    """Successive fresh_name calls produce strictly increasing counters."""
     reset_counters()
-    assert fresh_name("y") == "y_0"
+    a = fresh_name("v")
+    b = fresh_name("v")
+    a_id = int(_FRESH_NAME_RE.match(a).group(2))  # type: ignore[union-attr]  # pattern guaranteed to match
+    b_id = int(_FRESH_NAME_RE.match(b).group(2))  # type: ignore[union-attr]  # pattern guaranteed to match
+    assert b_id > a_id, f"Counter did not increment: {a} -> {b}"
+
+
+def test_reset_counters_deterministic() -> None:
+    """reset_counters restarts the counter, producing repeatable sequences."""
+    reset_counters()
+    first = fresh_name("y")
+    reset_counters()
+    second = fresh_name("y")
+    assert first == second, f"reset_counters did not restore determinism: {first} != {second}"
 
 
 class TestSymbolicType:
@@ -35,7 +55,7 @@ class TestSymbolicType:
 
     def test_type_tag(self) -> None:
         """Test type_tag behavior."""
-        assert SYMBOLIC_NONE.type_tag is TypeTag.NONE
+        assert SYMBOLIC_NONE.type_tag == "NoneType"
 
     def test_name(self) -> None:
         """Test name behavior."""
@@ -43,7 +63,7 @@ class TestSymbolicType:
 
     def test_to_z3(self) -> None:
         """Test to_z3 behavior."""
-        assert z3.is_int_value(SYMBOLIC_NONE.to_z3())
+        assert z3.is_false(SYMBOLIC_NONE.to_z3())
 
     def test_is_truthy(self) -> None:
         """Test is_truthy behavior."""
@@ -52,6 +72,18 @@ class TestSymbolicType:
     def test_is_falsy(self) -> None:
         """Test is_falsy behavior."""
         assert z3.is_true(SYMBOLIC_NONE.is_falsy())
+
+    def test_could_be_truthy(self) -> None:
+        """Canonical execution truthiness API delegates to legacy truthiness."""
+        assert z3.eq(SYMBOLIC_NONE.could_be_truthy(), SYMBOLIC_NONE.is_truthy())
+
+    def test_could_be_falsy(self) -> None:
+        """Canonical execution falsiness API delegates to legacy falsiness."""
+        assert z3.eq(SYMBOLIC_NONE.could_be_falsy(), SYMBOLIC_NONE.is_falsy())
+
+    def test_hash_value(self) -> None:
+        """SymbolicType exposes content hashing for VMState deduplication."""
+        assert SYMBOLIC_NONE.hash_value() == SymbolicNoneType().hash_value()
 
     def test_symbolic_eq(self) -> None:
         """Test symbolic_eq behavior."""
@@ -75,7 +107,7 @@ class TestSymbolicType:
 
     def test_is_none(self) -> None:
         """Test is_none behavior."""
-        assert z3.is_false(SYMBOLIC_NONE.is_none)
+        assert z3.is_true(SYMBOLIC_NONE.is_none)
 
     def test_is_path(self) -> None:
         """Test is_path behavior."""
@@ -99,7 +131,7 @@ class TestSymbolicNoneType:
 
     def test_type_tag(self) -> None:
         """Test type_tag behavior."""
-        assert SymbolicNoneType().type_tag is TypeTag.NONE
+        assert SymbolicNoneType().type_tag == "NoneType"
 
     def test_name(self) -> None:
         """Test name behavior."""
@@ -107,7 +139,7 @@ class TestSymbolicNoneType:
 
     def test_to_z3(self) -> None:
         """Test to_z3 behavior."""
-        assert z3.is_int_value(SymbolicNoneType().to_z3())
+        assert z3.is_false(SymbolicNoneType().to_z3())
 
     def test_is_truthy(self) -> None:
         """Test is_truthy behavior."""

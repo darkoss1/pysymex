@@ -30,7 +30,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
-from pysymex.analysis.cache.core import CacheKey, TieredCache
+from pysymex.analysis.cache.core import CacheKey, TieredCache, cache_hit_rate
 
 logger = logging.getLogger(__name__)
 
@@ -281,8 +281,7 @@ class CachedAnalysis:
     @property
     def hit_rate(self) -> float:
         """Get cache hit rate."""
-        total = self._hits + self._misses
-        return self._hits / total if total > 0 else 0.0
+        return cache_hit_rate(self._hits, self._misses)
 
     def stats(self) -> dict[str, object]:
         """Get statistics."""

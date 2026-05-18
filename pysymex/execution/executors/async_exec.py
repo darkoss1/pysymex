@@ -36,11 +36,10 @@ from typing import cast
 logger = logging.getLogger(__name__)
 
 from pysymex.analysis.concurrency import ConcurrencyAnalyzer
-from pysymex.analysis.detectors import DetectorRegistry, Issue, IssueKind
+from pysymex.analysis.detectors import DetectorRegistry
 from pysymex.core.state import VMState
 from pysymex.execution.executors.core import SymbolicExecutor
 from pysymex.execution.types import (
-    BRANCH_OPCODES,
     ExecutionConfig,
     ExecutionResult,
 )
@@ -312,67 +311,23 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
     ) -> ExecutionResult:
         """Execute with async analysis."""
         result = super().execute_function(func, symbolic_args, initial_values)
-        result.issues.extend(self._check_await_deadlocks())
+        self._check_await_deadlocks()
         return result
 
-    def _execute_step(self, state: VMState) -> None:
-        """Execute with async interception."""
-        instr, active_instructions = self._fetch_instruction(state)
-        if instr is None:
-            self._paths_completed += 1
-            self._last_globals = state.global_vars
-            self._last_locals = state.local_vars
+    def _on_path_complete(self, state: VMState) -> None:
+        """Complete the active coroutine when its symbolic path terminates."""
+        _ = state
+        if self._current_coro_id:
+            self._event_loop.complete_coroutine(self._current_coro_id)
 
-            if self._current_coro_id:
-                self._event_loop.complete_coroutine(self._current_coro_id)
-            return
-
-        if not self._check_resource_limits(state):
-            return
-
-        if self._state_merger is not None and self._state_merger.should_merge(state):
-            merged = self._state_merger.add_state_for_merge(state)
-            if merged is None:
-                self._paths_pruned += 1
-                return
-            if merged is not state:
-                state = merged
-
-        if not self._handle_loop_logic(state, active_instructions):
-            return
-
-        is_jump_or_branch = instr.opname in BRANCH_OPCODES or "JUMP" in instr.opname
-        if is_jump_or_branch:
-            state_key = self._state_key(state)
-            if state_key in self._visited_states:
-                self._paths_pruned += 1
-                return
-            else:
-                self._visited_states.add(state_key)
-
-        self._coverage.add(state.pc)
-        state.visited_pcs.add(state.pc)
-
-        needs_check = (
-            instr.opname in BRANCH_OPCODES
-            or state.pending_constraint_count >= self.config.lazy_eval_threshold
-        )
-        if needs_check:
-            if not self._check_path_feasibility(state):
-                return
-            state.pending_constraint_count = 0
-
+    def _before_dispatch(
+        self, instr: dis.Instruction, state: VMState, active_instructions: list[dis.Instruction]
+    ) -> None:
+        """Intercept async opcodes after the core feasibility checks."""
+        _ = active_instructions
+        self._current_coro_id = state.current_coro_id
         if instr.opname in _ASYNC_OPCODES:
             self._intercept_async(instr, state)
-
-        self._run_detectors(state, instr, active_instructions)
-
-        try:
-            result = self.dispatcher.dispatch(instr, state)
-            self._process_execution_result(result, state, active_instructions)
-        except Exception as e:
-            logger.error("Engine failure at PC %d: %s", state.pc, e, exc_info=True)
-            raise e
 
     def _intercept_async(self, instr: dis.Instruction, state: VMState) -> None:
         """Intercept async opcodes for coroutine scheduling."""
@@ -403,6 +358,7 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                     initial_state=state.fork(),
                 )
                 self._current_coro_id = coro.coro_id
+                state.current_coro_id = coro.coro_id
 
         except (AttributeError, KeyError, RuntimeError):
             logger.error(
@@ -429,24 +385,19 @@ class AsyncSymbolicExecutor(SymbolicExecutor):
                 exc_info=True,
             )
 
-    def _check_await_deadlocks(self) -> list[Issue]:
-        """Detect circular await chains and convert to Issues."""
-        issues: list[Issue] = []
+    def _check_await_deadlocks(self) -> list[list[str]]:
+        """Detect circular await chains and log deadlock cycles."""
         try:
             cycles = self._event_loop.detect_await_cycles()
             for cycle in cycles:
-                issues.append(
-                    Issue(
-                        kind=IssueKind.ASSERTION_ERROR,
-                        message=f"[Async] Deadlock: await cycle {' -> '.join(cycle)}",
-                    )
-                )
+                logger.warning("[Async] Deadlock cycle detected: %s", " -> ".join(cycle))
+            return cycles
         except (RuntimeError, KeyError):
             logger.error(
                 "Internal AsyncExecutor error during coroutine interleaving or cycle detection",
                 exc_info=True,
             )
-        return issues
+        return []
 
 
 def analyze_async(

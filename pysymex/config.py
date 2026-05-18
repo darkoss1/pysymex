@@ -30,15 +30,21 @@ or :func:`init_config` to scaffold a new one.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeGuard
 
+from pysymex._guards import is_dict_of_objects as _is_object_dict
+from pysymex._guards import is_list_of_objects as _is_object_list
+
 CONFIG_FILES = [
-    "pysymex.toml",
     ".pysymex.toml",
+    "pysymex.toml",
     "pyproject.toml",
 ]
+
+VERSION = "0.1.0a5"
 
 
 def _new_plugin_dirs() -> list[str]:
@@ -56,9 +62,9 @@ def _new_plugin_settings() -> dict[str, dict[str, object]]:
     return {}
 
 
-def _is_object_list(value: object) -> TypeGuard[list[object]]:
+def is_object_list(value: object) -> TypeGuard[list[object]]:
     """Return True when *value* is a list of runtime objects."""
-    return isinstance(value, list)
+    return _is_object_list(value)
 
 
 def _is_object_collection(
@@ -68,9 +74,14 @@ def _is_object_collection(
     return isinstance(value, (list, set, tuple))
 
 
-def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+def is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
     """Return True when *value* is a dictionary."""
-    return isinstance(value, dict)
+    return _is_object_dict(value)
+
+
+def is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """Return True when *value* is a mapping with runtime object pairs."""
+    return isinstance(value, Mapping)
 
 
 def _normalize_object_dict(value: object) -> dict[str, object] | None:
@@ -484,7 +495,7 @@ def find_config_file(start_dir: Path | None = None) -> Path | None:
                 return config_path
         current = current.parent
     home = Path.home()
-    for config_name in [".pysymex.toml", "pysymex.toml"]:
+    for config_name in (".pysymex.toml", "pysymex.toml"):
         config_path = home / config_name
         if config_path.exists():
             return config_path
@@ -527,7 +538,7 @@ def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
     """Apply configuration data to config object."""
     det_data = _normalize_object_dict(data.get("detectors"))
     if det_data is not None:
-        for key in [
+        for key in (
             "division_by_zero",
             "assertion_errors",
             "index_errors",
@@ -536,13 +547,13 @@ def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
             "attribute_errors",
             "overflow",
             "null_pointer",
-        ]:
+        ):
             if key in det_data:
                 setattr(config.detectors, key, det_data[key])
 
     lim_data = _normalize_object_dict(data.get("limits"))
     if lim_data is not None:
-        for key in [
+        for key in (
             "max_paths",
             "max_depth",
             "max_iterations",
@@ -551,13 +562,13 @@ def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
             "max_constraint_size",
             "max_string_length",
             "max_list_length",
-        ]:
+        ):
             if key in lim_data:
                 setattr(config.limits, key, lim_data[key])
 
     out_data = _normalize_object_dict(data.get("output"))
     if out_data is not None:
-        for key in [
+        for key in (
             "format",
             "output_dir",
             "color",
@@ -566,20 +577,20 @@ def _apply_config(config: PysymexConfig, data: dict[str, object]) -> None:
             "show_paths",
             "show_constraints",
             "show_timing",
-        ]:
+        ):
             if key in out_data:
                 setattr(config.output, key, out_data[key])
 
     ana_data = _normalize_object_dict(data.get("analysis"))
     if ana_data is not None:
-        for key in [
+        for key in (
             "strategy",
             "loop_unroll_limit",
             "array_size_limit",
             "string_solver",
             "incremental_solving",
             "constraint_caching",
-        ]:
+        ):
             if key in ana_data:
                 setattr(config.analysis, key, ana_data[key])
         normalized_include = _normalize_string_list(ana_data.get("include_patterns"))
@@ -630,19 +641,3 @@ def init_config(directory: Path | None = None) -> Path:
     content = generate_default_config()
     config_path.write_text(content, encoding="utf-8")
     return config_path
-
-
-__all__ = [
-    "AnalysisConfig",
-    "AnalysisLimits",
-    "ConcurrencyConfig",
-    "DetectorConfig",
-    "OutputConfig",
-    "PluginConfig",
-    "PysymexConfig",
-    "SolverConfig",
-    "find_config_file",
-    "generate_default_config",
-    "init_config",
-    "load_config",
-]

@@ -13,6 +13,7 @@ from pysymex.contracts.quantifiers.core import (
     replace_quantifiers_with_z3,
 )
 from pysymex.contracts.quantifiers.types import Quantifier, QuantifierKind
+from pysymex.core.solver.engine import IncrementalSolver
 
 
 class TestQuantifierParser:
@@ -142,7 +143,7 @@ class TestQuantifierInstantiator:
         """Test instantiate_bounded behavior."""
         q = forall("i", (0, 2), "i >= 0")
         inst = QuantifierInstantiator()
-        solver = z3.Solver()
+        solver = IncrementalSolver()
         instances = inst.instantiate_bounded(q, solver)
         assert len(instances) == 2
 
@@ -151,7 +152,9 @@ class TestQuantifierInstantiator:
         q = forall("i", (0, 2), "i >= 0")
         inst = QuantifierInstantiator()
         f = z3.Function("f", z3.IntSort(), z3.IntSort())
-        res = inst.add_triggers(q, [f(q.variables[0].z3_var)])
+        z3_var = q.variables[0].z3_var
+        assert z3_var is not None
+        res = inst.add_triggers(q, [f(z3_var)])
         assert z3.is_bool(res)
 
 

@@ -156,10 +156,3 @@ class FailureThreshold:
         if result.low_count > 0:
             return ExitCode.LOW_FOUND
         return ExitCode.SUCCESS
-
-
-__all__ = [
-    "CIResult",
-    "ExitCode",
-    "FailureThreshold",
-]

@@ -41,6 +41,7 @@ from pysymex.plugins.base import (
     PluginPriority,
     PluginType,
 )
+from pysymex.config import VERSION
 from pysymex.scanner.core import get_code_objects_with_context
 from pysymex.scanner.types import ScanResult
 
@@ -338,7 +339,7 @@ class RealtimeVisualizationPlugin(HookPlugin):
 
     metadata = PluginMetadata(
         name="realtime-visualization",
-        version="1.0.0",
+        version=VERSION,
         description="Live execution visualizer feeding the D3 network map",
         author="pysymex",
         plugin_type=PluginType.HOOK,

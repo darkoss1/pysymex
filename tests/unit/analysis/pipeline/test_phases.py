@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import Mock, patch
+from unittest.mock import MagicMock
 from pysymex.analysis.pipeline.phases import (
     TypeInferencePhase,
     PatternRecognitionPhase,
@@ -17,7 +17,6 @@ from pysymex.analysis.pipeline.phases import (
 )
 from pysymex.analysis.pipeline.types import AnalysisContext, ScannerConfig, ScanIssue, IssueCategory
 from pysymex.analysis.detectors.types import Issue, IssueKind, Severity
-from pysymex.analysis.patterns import PatternMatch, PatternKind
 
 
 def make_dummy_ctx() -> AnalysisContext:
@@ -60,7 +59,7 @@ class TestBugDetectionPhase:
     """Test suite for pysymex.analysis.pipeline.phases.BugDetectionPhase."""
 
     @patch("pysymex.analysis.pipeline.phases.filter_issue")
-    def test_analyze(self, mock_filter_issue) -> None:
+    def test_analyze(self, mock_filter_issue: MagicMock) -> None:
         """Test analyze behavior."""
         p = BugDetectionPhase()
         p.analyzer.analyze_function = Mock(

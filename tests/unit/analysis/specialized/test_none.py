@@ -1,5 +1,3 @@
-import pytest
-from unittest.mock import Mock, patch
 from pysymex.analysis.specialized.none import (
     NoneCheckType,
     NoneCheck,
@@ -99,7 +97,8 @@ class TestNoneCheckAnalyzer:
         import ast
 
         analyzer = NoneCheckAnalyzer()
-        node = ast.parse("x is None").body[0].value
+        node = ast.parse("x is None", mode="eval").body
+        assert isinstance(node, ast.Compare)
         check = analyzer.analyze_ast_condition(node)
         assert check is not None
         assert check.variable_name == "x"
@@ -156,5 +155,5 @@ def test_is_none_check_in_message() -> None:
     assert is_none is True
     assert var == "x"
 
-    is_none2, var2 = is_none_check_in_message("x == 1")
+    is_none2, _ = is_none_check_in_message("x == 1")
     assert is_none2 is False

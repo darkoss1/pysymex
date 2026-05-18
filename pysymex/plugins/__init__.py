@@ -26,7 +26,26 @@ handlers, reporters, and analysis passes.
 
 from __future__ import annotations
 
-from importlib import import_module
+from typing import TYPE_CHECKING
+from pysymex._lazy import lazy_dir, lazy_getattr
+
+if TYPE_CHECKING:
+    from pysymex.plugins.base import (
+        HOOKS as HOOKS,
+        DetectorPlugin as DetectorPlugin,
+        HandlerPlugin as HandlerPlugin,
+        HookPlugin as HookPlugin,
+        HookPoint as HookPoint,
+        Plugin as Plugin,
+        PluginConfig as PluginConfig,
+        PluginLoader as PluginLoader,
+        PluginManager as PluginManager,
+        PluginManagerConfig as PluginManagerConfig,
+        PluginMetadata as PluginMetadata,
+        PluginPriority as PluginPriority,
+        PluginRegistry as PluginRegistry,
+        PluginType as PluginType,
+    )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "HOOKS": ("pysymex.plugins.base", "HOOKS"),
@@ -48,16 +67,27 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 def __getattr__(name: str) -> object:
     """Getattr."""
-    target = _EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module 'pysymex.plugins' has no attribute {name!r}")
-    module_path, attr_name = target
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """Dir."""
-    return list(_EXPORTS.keys())
+    return lazy_dir(_EXPORTS, globals(), include_namespace=False)
+
+
+__all__ = [
+    "HOOKS",
+    "DetectorPlugin",
+    "HandlerPlugin",
+    "HookPlugin",
+    "HookPoint",
+    "Plugin",
+    "PluginConfig",
+    "PluginLoader",
+    "PluginManager",
+    "PluginManagerConfig",
+    "PluginMetadata",
+    "PluginPriority",
+    "PluginRegistry",
+    "PluginType",
+]

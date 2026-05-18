@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.solver.formal import (
     FunctionChecklistItem,
     DifferentialResult,

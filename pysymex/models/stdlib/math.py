@@ -59,8 +59,19 @@ class MathSqrtModel(FunctionModel):
                 constraints=[
                     constraint,
                     result.is_float,
-                    x.z3_int >= 0,
-                    z3.fpGEQ(result.z3_float, z3.FPVal(0.0, z3.Float64())),
+                    z3.Or(
+                        z3.And(x.is_float, z3.fpGEQ(x.z3_float, z3.FPVal(0.0, z3.Float64()))),
+                        z3.And(x.is_int, x.z3_int >= 0),
+                    ),
+                    result.z3_float
+                    == z3.fpSqrt(
+                        z3.RNE(),
+                        z3.If(
+                            x.is_float,
+                            x.z3_float,
+                            z3.fpToFP(z3.RNE(), z3.ToReal(x.z3_int), z3.Float64()),
+                        ),
+                    ),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"sqrt_{state.pc}")
@@ -89,8 +100,12 @@ class MathCeilModel(FunctionModel):
                 constraints=[
                     constraint,
                     result.is_int,
-                    result.z3_int >= x.z3_int,
-                    result.z3_int <= x.z3_int + 1,
+                    result.z3_int
+                    == z3.If(
+                        x.is_float,
+                        z3.ToInt(z3.fpToReal(z3.fpRoundToIntegral(z3.RTP(), x.z3_float))),
+                        x.z3_int,
+                    ),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"ceil_{state.pc}")
@@ -119,8 +134,12 @@ class MathFloorModel(FunctionModel):
                 constraints=[
                     constraint,
                     result.is_int,
-                    result.z3_int <= x.z3_int,
-                    result.z3_int >= x.z3_int - 1,
+                    result.z3_int
+                    == z3.If(
+                        x.is_float,
+                        z3.ToInt(z3.fpToReal(z3.fpRoundToIntegral(z3.RTN(), x.z3_float))),
+                        x.z3_int,
+                    ),
                 ],
             )
         result, constraint = SymbolicValue.symbolic(f"floor_{state.pc}")

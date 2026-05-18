@@ -62,6 +62,34 @@ class TestStateMerger:
         join_points = merger.detect_join_points(instructions)
         assert isinstance(join_points, set)
 
+    def test_detect_join_points_excludes_backward_jump_targets(self) -> None:
+        """Loop headers are handled by loop logic, not ordinary state merging."""
+
+        def target() -> int:
+            total = 0
+            step = 0
+            while step < 3:
+                total += step
+                step += 1
+            return total
+
+        instructions = list(dis.get_instructions(target))
+        offset_to_index = {instr.offset: idx for idx, instr in enumerate(instructions)}
+        backward_targets = {
+            offset_to_index[instr.argval]
+            for idx, instr in enumerate(instructions)
+            if (instr.opcode in dis.hasjabs or instr.opcode in dis.hasjrel)
+            and isinstance(instr.argval, int)
+            and instr.argval in offset_to_index
+            and offset_to_index[instr.argval] <= idx
+        }
+
+        merger = StateMerger()
+        join_points = merger.detect_join_points(instructions)
+
+        assert backward_targets
+        assert join_points.isdisjoint(backward_targets)
+
     def test_is_join_point(self) -> None:
         """Test is_join_point behavior."""
         merger = StateMerger()

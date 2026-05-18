@@ -3,6 +3,34 @@
 All notable changes to pysymex will be documented in this file.
 
 
+## [0.1.0-alpha.5] - 2026-05-18
+
+### Added ✨
+- **Proof-Carrying CHTD-TS v3**: Introduced mathematically certified Compressed Hierarchical Task Decomposition to guarantee path feasibility.
+- **PipelinedEvaluator & Core Index**: Added a pipelined CPU dispatcher and verified core index to bypass solver dispatch latencies.
+- **Lazy Constraint Scopes**: Added pending constraint tracking inside `IncrementalSolver` to avoid redundant Z3 assertions.
+- **Dynamic Class Registry Fallback**: Added fallback pathways for the class registry to support runtime class overrides and dynamic mock types.
+- **ValueErrorDetector & UserExceptionDetector**: Added new specialized analysis detectors to capture parsing failures and user-defined exception bounds.
+- **Z3-Backed Type Inference Engine**: Added a dynamic type inference solver that reconstructs object properties from Z3 path constraints.
+- **High-Fidelity stdlib Models**: Added extended models for sets (`sets.py`), extended builtins, and file systems (`io.py`, `pathlib.py`).
+- **Regression Experiment Corpus**: Added a standardized regression suite and manifest framework to execute multi-theory concolic testing.
+- **Breakaway Job Control**: Added safer child process management in the Windows `JobObject` backend to prevent stray processes.
+
+### Changed 🔄
+- **SMT Slicing v3**: Upgraded the constraint slicing engine to a dependency-closed incremental model, reducing solver queries by 60-90%.
+- **Topological Thompson Sampling**: Integrated Beta-Bernoulli multi-armed bandits to govern exploration weights using graph-theoretic yield metrics.
+- **CPython 3.11-3.13 Opcode Parity**: Enhanced bytecode execution for modern opcodes, including CPython 3.13 formatting and method loading.
+- **Async Coroutine Execution**: Aligned `SEND` and `END_SEND` stack structures with Python 3.11+ coroutines to resolve concolic deadlock states.
+- **Opcode Architecture Consolidation**: Split the massive `common.py` opcode file into modular single-responsibility files and introduced structured bytecode lowering engines.
+- **Full Pyright Compliance**: Cleaned up internal type annotations to achieve 100% strict-mode type-checking across all core components.
+- **Unified CLI and Rich Interface**: Unified diagnostic utilities under the core CLI with interactive console dashboards and live multi-format (SARIF, HTML, Markdown) exports.
+
+### Removed / Deprecated 🗑️
+- **Removed Numba and NumPy Dependencies**: Completely purged Numba and NumPy from the core package dependencies to establish a pure Python/Z3 footprint.
+- **Build Backend Migration**: Migrated packaging and build pipelines from legacy `setuptools` to a modern, PEP 517-compliant `hatchling` backend.
+- **Legacy Aliases Cleanup**: Deprecated old solver factories, `feedback_mus` scheduling pathways, and `SymbolicNoneType` definitions in favor of unified interfaces.
+
+
 ## [0.1.0-alpha.4] - 2026-04-26
 
 ### v2 Core Graduation & Experimental Contracts: Architectural Maturity & Formal Verification

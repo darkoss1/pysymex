@@ -14,8 +14,8 @@ from pysymex.analysis.patterns import (
     SafeCollectionHandler,
     StringMultiplyHandler,
     TryExceptHandler,
-    _is_set_of_objects,
-    _to_string_set,
+    _is_set_of_objects,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _to_string_set,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 )
 from pysymex.analysis.patterns.core import (
     PatternKind,
@@ -281,7 +281,7 @@ class TestPatternMatcher:
     def test_clear_cache(self) -> None:
         """clear_cache empties the cache."""
         matcher = PatternMatcher()
-        matcher._cache[0] = []
+        matcher._cache[0] = []  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         matcher.clear_cache()
         assert matcher.cache_keys() == []
 

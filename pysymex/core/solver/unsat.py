@@ -27,8 +27,37 @@ This enables better error messages and faster subsequent queries.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 import z3
+
+from pysymex.contracts.decorators import ensures, requires
+
+
+def _is_unsat_core_result(value: object) -> bool:
+    return isinstance(value, UnsatCoreResult)
+
+
+def _is_reduction_ratio(value: object) -> bool:
+    return isinstance(value, float) and 0.0 <= value <= 1.0
+
+
+class _TranslatableZ3Expr(Protocol):
+    """Z3 expression surface for context translation."""
+
+    def translate(self, target: z3.Context) -> z3.ExprRef: ...
+
+
+def _translate_bool_constraint(constraint: z3.BoolRef, target_ctx: z3.Context) -> z3.BoolRef | None:
+    """Translate a BoolRef into the target Z3 context."""
+    source_ctx: object = getattr(constraint, "ctx", None)
+    if source_ctx == target_ctx:
+        return constraint
+    try:
+        translated = cast("_TranslatableZ3Expr", constraint).translate(target_ctx)
+    except z3.Z3Exception:
+        return None
+    return translated if isinstance(translated, z3.BoolRef) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +69,7 @@ class UnsatCoreResult:
     total_constraints: int
 
     @property
+    @ensures(_is_reduction_ratio)
     def reduction_ratio(self) -> float:
         """Ratio of constraints eliminated (0.0 = no reduction, 1.0 = maximal)."""
         if self.total_constraints == 0:
@@ -47,6 +77,8 @@ class UnsatCoreResult:
         return 1.0 - len(self.core) / self.total_constraints
 
 
+@requires("len(constraints) >= 0")
+@requires("timeout_ms > 0")
 def extract_unsat_core(
     constraints: list[z3.BoolRef],
     timeout_ms: int = 5000,
@@ -67,18 +99,33 @@ def extract_unsat_core(
     if not constraints:
         return None
 
+    target_ctx = z3.main_ctx()
+    translated_constraints: list[tuple[int, z3.BoolRef]] = []
+    for index, constraint in enumerate(constraints):
+        translated = _translate_bool_constraint(constraint, target_ctx)
+        if translated is not None:
+            translated_constraints.append((index, translated))
+
+    if not translated_constraints:
+        return None
+
     solver = z3.Solver()
     solver.set("timeout", timeout_ms)
 
-    indicators = [z3.Bool(f"_core_ind_{id(c)}_{i}") for i, c in enumerate(constraints)]
+    indicators = [
+        z3.Bool(f"_core_ind_{id(c)}_{i}") for i, (_, c) in enumerate(translated_constraints)
+    ]
     assumptions: list[z3.BoolRef] = []
 
-    for ind, c in zip(indicators, constraints, strict=False):
+    for ind, (_, c) in zip(indicators, translated_constraints, strict=False):
         try:
             solver.add(z3.Implies(ind, c))
             assumptions.append(ind)
         except z3.Z3Exception:
             continue
+
+    if not assumptions:
+        return None
 
     result = solver.check(*assumptions)
 
@@ -91,10 +138,10 @@ def extract_unsat_core(
     core_constraints: list[z3.BoolRef] = []
     core_indices: list[int] = []
 
-    for i, (ind, c) in enumerate(zip(indicators, constraints, strict=False)):
+    for ind, (original_index, c) in zip(indicators, translated_constraints, strict=False):
         if ind.get_id() in core_ids:
             core_constraints.append(c)
-            core_indices.append(i)
+            core_indices.append(original_index)
 
     return UnsatCoreResult(
         core=core_constraints,
@@ -103,6 +150,8 @@ def extract_unsat_core(
     )
 
 
+@requires("len(constraints) >= 0")
+@requires(_is_unsat_core_result)
 def prune_with_core(
     constraints: list[z3.BoolRef],
     core_result: UnsatCoreResult,

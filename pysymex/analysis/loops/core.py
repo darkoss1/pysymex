@@ -161,7 +161,7 @@ class LoopDetector:
         back_edges: list[tuple[int, int]] = []
         for from_pc, successors in cfg.items():
             for to_pc in successors:
-                if to_pc in dominators.get(from_pc, set()):
+                if to_pc in dominators.get(from_pc, ()):
                     back_edges.append((from_pc, to_pc))
         return back_edges
 
@@ -182,13 +182,13 @@ class LoopDetector:
                 reverse_cfg[dst].add(src)
         while worklist:
             pc = worklist.pop()
-            for pred in reverse_cfg.get(pc, set()):
+            for pred in reverse_cfg.get(pc, ()):
                 if pred not in body_pcs and pred != header_pc:
                     body_pcs.add(pred)
                     worklist.append(pred)
         exit_pcs: set[int] = set()
         for pc in body_pcs:
-            for succ in cfg.get(pc, set()):
+            for succ in cfg.get(pc, ()):
                 if succ not in body_pcs and succ != header_pc:
                     exit_pcs.add(succ)
         return LoopInfo(
@@ -255,7 +255,7 @@ class LoopBoundInference:
     def _try_extract_iterator_bound(self, state: VMState) -> LoopBound | None:
         """Try to extract bound from iterator on the stack."""
         from pysymex.core.iterators import SymbolicIterator, SymbolicRange
-        from pysymex.core.types.containers import SymbolicIterator as ContainerSymbolicIterator
+        from pysymex.core.types import SymbolicIterator as ContainerSymbolicIterator
 
         if not state.stack:
             return None
@@ -572,14 +572,14 @@ class LoopSummarizer:
         new_state = state.copy()
         for name, final_value in summary.variable_effects.items():
             if name in new_state.locals:
-                from pysymex.core.types.scalars import SymbolicValue
+                from pysymex.core.types import SymbolicValue
 
                 new_state.locals[name] = SymbolicValue.from_z3(final_value, name)
         for addr, effects in summary.memory_effects.items():
             if addr in new_state.memory:
                 mem_obj = new_state.memory[addr]
                 if isinstance(mem_obj, dict):
-                    from pysymex.core.types.scalars import SymbolicValue as SV
+                    from pysymex.core.types import SymbolicValue as SV
 
                     for attr, value in effects.items():
                         mem_obj[attr] = SV.from_z3(value, f"mem_{addr}_{attr}")
@@ -678,7 +678,7 @@ class LoopWidening:
         constraints from ``SymbolicValue.symbolic()`` are added to the path
         so widened values retain proper typing.
         """
-        from pysymex.core.types.scalars import SymbolicString, SymbolicValue
+        from pysymex.core.types import SymbolicString, SymbolicValue
 
         widened = new_state.copy()
 
@@ -760,13 +760,3 @@ class LoopWidening:
                     widened.path_constraints = widened.path_constraints.append(type_constraint)
 
         return widened
-
-
-__all__ = [
-    "InductionVariableDetector",
-    "LoopBoundInference",
-    "LoopDetector",
-    "LoopInvariantGenerator",
-    "LoopSummarizer",
-    "LoopWidening",
-]

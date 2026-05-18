@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TextIO, TypeGuard, cast
 
 from pysymex.ci.types import CIResult, ExitCode, FailureThreshold
+from pysymex.analysis.cache.core import hash_bytecode
 from pysymex.reporting.sarif import Severity, VulnerabilityReport, generate_sarif
 
 
@@ -315,10 +316,8 @@ class GitLabReporter:
 
     def _fingerprint(self, vuln: VulnerabilityReport) -> str:
         """Generate a stable fingerprint for a vulnerability."""
-        import hashlib
-
         data = f"{vuln.vuln_type}:{vuln.file_path}:{vuln.line_number}:{vuln.message}"
-        return hashlib.sha256(data.encode()).hexdigest()[:32]
+        return hash_bytecode(data.encode())[:32]
 
 
 def generate_precommit_config() -> str:
@@ -412,7 +411,7 @@ class CIRunner:
                 else:
                     medium += 1
         total = critical + high + medium + low
-        result = CIResult(
+        temp_result = CIResult(
             exit_code=ExitCode.SUCCESS,
             issues_count=total,
             critical_count=critical,
@@ -422,15 +421,14 @@ class CIRunner:
             files_analyzed=len(files),
             duration_seconds=duration,
         )
-        if self.threshold.should_fail(result):
-            object.__setattr__(result, "exit_code", self.threshold.get_exit_code(result))
-            object.__setattr__(
-                result,
-                "message",
-                f"Failed: {total} issues found ({critical} critical, {high} high)",
-            )
-        else:
-            object.__setattr__(result, "message", f"Passed: {total} issues found")
+
+        exit_code = ExitCode.SUCCESS
+        message = f"Passed: {total} issues found"
+        if self.threshold.should_fail(temp_result):
+            exit_code = self.threshold.get_exit_code(temp_result)
+            message = f"Failed: {total} issues found ({critical} critical, {high} high)"
+
+        sarif_path = None
         if self.sarif_output:
             generate_sarif(
                 vulnerabilities=vulnerabilities,
@@ -438,7 +436,20 @@ class CIRunner:
                 analyzed_files=files,
                 output_path=self.sarif_output,
             )
-            object.__setattr__(result, "sarif_path", self.sarif_output)
+            sarif_path = self.sarif_output
+
+        result = CIResult(
+            exit_code=exit_code,
+            issues_count=total,
+            critical_count=critical,
+            high_count=high,
+            medium_count=medium,
+            low_count=low,
+            files_analyzed=len(files),
+            duration_seconds=duration,
+            message=message,
+            sarif_path=sarif_path,
+        )
         if self.github_reporter:
             for vuln in vulnerabilities:
                 self.github_reporter.report_vulnerability(vuln)
@@ -501,13 +512,3 @@ def run_ci_check(
         issues=all_issues,
     )
     return ci_result.exit_code.value
-
-
-__all__ = [
-    "CIRunner",
-    "GitHubActionsReporter",
-    "GitLabReporter",
-    "generate_precommit_config",
-    "generate_precommit_hook_script",
-    "run_ci_check",
-]

@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t4_interprocedural/range_propagation.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t4_interprocedural.range_propagation import (
     NumericRangePropagationRule,
 )
@@ -35,3 +34,20 @@ class TestNumericRangePropagationRule:
         """Test basic initialization and properties."""
         assert NumericRangePropagationRule is not None
         assert NumericRangePropagationRule.__name__ == "NumericRangePropagationRule"
+
+    def test_matches_interprocedural_relation_conflict(self) -> None:
+        """Classify contradictory propagated ranges between interprocedural variables."""
+        caller_arg = z3.Int("caller_arg")
+        callee_result = z3.Int("callee_result")
+        core = [caller_arg < callee_result, callee_result <= caller_arg]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert NumericRangePropagationRule().matches(ctx)
+
+    def test_does_not_match_unrelated_relation_when_interproc_signal_exists(self) -> None:
+        """Do not classify unrelated variable relations because another interproc marker exists."""
+        caller_arg = z3.Int("caller_arg")
+        x = z3.Int("x")
+        y = z3.Int("y")
+        core = [caller_arg >= 0, x < y, y <= x]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not NumericRangePropagationRule().matches(ctx)

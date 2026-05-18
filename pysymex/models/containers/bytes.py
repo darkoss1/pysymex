@@ -28,8 +28,9 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicList, SymbolicNone, SymbolicString, SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, ModelResult
+from pysymex.core.types import SymbolicList, SymbolicNone, SymbolicString, SymbolicValue
+from pysymex.models.builtins.base import FunctionModel, ModelResult, NoneResultFunctionModel
+from pysymex.models.containers.strings import SymbolicIsasciiModel
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -1040,19 +1041,11 @@ class BytearrayClearModel(FunctionModel):
         return ModelResult(value=SymbolicNone(), constraints=constraints)
 
 
-class BytearrayReverseModel(FunctionModel):
+class BytearrayReverseModel(NoneResultFunctionModel):
     """Model for bytearray.reverse()."""
 
     name = "reverse"
     qualname = "bytearray.reverse"
-
-    def apply(
-        self,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult:
-        return ModelResult(value=SymbolicNone())
 
 
 class BytearrayCopyModel(FunctionModel):
@@ -1129,32 +1122,14 @@ BYTES_MODELS: list[FunctionModel] = [
 ]
 
 
-class BytesIsasciiModel(FunctionModel):
+class BytesIsasciiModel(SymbolicIsasciiModel):
     name = "isascii"
     qualname = "bytes.isascii"
 
-    def apply(
-        self,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"isascii_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
-
-class BytearrayIsasciiModel(FunctionModel):
+class BytearrayIsasciiModel(SymbolicIsasciiModel):
     name = "isascii"
     qualname = "bytearray.isascii"
-
-    def apply(
-        self,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"isascii_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
 BYTES_MODELS.extend([BytesIsasciiModel(), BytearrayIsasciiModel()])

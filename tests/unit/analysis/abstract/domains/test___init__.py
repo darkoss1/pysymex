@@ -11,8 +11,6 @@ from pysymex.analysis.abstract.domains import (
 )
 from pysymex.analysis.abstract.domains.base import Interval
 from pysymex.analysis.abstract.domains.lattices import (
-    Null,
-    NullValue,
     Parity,
     ParityValue,
     Sign,
@@ -158,7 +156,8 @@ class TestAbstractState:
         s2 = AbstractState()
         s2.set("x", ProductDomain(interval=Interval(0, 10)))
         widened = s1.widen(s2)
-        assert widened.get("x").interval.hi is None or widened.get("x").interval.hi >= 10
+        high = widened.get("x").interval.hi
+        assert high is None or high >= 10
 
     def test_to_z3_constraints(self) -> None:
         """to_z3_constraints produces Z3 constraints."""
@@ -239,7 +238,7 @@ class TestAbstractInterpreter:
         ai = AbstractInterpreter()
         left = ProductDomain(interval=Interval(0, 100))
         right = ProductDomain.from_concrete(10)
-        refined_left, refined_right = ai.analyze_comparison("<", left, right)
+        refined_left, _ = ai.analyze_comparison("<", left, right)
         assert refined_left.interval.hi is not None
         assert refined_left.interval.hi <= 9
 
@@ -273,41 +272,41 @@ class TestAbstractInterpreter:
     def test_add_signs_pos_pos(self) -> None:
         """Adding POS + POS gives POS."""
         ai = AbstractInterpreter()
-        result = ai._add_signs(Sign(SignValue.POS), Sign(SignValue.POS))
+        result = ai._add_signs(Sign(SignValue.POS), Sign(SignValue.POS))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.POS
 
     def test_add_signs_neg_neg(self) -> None:
         """Adding NEG + NEG gives NEG."""
         ai = AbstractInterpreter()
-        result = ai._add_signs(Sign(SignValue.NEG), Sign(SignValue.NEG))
+        result = ai._add_signs(Sign(SignValue.NEG), Sign(SignValue.NEG))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.NEG
 
     def test_add_signs_zero_x(self) -> None:
         """Adding ZERO + X gives X."""
         ai = AbstractInterpreter()
-        result = ai._add_signs(Sign(SignValue.ZERO), Sign(SignValue.POS))
+        result = ai._add_signs(Sign(SignValue.ZERO), Sign(SignValue.POS))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.POS
 
     def test_sub_signs_pos_neg(self) -> None:
         """Subtracting POS - NEG gives POS."""
         ai = AbstractInterpreter()
-        result = ai._sub_signs(Sign(SignValue.POS), Sign(SignValue.NEG))
+        result = ai._sub_signs(Sign(SignValue.POS), Sign(SignValue.NEG))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.POS
 
     def test_mul_signs_pos_neg(self) -> None:
         """Multiplying POS * NEG gives NEG."""
         ai = AbstractInterpreter()
-        result = ai._mul_signs(Sign(SignValue.POS), Sign(SignValue.NEG))
+        result = ai._mul_signs(Sign(SignValue.POS), Sign(SignValue.NEG))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.NEG
 
     def test_mul_signs_neg_neg(self) -> None:
         """Multiplying NEG * NEG gives POS."""
         ai = AbstractInterpreter()
-        result = ai._mul_signs(Sign(SignValue.NEG), Sign(SignValue.NEG))
+        result = ai._mul_signs(Sign(SignValue.NEG), Sign(SignValue.NEG))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.POS
 
     def test_mul_signs_zero(self) -> None:
         """Multiplying by ZERO gives ZERO."""
         ai = AbstractInterpreter()
-        result = ai._mul_signs(Sign(SignValue.POS), Sign(SignValue.ZERO))
+        result = ai._mul_signs(Sign(SignValue.POS), Sign(SignValue.ZERO))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result.value == SignValue.ZERO

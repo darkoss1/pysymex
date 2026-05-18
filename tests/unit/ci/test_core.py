@@ -4,7 +4,6 @@ import io
 import json
 from pathlib import Path
 
-import pytest
 
 from pysymex.ci.core import (
     CIRunner,

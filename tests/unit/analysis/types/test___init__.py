@@ -1,6 +1,5 @@
 """Test exports of pysymex.analysis.types.__init__."""
 
-from typing import Any
 import pysymex.analysis.types as t
 
 

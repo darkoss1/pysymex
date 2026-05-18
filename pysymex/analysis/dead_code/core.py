@@ -36,19 +36,15 @@ import inspect
 from collections import defaultdict
 from collections.abc import Sequence
 from types import CodeType
-from typing import TypeGuard, cast
+from typing import cast
 
+from pysymex._guards import is_tuple_of_objects as _is_object_tuple
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 
 from ..cross_function import CallGraph
 from ..control.cfg import CFGBuilder
 from ..dataflow.core import LiveVariables
 from .types import DeadCode, DeadCodeKind
-
-
-def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
-    """Type guard to narrow a value to tuple[object, ...]."""
-    return isinstance(value, tuple)
 
 
 def _as_object_tuple(value: object) -> tuple[object, ...]:

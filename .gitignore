@@ -44,7 +44,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-rw_tests/
+.pytest-tmp/
 
 # Translations
 *.mo
@@ -108,25 +108,10 @@ profile_results*.txt
 restats
 path_tree*.json
 visualize*.html
-triage_bugs.py
-Reports/
 
 # Build artifacts
 dist_tmp/
 
 # Tool artifacts
-tmpclaude-*-cwd/
 .ruff_cache/
 .tmp/
-
-# Comment backup archive (pre-cleanup originals)
-.comment_backups/
-pysymex_docs_experimental/
-tests_repo/
-.pysymex/
-_tmp_rt_*/
-
-# other
-future.md
-.txt
-docs/notes/

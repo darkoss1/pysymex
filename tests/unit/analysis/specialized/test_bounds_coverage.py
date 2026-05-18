@@ -306,14 +306,14 @@ class TestBoundsChecker:
         """check_array_access returns (value, issues)."""
         checker = BoundsChecker(check_off_by_one=False)
         arr = SymbolicArray(name="arr", length=z3.IntVal(10))
-        value, issues = checker.check_array_access(arr, z3.IntVal(5))
+        value, _ = checker.check_array_access(arr, z3.IntVal(5))
         assert isinstance(value, z3.ExprRef)
 
     def test_check_array_store(self) -> None:
         """check_array_store returns (new_array, issues)."""
         checker = BoundsChecker(check_off_by_one=False)
         arr = SymbolicArray(name="arr", length=z3.IntVal(10))
-        new_arr, issues = checker.check_array_store(arr, z3.IntVal(3), z3.IntVal(42))
+        new_arr, _ = checker.check_array_store(arr, z3.IntVal(3), z3.IntVal(42))
         assert isinstance(new_arr, SymbolicArray)
 
     def test_prove_safe_access_safe(self) -> None:
@@ -337,9 +337,9 @@ class TestBoundsChecker:
     def test_reset(self) -> None:
         """reset clears solver and issues."""
         checker = BoundsChecker()
-        checker._issues.append(BoundsIssue(kind=BoundsIssueKind.BUFFER_OVERFLOW, message="test"))
+        checker._issues.append(BoundsIssue(kind=BoundsIssueKind.BUFFER_OVERFLOW, message="test"))  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         checker.reset()
-        assert len(checker._issues) == 0
+        assert len(checker._issues) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_bounds_issue_format(self) -> None:
         """BoundsIssue.format() produces expected string."""

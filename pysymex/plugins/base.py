@@ -450,21 +450,3 @@ class PluginManager:
     def deactivate(self, engine: SymbolicEngine) -> None:
         """Deactivate all plugins from an engine."""
         self.registry.deactivate_all(engine)
-
-
-__all__ = [
-    "HOOKS",
-    "DetectorPlugin",
-    "HandlerPlugin",
-    "HookPlugin",
-    "HookPoint",
-    "Plugin",
-    "PluginConfig",
-    "PluginLoader",
-    "PluginManager",
-    "PluginManagerConfig",
-    "PluginMetadata",
-    "PluginPriority",
-    "PluginRegistry",
-    "PluginType",
-]

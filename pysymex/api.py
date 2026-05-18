@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TypeGuard, Unpack, cast
 
 from pysymex.analysis.detectors import Issue, IssueKind
 from pysymex.analysis.integration import (
@@ -40,15 +39,14 @@ from pysymex.analysis.pipeline import (
     Scanner,
     ScannerConfig,
 )
-from pysymex.async_api import AnalyzeConfigKwargs
-from pysymex.execution.executors.concurrent import analyze_concurrent
+from pysymex.config import is_object_mapping as _is_object_mapping
 from pysymex.execution.executors import (
     ExecutionConfig,
     ExecutionResult,
     SymbolicExecutor,
 )
-from pysymex.execution.executors.verified import verify
-from pysymex.reporting.formatters import format_result
+from pysymex.execution.strategies.manager import ExplorationStrategy
+from pysymex.pathing import normalize_input_path
 
 
 def _to_int(value: object, default: int) -> int:
@@ -96,11 +94,6 @@ def _to_bool(value: object, default: bool) -> bool:
     return default
 
 
-def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
-    """Return whether value is a generic object-key/object-value mapping."""
-    return isinstance(value, Mapping)
-
-
 def analyze(
     func: Callable[..., object],
     symbolic_args: Mapping[str, str] | None = None,
@@ -111,6 +104,7 @@ def analyze(
     max_iterations: int = 10000,
     timeout: float = 60.0,
     verbose: bool = False,
+    strategy: str | ExplorationStrategy = ExplorationStrategy.ADAPTIVE,
     detect_division_by_zero: bool = True,
     detect_assertion_errors: bool = True,
     detect_index_errors: bool = True,
@@ -132,6 +126,7 @@ def analyze(
         max_iterations: Maximum total iterations.
         timeout: Timeout in seconds.
         verbose: Print verbose output during analysis.
+        strategy: Path exploration strategy.
         detect_division_by_zero: Check for division by zero.
         detect_assertion_errors: Check for assertion failures.
         detect_index_errors: Check for index out of bounds.
@@ -148,6 +143,14 @@ def analyze(
         for issue in result.issues:
             print(issue.format())
     """
+    if isinstance(strategy, str):
+        try:
+            from pysymex.execution.strategies.manager import ExplorationStrategy as ES
+
+            strategy = ES(strategy.lower())
+        except (ValueError, KeyError):
+            strategy = ExplorationStrategy.ADAPTIVE
+
     if config is None:
         resolved_config = ExecutionConfig(
             max_paths=max_paths,
@@ -155,6 +158,7 @@ def analyze(
             max_iterations=max_iterations,
             timeout_seconds=timeout,
             verbose=verbose,
+            strategy=strategy,
             detect_division_by_zero=detect_division_by_zero,
             detect_assertion_errors=detect_assertion_errors,
             detect_index_errors=detect_index_errors,
@@ -185,8 +189,18 @@ def analyze_code(
         :class:`ExecutionResult` with issues found.
     """
     compiled = compile(code, "<string>", "exec")
-    config_ctor = cast("Callable[..., ExecutionConfig]", ExecutionConfig)
-    config = config_ctor(**kwargs)
+    config = ExecutionConfig(
+        max_paths=_to_int(kwargs.get("max_paths", 10000), 10000),
+        max_depth=_to_int(kwargs.get("max_depth", 1000), 1000),
+        max_iterations=_to_int(kwargs.get("max_iterations", 100000), 100000),
+        timeout_seconds=_to_float(kwargs.get("timeout_seconds", 300.0), 300.0),
+        verbose=_to_bool(kwargs.get("verbose", False), False),
+        detect_division_by_zero=_to_bool(kwargs.get("detect_division_by_zero", True), True),
+        detect_assertion_errors=_to_bool(kwargs.get("detect_assertion_errors", True), True),
+        detect_index_errors=_to_bool(kwargs.get("detect_index_errors", True), True),
+        detect_type_errors=_to_bool(kwargs.get("detect_type_errors", True), True),
+        detect_overflow=_to_bool(kwargs.get("detect_overflow", False), False),
+    )
     executor = SymbolicExecutor(config)
     return executor.execute_code(compiled, dict(symbolic_vars) if symbolic_vars else {})
 
@@ -283,10 +297,10 @@ def analyze_file(
     func_obj = namespace[safe_name]
     if not callable(func_obj):
         raise ValueError(f"'{safe_name}' is not a callable")
-    max_paths_cfg = cast("int", config_params["max_paths"])
-    max_depth_cfg = cast("int", config_params["max_depth"])
-    max_iterations_cfg = cast("int", config_params["max_iterations"])
-    timeout_cfg = cast("float", config_params["timeout"])
+    max_paths_cfg = int(config_params["max_paths"])  # type: ignore[arg-type]
+    max_depth_cfg = int(config_params["max_depth"])  # type: ignore[arg-type]
+    max_iterations_cfg = int(config_params["max_iterations"])  # type: ignore[arg-type]
+    timeout_cfg = float(config_params["timeout"])  # type: ignore[arg-type]
 
     return analyze(
         func_obj,
@@ -411,6 +425,7 @@ def format_issues(
 
 check: Callable[..., object] = analyze
 scan: Callable[..., object] = analyze_file
+
 __all__ = [
     "AnalysisConfig",
     "AnalysisPipeline",
@@ -420,82 +435,18 @@ __all__ = [
     "Issue",
     "IssueKind",
     "analyze",
-    "analyze_async",
     "analyze_code",
-    "analyze_code_async",
-    "analyze_concurrent",
     "analyze_file",
-    "analyze_file_async",
     "check",
     "check_assertions",
     "check_division_by_zero",
     "check_index_errors",
     "format_issues",
-    "format_result",
     "quick_check",
     "scan",
-    "scan_directory_async",
     "scan_pipeline",
     "scan_static",
-    "verify",
 ]
-
-
-async def analyze_async(
-    func: Callable[..., object],
-    symbolic_args: Mapping[str, str] | None = None,
-    **kwargs: Unpack[AnalyzeConfigKwargs],
-) -> ExecutionResult:
-    """Async version of analyze(). See :func:`pysymex.async_api.analyze_async`."""
-    from pysymex.async_api import analyze_async as _impl
-
-    return await _impl(func, symbolic_args, **kwargs)
-
-
-async def analyze_code_async(
-    code: str,
-    symbolic_vars: Mapping[str, str] | None = None,
-    **kwargs: Unpack[AnalyzeConfigKwargs],
-) -> ExecutionResult:
-    """Async version of analyze_code(). See :func:`pysymex.async_api.analyze_code_async`."""
-    from pysymex.async_api import analyze_code_async as _impl
-
-    return await _impl(code, symbolic_vars, **kwargs)
-
-
-async def analyze_file_async(
-    filepath: str | Path,
-    function_name: str,
-    symbolic_args: Mapping[str, str] | None = None,
-    **kwargs: Unpack[AnalyzeConfigKwargs],
-) -> ExecutionResult:
-    """Async version of analyze_file(). See :func:`pysymex.async_api.analyze_file_async`."""
-    from pysymex.async_api import analyze_file_async as _impl
-
-    return await _impl(filepath, function_name, symbolic_args, **kwargs)
-
-
-async def scan_directory_async(
-    dir_path: str | Path,
-    pattern: str = "**/*.py",
-    verbose: bool = True,
-    max_paths: int = 100,
-    timeout: float = 30.0,
-    max_concurrency: int | None = None,
-    auto_tune: bool = False,
-) -> list[object]:
-    """Async directory scan. See :func:`pysymex.async_api.scan_directory_async`."""
-    from pysymex.async_api import scan_directory_async as _impl
-
-    return await _impl(
-        dir_path,
-        pattern=pattern,
-        verbose=verbose,
-        max_paths=max_paths,
-        timeout=timeout,
-        max_concurrency=max_concurrency,
-        auto_tune=auto_tune,
-    )
 
 
 def scan_static(
@@ -528,7 +479,7 @@ def scan_static(
     )
     scanner = Scanner(config)
 
-    path_obj = Path(path)
+    path_obj = normalize_input_path(path)
     if path_obj.is_file():
         return scanner.scan_file(str(path_obj))
     elif path_obj.is_dir():
@@ -570,7 +521,7 @@ def scan_pipeline(
     )
     pipeline = AnalysisPipeline(config)
 
-    path_obj = Path(path)
+    path_obj = normalize_input_path(path)
     if path_obj.is_file():
         result = pipeline.analyze_file(str(path_obj))
         return {str(path_obj): result}

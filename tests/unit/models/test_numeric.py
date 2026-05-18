@@ -37,6 +37,14 @@ class TestIntBitLengthModel:
         result = numeric.IntBitLengthModel().apply([1], {}, _state())
         assert result.value == 1
 
+    def test_faithfulness_large_positive_int(self) -> None:
+        result = numeric.IntBitLengthModel().apply([1 << 200], {}, _state())
+        assert result.value == (1 << 200).bit_length()
+
+    def test_faithfulness_large_negative_int(self) -> None:
+        result = numeric.IntBitLengthModel().apply([-(1 << 170)], {}, _state())
+        assert result.value == (-(1 << 170)).bit_length()
+
 
 class TestIntBitCountModel:
     """Test suite for pysymex.models.numeric.IntBitCountModel."""
@@ -48,6 +56,16 @@ class TestIntBitCountModel:
     def test_error_path(self) -> None:
         result = numeric.IntBitCountModel().apply([1], {}, _state())
         assert result.value == 1
+
+    def test_faithfulness_large_positive_int(self) -> None:
+        value = (1 << 140) + (1 << 73) + (1 << 5) + 1
+        result = numeric.IntBitCountModel().apply([value], {}, _state())
+        assert result.value == value.bit_count()
+
+    def test_faithfulness_large_negative_int(self) -> None:
+        value = -((1 << 155) + (1 << 7) + 1)
+        result = numeric.IntBitCountModel().apply([value], {}, _state())
+        assert result.value == value.bit_count()
 
 
 class TestIntToBytesModel:

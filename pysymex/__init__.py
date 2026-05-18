@@ -20,21 +20,85 @@
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import TYPE_CHECKING
 
 from pysymex._deps import ensure_z3_ready
+from pysymex._lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
     from pysymex.api import (
         analyze as analyze,
-        check_assertions as check_assertions,
-        check_division_by_zero as check_division_by_zero,
+        analyze_file as analyze_file,
+        analyze_code as analyze_code,
         quick_check as quick_check,
+        check_division_by_zero as check_division_by_zero,
+        check_assertions as check_assertions,
+        check_index_errors as check_index_errors,
+        format_issues as format_issues,
     )
-    from pysymex.scanner import scan_directory as scan_directory, scan_file as scan_file
+    from pysymex.execution.executors import (
+        SymbolicExecutor as SymbolicExecutor,
+        ExecutionConfig as ExecutionConfig,
+        ExecutionResult as ExecutionResult,
+    )
+    from pysymex.core.types import (
+        SymbolicValue as SymbolicValue,
+        SymbolicString as SymbolicString,
+        SymbolicList as SymbolicList,
+        SymbolicDict as SymbolicDict,
+        SymbolicObject as SymbolicObject,
+        SymbolicNone as SymbolicNone,
+    )
+    from pysymex.core.state import VMState as VMState
+    from pysymex.core.solver.engine import IncrementalSolver as IncrementalSolver
+    from pysymex.analysis.detectors import (
+        Issue as Issue,
+        IssueKind as IssueKind,
+    )
+    from pysymex.config import PysymexConfig as PysymexConfig, load_config as load_config
+    from pysymex.logger import (
+        configure_logging as configure_logging,
+        get_logger as get_logger,
+        LogLevel as LogLevel,
+    )
+    from pysymex.reporting.formatters import format_result as format_result
+    from pysymex.execution.executors.verified import (
+        VerifiedExecutor as VerifiedExecutor,
+        VerifiedExecutionConfig as VerifiedExecutionConfig,
+        VerifiedExecutionResult as VerifiedExecutionResult,
+        verify as verify,
+        check_contracts as check_contracts,
+        check_arithmetic as check_arithmetic,
+        prove_termination as prove_termination,
+    )
+    from pysymex.scanner import (
+        scan_file as scan_file,
+        scan_directory as scan_directory,
+        scan_directory_async as scan_directory_async,
+    )
+    from pysymex.async_api import (
+        analyze_async as analyze_async,
+        analyze_code_async as analyze_code_async,
+        analyze_file_async as analyze_file_async,
+    )
+    from pysymex.analysis.solver import (
+        Z3Engine as Z3Engine,
+        CallGraph as CallGraph,
+        FunctionSummary as FunctionSummary,
+        BugType as BugType,
+        Severity as Severity,
+        VerificationResult as VerificationResult,
+        CrashCondition as CrashCondition,
+        verify_function as verify_function,
+        verify_code as verify_code,
+        verify_file as verify_file,
+        verify_directory as verify_directory,
+        is_z3_available as is_z3_available,
+    )
 
-__version__ = "0.1.0a4"
+from pysymex.config import VERSION as _VERSION
+
+__version__ = _VERSION
 
 try:
     ensure_z3_ready()
@@ -59,12 +123,12 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "SymbolicExecutor": ("pysymex.execution.executors", "SymbolicExecutor"),
     "ExecutionConfig": ("pysymex.execution.executors", "ExecutionConfig"),
     "ExecutionResult": ("pysymex.execution.executors", "ExecutionResult"),
-    "SymbolicValue": ("pysymex.core.types.scalars", "SymbolicValue"),
-    "SymbolicString": ("pysymex.core.types.containers", "SymbolicString"),
-    "SymbolicList": ("pysymex.core.types.containers", "SymbolicList"),
-    "SymbolicDict": ("pysymex.core.types.containers", "SymbolicDict"),
-    "SymbolicObject": ("pysymex.core.types.containers", "SymbolicObject"),
-    "SymbolicNone": ("pysymex.core.types.scalars", "SymbolicNone"),
+    "SymbolicValue": ("pysymex.core.types", "SymbolicValue"),
+    "SymbolicString": ("pysymex.core.types", "SymbolicString"),
+    "SymbolicList": ("pysymex.core.types", "SymbolicList"),
+    "SymbolicDict": ("pysymex.core.types", "SymbolicDict"),
+    "SymbolicObject": ("pysymex.core.types", "SymbolicObject"),
+    "SymbolicNone": ("pysymex.core.types", "SymbolicNone"),
     "VMState": ("pysymex.core.state", "VMState"),
     "IncrementalSolver": ("pysymex.core.solver.engine", "IncrementalSolver"),
     "Issue": ("pysymex.analysis.detectors", "Issue"),
@@ -95,7 +159,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "analyze_code_async": ("pysymex.async_api", "analyze_code_async"),
     "analyze_file_async": ("pysymex.async_api", "analyze_file_async"),
     "Z3Engine": ("pysymex.analysis.solver", "Z3Engine"),
-    "Z3Prover": ("pysymex.analysis.solver", "Z3Engine"),
     "CallGraph": ("pysymex.analysis.solver", "CallGraph"),
     "FunctionSummary": ("pysymex.analysis.solver", "FunctionSummary"),
     "BugType": ("pysymex.analysis.solver", "BugType"),
@@ -131,13 +194,9 @@ def __getattr__(name: str) -> object:
     if _Z3_IMPORT_ERROR is not None and name not in _NON_Z3_EXPORTS:
         raise RuntimeError(str(_Z3_IMPORT_ERROR)) from _Z3_IMPORT_ERROR
 
-    module_name, attr_name = target
-    module = import_module(module_name)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """Dir."""
-    return sorted(set(_EXPORTS.keys()) | {"Z3_AVAILABLE"} | set(globals()))
+    return lazy_dir(_EXPORTS, globals(), extra=("Z3_AVAILABLE",))

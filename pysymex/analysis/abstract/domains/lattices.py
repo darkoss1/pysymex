@@ -27,7 +27,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 
-
 import z3
 
 from pysymex.analysis.abstract.domains.base import AbstractValue
@@ -79,11 +78,17 @@ class Sign(AbstractValue["Sign"]):
         if self.value == other.value:
             return self
         v1, v2 = self.value, other.value
-        if (v1, v2) in [(SignValue.POS, SignValue.ZERO), (SignValue.ZERO, SignValue.POS)]:
+        if (v1 == SignValue.POS and v2 == SignValue.ZERO) or (
+            v1 == SignValue.ZERO and v2 == SignValue.POS
+        ):
             return Sign(SignValue.NON_NEG)
-        if (v1, v2) in [(SignValue.NEG, SignValue.ZERO), (SignValue.ZERO, SignValue.NEG)]:
+        if (v1 == SignValue.NEG and v2 == SignValue.ZERO) or (
+            v1 == SignValue.ZERO and v2 == SignValue.NEG
+        ):
             return Sign(SignValue.NON_POS)
-        if (v1, v2) in [(SignValue.POS, SignValue.NEG), (SignValue.NEG, SignValue.POS)]:
+        if (v1 == SignValue.POS and v2 == SignValue.NEG) or (
+            v1 == SignValue.NEG and v2 == SignValue.POS
+        ):
             return Sign(SignValue.NON_ZERO)
 
         if v1 in (SignValue.NON_NEG, SignValue.NON_POS, SignValue.NON_ZERO):
@@ -93,7 +98,7 @@ class Sign(AbstractValue["Sign"]):
                     SignValue.NON_POS: {SignValue.NEG, SignValue.ZERO},
                     SignValue.NON_ZERO: {SignValue.POS, SignValue.NEG},
                 }
-                if v2 in contained.get(v1, set()):
+                if v2 in contained.get(v1, ()):
                     return Sign(v1)
                 return Sign(SignValue.TOP)
         if v2 in (SignValue.NON_NEG, SignValue.NON_POS, SignValue.NON_ZERO):
@@ -103,7 +108,7 @@ class Sign(AbstractValue["Sign"]):
                     SignValue.NON_POS: {SignValue.NEG, SignValue.ZERO},
                     SignValue.NON_ZERO: {SignValue.POS, SignValue.NEG},
                 }
-                if v1 in contained.get(v2, set()):
+                if v1 in contained.get(v2, ()):
                     return Sign(v2)
                 return Sign(SignValue.TOP)
         return Sign(SignValue.TOP)

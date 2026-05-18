@@ -1,14 +1,14 @@
-import pytest
-import z3
 from unittest.mock import Mock, patch
+
+import z3
 from pysymex.analysis.specialized.bounds import (
-    BoundsIssueKind,
-    BoundsIssue,
-    SymbolicArray,
-    SymbolicBuffer,
     BoundsChecker,
+    BoundsIssue,
     ListBoundsChecker,
     NumpyBoundsChecker,
+    BoundsIssueKind,
+    SymbolicArray,
+    SymbolicBuffer,
 )
 
 
@@ -90,9 +90,9 @@ class TestBoundsChecker:
     def test_reset(self) -> None:
         """Test reset behavior."""
         c = BoundsChecker()
-        c._issues.append(Mock())
+        c._issues.append(Mock())  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         c.reset()
-        assert len(c._issues) == 0
+        assert len(c._issues) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_check_index(self) -> None:
         """Test check_index behavior."""
@@ -164,21 +164,21 @@ class TestBoundsChecker:
         """Test check_array_access behavior."""
         c = BoundsChecker()
         arr = SymbolicArray("arr", z3.IntVal(5), z3.IntSort())
-        res, issues = c.check_array_access(arr, z3.IntVal(10))
+        _res, issues = c.check_array_access(arr, z3.IntVal(10))
         assert len(issues) > 0
 
     def test_check_array_store(self) -> None:
         """Test check_array_store behavior."""
         c = BoundsChecker()
         arr = SymbolicArray("arr", z3.IntVal(5), z3.IntSort())
-        res, issues = c.check_array_store(arr, z3.IntVal(10), z3.IntVal(42))
+        _res, issues = c.check_array_store(arr, z3.IntVal(10), z3.IntVal(42))
         assert len(issues) > 0
 
     @patch("pysymex.analysis.specialized.bounds.z3.Solver.check", return_value=z3.unsat)
-    def test_prove_safe_access(self, mock_check) -> None:
+    def test_prove_safe_access(self, mock_check: Mock) -> None:
         """Test prove_safe_access behavior."""
         c = BoundsChecker()
-        safe, msg = c.prove_safe_access(z3.IntVal(2), z3.IntVal(5))
+        safe, _msg = c.prove_safe_access(z3.IntVal(2), z3.IntVal(5))
         assert safe is True
 
 
@@ -223,10 +223,5 @@ class TestNumpyBoundsChecker:
         arr2 = SymbolicArray(
             "arr2", z3.IntVal(6), z3.IntSort(), dimensions=[z3.IntVal(2), z3.IntVal(3)]
         )
-        shape, issues = c.check_broadcast(arr1.dimensions, arr2.dimensions)
+        _shape, issues = c.check_broadcast(arr1.dimensions, arr2.dimensions)
         assert len(issues) == 0
-
-
-0
-0
-0

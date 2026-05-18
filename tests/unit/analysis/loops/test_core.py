@@ -1,21 +1,24 @@
-import pytest
 import dis
+from types import CodeType
 from unittest.mock import Mock, patch
+
 import z3
 from pysymex.analysis.loops.core import (
-    LoopDetector,
-    LoopBoundInference,
     InductionVariableDetector,
-    LoopSummarizer,
+    LoopBoundInference,
+    LoopDetector,
     LoopInvariantGenerator,
+    LoopSummarizer,
     LoopWidening,
 )
-from pysymex.analysis.loops.types import LoopInfo, LoopBound, InductionVariable, LoopSummary
+from pysymex.analysis.loops.types import InductionVariable, LoopBound, LoopInfo, LoopSummary
+from pysymex.core.memory.cow import ConstraintChain
+from pysymex.core.types.scalars import SymbolicValue
 
 
-def make_dummy_code() -> object:
+def make_dummy_code() -> CodeType:
     def f() -> None:
-        for i in range(10):
+        for _i in range(10):
             pass
 
     return f.__code__
@@ -28,7 +31,7 @@ class TestLoopDetector:
         """Test analyze_cfg behavior."""
         d = LoopDetector()
         code = make_dummy_code()
-        instructions = list(dis.get_instructions(code))
+        instructions: list[dis.Instruction] = list(dis.get_instructions(code))
         loops = d.analyze_cfg(instructions)
         assert isinstance(loops, list)
         assert len(loops) > 0
@@ -39,7 +42,7 @@ class TestLoopDetector:
         d = LoopDetector()
         assert d.loops == []
         code = make_dummy_code()
-        instructions = list(dis.get_instructions(code))
+        instructions: list[dis.Instruction] = list(dis.get_instructions(code))
         loops = d.analyze_cfg(instructions)
         assert d.loops == loops
 
@@ -47,7 +50,7 @@ class TestLoopDetector:
         """Test get_loop_at behavior."""
         d = LoopDetector()
         code = make_dummy_code()
-        instructions = list(dis.get_instructions(code))
+        instructions: list[dis.Instruction] = list(dis.get_instructions(code))
         loops = d.analyze_cfg(instructions)
         assert len(loops) > 0
         pc = list(loops[0].body_pcs)[0]
@@ -118,7 +121,9 @@ class TestLoopSummarizer:
         state.locals = {"x": Mock()}
 
         new_state = ls.apply_summary(summary, state)
-        assert new_state.locals["x"].z3_int.eq(z3.IntVal(42))
+        new_value = new_state.locals["x"]
+        assert isinstance(new_value, SymbolicValue)
+        assert z3.eq(new_value.z3_int, z3.IntVal(42))
 
 
 class TestLoopInvariantGenerator:
@@ -144,7 +149,7 @@ class TestLoopInvariantGenerator:
         assert len(invs) > 0
 
     @patch("pysymex.core.solver.engine.is_satisfiable", return_value=False)
-    def test_verify_invariant(self, mock_is_sat) -> None:
+    def test_verify_invariant(self, mock_is_sat: Mock) -> None:
         """Test verify_invariant behavior."""
         lig = LoopInvariantGenerator()
         inv = z3.BoolVal(True)
@@ -164,7 +169,7 @@ class TestLoopWidening:
         lw = LoopWidening()
         loop = LoopInfo(header_pc=10, back_edge_pc=20, exit_pcs={30}, body_pcs={10, 20})
         lw.record_iteration(loop)
-        assert lw._iteration_count[10] == 1
+        assert lw._iteration_count[10] == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_should_widen(self) -> None:
         """Test should_widen behavior."""
@@ -179,7 +184,7 @@ class TestLoopWidening:
         assert lw.should_widen(loop) is True
 
     @patch("pysymex.core.types.scalars.SymbolicValue.symbolic_int")
-    def test_widen_state(self, mock_sym_int) -> None:
+    def test_widen_state(self, mock_sym_int: Mock) -> None:
         """Test widen_state behavior."""
         mock_sym_int.return_value = (Mock(z3_int=z3.Int("x_widened")), z3.BoolVal(True))
         lw = LoopWidening()
@@ -195,12 +200,7 @@ class TestLoopWidening:
         new_state = Mock()
         new_state.copy.return_value = new_state
         new_state.locals = {"x": new_val}
-
-        class MockConstraints(list):
-            def append(self, x):
-                return MockConstraints(super().copy() + [x])
-
-        new_state.path_constraints = MockConstraints()
+        new_state.path_constraints = ConstraintChain.empty()
 
         widened = lw.widen_state(old_state, new_state, loop)
         assert "x" in widened.locals

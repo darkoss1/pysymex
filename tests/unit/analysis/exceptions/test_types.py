@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.exceptions.types import (
     ExceptionWarningKind,
     HandlerIntent,

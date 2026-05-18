@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
 
+from pysymex.execution.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes import (
-    _detect_python_version,
-    _validate_version,
-    _route_to_opcode_dir,
+    _detect_python_version,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _validate_version,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    _route_to_opcode_dir,  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    load_opcode_handlers,
     py311,
     py312,
     py313,
@@ -65,3 +66,10 @@ def test_route_to_opcode_dir_unsupported() -> None:
         assert False, "Should have raised ImportError"
     except ImportError:
         pass
+
+
+def test_load_opcode_handlers_registers_resume_opcode() -> None:
+    """Test loading opcode handlers registers RESUME for the active interpreter family."""
+    load_opcode_handlers()
+    dispatcher = OpcodeDispatcher()
+    assert dispatcher.has_handler("RESUME") is True

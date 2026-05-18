@@ -27,7 +27,6 @@ handlers from OpcodeHandlersMixin.
 from __future__ import annotations
 
 import dis
-import hashlib
 import inspect
 import logging
 import operator
@@ -38,6 +37,7 @@ from typing import TYPE_CHECKING, cast
 
 import z3 as z3py
 
+from pysymex.analysis.cache.core import hash_bytecode
 from pysymex.analysis.solver.graph import CFGBuilder, SymbolicState
 from pysymex.analysis.solver.opcodes import OpcodeHandlersMixin
 from pysymex.analysis.solver.types import (
@@ -330,19 +330,19 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
 
     def _make_visit_key(self, block_id: int, state: SymbolicState) -> tuple[int, str]:
         """Make visit key."""
-        hasher = hashlib.sha256()
+        digest_parts: list[bytes] = []
         for constraint in state.path_constraints:
-            hasher.update(self._expr_fingerprint(constraint).encode())
-            hasher.update(b"\x00")
+            digest_parts.append(self._expr_fingerprint(constraint).encode())
+            digest_parts.append(b"\x00")
         for name, value in sorted(state.variables.items()):
-            hasher.update(name.encode())
-            hasher.update(b"\x01")
-            hasher.update(self._symvalue_fingerprint(value).encode())
-            hasher.update(b"\x00")
+            digest_parts.append(name.encode())
+            digest_parts.append(b"\x01")
+            digest_parts.append(self._symvalue_fingerprint(value).encode())
+            digest_parts.append(b"\x00")
         for value in state.stack:
-            hasher.update(self._symvalue_fingerprint(value).encode())
-            hasher.update(b"\x02")
-        return block_id, hasher.hexdigest()
+            digest_parts.append(self._symvalue_fingerprint(value).encode())
+            digest_parts.append(b"\x02")
+        return block_id, hash_bytecode(b"".join(digest_parts))
 
     def _explore_paths(
         self,
@@ -721,7 +721,7 @@ class FunctionAnalyzer(OpcodeHandlersMixin):
         """Build function summary from analysis results."""
         return FunctionSummary(
             name=code.co_name,
-            code_hash=hashlib.sha256(code.co_code).hexdigest()[:32],
+            code_hash=hash_bytecode(code.co_code)[:32],
             parameters=list(params),
             return_constraints=[],
             crash_conditions=crashes,

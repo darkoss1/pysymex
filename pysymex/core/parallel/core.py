@@ -40,16 +40,20 @@ from typing import (
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.core.solver.constraints import structural_hash
 from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
 from pysymex.core.parallel.types import (
     ExplorationConfig,
     ExplorationResult,
-    ExplorationStrategy,
     PathResult,
     StateSignature,
     WorkItem,
 )
+from pysymex.accel.thompson import HierarchicalThompsonScheduler, RewardMetrics
+from pysymex.accel.evaluator import EvaluatorFacade, PathState, ChtdBag, SmtSlicingLayer
+from pysymex.accel.core_index import CoreIndex
+from pysymex.accel.types import PruneResult
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +256,20 @@ class ParallelExplorer(Generic[T]):
         self._coverage: set[int] = set()
         self._coverage_lock = threading.Lock()
 
+        # V3 Acceleration scaffolding
+        self._core_index = CoreIndex()
+
+        # Mock SmtSlicingLayer for testing without a real solver binding
+        class DefaultSmtSlicingLayer(SmtSlicingLayer):
+            def check_bag(self, path: PathState, bag: ChtdBag) -> PruneResult:
+                return PruneResult.NOT_PRUNED
+
+            def check_full_path(self, path: PathState) -> PruneResult:
+                return PruneResult.NOT_PRUNED
+
+        self._evaluator_facade = EvaluatorFacade(self._core_index, DefaultSmtSlicingLayer())
+        self._scheduler = HierarchicalThompsonScheduler()
+
     def set_step_function(self, fn: Callable[[T], list[T]]) -> None:
         """Set the function that steps a state to successors."""
         self._step_fn = fn
@@ -270,31 +288,43 @@ class ParallelExplorer(Generic[T]):
             raise ValueError("Step function not set")
         self._running = True
         self._stop_event.clear()
-        start_time = time.time()
-        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-            futures: list[Future[None]] = []
-            for worker_id in range(self.config.max_workers):
-                future = executor.submit(self._worker_loop, worker_id)
-                futures.append(future)
-            worker_errors: list[Exception] = []
+        self._start_time = time.time()
+
+        if self.config.max_workers <= 1:
             try:
-                for future in as_completed(futures, timeout=self.config.timeout_seconds):
-                    try:
-                        future.result()
-                    except Exception as exc:
-                        worker_errors.append(exc)
-            except TimeoutError:
-                self._stop_event.set()
-                executor.shutdown(wait=False, cancel_futures=True)
-            if worker_errors:
+                self._worker_loop(0)
+            except Exception as exc:
                 self._stop_event.set()
                 raise ExceptionGroup(
-                    f"parallel exploration: {len(worker_errors)} worker(s) failed",
-                    worker_errors,
+                    "parallel exploration: 1 worker(s) failed",
+                    [exc],
                 )
+        else:
+            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+                futures: list[Future[None]] = []
+                for worker_id in range(self.config.max_workers):
+                    future = executor.submit(self._worker_loop, worker_id)
+                    futures.append(future)
+                worker_errors: list[Exception] = []
+                try:
+                    for future in as_completed(futures, timeout=self.config.timeout_seconds):
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            worker_errors.append(exc)
+                except TimeoutError:
+                    self._stop_event.set()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                if worker_errors:
+                    self._stop_event.set()
+                    raise ExceptionGroup(
+                        f"parallel exploration: {len(worker_errors)} worker(s) failed",
+                        worker_errors,
+                    )
+
         self._running = False
-        self._result.time_seconds = time.time() - start_time
-        self._result.workers_used = self.config.max_workers
+        self._result.time_seconds = time.time() - self._start_time
+        self._result.workers_used = max(1, self.config.max_workers)
         self._result.states_merged = self._merger.get_merge_count()
         remaining = self._merger.flush_pending()
         for state in remaining:
@@ -305,10 +335,16 @@ class ParallelExplorer(Generic[T]):
         """Main worker loop."""
         paths_explored = 0
         max_paths = self.config.max_paths_per_worker
+        timeout = getattr(self.config, "timeout_seconds", 60.0)
         while not self._stop_event.is_set() and paths_explored < max_paths:
+            if hasattr(self, "_start_time") and time.time() - self._start_time > timeout:
+                self._stop_event.set()
+                break
             if self._process_next_item(worker_id):
                 paths_explored += 1
             elif self._work_queue.empty():
+                if getattr(self.config, "max_workers", 1) <= 1:
+                    break
                 time.sleep(0.05)
                 if self._work_queue.empty():
                     break
@@ -376,30 +412,27 @@ class ParallelExplorer(Generic[T]):
         )
 
     def _compute_priority(self, state: T, parent: WorkItem[T]) -> float:
-        """Compute priority for a successor state."""
-        strategy = self.config.strategy
-        if strategy == ExplorationStrategy.ADAPTIVE:
-            depth = float(parent.depth + 1)
-            pc = float(getattr(state, "pc", 0))
-            with self._coverage_lock:
-                is_new_pc = 1.0 if int(pc) not in self._coverage else 0.0
-            return -((depth * 8.0) + (is_new_pc * 120.0) + pc)
-        elif strategy == ExplorationStrategy.CHTD_NATIVE:
-            depth = float(parent.depth + 1)
-            pc = float(getattr(state, "pc", 0))
-            return -(depth * 10.0 + pc)
-        elif strategy == ExplorationStrategy.COVERAGE:
-            pc = getattr(state, "pc", 0)
-            with self._coverage_lock:
-                if pc not in self._coverage:
-                    return 1000.0
-            return 0.0
-        elif strategy == ExplorationStrategy.RANDOM:
-            import random
+        """Compute priority for a successor state using adaptive CHTD-TS strategy."""
+        depth = float(parent.depth + 1)
+        pc = float(getattr(state, "pc", 0))
+        with self._coverage_lock:
+            is_new_pc = 1.0 if int(pc) not in self._coverage else 0.0
 
-            return random.random()
-        else:
-            return parent.priority
+        metrics = RewardMetrics(
+            pruned_frontier=0,
+            centrality=1.0,
+            core_size=1,
+            subtree_reach=float(depth),
+            separator_size=1,
+            core_reuse=int(is_new_pc),
+            subtree_width=1,
+            solve_time_ms=1.0,
+            minimize_time_ms=0.0,
+        )
+        yield_score = self._scheduler.compute_chtd_yield(metrics)
+        # Yield is [0, 1]. Priority queue is min-heap, so we negate a scaled score.
+        base_priority = -((depth * 8.0) + (is_new_pc * 120.0) + pc)
+        return base_priority * (1.0 + yield_score)
 
     def stop(self) -> None:
         """Stop exploration."""
@@ -494,12 +527,11 @@ class ParallelSolver:
 
     def _solve_partition(self, constraints: list[z3.BoolRef]) -> tuple[bool, z3.ModelRef | None]:
         """Solve a single partition."""
-        solver = z3.Solver()
-        solver.set("timeout", self.timeout_ms)
-        solver.add(constraints)
+        solver = IncrementalSolver(timeout_ms=self.timeout_ms)
+        solver.add(*constraints)
         result = solver.check()
-        if result == z3.sat:
-            return True, solver.model()
+        if result.is_sat:
+            return True, result.model
         return False, None
 
     def _combine_models(self, models: list[z3.ModelRef]) -> z3.ModelRef | None:
@@ -513,13 +545,14 @@ class ParallelSolver:
         if len(models) == 1:
             return models[0]
 
-        combined = z3.Solver()
+        combined = IncrementalSolver(timeout_ms=self.timeout_ms)
         for model in models:
             for decl in model.decls():
                 eq = decl() == model[decl]
                 combined.add(eq if isinstance(eq, z3.BoolRef) else z3.BoolVal(bool(eq)))
-        if combined.check() == z3.sat:
-            return combined.model()
+        combined_result = combined.check()
+        if combined_result.is_sat:
+            return combined_result.model
         return models[0]
 
 
@@ -661,13 +694,3 @@ def _process_verify_file(
         logger.error("Worker process error in %s: %s", filepath, e)
         traceback.print_exc()
         return None
-
-
-__all__ = [
-    "ConstraintPartitioner",
-    "ParallelExplorer",
-    "ParallelSolver",
-    "ProcessParallelVerifier",
-    "StateMerger",
-    "WorkQueue",
-]

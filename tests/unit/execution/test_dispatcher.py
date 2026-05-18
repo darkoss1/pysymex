@@ -158,6 +158,17 @@ class TestOpcodeDispatcher:
         assert dispatcher.find_exception_handler(2) is None
         assert dispatcher.find_exception_handler(3) == 0
 
+    def test_find_exception_handler_prefers_innermost_range(self) -> None:
+        """Nested exception ranges must return the innermost handler."""
+        dispatcher = OpcodeDispatcher()
+        entries: list[object] = [
+            _ExcEntry(start=0, end=10, target=40),
+            _ExcEntry(start=3, end=6, target=60),
+        ]
+        dispatcher.set_exception_entries(entries)
+        dispatcher.set_instructions([_make_instruction("NOP", 40), _make_instruction("NOP", 60)])
+        assert dispatcher.find_exception_handler(4) == 1
+
     def test_get_instruction(self) -> None:
         """Test get_instruction behavior."""
         dispatcher = OpcodeDispatcher()

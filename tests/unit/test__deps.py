@@ -12,12 +12,12 @@ class TestPackageVersion:
 
     def test_known_package_returns_string(self) -> None:
         """An installed package returns a version string."""
-        result = mod._package_version("z3-solver")
+        result = mod._package_version("z3-solver")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None or isinstance(result, str)
 
     def test_unknown_package_returns_none(self) -> None:
         """A non-existent package returns None."""
-        result = mod._package_version("this-package-definitely-does-not-exist-xyz-999")
+        result = mod._package_version("this-package-definitely-does-not-exist-xyz-999")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert result is None
 
 
@@ -26,14 +26,14 @@ class TestIsZ3Ready:
 
     def test_real_z3_module_is_ready(self) -> None:
         """The real z3 module should pass the readiness check."""
-        assert mod._is_z3_ready(z3) is True
+        assert mod._is_z3_ready(z3) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_empty_module_is_not_ready(self) -> None:
         """A module without solver API is not ready."""
         import types
 
         fake = types.ModuleType("fake_z3")
-        assert mod._is_z3_ready(fake) is False
+        assert mod._is_z3_ready(fake) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestZ3Diagnostics:
@@ -64,7 +64,7 @@ class TestBuildZ3Error:
 
     def test_returns_runtime_error(self) -> None:
         """The error builder produces a RuntimeError with diagnostic details."""
-        err = mod._build_z3_error()
+        err = mod._build_z3_error()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert isinstance(err, RuntimeError)
         msg = str(err)
         assert "z3-solver" in msg

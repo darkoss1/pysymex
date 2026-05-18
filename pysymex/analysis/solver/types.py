@@ -24,8 +24,9 @@ used throughout the Z3 verification engine.
 """
 
 from __future__ import annotations
+from pysymex.config import VERSION
 
-__version__ = "2.0.0"
+__version__ = VERSION
 __author__ = "pysymex Team"
 
 import dis

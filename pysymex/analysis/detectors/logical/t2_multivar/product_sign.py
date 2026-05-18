@@ -17,8 +17,42 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
-import z3
+from pysymex.analysis.detectors.logical.utils import (
+    extract_bounds,
+    extract_product_const_comparisons,
+)
+
+
+def _strictly_positive(bounds: dict[str, int | None]) -> bool:
+    min_val = bounds.get("min")
+    min_strict = bounds.get("min_strict")
+    return (min_val is not None and int(min_val) > 0) or (
+        min_strict is not None and int(min_strict) >= 0
+    )
+
+
+def _nonnegative(bounds: dict[str, int | None]) -> bool:
+    min_val = bounds.get("min")
+    min_strict = bounds.get("min_strict")
+    return (min_val is not None and int(min_val) >= 0) or (
+        min_strict is not None and int(min_strict) >= -1
+    )
+
+
+def _strictly_negative(bounds: dict[str, int | None]) -> bool:
+    max_val = bounds.get("max")
+    max_strict = bounds.get("max_strict")
+    return (max_val is not None and int(max_val) < 0) or (
+        max_strict is not None and int(max_strict) <= 0
+    )
+
+
+def _nonpositive(bounds: dict[str, int | None]) -> bool:
+    max_val = bounds.get("max")
+    max_strict = bounds.get("max_strict")
+    return (max_val is not None and int(max_val) <= 0) or (
+        max_strict is not None and int(max_strict) <= 1
+    )
 
 
 class ProductSignContradictionRule(LogicRule):
@@ -26,12 +60,33 @@ class ProductSignContradictionRule(LogicRule):
     tier = 2
 
     def matches(self, ctx: ContradictionContext) -> bool:
-        if count_variables(ctx.core) < 2:
-            return False
+        bounds = extract_bounds(ctx.core)
+        for left, right, op, value in extract_product_const_comparisons(ctx.core):
+            if value != 0:
+                continue
+            left_bounds = bounds.get(left)
+            right_bounds = bounds.get(right)
+            if left_bounds is None or right_bounds is None:
+                continue
 
-        has_mul = core_has_operator(ctx.core, {z3.Z3_OP_MUL})
-        has_ineq = core_has_operator(
-            ctx.core, {z3.Z3_OP_GT, z3.Z3_OP_GE, z3.Z3_OP_LT, z3.Z3_OP_LE, z3.Z3_OP_NOT}
-        )
+            same_sign_strict = (
+                _strictly_positive(left_bounds) and _strictly_positive(right_bounds)
+            ) or (_strictly_negative(left_bounds) and _strictly_negative(right_bounds))
+            same_sign_nonzero = (_nonnegative(left_bounds) and _nonnegative(right_bounds)) or (
+                _nonpositive(left_bounds) and _nonpositive(right_bounds)
+            )
+            opposite_sign_strict = (
+                _strictly_positive(left_bounds) and _strictly_negative(right_bounds)
+            ) or (_strictly_negative(left_bounds) and _strictly_positive(right_bounds))
+            opposite_sign_nonzero = (_nonnegative(left_bounds) and _nonpositive(right_bounds)) or (
+                _nonpositive(left_bounds) and _nonnegative(right_bounds)
+            )
 
-        return has_mul and has_ineq
+            if op in ("<=", "<") and (same_sign_strict or (op == "<" and same_sign_nonzero)):
+                return True
+            if op in (">=", ">") and (
+                opposite_sign_strict or (op == ">" and opposite_sign_nonzero)
+            ):
+                return True
+
+        return False

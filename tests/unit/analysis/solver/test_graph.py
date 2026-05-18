@@ -1,11 +1,10 @@
-import pytest
-import dis
 import z3
+from types import CodeType
 from pysymex.analysis.solver.graph import CallGraph, CFGBuilder, SymbolicState
 from pysymex.analysis.solver.types import CallSite, SymValue, SymType
 
 
-def make_dummy_code() -> object:
+def make_dummy_code() -> CodeType:
     def f() -> None:
         pass
 

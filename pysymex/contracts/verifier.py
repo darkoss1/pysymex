@@ -39,10 +39,12 @@ the low-level Z3 verification utilities used by the executor.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.contracts.compiler import ContractCompiler
 from pysymex.contracts.types import (
     Contract,
@@ -73,14 +75,13 @@ class ContractVerifier:
 
     def __init__(self, timeout_ms: int = 5000) -> None:
         self.timeout_ms: int = timeout_ms
-        self._solver: z3.Solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
 
     def verify_precondition(
         self,
         contract: Contract,
         path_constraints: list[z3.BoolRef],
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> tuple[VerificationResult, dict[str, object] | None]:
         """Verify that a precondition can be satisfied.
 
@@ -92,16 +93,20 @@ class ContractVerifier:
         for pc in path_constraints:
             self._solver.add(pc)
 
-        pre_expr = ContractCompiler.compile_predicate(contract.predicate, symbols)
+        try:
+            pre_expr = ContractCompiler.compile_predicate(contract.predicate, symbols)
+        except (TypeError, ValueError, z3.Z3Exception):
+            logger.debug("Failed to compile precondition %s", contract.condition, exc_info=True)
+            return VerificationResult.UNKNOWN, None
 
         self._solver.push()
         self._solver.add(pre_expr)
         result = self._solver.check()
         self._solver.pop()
 
-        if result == z3.sat:
+        if result.is_sat:
             return VerificationResult.VERIFIED, None
-        elif result == z3.unsat:
+        elif result.is_unsat:
             return VerificationResult.UNREACHABLE, None
         else:
             return VerificationResult.UNKNOWN, None
@@ -111,7 +116,7 @@ class ContractVerifier:
         contract: Contract,
         preconditions: list[Contract],
         path_constraints: list[z3.BoolRef],
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> tuple[VerificationResult, dict[str, object] | None]:
         """Verify that a postcondition holds given preconditions.
 
@@ -121,20 +126,28 @@ class ContractVerifier:
         self._solver.reset()
 
         for pre in preconditions:
-            pre_expr = ContractCompiler.compile_predicate(pre.predicate, symbols)
+            try:
+                pre_expr = ContractCompiler.compile_predicate(pre.predicate, symbols)
+            except (TypeError, ValueError, z3.Z3Exception):
+                logger.debug("Failed to compile precondition %s", pre.condition, exc_info=True)
+                return VerificationResult.UNKNOWN, None
             self._solver.add(pre_expr)
 
         for pc in path_constraints:
             self._solver.add(pc)
 
-        post_expr = ContractCompiler.compile_predicate(contract.predicate, symbols)
+        try:
+            post_expr = ContractCompiler.compile_predicate(contract.predicate, symbols)
+        except (TypeError, ValueError, z3.Z3Exception):
+            logger.debug("Failed to compile postcondition %s", contract.condition, exc_info=True)
+            return VerificationResult.UNKNOWN, None
         self._solver.add(z3.Not(post_expr))
 
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return VerificationResult.VERIFIED, None
-        elif result == z3.sat:
-            model = self._solver.model()
+        elif result.is_sat and result.model is not None:
+            model = result.model
             counterexample = self._extract_counterexample(model, symbols)
             return VerificationResult.VIOLATED, counterexample
         else:
@@ -146,8 +159,8 @@ class ContractVerifier:
         loop_condition: z3.BoolRef,
         loop_body_constraints: list[z3.BoolRef],
         pre_loop_constraints: list[z3.BoolRef],
-        symbols: dict[str, z3.ExprRef],
-        symbols_after: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
+        symbols_after: Mapping[str, z3.ExprRef],
     ) -> tuple[VerificationResult, dict[str, object] | None]:
         """Verify a loop invariant using induction.
 
@@ -155,16 +168,20 @@ class ContractVerifier:
         2. **Inductive step**: If invariant holds and loop condition is true,
            invariant still holds after one iteration.
         """
-        inv_expr = ContractCompiler.compile_predicate(inv.predicate, symbols)
+        try:
+            inv_expr = ContractCompiler.compile_predicate(inv.predicate, symbols)
+        except (TypeError, ValueError, z3.Z3Exception):
+            logger.debug("Failed to compile loop invariant %s", inv.condition, exc_info=True)
+            return VerificationResult.UNKNOWN, None
 
         self._solver.reset()
         for pc in pre_loop_constraints:
             self._solver.add(pc)
         self._solver.add(z3.Not(inv_expr))
-        base_result = self._solver.check()
+        base_result = self._solver.check(need_model=True)
 
-        if base_result == z3.sat:
-            model = self._solver.model()
+        if base_result.is_sat and base_result.model is not None:
+            model = base_result.model
             return VerificationResult.VIOLATED, self._extract_counterexample(model, symbols)
 
         self._solver.reset()
@@ -173,14 +190,18 @@ class ContractVerifier:
         for bc in loop_body_constraints:
             self._solver.add(bc)
 
-        inv_after = ContractCompiler.compile_predicate(inv.predicate, symbols_after)
+        try:
+            inv_after = ContractCompiler.compile_predicate(inv.predicate, symbols_after)
+        except (TypeError, ValueError, z3.Z3Exception):
+            logger.debug("Failed to compile loop invariant %s", inv.condition, exc_info=True)
+            return VerificationResult.UNKNOWN, None
         self._solver.add(z3.Not(inv_after))
 
-        inductive_result = self._solver.check()
-        if inductive_result == z3.sat:
-            model = self._solver.model()
+        inductive_result = self._solver.check(need_model=True)
+        if inductive_result.is_sat and inductive_result.model is not None:
+            model = inductive_result.model
             return VerificationResult.VIOLATED, self._extract_counterexample(model, symbols)
-        elif inductive_result == z3.unsat and base_result == z3.unsat:
+        elif inductive_result.is_unsat and base_result.is_unsat:
             return VerificationResult.VERIFIED, None
         else:
             return VerificationResult.UNKNOWN, None
@@ -189,7 +210,7 @@ class ContractVerifier:
         self,
         condition: z3.BoolRef,
         path_constraints: list[z3.BoolRef],
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> tuple[VerificationResult, dict[str, object] | None]:
         """Verify an inline assertion."""
         self._solver.reset()
@@ -197,11 +218,11 @@ class ContractVerifier:
             self._solver.add(pc)
         self._solver.add(z3.Not(condition))
 
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return VerificationResult.VERIFIED, None
-        elif result == z3.sat:
-            model = self._solver.model()
+        elif result.is_sat and result.model is not None:
+            model = result.model
             counterexample = self._extract_counterexample(model, symbols)
             return VerificationResult.VIOLATED, counterexample
         else:
@@ -210,7 +231,7 @@ class ContractVerifier:
     def _extract_counterexample(
         self,
         model: z3.ModelRef,
-        symbols: dict[str, z3.ExprRef],
+        symbols: Mapping[str, z3.ExprRef],
     ) -> dict[str, object]:
         """Extract concrete variable assignments from a Z3 model."""
         counterexample: dict[str, object] = {}
@@ -299,9 +320,3 @@ class VerificationReport:
                 lines.append("")
                 lines.append(v.format())
         return "\n".join(lines)
-
-
-__all__ = [
-    "ContractVerifier",
-    "VerificationReport",
-]

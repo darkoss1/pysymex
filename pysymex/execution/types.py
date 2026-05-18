@@ -24,14 +24,8 @@ from dataclasses import dataclass, field
 from typing import TypeGuard
 
 from pysymex.analysis.detectors import Issue, IssueKind
+from pysymex.config import is_object_list
 from pysymex.execution.strategies.manager import ExplorationStrategy
-
-__all__ = [
-    "BRANCH_OPCODES",
-    "ExecutionConfig",
-    "ExecutionResult",
-]
-
 
 BRANCH_OPCODES: frozenset[str] = frozenset(
     {
@@ -52,10 +46,7 @@ BRANCH_OPCODES: frozenset[str] = frozenset(
     }
 )
 
-
-def _is_object_list(value: object) -> TypeGuard[list[object]]:
-    """Return True when *value* is a list."""
-    return isinstance(value, list)
+_is_object_list = is_object_list
 
 
 def _is_dict_list(value: object) -> TypeGuard[list[dict[str, object]]]:
@@ -81,7 +72,7 @@ class ExecutionConfig:
         max_depth: Maximum call/recursion depth per path.
         max_iterations: Global iteration budget across all paths.
         timeout_seconds: Wall-clock timeout for the entire analysis.
-        strategy: Path exploration strategy (CHTD-native, adaptive, coverage, etc.).
+        strategy: Path exploration strategy (strictly Adaptive CHTD-TS).
         max_loop_iterations: Per-loop iteration cap before widening/pruning.
         unroll_loops: Whether to unroll loops during exploration.
         solver_timeout_ms: Z3 solver timeout per query in milliseconds.
@@ -155,6 +146,10 @@ class ExecutionConfig:
     chtd_min_check_interval: int = 8
     chtd_max_check_interval: int = 128
     chtd_growth_trigger: int = 8
+    max_bags_per_path: int = 16
+    max_bag_solve_ms: int = 500
+    max_decomposition_ms: int = 1000
+    chtd_min_frontier_size: int = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,10 +248,11 @@ class ExecutionResult:
             SARIF log as a dictionary.
         """
         from pysymex.reporting.sarif import SARIFGenerator
+        from pysymex.config import VERSION
 
         generator = SARIFGenerator(
             tool_name="pysymex",
-            tool_version="0.3.0-alpha",
+            tool_version=VERSION,
         )
         issue_dicts: list[dict[str, object]] = []
         for issue in self.issues:

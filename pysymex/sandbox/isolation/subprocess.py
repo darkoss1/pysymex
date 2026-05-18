@@ -45,7 +45,7 @@ from . import IsolationBackend
 from .harness import HARNESS_FILENAME, generate_harness_script
 
 if TYPE_CHECKING:
-    from ..types import SandboxConfig
+    pass
 
 
 class SubprocessBackend(IsolationBackend):
@@ -64,10 +64,6 @@ class SubprocessBackend(IsolationBackend):
     isolation (namespaces, Job Objects) is absent.
     """
 
-    def __init__(self, config: SandboxConfig) -> None:
-        super().__init__(config)
-        self._process: subprocess.Popen[bytes] | None = None
-
     @property
     def is_available(self) -> bool:
         """Subprocess backend is always available."""
@@ -84,28 +80,6 @@ class SubprocessBackend(IsolationBackend):
             cpu_limits=sys.platform != "win32",
             process_limits=sys.platform != "win32",
         )
-
-    def setup(self) -> None:
-        """Create the filesystem jail."""
-        try:
-            self._jail_path = self._create_jail()
-            self._is_setup = True
-        except Exception as exc:
-            self.cleanup()
-            raise SandboxSetupError(f"Failed to create jail: {exc}") from exc
-
-    def cleanup(self) -> None:
-        """Remove the filesystem jail and kill any running processes."""
-        if self._process is not None:
-            try:
-                self._process.kill()
-                self._process.wait(timeout=5.0)
-            except Exception:
-                pass
-            self._process = None
-
-        self._destroy_jail()
-        self._is_setup = False
 
     def execute(
         self,
@@ -193,13 +167,6 @@ class SubprocessBackend(IsolationBackend):
         finally:
             self._process = None
 
-    def _kill_and_drain(self) -> tuple[bytes, bytes]:
-        """Kill the child process and drain remaining output."""
-        if self._process is not None:
-            self._process.kill()
-            return self._process.communicate()
-        return b"", b""
-
     def _make_preexec_fn(self):
         """Create a Unix-only preexec function that enforces rlimits."""
         if sys.platform == "win32":
@@ -251,6 +218,3 @@ class SubprocessBackend(IsolationBackend):
                 pass
 
         return _apply_limits
-
-
-__all__ = ["SubprocessBackend"]

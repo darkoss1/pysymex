@@ -236,10 +236,11 @@ from pysymex import scan_directory
 
 results = scan_directory(
     dir_path,               # Directory path
-    pattern="**/*.py",      # Glob pattern
+    pattern="**/*.py",      # Glob pattern; non-recursive unless recursive=True
     verbose=True,           # Show progress
-    max_paths=100,          # Max paths per function
-    timeout=30.0            # Timeout per file
+    max_paths=200,          # Max paths per function
+    timeout=30,             # Timeout per file
+    recursive=False         # Recurse into subdirectories
 ) -> List[ScanResult]
 ```
 
@@ -249,6 +250,15 @@ results = scan_directory("./src", verbose=True)
 
 total_issues = sum(len(r.issues) for r in results)
 print(f"Total issues across all files: {total_issues}")
+```
+
+Static and pipeline analysis helpers live in `pysymex.api`:
+
+```python
+from pysymex.api import scan_pipeline, scan_static
+
+static_issues = scan_static("./src", recursive=True)
+pipeline_results = scan_pipeline("./src", recursive=True)
 ```
 
 ---
@@ -450,23 +460,30 @@ configure_logging(LogLevel.ERROR)
 from pysymex import IssueKind
 
 class IssueKind(Enum):
-    DIVISION_BY_ZERO = "DIVISION_BY_ZERO"
-    ASSERTION_ERROR = "ASSERTION_ERROR"
-    INDEX_ERROR = "INDEX_ERROR"
-    KEY_ERROR = "KEY_ERROR"
-    TYPE_ERROR = "TYPE_ERROR"
-    ATTRIBUTE_ERROR = "ATTRIBUTE_ERROR"
-    NULL_DEREFERENCE = "NULL_DEREFERENCE"
-    FORMAT_STRING_ERROR = "FORMAT_STRING_ERROR"
-    RESOURCE_LEAK = "RESOURCE_LEAK"
-    OVERFLOW = "OVERFLOW"
-    UNREACHABLE_CODE = "UNREACHABLE_CODE"
-    INFINITE_LOOP = "INFINITE_LOOP"
-    CONTRACT_VIOLATION = "CONTRACT_VIOLATION"
-    VALUE_ERROR = "VALUE_ERROR"
-    UNBOUND_VARIABLE = "UNBOUND_VARIABLE"
-    UNHANDLED_EXCEPTION = "UNHANDLED_EXCEPTION"
-    RECURSION_LIMIT = "RECURSION_LIMIT"
+    DIVISION_BY_ZERO
+    ASSERTION_ERROR
+    INDEX_ERROR
+    KEY_ERROR
+    TYPE_ERROR
+    ATTRIBUTE_ERROR
+    OVERFLOW
+    NULL_DEREFERENCE
+    INFINITE_LOOP
+    UNREACHABLE_CODE
+    UNHANDLED_EXCEPTION
+    CONTRACT_VIOLATION
+    RECURSION_LIMIT
+    NEGATIVE_SQRT
+    INVALID_ARGUMENT
+    FORMAT_STRING_INJECTION
+    RESOURCE_LEAK
+    VALUE_ERROR
+    UNBOUND_VARIABLE
+    LOGICAL_CONTRADICTION
+    RUNTIME_ERROR
+    EXCEPTION
+    SYNTAX_ERROR
+    UNKNOWN
 ```
 
 ### Issue Descriptions
@@ -479,7 +496,7 @@ class IssueKind(Enum):
 | `TYPE_ERROR` | Type mismatch | `"str" + 5` |
 | `NULL_DEREFERENCE` | Accessing None | `x.method()` when x=None |
 | `ASSERTION_ERROR` | Assert can fail | `assert x > 0` when x=0 |
-| `FORMAT_STRING_ERROR` | Bad format string | `"{} {}".format(x)` |
+| `FORMAT_STRING_INJECTION` | Unsafe or malformed format-string usage | `"{} {}".format(x)` |
 | `RESOURCE_LEAK` | Unclosed resource | `open(f)` without close |
 | `VALUE_ERROR` | Invalid arguments to builtins | `int("abc")` |
 | `UNBOUND_VARIABLE` | Accessing variable before assignment | `print(x)` before `x = 1` |
@@ -491,16 +508,30 @@ class IssueKind(Enum):
 ### Custom Detectors
 
 ```python
-from pysymex.analysis.detectors import BaseDetector, Issue, IssueKind
+import dis
+from collections.abc import Callable
+
+import z3
+
+from pysymex.analysis.detectors import Detector, Issue, IssueKind
 from pysymex.core.state import VMState
 
-class CustomDetector(BaseDetector):
+class CustomDetector(Detector):
     """Custom detector for specific patterns."""
-    
-    def check_state(self, state: VMState) -> List[Issue]:
-        issues = []
-        # Custom detection logic here
-        return issues
+
+    name = "custom-detector"
+    description = "Detects a project-specific runtime pattern"
+    issue_kind = IssueKind.RUNTIME_ERROR
+
+    def check(
+        self,
+        state: VMState,
+        instruction: dis.Instruction,
+        solver_check: Callable[[list[z3.BoolRef]], bool],
+    ) -> Issue | None:
+        if instruction.opname == "RAISE_VARARGS":
+            return Issue(kind=self.issue_kind, message="Custom issue detected", pc=state.pc)
+        return None
 ```
 
 ### Verified Execution
@@ -534,13 +565,13 @@ result = prove_termination(func)
 Analyze call graphs:
 
 ```python
-from pysymex.analysis.interprocedural import CallGraphAnalyzer
+from pysymex.analysis.interprocedural import InterproceduralAnalyzer
 
-analyzer = CallGraphAnalyzer()
-call_graph = analyzer.build_call_graph(module)
+analyzer = InterproceduralAnalyzer()
+results = analyzer.analyze_module(module)
 
-# Find all paths from entry to sensitive sinks
-paths = analyzer.find_paths_to_sink("sensitive_function")
+# Export the discovered call graph in DOT format
+dot_graph = analyzer.get_call_graph_dot()
 ```
 
 ---
@@ -583,11 +614,10 @@ from pysymex import (
     SymbolicObject,
     SymbolicNone,
     VMState,
-    ShadowSolver,
+    IncrementalSolver,
 
     # Z3 engine (high-level API)
     Z3Engine,
-    Z3Prover,          # alias for Z3Engine
     CallGraph,
     FunctionSummary,
     BugType,
@@ -624,6 +654,12 @@ from pysymex import (
     check_arithmetic,
     prove_termination,
 )
+```
+
+Static and pipeline scanning helpers are exported by `pysymex.api`:
+
+```python
+from pysymex.api import AnalysisConfig, AnalysisPipeline, AnalysisResult, scan_pipeline, scan_static
 ```
 
 ---

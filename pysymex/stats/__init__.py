@@ -25,17 +25,22 @@ from .collectors.smt import SmtCollector
 from .sinks.sqlite import SQLiteSink
 from .sinks.console import ConsoleSink
 
-# Singleton Registry
+
 _STATS_REGISTRY = StatsRegistry()
 registry: StatsRegistry = _STATS_REGISTRY
 
-# Initialize defaults
 _STATS_REGISTRY.register_collector(PerfCollector())
 _STATS_REGISTRY.register_collector(SmtCollector())
 
-# Default sinks (SQLite disabled by default until user specifically turns on stats)
-# We can register the console sink by default for debugging:
-_STATS_REGISTRY.register_sink(ConsoleSink())
+# NOTE: ConsoleSink is NOT registered here by default.  The CLI registers
+# it only when ``--stats`` is passed, so stats output does not appear
+# unless explicitly requested.  Other sinks (e.g. SQLiteSink) can still
+# be registered unconditionally if needed.
+
+
+def enable_console_sink() -> None:
+    """Register the Rich-powered ConsoleSink for live streaming stats."""
+    _STATS_REGISTRY.register_sink(ConsoleSink())
 
 
 def emit(event_type: EventType, value: float = 0.0, metadata: Metadata | None = None) -> None:
@@ -53,4 +58,14 @@ def stop() -> None:
     _STATS_REGISTRY.stop()
 
 
-__all__ = ["registry", "emit", "start", "stop", "EventType", "Event", "SQLiteSink"]
+__all__ = [
+    "registry",
+    "emit",
+    "start",
+    "stop",
+    "enable_console_sink",
+    "EventType",
+    "Event",
+    "SQLiteSink",
+    "ConsoleSink",
+]

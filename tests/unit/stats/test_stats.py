@@ -1,5 +1,7 @@
-import time
+from __future__ import annotations
+
 from pysymex.stats import emit, EventType, start, stop, registry
+from pysymex.stats.types import MetricValue
 
 
 def test_stats_integration() -> None:
@@ -13,10 +15,14 @@ def test_stats_integration() -> None:
         stop()
 
     # Check if collectors received the events (safe after stop() which calls flush)
-    metrics = {}
-    for collector in registry._collectors:
+    metrics: dict[str, MetricValue] = {}
+    for collector in registry._collectors:  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         metrics.update(collector.get_metrics())
 
-    assert metrics["total_paths_explored"] >= 1.0
+    total_paths = metrics["total_paths_explored"]
+    assert isinstance(total_paths, int | float)
+    assert total_paths >= 1.0
     # sat_unsat_ratio may vary based on solver state, just check it's a valid ratio
-    assert 0.0 <= metrics["sat_unsat_ratio"] <= 1.0
+    sat_unsat_ratio = metrics["sat_unsat_ratio"]
+    assert isinstance(sat_unsat_ratio, int | float)
+    assert 0.0 <= sat_unsat_ratio <= 1.0

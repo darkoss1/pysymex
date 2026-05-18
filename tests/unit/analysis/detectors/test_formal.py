@@ -1,4 +1,4 @@
-from unittest.mock import patch, Mock
+from unittest.mock import MagicMock, patch, Mock
 import z3
 from pysymex.analysis.detectors.formal import (
     DetectorFormalSpec,
@@ -69,7 +69,7 @@ def test_specs() -> None:
 
 
 @patch("pysymex.analysis.detectors.formal.is_satisfiable", return_value=False)
-def test_prove_smt_obligations(mock_is_sat) -> None:
+def test_prove_smt_obligations(_mock_is_sat: MagicMock) -> None:
     """Test prove_smt_obligations behavior."""
     results = prove_smt_obligations()
     assert len(results) > 0
@@ -80,7 +80,9 @@ def test_prove_smt_obligations(mock_is_sat) -> None:
 @patch("pysymex.analysis.detectors.formal.pure_check_index_bounds", return_value=None)
 @patch("pysymex.analysis.detectors.formal.pure_check_none_deref", return_value=None)
 @patch("pysymex.analysis.detectors.formal.is_satisfiable", return_value=True)
-def test_run_property_validation(m1, m2, m3, m4) -> None:
+def test_run_property_validation(
+    _m1: MagicMock, _m2: MagicMock, _m3: MagicMock, _m4: MagicMock
+) -> None:
     """Test run_property_validation behavior."""
     with (
         patch("pysymex.analysis.detectors.formal.SymbolicValue.symbolic") as m_sym,
@@ -104,7 +106,7 @@ def test_run_property_validation(m1, m2, m3, m4) -> None:
 
 
 @patch("pysymex.analysis.detectors.formal.is_satisfiable", return_value=True)
-def test_run_mutation_analysis(mock_is_sat) -> None:
+def test_run_mutation_analysis(_mock_is_sat: MagicMock) -> None:
     """Test run_mutation_analysis behavior."""
     res = run_mutation_analysis()
     assert len(res) == 4
@@ -114,7 +116,7 @@ def test_run_mutation_analysis(mock_is_sat) -> None:
 @patch("pysymex.analysis.detectors.formal.pure_check_division_by_zero", return_value=None)
 @patch("pysymex.analysis.detectors.formal.pure_check_index_bounds", return_value=None)
 @patch("pysymex.analysis.detectors.formal.pure_check_none_deref", return_value=None)
-def test_run_oracle_differential_validation(m1, m2, m3) -> None:
+def test_run_oracle_differential_validation(_m1: MagicMock, _m2: MagicMock, _m3: MagicMock) -> None:
     """Test run_oracle_differential_validation behavior."""
     with (
         patch("pysymex.analysis.detectors.formal.SymbolicValue.symbolic") as m_sym,
@@ -144,7 +146,9 @@ def test_run_oracle_differential_validation(m1, m2, m3) -> None:
 )
 @patch("pysymex.analysis.detectors.formal.run_oracle_differential_validation", return_value=[])
 @patch("pysymex.analysis.detectors.formal.prove_smt_obligations", return_value=[])
-def test_build_machine_checkable_report(m1, m2, m3, m4) -> None:
+def test_build_machine_checkable_report(
+    _m1: MagicMock, _m2: MagicMock, _m3: MagicMock, _m4: MagicMock
+) -> None:
     """Test build_machine_checkable_report behavior."""
     report = build_machine_checkable_report(samples=2, seed=42)
     assert "specs" in report

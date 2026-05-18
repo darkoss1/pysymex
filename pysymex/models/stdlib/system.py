@@ -33,14 +33,14 @@ from typing import TYPE_CHECKING
 import z3
 
 from pysymex.core.memory.addressing import next_address
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicList,
-    SymbolicNone,
     SymbolicObject,
     SymbolicString,
     SymbolicValue,
 )
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.builtins.base import none_model_result
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -229,10 +229,7 @@ class JsonDumpModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"io": True},
-        )
+        return none_model_result({"io": True})
 
 
 class DatetimeNowModel(FunctionModel):
@@ -353,10 +350,7 @@ class RandomShuffleModel(FunctionModel):
     def apply(
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
-        return ModelResult(
-            value=SymbolicNone("none"),
-            side_effects={"mutates_arg": 0},
-        )
+        return none_model_result({"mutates_arg": 0})
 
 
 class RandomSampleModel(FunctionModel):

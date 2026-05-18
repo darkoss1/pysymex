@@ -23,9 +23,9 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from pysymex import __version__
+from pysymex.config import VERSION
 
 if TYPE_CHECKING:
     from pysymex.analysis.detectors import Issue
@@ -92,7 +92,7 @@ class TextFormatter(Formatter):
         lines: list[str] = []
         lines.append("")
         lines.append("══════════════════════════════════════════════════════════════════════")
-        lines.append("  pysymex — Formal Verification Report")
+        lines.append("  pysymex — formal verification report")
         lines.append("══════════════════════════════════════════════════════════════════════")
         lines.append("")
         lines.append(f"  File:      {result.source_file}")
@@ -127,9 +127,41 @@ class TextFormatter(Formatter):
         lines.append(f"  Instructions:     {len(result.coverage)}")
         lines.append(f"  Execution time:  {result.total_time_seconds:.3f}s")
         lines.append("")
-        lines.append(f"  pysymex v{__version__} | https://github.com/darkoss1/pysymex")
+        lines.append(f"  pysymex v{VERSION} | https://github.com/darkoss1/pysymex")
         lines.append("")
         return "\n".join(lines)
+
+    def format_verify(self, result: Any) -> str:
+        """Format a VerifiedExecutionResult."""
+        lines = [f"\n  --- Verified Execution: {result.function_name} ---"]
+        if result.termination_proof:
+            status_obj = result.termination_proof.status
+            status_name = getattr(status_obj, "name", None)
+            status = status_name if isinstance(status_name, str) else str(status_obj)
+            lines.append(f"  Termination: {status} - {result.termination_proof.message}")
+        if result.arithmetic_issues:
+            lines.append(f"  Arithmetic issues: {len(result.arithmetic_issues)}")
+            for ai in result.arithmetic_issues:
+                format_fn = getattr(ai, "format", None)
+                if callable(format_fn):
+                    lines.append(f"    - {str(format_fn()).strip()}")
+                else:
+                    lines.append(f"    - {ai}")
+        if result.contract_issues:
+            for ci in result.contract_issues:
+                format_fn = getattr(ci, "format", None)
+                if callable(format_fn):
+                    lines.append(f"    - {str(format_fn()).strip()}")
+                else:
+                    lines.append(f"    - {ci}")
+        lines.append(
+            f"  Paths: {result.paths_explored} explored, {result.paths_completed} completed"
+        )
+        return "\n".join(lines)
+
+    def format_concolic(self, result: Any) -> str:
+        """Format a ConcolicResult."""
+        return result.format_summary()
 
 
 class JSONFormatter(Formatter):
@@ -165,7 +197,7 @@ class JSONFormatter(Formatter):
         data = {
             "meta": {
                 "tool": "pysymex",
-                "version": __version__,
+                "version": VERSION,
                 "timestamp": datetime.now().isoformat(),
             },
             "function": {
@@ -252,7 +284,7 @@ class MarkdownFormatter(Formatter):
             Markdown string with tables and headings.
         """
         lines: list[str] = [
-            "# pysymex - Symbolic Execution Report",
+            "# pysymex - symbolic execution report",
             "",
             f"**Function:** `{result.function_name}`  ",
             f"**Source:** `{result.source_file}`  ",
@@ -331,7 +363,7 @@ class RichFormatter(Formatter):
 
             # 1. Main Header
             header = Panel(
-                "pysymex - Formal Verification Report",
+                "pysymex - formal verification report",
                 border_style="cyan",
                 box=box.ROUNDED,
             )
@@ -352,7 +384,7 @@ class RichFormatter(Formatter):
 
                     counterexample = issue.get_counterexample()
                     if counterexample:
-                        crash_details += f"\n[bold red]Trigger:[/bold red]  [bold yellow]"
+                        crash_details += "\n[bold red]Trigger:[/bold red]  [bold yellow]"
                         for name, value in sorted(counterexample.items()):
                             crash_details += f"{name} = {value}, "
                         crash_details = crash_details.rstrip(", ")
@@ -395,12 +427,96 @@ class RichFormatter(Formatter):
 
             console.print(summary_grid)
             console.print()
-            console.print(f"pysymex v{__version__} | https://github.com/darkoss1/pysymex")
+            console.print(f"pysymex v{VERSION} | https://github.com/darkoss1/pysymex")
 
             output = console.file.getvalue()  # type: ignore[attr-access]  # will be fixed later
             return output  # type: ignore[return-value]  # will be fixed later
         except ImportError:
             return TextFormatter(color=self.color, verbose=self.verbose).format(result)
+
+    def format_verify(self, result: Any) -> str:
+        """Format a VerifiedExecutionResult with Rich."""
+        try:
+            from io import StringIO
+            from rich import box
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.table import Table
+
+            console = Console(file=StringIO(), force_terminal=True, width=100)
+            console.print(
+                Panel(
+                    f"Verified Execution: [bold cyan]{result.function_name}[/bold cyan]",
+                    border_style="cyan",
+                    box=box.ROUNDED,
+                )
+            )
+            console.print()
+
+            if result.termination_proof:
+                status_obj = result.termination_proof.status
+                status_name = getattr(status_obj, "name", None)
+                status = status_name if isinstance(status_name, str) else str(status_obj)
+                status_style = (
+                    "green" if status == "PROVED" else "yellow" if status == "UNKNOWN" else "red"
+                )
+                console.print(
+                    f"[bold]Termination:[/bold] [{status_style}]{status}[/{status_style}] - {result.termination_proof.message}"
+                )
+                console.print()
+
+            if result.arithmetic_issues:
+                console.print(
+                    f"[bold red]Arithmetic Issues ({len(result.arithmetic_issues)}):[/bold red]"
+                )
+                for ai in result.arithmetic_issues:
+                    format_fn = getattr(ai, "format", None)
+                    msg = str(format_fn()).strip() if callable(format_fn) else str(ai)
+                    console.print(f"  • {msg}")
+                console.print()
+
+            if result.contract_issues:
+                console.print(
+                    f"[bold red]Contract Issues ({len(result.contract_issues)}):[/bold red]"
+                )
+                for ci in result.contract_issues:
+                    format_fn = getattr(ci, "format", None)
+                    msg = str(format_fn()).strip() if callable(format_fn) else str(ci)
+                    console.print(f"  • {msg}")
+                console.print()
+
+            summary = Table.grid(padding=(0, 2))
+            summary.add_column(style="bold white")
+            summary.add_column(style="cyan")
+            summary.add_row("Paths Explored:", str(result.paths_explored))
+            summary.add_row("Paths Completed:", str(result.paths_completed))
+            console.print(summary)
+
+            return str(cast(Any, console.file).getvalue())
+        except ImportError:
+            return TextFormatter(color=self.color, verbose=self.verbose).format_verify(result)
+
+    def format_concolic(self, result: Any) -> str:
+        """Format a ConcolicResult with Rich."""
+        try:
+            from io import StringIO
+            from rich import box
+            from rich.console import Console
+            from rich.panel import Panel
+
+            console = Console(file=StringIO(), force_terminal=True, width=100)
+            summary = result.format_summary()
+            console.print(
+                Panel(
+                    summary,
+                    title="[bold magenta]Concolic Execution Summary[/bold magenta]",
+                    border_style="magenta",
+                    box=box.ROUNDED,
+                )
+            )
+            return str(cast(Any, console.file).getvalue())
+        except ImportError:
+            return TextFormatter(color=self.color, verbose=self.verbose).format_concolic(result)
 
 
 def format_result(

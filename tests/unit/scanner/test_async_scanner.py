@@ -26,3 +26,21 @@ def test_scan_directory_async_scans_single_python_file(tmp_path: Path) -> None:
     )
     assert len(results) == 1
     assert results[0].file_path.endswith("x.py")
+
+
+def test_scan_directory_async_returns_results_in_stable_path_order(tmp_path: Path) -> None:
+    """Async scanner should return results sorted by file path for deterministic output."""
+    (tmp_path / "b.py").write_text("x = 2\n", encoding="utf-8")
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+
+    results = asyncio.run(
+        async_scanner.scan_directory_async(
+            tmp_path,
+            verbose=False,
+            max_concurrency=8,
+            timeout=5.0,
+            max_paths=10,
+        )
+    )
+    file_names = [Path(result.file_path).name for result in results]
+    assert file_names == sorted(file_names)

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import cast
+
 
 class TestPartialModel:
     """Test PartialModel class and model_partial factory."""
@@ -87,7 +90,11 @@ class TestLRUCacheModel:
         from pysymex.models.stdlib.functools import LRUCacheModel
 
         cache = LRUCacheModel(maxsize=256)
-        wrapper = cache(lambda x: x)
+
+        def identity(x: object) -> object:
+            return x
+
+        wrapper = cache(identity)
         info = wrapper.cache_info()
         assert info == (0, 0, 256, 0)
 
@@ -134,7 +141,8 @@ class TestModelWraps:
         def wrapper() -> None:
             return None
 
-        assert wrapper.__name__ == "real_func"
+        wrapped = cast(Callable[[], None], wrapper)
+        assert wrapped.__name__ == "real_func"
 
 
 class TestModelCmpToKey:

@@ -1,7 +1,7 @@
-import pytest
-from unittest.mock import Mock, patch
-import z3
 import types
+from unittest.mock import Mock, patch
+
+import z3
 from pysymex.analysis.interprocedural.cross_function import (
     CallType,
     CallSite,
@@ -11,7 +11,6 @@ from pysymex.analysis.interprocedural.cross_function import (
     CallContext,
     ContextSensitiveAnalyzer,
 )
-from pysymex.execution.executors import ExecutionResult
 
 
 def make_dummy_func() -> types.FunctionType:
@@ -51,9 +50,9 @@ class TestFunctionSummary:
         arg.z3_expr = z3.IntVal(5)
         state = Mock()
 
-        res, constraints = summary.apply([arg], state)
-        assert res is not None
-        assert z3.simplify(res).eq(z3.IntVal(6))
+        res, _constraints = summary.apply([arg], state)
+        assert isinstance(res, z3.ExprRef)
+        assert z3.eq(z3.simplify(res), z3.IntVal(6))
 
 
 class TestCallGraph:
@@ -63,15 +62,15 @@ class TestCallGraph:
         """Test add_function behavior."""
         cg = CallGraph()
         cg.add_function("f")
-        assert "f" in cg._nodes
+        assert "f" in cg._nodes  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_add_call(self) -> None:
         """Test add_call behavior."""
         cg = CallGraph()
         site = CallSite("a", "b", CallType.DIRECT, 10)
         cg.add_call("a", "b", site)
-        assert "b" in cg._edges["a"]
-        assert len(cg._call_sites[("a", "b")]) == 1
+        assert "b" in cg._edges["a"]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert len(cg._call_sites[("a", "b")]) == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_callees(self) -> None:
         """Test get_callees behavior."""
@@ -112,7 +111,7 @@ class TestCallGraph:
         cg = CallGraph()
         summary = FunctionSummary("f", [])
         cg.add_summary("f", summary)
-        assert cg._summaries["f"] is summary
+        assert cg._summaries["f"] is summary  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_get_summary(self) -> None:
         """Test get_summary behavior."""
@@ -134,7 +133,7 @@ class TestInterproceduralAnalyzer:
     """Test suite for pysymex.analysis.interprocedural.cross_function.InterproceduralAnalyzer."""
 
     @patch("pysymex.execution.executors.SymbolicExecutor")
-    def test_analyze_module(self, mock_executor) -> None:
+    def test_analyze_module(self, mock_executor: Mock) -> None:
         """Test analyze_module behavior."""
         mock_instance = Mock()
         mock_result = Mock(issues=[], paths_explored=1)
@@ -184,7 +183,7 @@ class TestContextSensitiveAnalyzer:
     """Test suite for pysymex.analysis.interprocedural.cross_function.ContextSensitiveAnalyzer."""
 
     @patch("pysymex.execution.executors.SymbolicExecutor")
-    def test_analyze_with_context(self, mock_executor) -> None:
+    def test_analyze_with_context(self, mock_executor: Mock) -> None:
         """Test analyze_with_context behavior."""
         mock_instance = Mock()
         mock_instance.execute_function.return_value = "result"

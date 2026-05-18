@@ -64,7 +64,6 @@ class TestAnalysisContext:
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        import types
 
         def f() -> None:
             pass
@@ -79,6 +78,12 @@ class TestAnalysisPhase:
 
     def test_analyze(self) -> None:
         """Test analyze behavior."""
+
+        def _sample() -> None:
+            return None
+
+        ctx = AnalysisContext("f.py", "def _sample(): return None", _sample.__code__)
+        cfg = ScannerConfig()
         p = AnalysisPhase()
-        with pytest.raises(NotImplementedError):
-            p.analyze(None, None)
+        with pytest.raises(RuntimeError):
+            p.analyze(ctx, cfg)

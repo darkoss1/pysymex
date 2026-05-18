@@ -1,111 +1,267 @@
-# SMT Slicing and Incremental Execution Architecture
+# pysymex SMT slicing architecture v3
 
-This document describes the current SMT-performance architecture in PySymEx, with explicit status labels for what is implemented today versus what remains future work.
+**Author:** Yassine Lahyani
+**Scope:** exact SMT fallback, dependency-closed query slicing, solver-cache reuse, and certified
+UNSAT pruning
 
-## Scope and Guarantees
+---
 
-The goals are:
+## Purpose
 
-- Reduce Python-to-Z3 overhead on branch-heavy execution.
-- Preserve soundness (never prune feasible states due to accelerator/backend issues).
-- Keep acceleration optional and safely degradable when unavailable.
+SMT slicing is pysymex's exact solving layer for reducing repeated Z3 work while preserving solver
+meaning. It lowers query cost by reusing path prefixes, slicing independent constraints, caching
+translated ASTs, and reusing certified UNSAT cores.
 
-PySymEx currently prioritizes soundness over peak speed when there is any conflict.
+The core invariant is:
 
-## Implementation Status Matrix
+```text
+Only exact SMT UNSAT or a rechecked UNSAT certificate may prune symbolic states.
+```
 
-| Area | Status | Primary Components |
-|---|---|---|
-| True incremental prefix synchronization | Implemented | `IncrementalSolver._active_path`, `_sync_path`, `is_sat(..., known_sat_prefix_len=...)` |
-| Chronological constraint chain iteration | Implemented | `ConstraintChain.__iter__`, `ConstraintChain.newest`, `ConstraintChain.__reversed__` |
-| CHTD hardware acceleration (Tiered CPU Dispatcher/CaDiCaL fast-paths) | Implemented | `executor_core._get_chtd_solver`, `accel.chtd_solver` |
-| Hardware-acceleration integrity guard on UNSAT prune | Implemented | `SymbolicExecutor._validate_chtd_unsat` |
-| Constraint hash shortcut directly from `ConstraintChain.hash_value()` in solver cache discriminator | Implemented | `IncrementalSolver` cache key/discriminator now use `hash_value()` fast-path when available |
-| Backward AST data-flow slicing of ambient constraints | Implemented | `IncrementalSolver.is_sat(..., known_sat_prefix_len=...)` slices ambient prefix constraints against suffix query variables |
-| Cube-and-conquer search-space splitting in portfolio path | Partial | `PortfolioSolver` exists; no full production cube orchestrator integrated in main executor loop |
+The layer can reduce formulas before solving, but every reduction has a soundness condition.
 
-## 1. True Incremental Z3 Solving
+## Solver Result Semantics
 
-### Problem
-Without synchronization, each branch check can reassert long path prefixes into temporary scopes, increasing FFI and solver setup overhead.
+| Solver outcome | Architectural meaning |
+|---|---|
+| `sat` | The checked formula is feasible under the encoded model. |
+| `unsat` | The checked formula is infeasible and may produce a core. |
+| `unknown` | No definite feasibility answer. It cannot prune and cannot verify success. |
+| timeout | Treated as unknown or inconclusive. |
+| exception | Explicit solver failure or blocked state, not silent fallback. |
 
-### Current Architecture
-`IncrementalSolver` tracks an ambient synchronized path in `_active_path` and aligns it with incoming constraints:
+This distinction is central to bug-report trust. pysymex must not report a definite bug or definite
+verification result when feasibility is unknown.
 
-1. Compute longest common prefix with `_common_prefix_len`.
-2. `pop()` only the divergent suffix.
-3. `push()` and add only the missing suffix.
-4. For `known_sat_prefix_len`, solve only the delta constraints in a temporary scope.
+## Formal Query Model
 
-### Result
-For prefix-heavy workloads, this provides substantial speedup while preserving exact SAT semantics.
+An SMT query has the form:
 
-## 2. Chronological Copy-On-Write Chains
+\[
+Q = \Phi_{prefix} \land \Phi_{suffix} \land \psi
+\]
 
-### Problem
-Prefix synchronization requires consistent chronological ordering. Newest-first iteration can break common-prefix detection.
+where \(\Phi_{prefix}\) is the shared path prefix, \(\Phi_{suffix}\) is the current path-specific
+suffix, and \(\psi\) is the branch, bug condition, contract obligation, or validation query.
 
-### Current Architecture
-`ConstraintChain` now iterates oldest-first, and exposes explicit newest-first access via:
+SMT slicing replaces \(Q\) with a smaller query \(Q'\) only when the replacement preserves the
+answer needed by the caller. For SAT answers, this requires dependency closure or a proven semantic
+equivalence. For UNSAT pruning, it is enough that the checked formula is a subset or sound summary
+whose contradiction implies contradiction of the original query.
 
-- `ConstraintChain.newest()` for O(1) tail access.
-- `reversed(chain)` for newest-first traversal.
+## Incremental Prefix Solving
 
-This keeps persistent structural sharing while enabling correct prefix synchronization.
+Symbolic paths often share long prefixes. pysymex uses an incremental solver so a path check can
+reuse constraints already asserted for a common prefix and focus only on the divergent suffix.
 
-## 3. CHTD and Hardware Acceleration
+Prefix reuse is safe when the active solver context exactly matches the path prefix. A stack or
+context mismatch forces a full rebuild because stale assertions would corrupt feasibility results.
 
-### Problem
-CHTD pruning can reduce search work, but backend complexity (Tiered CPU/Z3/reference) must never compromise correctness.
+## Prefix Reuse Invariant
 
-### Current Architecture
-The executor:
+Let the active solver stack contain:
 
-- Builds a constraint interaction graph.
-- Runs CHTD message propagation at adaptive intervals.
-- Chooses backend dynamically:
-  - Thread-local SAT solver (e.g., CaDiCaL) preferred for pure boolean bags.
-  - CDCL SMT (Z3) fallback for mixed arithmetic.
-- Tracks detailed CHTD telemetry in solver stats.
+\[
+\Gamma = [\phi_1,\ldots,\phi_k]
+\]
 
-## 4. UNSAT Integrity Guard for Accelerator Paths
+and the path prefix be:
 
-### Problem
-A false UNSAT from any accelerated path would be catastrophic if used directly for pruning.
+\[
+\Phi_k = \bigwedge_{i=1}^{k}\phi_i
+\]
 
-### Current Architecture
-Before pruning forked states on CHTD UNSAT, PySymEx now runs a deterministic incremental Z3 validation over the candidate branch states.
+Prefix reuse is valid exactly when \(\Gamma\) and \(\Phi_k\) are syntactically and contextually the
+same ordered constraint sequence. If a solver contains any stale constraint \(\chi\), the checked
+query becomes:
 
-- If incremental Z3 finds any SAT candidate, pruning is canceled.
-- A mismatch counter is incremented and logged.
-- Telemetry fields:
-  - `unsat_hits`
-  - `unsat_validations`
-  - `unsat_mismatches`
+\[
+\Phi_k \land \chi \land \psi
+\]
 
-This ensures hardware acceleration can speed execution without weakening soundness.
+which can produce false UNSAT. If a required prefix constraint is missing, the checked query becomes
+an under-approximation that can produce false SAT. Both cases break diagnostic trust, hence the
+strict synchronization invariant.
 
-## 5. What Is Not Yet Implemented (and Should Not Be Overclaimed)
+## Constraint Independence
 
-The following optimizations are still roadmap items and are not currently active in the core SAT path:
+The constraint-independence optimizer partitions constraints by shared symbolic dependencies. A
+query only needs constraints from components that can affect that query.
 
-- End-to-end production cube-and-conquer splitting integrated into the default executor SAT pipeline.
+For a query \(Q\) and path constraints \(\Phi\), a sliced formula \(S\) is valid for SAT only when
+the slice is dependency closed:
 
-## 6. Operational Guidance
+\[
+Vars(Q \cup S) \cap Vars(\Phi \setminus S) = \varnothing
+\]
 
-For best speed with integrity:
+Without dependency closure, a missing prefix constraint can turn an infeasible path into an
+apparently feasible one.
 
-- Keep incremental solving enabled.
-- Keep CHTD enabled for branch-heavy workloads.
-- Enable hardware acceleration when available, relying on automatic fallback and UNSAT validation.
-- Use bounded benchmark runs to compare workloads, since benefit depends on branch structure and treewidth.
+## Proof Sketch: Dependency-Closed SAT Preservation
 
-## 7. References
+Let \(\Phi = S \land R\), where \(S\) is the selected slice and \(R\) is the removed remainder. If
+the slice is dependency closed with respect to query \(Q\), then variables in \(R\) are disjoint
+from variables in \(S \land Q\):
 
-- `pysymex/core/solver.py`
-- `pysymex/core/copy_on_write.py`
-- `pysymex/execution/executor_core.py`
-- `pysymex/accel/chtd_solver.py`
-- `tests/unit/core/solver/test_engine.py`
-- `tests/unit/core/solver/test_constraints.py`
-- `tests/unit/accel/test_chtd.py`
+\[
+Vars(R) \cap Vars(S \land Q)=\varnothing
+\]
+
+If \(S \land Q\) is SAT with model \(m_S\), and \(R\) is independently SAT with model \(m_R\), the
+models can be combined because they assign disjoint symbols:
+
+\[
+m = m_S \cup m_R
+\]
+
+and:
+
+\[
+m \models S \land R \land Q
+\]
+
+The preservation depends on \(R\) being independently feasible or already known feasible as part of
+a verified prefix. If removed constraints share variables with the query slice, the model-combining
+argument fails.
+
+## Semantic Reduction
+
+Semantic reduction removes constraints only when another trusted domain proves they add no new
+information for the query. For example, an abstract domain may prove that a bound is already implied
+by stronger retained constraints.
+
+The reduction is sound only when implication is proved:
+
+\[
+S \models c
+\]
+
+If implication is not established, the constraint remains in the SMT formula.
+
+## Proof Sketch: Subsumption Reduction
+
+If a retained formula \(S\) implies a removed constraint \(c\):
+
+\[
+S \models c
+\]
+
+then:
+
+\[
+S \land c \equiv S
+\]
+
+because \(c\) adds no models beyond those already satisfying \(S\). Dropping \(c\) preserves both
+SAT and UNSAT answers for the reduced formula. This is why domain-subsumption reduction requires a
+proof of implication rather than a heuristic similarity score.
+
+## Translation And Cache Model
+
+SMT execution pays for both formula construction and solver time. pysymex uses structural hashes and
+theory signatures to cache:
+
+- Z3 AST translations across compatible contexts;
+- sliced prefix closures;
+- solver check results tied to structural context;
+- validated UNSAT cores;
+- component-level feasibility facts.
+
+Cache hits are correctness-preserving only when keys encode enough context to avoid cross-formula or
+cross-context reuse.
+
+## UNSAT Core Reuse
+
+When Z3 proves a subset of constraints UNSAT, pysymex can store a certified core. Future paths whose
+atom masks contain that core are infeasible without another full solver query.
+
+The reuse principle is:
+
+\[
+C \models \bot \land C \subseteq \Phi(P) \Rightarrow \Phi(P) \models \bot
+\]
+
+This is the same proof basis used by CHTD-TS and the acceleration layer. SMT slicing is the exact
+validation layer that turns candidates into trusted cores.
+
+## Proof Sketch: UNSAT Subset Reuse
+
+UNSAT is monotone under conjunction:
+
+\[
+C \models \bot \Rightarrow C \land R \models \bot
+\]
+
+For a path formula \(\Phi(P)=C\land R\), a certified core \(C\) therefore proves the whole path
+infeasible. The core does not need to mention every constraint on the path; it only needs to be a
+semantically identical subset of the active path formula.
+
+## Accelerator Validation Boundary
+
+Acceleration and CHTD may produce UNSAT candidates over local bags or reduced formulas. SMT slicing
+validates those candidates against exact solver semantics before they enter the certified-core
+cache.
+
+Rejected candidates are diagnostic information, not pruning facts. `sat`, `unknown`, timeout, and
+solver exceptions reject the candidate for pruning.
+
+## Dense Regions And Abstraction
+
+Some constraint regions are too dense for cheap structural slicing. pysymex can summarize dense
+regions only when the summary preserves the relevant satisfiability meaning or is refined through a
+CEGAR-style validation loop.
+
+The soundness rule is conservative:
+
+- UNSAT from an exact or validated formula can prune.
+- SAT from an abstraction requires concrete validation.
+- UNKNOWN or failed refinement cannot prune.
+
+## Complexity Model
+
+The layer targets repeated-work reduction rather than changing worst-case SMT complexity.
+
+| Mechanism | Cost effect |
+|---|---|
+| Incremental prefix sync | Avoids rebuilding long common prefixes. |
+| Dependency slicing | Reduces query size when constraints are independent. |
+| AST translation cache | Avoids repeated Python-to-Z3 conversion. |
+| Core containment check | Converts prior UNSAT proofs into cheap path pruning. |
+| Component cache | Reuses independent component results. |
+| Adaptive policy | Disables slicing paths that cost more than they save. |
+
+## Telemetry
+
+Telemetry is part of the architecture because unsafe optimism about solver speed can degrade both
+performance and diagnostics. Useful counters include:
+
+- sliced query count;
+- constraints before and after slicing;
+- cache hit and miss rates;
+- Z3 time saved or spent;
+- UNSAT core reuse count;
+- timeout and unknown rates;
+- accelerator validation acceptance and rejection.
+
+## Soundness Boundary
+
+SMT slicing remains sound under these conditions:
+
+- SAT is returned from a dependency-closed and semantically valid formula;
+- UNSAT used for pruning is exact or certificate-validated;
+- translation caches are context-safe;
+- unknown, timeout, unsupported theory, and exceptions remain visible;
+- abstractions are validated before their SAT answers are trusted;
+- core reuse uses context-safe atom identity.
+
+## Related Components
+
+- `pysymex/core/solver/engine.py`
+- `pysymex/core/solver/independence.py`
+- `pysymex/core/solver/learner.py`
+- `pysymex/core/solver/unsat.py`
+- `pysymex/core/memory/cow.py`
+- `pysymex/core/memory/unsat_core_registry.py`
+- `pysymex/execution/executors/core.py`
+- `pysymex/accel/evaluator.py`

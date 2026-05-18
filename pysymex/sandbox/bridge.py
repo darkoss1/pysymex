@@ -26,14 +26,15 @@ bytes/JSON requests.
 from __future__ import annotations
 
 import json
-import marshal
 import sys
 import textwrap
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import CodeType
-from typing import TYPE_CHECKING, Protocol, TypeGuard
+from typing import TYPE_CHECKING, TypeGuard
+
+from pysymex.config import is_object_mapping as _is_object_mapping
 
 if TYPE_CHECKING:
     from pysymex.sandbox import SandboxConfig
@@ -41,6 +42,55 @@ if TYPE_CHECKING:
 _BYTECODE_MARKER = b"__PYSYMEX_BYTECODE__"
 _CONCRETE_MARKER = "__PYSYMEX_CONCRETE__"
 _MAX_BYTECODE_PAYLOAD_BYTES = 10 * 1024 * 1024
+_SANDBOX_LAUNCH_FAILURE_NEEDLES = (
+    "unable to create process using",
+    "failed to spawn",
+    "fork failed",
+    "resource temporarily unavailable",
+    "unshare:",
+    "trampoline",
+    "failed to execute",
+    "no such file or directory",
+)
+
+
+def _require_json_object(value: object) -> dict[str, object]:
+    normalized = _normalize_mapping(value)
+    if normalized is None:
+        raise ValueError("Expected JSON object")
+    return normalized
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    return isinstance(value, list)
+
+
+def _require_json_list(value: object) -> list[object]:
+    if not _is_object_list(value):
+        raise ValueError("Expected JSON list")
+    return value
+
+
+def _require_json_str(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Expected JSON string")
+    return value
+
+
+def _require_json_int(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("Expected JSON integer")
+    if not isinstance(value, int):
+        raise ValueError("Expected JSON integer")
+    return value
+
+
+def _decode_str_tuple(value: object) -> tuple[str, ...]:
+    items = _require_json_list(value)
+    decoded: list[str] = []
+    for item in items:
+        decoded.append(_require_json_str(item))
+    return tuple(decoded)
 
 
 @dataclass(slots=True)
@@ -72,32 +122,110 @@ class BytecodeBlob:
                 raise ValueError("Sandbox bytecode producer Python version does not match host")
 
         try:
-            code_obj = marshal.loads(self.payload)
-        except (TypeError, ValueError, EOFError) as exc:
+            import base64
+
+            parsed: object = json.loads(self.payload.decode("utf-8"))
+
+            # Extract and reconstruct inert primitives safely
+            def _decode_bytes(value: object) -> bytes:
+                return base64.b64decode(_require_json_str(value))
+
+            def _reconstruct_code_obj(raw: object) -> CodeType:
+                d = _require_json_object(raw)
+                co_argcount = _require_json_int(d["co_argcount"])
+                co_posonlyargcount = _require_json_int(d["co_posonlyargcount"])
+                co_kwonlyargcount = _require_json_int(d["co_kwonlyargcount"])
+                co_nlocals = _require_json_int(d["co_nlocals"])
+                co_stacksize = _require_json_int(d["co_stacksize"])
+                co_flags = _require_json_int(d["co_flags"])
+                co_code = _decode_bytes(d["co_code"])
+
+                def _reconstruct_const(c: object) -> object:
+                    const_data = _normalize_mapping(c)
+                    if const_data is not None and const_data.get("_type") == "CodeType":
+                        return _reconstruct_code_obj(c)
+                    if const_data is not None and const_data.get("_type") == "tuple":
+                        return tuple(
+                            _reconstruct_const(item)
+                            for item in _require_json_list(const_data["value"])
+                        )
+                    if const_data is not None and const_data.get("_type") == "frozenset":
+                        return frozenset(
+                            _reconstruct_const(item)
+                            for item in _require_json_list(const_data["value"])
+                        )
+                    if const_data is not None and const_data.get("_type") == "bytes":
+                        return _decode_bytes(const_data["value"])
+                    return c
+
+                # Recursively parse constants
+                co_consts_list: list[object] = []
+                for c in _require_json_list(d["co_consts"]):
+                    co_consts_list.append(_reconstruct_const(c))
+                co_consts = tuple(co_consts_list)
+
+                co_names = _decode_str_tuple(d["co_names"])
+                co_varnames = _decode_str_tuple(d["co_varnames"])
+                co_freevars = _decode_str_tuple(d.get("co_freevars", []))
+                co_cellvars = _decode_str_tuple(d.get("co_cellvars", []))
+                co_filename = str(d["co_filename"])
+                co_name = str(d["co_name"])
+                co_qualname = str(d.get("co_qualname", d["co_name"]))
+                co_firstlineno = _require_json_int(d["co_firstlineno"])
+
+                # Handle version-specific attributes
+                if sys.version_info >= (3, 11):
+                    co_linetable = _decode_bytes(d["co_linetable"])
+                    co_exceptiontable = _decode_bytes(d["co_exceptiontable"])
+                    return CodeType(
+                        co_argcount,
+                        co_posonlyargcount,
+                        co_kwonlyargcount,
+                        co_nlocals,
+                        co_stacksize,
+                        co_flags,
+                        co_code,
+                        co_consts,
+                        co_names,
+                        co_varnames,
+                        co_filename,
+                        co_name,
+                        co_qualname,
+                        co_firstlineno,
+                        co_linetable,
+                        co_exceptiontable,
+                        co_freevars,
+                        co_cellvars,
+                    )
+                else:
+                    co_lnotab = _decode_bytes(d["co_lnotab"])
+                    return CodeType(
+                        co_argcount,
+                        co_posonlyargcount,
+                        co_kwonlyargcount,
+                        co_nlocals,
+                        co_stacksize,
+                        co_flags,
+                        co_code,
+                        co_consts,
+                        co_names,
+                        co_varnames,
+                        co_filename,
+                        co_name,
+                        co_firstlineno,
+                        co_lnotab,
+                        co_freevars,
+                        co_cellvars,
+                    )
+
+            code_obj = _reconstruct_code_obj(parsed)
+
+        except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
             raise ValueError("Invalid sandbox bytecode payload") from exc
 
-        if not isinstance(code_obj, CodeType):
-            raise ValueError("Sandbox bytecode payload did not decode to CodeType")
         if code_obj.co_filename != self.filename:
             raise ValueError("Sandbox bytecode payload filename metadata mismatch")
         return code_obj
-
-
-class _ObjectMapping(Protocol):
-    """Mapping protocol with object key/value pairs for strict normalization."""
-
-    def items(self) -> Iterable[tuple[object, object]]:
-        """Return key/value pairs."""
-        return ()
-
-    def get(self, key: str, default: object = None) -> object:
-        """Return value for key or default."""
-        return default
-
-
-def _is_object_mapping(value: object) -> TypeGuard[_ObjectMapping]:
-    """Return whether value behaves like a mapping of arbitrary objects."""
-    return isinstance(value, Mapping)
 
 
 def _normalize_mapping(value: object) -> dict[str, object] | None:
@@ -108,6 +236,14 @@ def _normalize_mapping(value: object) -> dict[str, object] | None:
     for key, item in value.items():
         normalized[str(key)] = item
     return normalized
+
+
+def _is_compat_launch_failure(status: object, output: str) -> bool:
+    status_name = getattr(status, "name", None)
+    if status_name not in {"SETUP_ERROR", "FAILED"}:
+        return False
+    lowered = output.lower()
+    return any(needle in lowered for needle in _SANDBOX_LAUNCH_FAILURE_NEEDLES)
 
 
 def _parse_module_list(value: object) -> frozenset[str] | None:
@@ -376,11 +512,12 @@ def _run_json_worker(
     fail_on_not_ok: bool = True,
 ) -> tuple[dict[str, object], str, str]:
     from pysymex.sandbox import SandboxBackend, SandboxResult, SecureSandbox
-    from pysymex.sandbox.types import ExecutionStatus
 
     all_files: dict[str, bytes] = {}
     if extra_files:
         all_files.update(dict(extra_files))
+
+    from pysymex.sandbox.errors import SandboxSetupError
 
     def _execute_with_config(cfg: SandboxConfig) -> SandboxResult:
         with SecureSandbox(cfg) as sandbox:
@@ -393,12 +530,12 @@ def _run_json_worker(
 
     config = _make_sandbox_config(sandbox_config)
     allow_compat_fallback = _to_bool(
-        (sandbox_config or {}).get("allow_compat_fallback", True),
+        (sandbox_config or {}).get("allow_compat_fallback", False),
         False,
     )
     try:
         sandbox_result = _execute_with_config(config)
-    except Exception:
+    except SandboxSetupError:
         if not allow_compat_fallback:
             raise
         if sandbox_config is not None and "backend" in sandbox_config:
@@ -416,21 +553,8 @@ def _run_json_worker(
             sandbox_result.get_stdout_text(),
         )
     )
-    launch_error_lower = launch_error_text.lower()
-    if (
-        allow_compat_fallback
-        and sandbox_result.status
-        in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
-        and (
-            "Unable to create process using" in launch_error_text
-            or "failed to spawn" in launch_error_lower
-            or "fork failed" in launch_error_lower
-            or "resource temporarily unavailable" in launch_error_lower
-            or "unshare:" in launch_error_lower
-            or "trampoline" in launch_error_lower
-            or "failed to execute" in launch_error_lower
-            or "no such file or directory" in launch_error_lower
-        )
+    if allow_compat_fallback and _is_compat_launch_failure(
+        sandbox_result.status, launch_error_text
     ):
         if sandbox_config is not None and "backend" in sandbox_config:
             pass
@@ -454,8 +578,7 @@ def _run_json_worker(
             allow_compat_fallback
             and not fallback_attempted
             and (sandbox_config is None or "backend" not in sandbox_config)
-            and sandbox_result.status
-            in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
+            and _is_compat_launch_failure(sandbox_result.status, launch_error_text)
         ):
             import warnings
 
@@ -490,7 +613,6 @@ def _run_raw_worker(
     input_data: bytes | None = None,
 ) -> bytes:
     from pysymex.sandbox import SandboxBackend, SecureSandbox
-    from pysymex.sandbox.types import ExecutionStatus
 
     all_files: dict[str, bytes] = {}
     if extra_files:
@@ -507,7 +629,7 @@ def _run_raw_worker(
 
     config = _make_sandbox_config(sandbox_config)
     allow_compat_fallback = _to_bool(
-        (sandbox_config or {}).get("allow_compat_fallback", True),
+        (sandbox_config or {}).get("allow_compat_fallback", False),
         False,
     )
     try:
@@ -529,22 +651,7 @@ def _run_raw_worker(
             result.get_stdout_text(),
         )
     )
-    launch_error_lower = launch_error_text.lower()
-    if (
-        allow_compat_fallback
-        and result.status
-        in {ExecutionStatus.CRASH, ExecutionStatus.SETUP_ERROR, ExecutionStatus.FAILED}
-        and (
-            "Unable to create process using" in launch_error_text
-            or "failed to spawn" in launch_error_lower
-            or "fork failed" in launch_error_lower
-            or "resource temporarily unavailable" in launch_error_lower
-            or "unshare:" in launch_error_lower
-            or "trampoline" in launch_error_lower
-            or "failed to execute" in launch_error_lower
-            or "no such file or directory" in launch_error_lower
-        )
-    ):
+    if allow_compat_fallback and _is_compat_launch_failure(result.status, launch_error_text):
         if sandbox_config is not None and "backend" in sandbox_config:
             pass
         else:
@@ -568,29 +675,85 @@ def extract_bytecode(
     filename: str,
     sandbox_config: Mapping[str, object] | None = None,
 ) -> BytecodeBlob:
+    import secrets
     from pysymex._constants import SANDBOX_BLOCKED_MODULES
+
+    dynamic_marker = f"{_BYTECODE_MARKER.decode('utf-8')}_{secrets.token_hex(16)}".encode("utf-8")
 
     worker = textwrap.dedent(
         f"""
-        import marshal
+        import json
+        import base64
         import sys
 
         _source = sys.stdin.buffer.read()
         _code = compile(_source, {filename!r}, "exec")
-        _payload = marshal.dumps(_code)
-        sys.stdout.buffer.write({_BYTECODE_MARKER!r} + _payload)
+        def _serialize_code(co):
+            d = {{
+                "co_argcount": co.co_argcount,
+                "co_posonlyargcount": getattr(co, "co_posonlyargcount", 0),
+                "co_kwonlyargcount": co.co_kwonlyargcount,
+                "co_nlocals": co.co_nlocals,
+                "co_stacksize": co.co_stacksize,
+                "co_flags": co.co_flags,
+                "co_code": base64.b64encode(co.co_code).decode("ascii"),
+                "co_names": list(co.co_names),
+                "co_varnames": list(co.co_varnames),
+                "co_freevars": list(getattr(co, "co_freevars", [])),
+                "co_cellvars": list(getattr(co, "co_cellvars", [])),
+                "co_filename": co.co_filename,
+                "co_name": co.co_name,
+                "co_firstlineno": co.co_firstlineno,
+                "_type": "CodeType"
+            }}
+
+            def _serialize_const(c):
+                if isinstance(c, type(co)):
+                    return _serialize_code(c)
+                if isinstance(c, tuple):
+                    return {{"_type": "tuple", "value": [_serialize_const(item) for item in c]}}
+                if isinstance(c, frozenset):
+                    return {{
+                        "_type": "frozenset",
+                        "value": [_serialize_const(item) for item in c],
+                    }}
+                if isinstance(c, bytes):
+                    return {{
+                        "_type": "bytes",
+                        "value": base64.b64encode(c).decode("ascii"),
+                    }}
+                if isinstance(c, (int, float, str, type(None), bool)):
+                    return c
+                return None
+
+            d["co_consts"] = [_serialize_const(c) for c in co.co_consts]
+
+            if hasattr(co, "co_qualname"):
+                d["co_qualname"] = co.co_qualname
+            if hasattr(co, "co_linetable"):
+                d["co_linetable"] = base64.b64encode(co.co_linetable).decode("ascii")
+                d["co_exceptiontable"] = base64.b64encode(co.co_exceptiontable).decode("ascii")
+            if hasattr(co, "co_lnotab"):
+                d["co_lnotab"] = base64.b64encode(co.co_lnotab).decode("ascii")
+            return d
+
+        _payload = json.dumps(_serialize_code(_code)).encode("utf-8")
+        sys.stdout.buffer.write({dynamic_marker!r} + _payload)
         """
     ).strip()
 
     cfg_overrides = dict(sandbox_config or {})
     cfg_overrides.setdefault("harness_restrict_builtins", False)
-    cfg_overrides.setdefault("harness_install_audit_hook", True)
+    # Bytecode extraction compiles source but does not execute target code. Keeping the audit hook
+    # disabled avoids Linux seccomp launcher incompatibilities while retaining process/resource
+    # isolation for parser/compiler work.
+    cfg_overrides.setdefault("harness_install_audit_hook", False)
     cfg_overrides.setdefault("harness_block_ast_imports", False)
-    cfg_overrides.setdefault("allow_compat_fallback", True)
-    cfg_overrides.setdefault("harness_allowed_imports", "marshal,sys")
+    cfg_overrides.setdefault("allow_compat_fallback", False)
+    cfg_overrides.setdefault("harness_allowed_imports", "json,base64,sys")
     cfg_overrides.setdefault(
         "harness_blocked_modules",
-        ",".join(sorted(SANDBOX_BLOCKED_MODULES.union({"json", "socket", "subprocess"}))),
+        ",".join(sorted(SANDBOX_BLOCKED_MODULES.union({"marshal", "socket", "subprocess"}))),
     )
 
     raw = _run_raw_worker(
@@ -598,9 +761,9 @@ def extract_bytecode(
         sandbox_config=cfg_overrides,
         input_data=source,
     )
-    if not raw.startswith(_BYTECODE_MARKER):
+    if not raw.startswith(dynamic_marker):
         raise RuntimeError("Missing bytecode marker")
-    payload = raw[len(_BYTECODE_MARKER) :]
+    payload = raw[len(dynamic_marker) :]
     return BytecodeBlob(
         payload=payload,
         filename=filename,
@@ -699,11 +862,3 @@ def execute_concrete(
         stdout=cleaned_stdout,
         stderr=stderr_text,
     )
-
-
-__all__ = [
-    "BytecodeBlob",
-    "ConcreteResult",
-    "execute_concrete",
-    "extract_bytecode",
-]

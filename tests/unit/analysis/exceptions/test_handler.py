@@ -1,4 +1,5 @@
-import pytest
+from types import CodeType
+
 from pysymex.analysis.exceptions.handler import (
     ExceptionHandlerType,
     ExceptionHandlerInfo,
@@ -8,7 +9,7 @@ from pysymex.analysis.exceptions.handler import (
 )
 
 
-def make_dummy_code() -> object:
+def make_dummy_code() -> CodeType:
     def f() -> None:
         try:
             pass

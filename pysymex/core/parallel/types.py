@@ -25,21 +25,13 @@ exploration engine.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import (
     Generic,
     TypeVar,
 )
 
 
-class ExplorationStrategy(Enum):
-    """Path exploration strategies."""
-
-    ADAPTIVE = auto()
-    CHTD_NATIVE = auto()
-    RANDOM = auto()
-    COVERAGE = auto()
-    PRIORITY = auto()
+from pysymex.execution.strategies.manager import ExplorationStrategy
 
 
 @dataclass
@@ -155,14 +147,3 @@ class StateSignature:
             and self.constraint_hash == other.constraint_hash
             and self.constraint_discriminator == other.constraint_discriminator
         )
-
-
-__all__ = [
-    "ExplorationConfig",
-    "ExplorationResult",
-    "ExplorationStrategy",
-    "PathResult",
-    "StateSignature",
-    "T",
-    "WorkItem",
-]

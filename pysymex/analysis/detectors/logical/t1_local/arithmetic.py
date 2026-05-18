@@ -18,9 +18,11 @@
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
+from pysymex.core.solver.engine import is_satisfiable
 from pysymex.analysis.detectors.logical.utils import (
     count_variables,
     core_has_operator,
+    is_sat_over_reals,
 )
 
 
@@ -36,4 +38,6 @@ class ArithmeticImpossibilityRule(LogicRule):
         )
         has_eq = core_has_operator(ctx.core, {z3.Z3_OP_EQ})
         has_mod = core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM})
-        return has_arith and has_eq and not has_mod
+        if not (has_arith and has_eq and not has_mod):
+            return False
+        return not is_satisfiable(ctx.core) and is_sat_over_reals(ctx.core)

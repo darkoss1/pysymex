@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from pysymex.analysis.cache.analysis import (
     AnalysisTask,

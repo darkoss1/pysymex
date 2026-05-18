@@ -37,15 +37,6 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from ..exceptions.handler import ExceptionHandlerInfo
 
-__all__ = [
-    "SUGGESTION_MAP",
-    "AnalysisContext",
-    "AnalysisPhase",
-    "IssueCategory",
-    "ScanIssue",
-    "ScannerConfig",
-]
-
 
 class NoneCheckAnalyzerLike(Protocol):
     def is_none_safe(self, var_name: str) -> bool: ...
@@ -264,4 +255,4 @@ class AnalysisPhase:
         config: ScannerConfig,
     ) -> list[ScanIssue]:
         """Run analysis phase."""
-        raise NotImplementedError
+        raise RuntimeError("AnalysisPhase.analyze() must be implemented by subclasses")

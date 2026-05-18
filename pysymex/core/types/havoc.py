@@ -46,7 +46,7 @@ from typing import TypeGuard
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.types.scalars import SymbolicValue, exactly_one_bool
 
 
 @dataclass(slots=True)
@@ -100,13 +100,7 @@ class HavocValue(SymbolicValue):
         is_dict = z3.Bool(f"{name}_is_dict")
 
         type_vars = [is_int, is_bool, is_str, is_path, is_obj, is_none, is_float, is_list, is_dict]
-        at_least_one = z3.Or(*type_vars)
-        at_most_one: list[z3.BoolRef] = []
-        for i in range(len(type_vars)):
-            for j in range(i + 1, len(type_vars)):
-                at_most_one.append(z3.Not(z3.And(type_vars[i], type_vars[j])))
-
-        type_constraint = z3.And(at_least_one, *at_most_one)
+        type_constraint = exactly_one_bool(type_vars)
 
         val = HavocValue(
             z3_int=z3_int,

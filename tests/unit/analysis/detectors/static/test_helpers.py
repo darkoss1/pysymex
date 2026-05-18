@@ -1,9 +1,6 @@
 """Tests for pysymex/analysis/detectors/static/helpers.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
 from pysymex.analysis.detectors.static.helpers import caught_by_handler_reason
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import z3
 
-import pytest
 
 from pysymex.contracts.types import Contract, ContractKind, VerificationResult
 from pysymex.contracts.verifier import ContractVerifier, VerificationReport
@@ -49,6 +48,23 @@ class TestContractVerifier:
         result, counter = verifier.verify_postcondition(contract, [], path_constraints, symbols)
         assert result == VerificationResult.VIOLATED
         assert counter is not None
+
+    def test_verify_postcondition_compile_failure_is_unknown(self) -> None:
+        """Unsupported predicates must not be treated as verified."""
+        verifier = ContractVerifier()
+
+        def bad_predicate(y: z3.ArithRef) -> object:
+            _ = y
+            return object()
+
+        contract = Contract(
+            kind=ContractKind.ENSURES,
+            predicate=bad_predicate,  # type: ignore[arg-type]  # invalid predicate exercises UNKNOWN path
+        )
+        y = z3.Int("y")
+        result, counter = verifier.verify_postcondition(contract, [], [y == 1], {"y": y})
+        assert result == VerificationResult.UNKNOWN
+        assert counter is None
 
     def test_verify_loop_invariant_base_violated(self) -> None:
         """Verify loop invariant returns VIOLATED on base case."""
@@ -108,10 +124,10 @@ class TestContractVerifier:
         x = z3.Int("x")
         y = z3.Real("y")
         b = z3.Bool("b")
-        solver.add(x == 42, y == 3.14, b == True)
+        solver.add(x == 42, y == 3.14, b)
         solver.check()
         model = solver.model()
-        counter = verifier._extract_counterexample(model, {"x": x, "y": y, "b": b})
+        counter = verifier._extract_counterexample(model, {"x": x, "y": y, "b": b})  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert counter["x"] == 42
         assert isinstance(counter["y"], float)
         assert counter["b"] is True

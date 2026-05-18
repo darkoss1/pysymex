@@ -1,6 +1,5 @@
 import sys
 import os
-import dis
 
 # Add the project root to sys.path to allow imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -8,7 +7,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from tests.repro.opcode_validator import validate_opcode
 
 
-def run_test(description, code, symbolic_vars=None, initial_values=None, expected_locals=None):
+def run_test(
+    description: str,
+    code: str,
+    symbolic_vars: dict[str, str] | None = None,
+    initial_values: dict[str, object] | None = None,
+    expected_locals: dict[str, object] | None = None,
+) -> bool:
     success, msg = validate_opcode(
         code,
         symbolic_vars=symbolic_vars,
@@ -20,7 +25,7 @@ def run_test(description, code, symbolic_vars=None, initial_values=None, expecte
     return success
 
 
-def validate_stack_locals():
+def validate_stack_locals() -> None:
     print("\n--- Validating Stack & Local Opcodes ---")
 
     run_test(
@@ -34,7 +39,7 @@ def validate_stack_locals():
     run_test("STORE_GLOBAL", "global x; x = 20", expected_locals={"x": 20})
 
 
-def validate_collections():
+def validate_collections() -> None:
     print("\n--- Validating Collection Opcodes ---")
 
     run_test("BUILD_LIST", "x = [1, 2, 3]", expected_locals={"x": [1, 2, 3]})
@@ -46,7 +51,7 @@ def validate_collections():
     run_test("STORE_SUBSCR (List)", "l = [10, 20]; l[0] = 30; x = l[0]", expected_locals={"x": 30})
 
 
-def validate_functions_exceptions():
+def validate_functions_exceptions() -> None:
     print("\n--- Validating Functions & Exceptions ---")
 
     code_call = """

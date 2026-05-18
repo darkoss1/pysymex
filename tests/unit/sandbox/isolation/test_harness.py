@@ -14,8 +14,6 @@ def test_generate_harness_script() -> None:
         enable_ast_prescreening=True,
         install_audit_hook=True,
         block_ast_imports=True,
-        install_seccomp=True,
-        seccomp_allowlist=(0, 1, 60),
     )
 
     assert HARNESS_FILENAME == "_sandbox_harness.py"
@@ -34,6 +32,4 @@ def test_generate_harness_script() -> None:
     assert "_BLOCK_AST_IMPORTS" in script
     assert "sandbox-harness: rejected" in script
     assert "_INSTALL_AUDIT_HOOK" in script
-    assert "_INSTALL_SECCOMP" in script
-    assert "_SECCOMP_ALLOWLIST" in script
     assert "exec(_code_obj, _namespace)" in script

@@ -25,10 +25,9 @@ protocol — all emoji / colour / progress-bar logic lives here, keeping
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
+from pysymex.cli.output import format_progress_line, safe_print
 from pysymex.scanner.types import ScanResult, ScanSession
 
 
@@ -42,16 +41,6 @@ def _as_scan_result(value: object) -> ScanResult | None:
 
 def _as_scan_session(value: object) -> ScanSession | None:
     return value if isinstance(value, ScanSession) else None
-
-
-def _safe_print(message: str = "") -> None:
-    """Print text safely across console encodings (e.g. cp1252 on Windows)."""
-    try:
-        print(message)
-    except UnicodeEncodeError:
-        encoding = sys.stdout.encoding or "utf-8"
-        fallback = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
-        print(fallback)
 
 
 def _iter_object_mapping_items(value: object) -> list[tuple[str, object]]:
@@ -83,42 +72,42 @@ class ConsoleScanReporter:
 
     def on_file_start(self, file_path: object) -> None:
         """On file start."""
-        _safe_print(f"\n{'=' * 70}")
-        _safe_print(f"[SCAN] Scanning: {file_path}")
-        _safe_print("=" * 70)
+        safe_print(f"\n{'=' * 70}")
+        safe_print(f"[SCAN] Scanning: {file_path}")
+        safe_print("=" * 70)
 
     def on_file_done(self, file_path: object, result: object) -> None:
         """On file done."""
         _ = file_path
         scan_result = _as_scan_result(result)
         if scan_result is None:
-            _safe_print("\n[X] Invalid scan result")
+            safe_print("\n[X] Invalid scan result")
             return
         if scan_result.issues:
-            _safe_print(f"\n[!] Found {len(scan_result.issues)} potential issues:\n")
+            safe_print(f"\n[!] Found {len(scan_result.issues)} potential issues:\n")
             for issue in scan_result.issues:
-                _safe_print(f"   - [{issue['kind']}] {issue['message']} (Line {issue['line']})")
+                safe_print(f"   - [{issue['kind']}] {issue['message']} (Line {issue['line']})")
                 counterexample = issue.get("counterexample")
                 for var, val in _iter_object_mapping_items(counterexample):
-                    _safe_print(f"       - {var} = {val}")
+                    safe_print(f"       - {var} = {val}")
         elif scan_result.error:
-            _safe_print(f"\n[X] {scan_result.error}")
+            safe_print(f"\n[X] {scan_result.error}")
         else:
-            _safe_print("\n[OK] No issues found!")
+            safe_print("\n[OK] No issues found!")
         stats_line = (
             f"\n   [STATS] {scan_result.code_objects} code objects"
             f" | {scan_result.paths_explored} paths explored"
         )
         if self.show_stats:
             stats_line += f" | Time: {scan_result.elapsed_time:.2f}s | Avg Memory: {scan_result.avg_memory_mb:.2f} MB"
-        _safe_print(stats_line)
+        safe_print(stats_line)
 
     def on_issue(self, issue: dict[str, object]) -> None:
-        _safe_print(f"   - [{issue['kind']}] {issue['message']} (Line {issue['line']})")
+        safe_print(f"   - [{issue['kind']}] {issue['message']} (Line {issue['line']})")
 
     def on_error(self, file_path: object, error: str) -> None:
         _ = file_path
-        _safe_print(f"\n[X] {error}")
+        safe_print(f"\n[X] {error}")
 
     def on_progress(
         self,
@@ -128,8 +117,6 @@ class ConsoleScanReporter:
         result: object | None,
     ) -> None:
         """On progress."""
-        pct = completed * 100 // total if total else 0
-        name = Path(str(file_path)).name if file_path else "?"
         status = "[OK]"
         if result is None or getattr(result, "error", None):
             status = "[X]"
@@ -137,11 +124,11 @@ class ConsoleScanReporter:
             typed_result = _as_scan_result(result)
             if typed_result is not None and typed_result.issues:
                 status = f"[!] {len(typed_result.issues)}"
-        _safe_print(f"[{completed}/{total}] ({pct}%) {name} {status}")
+        safe_print(format_progress_line(completed, total, file_path, status))
 
     def on_status(self, message: str) -> None:
         """Print a generic status message."""
-        _safe_print(message)
+        safe_print(message)
 
     def on_summary(self, results: Sequence[object], total_files: int) -> None:
         """On summary."""
@@ -149,39 +136,39 @@ class ConsoleScanReporter:
         total_issues = sum(len(r.issues) for r in typed_results)
         files_with_issues = sum(1 for r in typed_results if r.issues)
         errors = sum(1 for r in typed_results if r.error)
-        _safe_print(
+        safe_print(
             f"\nSummary: {total_issues} issues in {files_with_issues}/{len(results)} files",
         )
         if errors:
-            _safe_print(f" ({errors} errors)")
+            safe_print(f" ({errors} errors)")
         else:
-            _safe_print()
+            safe_print()
         if len(results) < total_files:
-            _safe_print(f"  [!] {total_files - len(results)} file(s) could not be scanned")
+            safe_print(f"  [!] {total_files - len(results)} file(s) could not be scanned")
 
     def on_session_summary(self, session: object) -> None:
         """Print a formatted session summary (watch-mode or full scan)."""
         typed_session = _as_scan_session(session)
         if typed_session is None:
-            _safe_print("\n[X] Invalid scan session")
+            safe_print("\n[X] Invalid scan session")
             return
         summary = typed_session.get_summary()
-        _safe_print(f"\n\n{'=' * 70}")
-        _safe_print("[SUMMARY] SESSION SUMMARY")
-        _safe_print("=" * 70)
-        _safe_print(f"   Files scanned:     {summary['files_scanned']}")
-        _safe_print(f"   Files with issues: {summary['files_with_issues']}")
-        _safe_print(f"   Files clean:       {summary['files_clean']}")
-        _safe_print(f"   Files with errors: {summary['files_error']}")
-        _safe_print(f"   Total issues:      {summary['total_issues']}")
+        safe_print(f"\n\n{'=' * 70}")
+        safe_print("[SUMMARY] SESSION SUMMARY")
+        safe_print("=" * 70)
+        safe_print(f"   Files scanned:     {summary['files_scanned']}")
+        safe_print(f"   Files with issues: {summary['files_with_issues']}")
+        safe_print(f"   Files clean:       {summary['files_clean']}")
+        safe_print(f"   Files with errors: {summary['files_error']}")
+        safe_print(f"   Total issues:      {summary['total_issues']}")
         if self.show_stats:
-            _safe_print(f"   Total time:        {summary.get('total_time', 0.0):.2f}s")
-            _safe_print(f"   Avg memory:        {summary.get('avg_memory', 0.0):.2f} MB")
-        _safe_print()
+            safe_print(f"   Total time:        {summary.get('total_time', 0.0):.2f}s")
+            safe_print(f"   Avg memory:        {summary.get('avg_memory', 0.0):.2f} MB")
+        safe_print()
         issue_breakdown = summary.get("issue_breakdown")
-        _safe_print("   Issue breakdown:")
+        safe_print("   Issue breakdown:")
         for kind, count in sorted(issue_breakdown.items(), key=_descending_count):
             bar = "#" * min(count, 30)
-            _safe_print(f"      {kind:<25} {count:>4} {bar}")
-        _safe_print(f"\n   [LOG] Log saved to: {typed_session.log_file}")
-        _safe_print("=" * 70)
+            safe_print(f"      {kind:<25} {count:>4} {bar}")
+        safe_print(f"\n   [LOG] Log saved to: {typed_session.log_file}")
+        safe_print("=" * 70)

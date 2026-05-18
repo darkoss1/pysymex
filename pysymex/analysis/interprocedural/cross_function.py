@@ -138,7 +138,8 @@ class CallGraph:
 
     def get_callees(self, caller: str) -> set[str]:
         """Get all functions called by the given function."""
-        return self._edges.get(caller, set())
+        res = self._edges.get(caller)
+        return res if res is not None else set()
 
     def get_callers(self, callee: str) -> set[str]:
         """Get all functions that call the given function."""
@@ -177,7 +178,7 @@ class CallGraph:
         while queue:
             node = queue.pop(0)
             result.append(node)
-            for callee in self._edges.get(node, set()):
+            for callee in self._edges.get(node, ()):
                 if callee in in_degree:
                     in_degree[callee] -= 1
                     if in_degree[callee] == 0:
@@ -394,14 +395,3 @@ class ContextSensitiveAnalyzer:
         result = executor.execute_function(func)
         self._results[key] = result
         return result
-
-
-__all__ = [
-    "CallContext",
-    "CallGraph",
-    "CallSite",
-    "CallType",
-    "ContextSensitiveAnalyzer",
-    "FunctionSummary",
-    "InterproceduralAnalyzer",
-]

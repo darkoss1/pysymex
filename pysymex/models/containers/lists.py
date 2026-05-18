@@ -34,8 +34,12 @@ from typing import TYPE_CHECKING, cast
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicList, SymbolicNone, SymbolicValue
+from pysymex.core.types import SymbolicList, SymbolicNone, SymbolicValue
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.typed_results import (
+    symbolic_bool_result,
+    symbolic_int_result,
+)
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -46,7 +50,7 @@ def _get_symbolic_list(arg: object, state: VMState) -> SymbolicList | None:
     """Extract SymbolicList from argument, resolving SymbolicObject if needed."""
     if isinstance(arg, SymbolicList):
         return arg
-    from pysymex.core.types.containers import SymbolicObject
+    from pysymex.core.types import SymbolicObject
 
     if isinstance(arg, SymbolicObject):
         addr = arg.address
@@ -62,6 +66,31 @@ def _get_symbolic_value(arg: object) -> SymbolicValue | None:
     if isinstance(arg, SymbolicValue):
         return arg
     return None
+
+
+def _absence_condition(values: list[object] | None, needle: object) -> z3.BoolRef | None:
+    if values is None:
+        return None
+    if not values:
+        return z3.BoolVal(True)
+    if isinstance(needle, SymbolicValue):
+        clauses: list[z3.BoolRef] = []
+        for value in values:
+            if isinstance(value, SymbolicValue):
+                value = value.value
+            if isinstance(value, bool):
+                clauses.append(needle.z3_int != int(value))
+            elif isinstance(value, int):
+                clauses.append(needle.z3_int != value)
+            elif isinstance(value, str):
+                clauses.append(needle.z3_str != z3.StringVal(value))
+        if clauses:
+            return z3.And(*clauses)
+        return None
+    try:
+        return z3.BoolVal(needle not in values)
+    except TypeError:
+        return None
 
 
 class ListAppendModel(FunctionModel):
@@ -196,11 +225,15 @@ class ListRemoveModel(FunctionModel):
         side_effects: dict[str, object] = {}
         constraints: list[z3.BoolRef | z3.ExprRef] = []
         if lst is not None:
-            side_effects["potential_exception"] = {
-                "type": "ValueError",
-                "message": "list.remove(x): x not in list",
-                "condition": "element_not_found",
-            }
+            missing_condition = _absence_condition(
+                lst.concrete_items, args[1] if len(args) > 1 else None
+            )
+            if missing_condition is not None:
+                side_effects["potential_exception"] = {
+                    "type": "ValueError",
+                    "message": "list.remove(x): x not in list",
+                    "condition": missing_condition,
+                }
             new_list = lst.copy()
             new_list.z3_len = lst.z3_len - 1
             constraints.append(lst.z3_len >= 1)
@@ -488,8 +521,7 @@ class ListContainsModel(FunctionModel):
         state: VMState,
     ) -> ModelResult:
         lst = _get_symbolic_list(args[0], state) if args else None
-        result, constraint = SymbolicValue.symbolic(f"list_contains_{state.pc}")
-        constraints = [constraint, result.is_bool]
+        result, constraints = symbolic_bool_result(f"list_contains_{state.pc}")
         if lst is not None:
             constraints.append(z3.Implies(lst.z3_len == 0, z3.Not(result.z3_bool)))
         return ModelResult(value=result, constraints=constraints)
@@ -513,10 +545,11 @@ class ListLenModel(FunctionModel):
         if lst is not None:
             result = lst.length()
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"list_len_{state.pc}")
+        result, constraints = symbolic_int_result(f"list_len_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= 0],
+            constraints=constraints,
         )
 
 

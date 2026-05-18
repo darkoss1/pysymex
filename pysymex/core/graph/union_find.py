@@ -45,9 +45,19 @@ class UnionFind(Generic[T]):
         Finds the representative of the set containing x with path compression.
         Raises KeyError if x is not in any set.
         """
-        if self._parent[x] != x:
-            self._parent[x] = self.find(self._parent[x])
-        return self._parent[x]
+        # Find root
+        root = x
+        while self._parent[root] != root:
+            root = self._parent[root]
+
+        # Path compression
+        curr = x
+        while curr != root:
+            nxt = self._parent[curr]
+            self._parent[curr] = root
+            curr = nxt
+
+        return root
 
     def union(self, x: T, y: T) -> bool:
         """

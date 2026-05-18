@@ -22,6 +22,29 @@ from pysymex.analysis.detectors.logical.utils import (
     extract_var_const_equalities,
     get_variable_names_all,
 )
+from pysymex.core.solver.engine import is_satisfiable
+
+
+_TYPE_MARKERS = {
+    "_is_int": "int",
+    "_is_bool": "bool",
+    "_is_float": "float",
+    "_is_str": "str",
+    "_is_list": "list",
+    "_is_tuple": "tuple",
+    "_is_dict": "dict",
+    "_is_none": "none",
+}
+
+
+def _return_type_marker(name: str) -> tuple[str, str] | None:
+    lname = name.lower()
+    if "ret" not in lname and "return" not in lname and "result" not in lname:
+        return None
+    for suffix, ty in _TYPE_MARKERS.items():
+        if lname.endswith(suffix):
+            return (lname[: -len(suffix)], ty)
+    return None
 
 
 class ReturnTypeContradictionRule(LogicRule):
@@ -37,32 +60,22 @@ class ReturnTypeContradictionRule(LogicRule):
         if not has_return_signal:
             return False
 
-        type_markers = {
-            "_is_int": "int",
-            "_is_bool": "bool",
-            "_is_float": "float",
-            "_is_str": "str",
-            "_is_list": "list",
-            "_is_tuple": "tuple",
-            "_is_dict": "dict",
-            "_is_none": "none",
-        }
-        flagged_types: set[str] = set()
-        for name in lower_names:
-            if "ret" not in name and "return" not in name and "result" not in name:
-                continue
-            for suffix, ty in type_markers.items():
-                if suffix in name:
-                    flagged_types.add(ty)
-
-        if len(flagged_types) > 1:
-            return True
-
         bool_assignments = extract_bool_assignments(ctx.core)
+        true_type_markers: dict[str, set[str]] = {}
         for name, values in bool_assignments.items():
             lname = name.lower()
             if ("ret" in lname or "return" in lname or "result" in lname) and len(values) > 1:
                 return True
+            if True not in values:
+                continue
+            marker = _return_type_marker(name)
+            if marker is None:
+                continue
+            stem, ty = marker
+            true_type_markers.setdefault(stem, set()).add(ty)
+
+        if any(len(types) > 1 for types in true_type_markers.values()):
+            return not is_satisfiable(ctx.core)
 
         equalities = extract_var_const_equalities(ctx.core)
         for name, values in equalities.items():

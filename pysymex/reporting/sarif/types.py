@@ -286,19 +286,3 @@ class SARIFLog:
         """Save to a file."""
         path = Path(path)
         path.write_text(self.to_json(), encoding="utf-8")
-
-
-__all__ = [
-    "SARIF_SCHEMA",
-    "SARIF_VERSION",
-    "CodeFlow",
-    "LogicalLocation",
-    "PhysicalLocation",
-    "ReportingDescriptor",
-    "Run",
-    "SARIFLog",
-    "SARIFResult",
-    "Severity",
-    "ToolDriver",
-    "VulnerabilityReport",
-]

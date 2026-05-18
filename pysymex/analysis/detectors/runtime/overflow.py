@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 from __future__ import annotations
 
 import dis
@@ -27,10 +26,82 @@ if TYPE_CHECKING:
     from pysymex.core.state import VMState
 
 from pysymex.core.solver.engine import get_model, is_satisfiable
-from pysymex.core.types.scalars import (
-    SymbolicValue,
-)
+from pysymex.core.types import SymbolicValue
 from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, IsSatFn, GetModelFn
+
+_BINARY_OP_SYMBOL_BY_ARG: dict[int, str] = {
+    0: "+",
+    1: "&",
+    2: "//",
+    3: "<<",
+    4: "@",
+    5: "*",
+    6: "%",
+    7: "|",
+    8: "**",
+    9: ">>",
+    10: "-",
+    11: "/",
+    12: "^",
+    13: "+=",
+    14: "&=",
+    15: "//=",
+    16: "<<=",
+    17: "@=",
+    18: "*=",
+    19: "%=",
+    20: "|=",
+    21: "**=",
+    22: ">>=",
+    23: "-=",
+    24: "/=",
+    25: "^=",
+}
+
+
+def resolve_binary_op_symbol(instruction: dis.Instruction) -> str:
+    """Resolve operator symbol for ``BINARY_OP`` instructions."""
+    if instruction.argrepr:
+        return instruction.argrepr
+    if isinstance(instruction.argval, str):
+        return instruction.argval
+    if not isinstance(instruction.arg, int):
+        return ""
+    return _BINARY_OP_SYMBOL_BY_ARG.get(instruction.arg, "")
+
+
+_resolve_binary_op_symbol = resolve_binary_op_symbol
+
+
+def _fresh_concrete_int(value: int, *, is_bool: bool = False) -> SymbolicValue:
+    int_value = int(value)
+    return SymbolicValue(
+        _name=str(value),
+        z3_int=z3.IntVal(int_value),
+        is_int=z3.BoolVal(not is_bool),
+        z3_bool=z3.BoolVal(bool(value)),
+        is_bool=z3.BoolVal(is_bool),
+        is_float=z3.BoolVal(False),
+        is_path=z3.BoolVal(False),
+        _constant_value=bool(value) if is_bool else int_value,
+        affinity_type="bool" if is_bool else "int",
+        min_val=int_value,
+        max_val=int_value,
+    )
+
+
+def as_symbolic_int(value: object) -> SymbolicValue | None:
+    """Convert supported numeric values into SymbolicValue form."""
+    if isinstance(value, SymbolicValue):
+        return value
+    if isinstance(value, bool):
+        return _fresh_concrete_int(1 if value else 0, is_bool=True)
+    if isinstance(value, int):
+        return _fresh_concrete_int(value)
+    return None
+
+
+_as_symbolic_int = as_symbolic_int
 
 
 def _pure_check_overflow(
@@ -45,11 +116,14 @@ def _pure_check_overflow(
     get_model_fn: GetModelFn = get_model,
 ) -> Issue | None:
     """Pure: check if arithmetic *op* on *left*/*right* can overflow."""
+    int_like_left = z3.Or(left.is_int, left.is_bool)
+    int_like_right = z3.Or(right.is_int, right.is_bool)
+
     if op == "<<":
         shift_overflow = [
             *path_constraints,
-            left.is_int,
-            right.is_int,
+            int_like_left,
+            int_like_right,
             right.z3_int > 63,
         ]
         if is_satisfiable_fn(shift_overflow):
@@ -64,8 +138,8 @@ def _pure_check_overflow(
     if op == "**":
         power_overflow = [
             *path_constraints,
-            left.is_int,
-            right.is_int,
+            int_like_left,
+            int_like_right,
             left.z3_int > 2,
             right.z3_int > 62,
         ]
@@ -89,8 +163,8 @@ def _pure_check_overflow(
         return None
     overflow_constraint = [
         *path_constraints,
-        left.is_int,
-        right.is_int,
+        int_like_left,
+        int_like_right,
         z3.Or(result > max_val, result < min_val),
     ]
     if is_satisfiable_fn(overflow_constraint):
@@ -129,14 +203,17 @@ class OverflowDetector(Detector):
         """Check."""
         if instruction.opname != "BINARY_OP":
             return None
-        op = instruction.argrepr
+        op_symbol = resolve_binary_op_symbol(instruction)
+        if not op_symbol:
+            return None
+        op = op_symbol[:-1] if op_symbol.endswith("=") else op_symbol
         if op not in {"*", "+", "-", "**", "<<"}:
             return None
         if len(state.stack) < 2:
             return None
-        left = state.stack[-2]
-        right = state.stack[-1]
-        if not isinstance(left, SymbolicValue) or not isinstance(right, SymbolicValue):
+        left = _as_symbolic_int(state.stack[-2])
+        right = _as_symbolic_int(state.stack[-1])
+        if left is None or right is None:
             return None
         return _pure_check_overflow(
             left,
@@ -146,4 +223,5 @@ class OverflowDetector(Detector):
             state.pc,
             self.min_val,
             self.max_val,
+            is_satisfiable_fn=_solver_check,
         )

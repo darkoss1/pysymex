@@ -1,7 +1,9 @@
 import z3
 import itertools
 
+from pysymex.core.types.base import SymbolicNoneType, SymbolicType as BaseSymbolicType
 import pysymex.core.types.scalars as mod
+import pytest
 
 
 if not hasattr(mod, "next_address"):
@@ -11,6 +13,13 @@ if not hasattr(mod, "next_address"):
 
 def test_fresh_name() -> None:
     assert mod.fresh_name("x").startswith("x_")
+
+
+def test_symbolic_type_contract_uses_base_ssot() -> None:
+    assert mod.SymbolicType is BaseSymbolicType
+    assert mod.SymbolicNone is SymbolicNoneType
+    assert isinstance(mod.SymbolicValue.from_const(1), BaseSymbolicType)
+    assert not hasattr(mod, "SymbolicRuntimeType")
 
 
 class TestSymbolicType:
@@ -41,6 +50,7 @@ class TestSymbolicNone:
 
     def test_type_tag(self) -> None:
         assert mod.SymbolicNone().type_tag == "NoneType"
+        assert z3.is_true(mod.SymbolicNone().is_none)
 
     def test_to_z3(self) -> None:
         assert z3.is_false(mod.SymbolicNone().to_z3())
@@ -105,6 +115,36 @@ class TestSymbolicValue:
         sv, c = mod.SymbolicValue.symbolic("x")
         assert isinstance(sv, mod.SymbolicValue) and z3.is_bool(c)
 
+    def test_symbolic_type_constraint_requires_exactly_one_type(self) -> None:
+        sv, constraint = mod.SymbolicValue.symbolic("exactly_one")
+        type_vars = [
+            sv.is_int,
+            sv.is_bool,
+            sv.is_str,
+            sv.is_path,
+            sv.is_obj,
+            sv.is_none,
+            sv.is_float,
+            sv.is_list,
+            sv.is_dict,
+        ]
+
+        all_false_solver = z3.Solver()
+        all_false_solver.add(constraint, *[z3.Not(type_var) for type_var in type_vars])
+        assert all_false_solver.check() == z3.unsat
+
+        two_true_solver = z3.Solver()
+        two_true_solver.add(constraint, sv.is_int, sv.is_bool)
+        assert two_true_solver.check() == z3.unsat
+
+        one_true_solver = z3.Solver()
+        one_true_solver.add(
+            constraint,
+            sv.is_int,
+            *[z3.Not(type_var) for type_var in type_vars[1:]],
+        )
+        assert one_true_solver.check() == z3.sat
+
     def test_symbolic_int(self) -> None:
         sv, c = mod.SymbolicValue.symbolic_int("x")
         assert z3.is_true(c) and z3.is_true(sv.is_int)
@@ -132,6 +172,41 @@ class TestSymbolicValue:
         sv = mod.SymbolicValue.from_const(True)
         assert isinstance(sv.logical_not(), mod.SymbolicValue)
 
+    @pytest.mark.parametrize(
+        ("lhs", "rhs"),
+        [
+            (-(1 << 70), -(1 << 70)),
+            (1 << 70, (1 << 65) - 1),
+            (-(1 << 63) - 1, 1 << 63),
+        ],
+    )
+    def test_concrete_bitwise_matches_python_unbounded_int(self, lhs: int, rhs: int) -> None:
+        left = mod.SymbolicValue.from_const(lhs)
+        and_value = left & rhs
+        or_value = left | rhs
+        xor_value = left ^ rhs
+        assert and_value.value == (lhs & rhs)
+        assert or_value.value == (lhs | rhs)
+        assert xor_value.value == (lhs ^ rhs)
+
+    @pytest.mark.parametrize("shift", [-7, -1])
+    def test_concrete_left_shift_negative_count_raises(self, shift: int) -> None:
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = mod.SymbolicValue.from_const(3) << shift
+
+    @pytest.mark.parametrize("shift", [-8, -1])
+    def test_concrete_right_shift_negative_count_raises(self, shift: int) -> None:
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = mod.SymbolicValue.from_const(3) >> shift
+
+    def test_concrete_power_matches_python_exception_semantics(self) -> None:
+        with pytest.raises(ZeroDivisionError):
+            _ = mod.SymbolicValue.from_const(0) ** -3
+
+    def test_concrete_power_negative_exponent_returns_float(self) -> None:
+        out = mod.SymbolicValue.from_const(2) ** -2
+        assert out.value == 0.25
+
 
 class TestSymbolicString:
     def test_z3_str(self) -> None:
@@ -149,6 +224,7 @@ class TestSymbolicString:
     def test_type_tag(self) -> None:
         s = mod.SymbolicString.from_const("a")
         assert s.type_tag == "str"
+        assert z3.is_true(s.is_str)
 
     def test_to_z3(self) -> None:
         s = mod.SymbolicString.from_const("a")

@@ -119,10 +119,10 @@ def analyze_function_name(name: str | None) -> tuple[ContextType, float]:
 
     name_lower = name.lower()
 
-    if any(word in name_lower for word in ["init", "setup", "configure", "load"]):
+    if any(word in name_lower for word in ("init", "setup", "configure", "load")):
         return ContextType.INVARIANT, 0.7
 
-    if any(word in name_lower for word in ["parse", "convert", "process"]):
+    if any(word in name_lower for word in ("parse", "convert", "process")):
         return ContextType.INPUT_VALIDATION, 0.6
 
     return ContextType.UNKNOWN, 0.3
@@ -209,12 +209,12 @@ def analyze_assertion(
 
     message_lower = message.lower()
 
-    if any(word in message_lower for word in ["required", "mandatory", "must"]):
+    if any(word in message_lower for word in ("required", "mandatory", "must")):
         if context_type == ContextType.UNKNOWN:
             context_type = ContextType.INPUT_VALIDATION
             confidence = max(confidence, 0.6)
 
-    if any(word in message_lower for word in ["permission", "access", "unauthorized"]):
+    if any(word in message_lower for word in ("permission", "access", "unauthorized")):
         context_type = ContextType.PERMISSION_CHECK
         confidence = max(confidence, 0.8)
 

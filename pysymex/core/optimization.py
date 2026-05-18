@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 import z3
 
-from pysymex.core.solver.engine import create_solver
+from pysymex.core.solver.engine import IncrementalSolver
 
 logger = logging.getLogger(__name__)
 
@@ -185,18 +185,15 @@ def cached_is_satisfiable(
     if cached_result is not None:
         return cached_result[0]
     start_time = time.perf_counter()
-    solver = create_solver()
-    solver.add(constraints)
-    result = solver.check() == z3.sat
-    model = solver.model() if result else None
+    typed_constraints: list[z3.BoolRef] = []
+    for constraint in constraints:
+        if not isinstance(constraint, z3.BoolRef):
+            raise TypeError("cached_is_satisfiable requires Boolean constraints")
+        typed_constraints.append(constraint)
+    solver = IncrementalSolver()
+    solver_result = solver.check_sat_cached(typed_constraints)
+    result = solver_result.is_sat
+    model = solver_result.model if result else None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
     cache.put(constraints, result, model, elapsed_ms)
     return result
-
-
-__all__ = [
-    "CacheStats",
-    "ConstraintCache",
-    "cached_is_satisfiable",
-    "get_constraint_cache",
-]

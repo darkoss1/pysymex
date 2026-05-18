@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors import IssueKind
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
 from pysymex.execution.dispatcher import OpcodeDispatcher
@@ -24,9 +23,8 @@ def test_check_division_by_zero() -> None:
     state = VMState(pc=7)
     left = SymbolicValue.from_const(10)
     right = SymbolicValue.from_const(0)
-    issues = arithmetic.check_division_by_zero(right, state, "/", left)
-    assert len(issues) == 1
-    assert issues[0].kind is IssueKind.DIVISION_BY_ZERO
+    has_zero = arithmetic.check_division_by_zero(right, state, "/", left)
+    assert has_zero is True
 
 
 def test_check_negative_shift() -> None:
@@ -34,9 +32,8 @@ def test_check_negative_shift() -> None:
     state = VMState(pc=3)
     left = SymbolicValue.from_const(1)
     right = SymbolicValue.from_const(-1)
-    issues = arithmetic.check_negative_shift(right, state, "<<", left)
-    assert len(issues) == 1
-    assert issues[0].kind is IssueKind.VALUE_ERROR
+    has_negative_shift = arithmetic.check_negative_shift(right, state, "<<", left)
+    assert has_negative_shift is True
 
 
 def test_handle_unary_negative() -> None:
@@ -71,8 +68,8 @@ def test_handle_binary_op() -> None:
 
 
 def test_handle_load_attr() -> None:
-    """Test handle_load_attr behavior."""
+    """Test handle_load_attr behavior with None receiver."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = arithmetic.handle_load_attr(_instr("LOAD_ATTR", "x"), state, OpcodeDispatcher())
     assert result.terminal is False
-    assert result.new_states[0].pc == 1
+    assert len(result.issues) == 0

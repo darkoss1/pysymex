@@ -30,12 +30,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import z3
+
+from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicValue
+from pysymex.models.builtins import ModelResult
+
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
-    from pysymex.core.types.scalars import SymbolicValue
-    from pysymex.core.types.containers import SymbolicDict, SymbolicList
-else:
-    from pysymex.core.types.scalars import SymbolicDict, SymbolicList
 
 
 class CounterModel:
@@ -153,7 +154,7 @@ class DefaultDictModel:
         Returns:
             The value (existing or default)
         """
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic(f"defaultdict_value_{key}")
         return result
@@ -167,7 +168,7 @@ class DefaultDictModel:
 
         Called when key is not found.
         """
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic(f"defaultdict_default_{key}")
         return result
@@ -177,6 +178,7 @@ class DequeModel:
     """Model for collections.deque.
 
     Double-ended queue with O(1) append/pop on both ends.
+    Uses high-fidelity SymbolicList extensions for prepend and rotate.
     """
 
     @staticmethod
@@ -200,40 +202,77 @@ class DequeModel:
         return SymbolicList.empty("deque")
 
     @staticmethod
+    def apply(
+        args: list[object],
+        kwargs: dict[str, object],
+        state: VMState,
+    ) -> ModelResult:
+        """Dispatch deque method calls to high-fidelity SymbolicList methods."""
+        from pysymex.core.types import SymbolicNone
+
+        lst = args[0] if args and isinstance(args[0], SymbolicList) else None
+        side_effects: dict[str, object] = {}
+
+        if lst is not None:
+            method_name = kwargs.get("_method_name", "")
+            if method_name == "append" and len(args) > 1:
+                val = args[1]
+                sym_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+                new_list = lst.append(sym_val)
+                side_effects["list_mutation"] = {"operation": "append", "updated_list": new_list}
+            elif method_name == "appendleft" and len(args) > 1:
+                val = args[1]
+                sym_val = val if isinstance(val, SymbolicValue) else SymbolicValue.from_const(val)
+                new_list = lst.prepend(sym_val)
+                side_effects["list_mutation"] = {
+                    "operation": "appendleft",
+                    "updated_list": new_list,
+                }
+            elif method_name == "rotate":
+                n_arg = args[1] if len(args) > 1 else 1
+                n_val: int | z3.ArithRef
+                if isinstance(n_arg, int):
+                    n_val = n_arg
+                elif hasattr(n_arg, "z3_int"):
+                    n_val = getattr(n_arg, "z3_int")
+                elif isinstance(n_arg, z3.ArithRef):
+                    n_val = n_arg
+                else:
+                    n_val = 1
+                new_list = lst.rotate(n_val)
+                side_effects["list_mutation"] = {"operation": "rotate", "updated_list": new_list}
+
+        return ModelResult(value=SymbolicNone(), side_effects=side_effects)
+
+    @staticmethod
     def model_append(deque: SymbolicList, x: SymbolicValue) -> None:
-        """Model deque.append(x). Adds to right end."""
+        """Legacy stub."""
         pass
 
     @staticmethod
     def model_appendleft(deque: SymbolicList, x: SymbolicValue) -> None:
-        """Model deque.appendleft(x). Adds to left end."""
+        """Legacy stub."""
         pass
 
     @staticmethod
     def model_pop(deque: SymbolicList) -> SymbolicValue:
-        """Model deque.pop(). Removes and returns from right end.
-
-        Raises IndexError if empty.
-        """
-        from pysymex.core.types.scalars import SymbolicValue
+        """Model deque.pop(). Removes and returns from right end."""
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic("deque_pop_result")
         return result
 
     @staticmethod
     def model_popleft(deque: SymbolicList) -> SymbolicValue:
-        """Model deque.popleft(). Removes and returns from left end.
-
-        Raises IndexError if empty.
-        """
-        from pysymex.core.types.scalars import SymbolicValue
+        """Model deque.popleft(). Removes and returns from left end."""
+        from pysymex.core.types import SymbolicValue
 
         result, _ = SymbolicValue.symbolic("deque_popleft_result")
         return result
 
     @staticmethod
     def model_rotate(deque: SymbolicList, n: int = 1) -> None:
-        """Model deque.rotate(n). Rotates n steps to the right."""
+        """Legacy stub."""
         pass
 
     @staticmethod
@@ -281,7 +320,7 @@ class OrderedDictModel:
             ModelResult with symbolic result and constraints
         """
         from pysymex.models.numeric import ModelResult
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, constraint = SymbolicValue.symbolic(f"ordereddict_call_{state.pc}_{state.path_id}")
         return ModelResult(value=result, constraints=[constraint])
@@ -308,7 +347,7 @@ class OrderedDictModel:
         Returns and removes (key, value) pair.
         Raises KeyError if empty.
         """
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         key, _ = SymbolicValue.symbolic("popitem_key")
         value, _ = SymbolicValue.symbolic("popitem_value")

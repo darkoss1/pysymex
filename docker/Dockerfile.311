@@ -2,20 +2,23 @@ FROM python:3.11
 
 WORKDIR /workspace
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pyproject.toml first for better caching
-COPY pyproject.toml ./
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install pip and build dependencies
-RUN pip install --upgrade pip setuptools wheel
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
-# Install pysymex with dev dependencies
-RUN pip install -e '.[dev]'
+COPY pyproject.toml uv.lock ./
 
-# Keep container running
+RUN uv sync --no-install-project --group dev
+
+COPY . .
+
+RUN uv sync --group dev
+
+ENV PATH="/opt/venv/bin:$PATH"
+
 CMD ["tail", "-f", "/dev/null"]

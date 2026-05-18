@@ -64,6 +64,6 @@ def test_markdown_and_format_result_dispatch(tmp_path: Path) -> None:
     out = tmp_path / "report.txt"
     TextFormatter().save(typed_result, str(out))
 
-    assert "# pysymex - Symbolic Execution Report" in md
+    assert "# pysymex - symbolic execution report" in md
     assert "pysymex" in fallback
     assert out.exists()

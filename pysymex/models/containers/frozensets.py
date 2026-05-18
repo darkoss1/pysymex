@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicList, SymbolicValue
+from pysymex.core.types import SymbolicList, SymbolicValue
 from pysymex.models.builtins.base import FunctionModel, ModelResult
 
 if TYPE_CHECKING:

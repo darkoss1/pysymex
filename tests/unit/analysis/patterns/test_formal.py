@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.patterns.formal import (
     FunctionChecklistItem,
     DifferentialResult,

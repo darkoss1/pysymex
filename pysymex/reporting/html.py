@@ -27,24 +27,17 @@ import html
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TypeGuard
 
+from pysymex.config import is_object_dict, is_object_list
 from pysymex.resources import ResourceSnapshot
+
+_is_object_dict = is_object_dict
+_is_object_list = is_object_list
 
 
 def _new_issue_reports() -> list["IssueReport"]:
     """Create an empty typed issue-report list."""
     return []
-
-
-def _is_object_list(value: object) -> TypeGuard[list[object]]:
-    """Return True when *value* is a list of runtime objects."""
-    return isinstance(value, list)
-
-
-def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
-    """Return True when *value* is a dictionary."""
-    return isinstance(value, dict)
 
 
 def _optional_int(value: object) -> int | None:
@@ -56,7 +49,7 @@ def _optional_int(value: object) -> int | None:
 
 def _optional_input_dict(value: object) -> dict[str, object] | None:
     """Normalize optional triggering-input payloads."""
-    if not _is_object_dict(value):
+    if not is_object_dict(value):
         return None
     normalized: dict[str, object] = {}
     for key_obj, value_obj in value.items():
@@ -91,6 +84,9 @@ class IssueReport:
         }
 
 
+from pysymex.config import VERSION
+
+
 @dataclass
 class AnalysisReport:
     """Complete analysis report."""
@@ -98,7 +94,7 @@ class AnalysisReport:
     title: str
     timestamp: str
     duration_seconds: float
-    version: str = "1.0.0"
+    version: str = VERSION
     file_path: str = ""
     function_name: str = ""
     issues: list[IssueReport] = field(default_factory=_new_issue_reports)
@@ -577,7 +573,7 @@ def create_report_from_result(
     """
     issues: list[IssueReport] = []
     raw_issues = getattr(result, "issues", None)
-    if _is_object_list(raw_issues):
+    if is_object_list(raw_issues):
         for issue in raw_issues:
             issue_obj: object = issue
             severity: str = "critical"
@@ -624,12 +620,3 @@ def create_report_from_result(
         success=not issues,
         partial=getattr(result, "partial", False),
     )
-
-
-__all__ = [
-    "AnalysisReport",
-    "IssueReport",
-    "create_report_from_result",
-    "generate_html_report",
-    "save_html_report",
-]

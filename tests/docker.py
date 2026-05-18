@@ -50,6 +50,8 @@ class TestResult:
     failed: int
     errors: int
     skipped: int
+    xfailed: int
+    xpassed: int
     total: int
     output: str
     error_output: str
@@ -64,7 +66,13 @@ class DockerTestRunner:
         "3.12": "pysymex-python312",
         "3.13": "pysymex-python313",
     }
+    SERVICE_NAMES: Final = {
+        "3.11": "python311",
+        "3.12": "python312",
+        "3.13": "python313",
+    }
     STARTUP_TIMEOUT: Final = 30.0  # seconds
+    COMPOSE_TIMEOUT: Final = 900.0  # 15 minutes
     TEST_TIMEOUT: Final = 600.0  # 10 minutes
     MAX_RETRIES: Final = 2
 
@@ -109,7 +117,10 @@ class DockerTestRunner:
             status = self._check_container_running(container_name)
             if not status:
                 print(f"Starting container {container_name}...")
-                self._start_container(container_name)
+                if not self._start_container(version):
+                    print(f"ERROR: Failed to issue start command for {container_name}")
+                    running[version] = False
+                    continue
                 # Wait for container to be healthy
                 if self._wait_for_container(container_name):
                     running[version] = True
@@ -141,7 +152,7 @@ class DockerTestRunner:
             print("This script supports Windows and Linux only.")
             return False
 
-    def _check_docker_daemon(self) -> bool:
+    def _check_docker_daemon(self, timeout: float = 10.0) -> bool:
         """Check if Docker daemon is running.
 
         Returns:
@@ -152,7 +163,7 @@ class DockerTestRunner:
                 ["docker", "info"],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=timeout,
             )
             return result.returncode == 0
         except FileNotFoundError:
@@ -191,16 +202,18 @@ class DockerTestRunner:
                 if os.path.exists(path):
                     print(f"Starting Docker Desktop from {path}...")
                     try:
-                        subprocess.Popen([path], shell=True)
+                        subprocess.Popen([path])
                         self._docker_started = True
                         # Wait for Docker to start
-                        for i in range(30):  # 30 seconds timeout
-                            time.sleep(1)
-                            if self._check_docker_daemon():
+                        max_wait = 120  # 120 seconds timeout for Windows
+                        print(f"Waiting up to {max_wait} seconds for Docker to start...")
+                        for i in range(max_wait):
+                            if self._check_docker_daemon(timeout=2.0):
                                 print("Docker Desktop started successfully.")
                                 return True
-                            if i % 5 == 0:
-                                print(f"Waiting for Docker to start... ({i + 1}/30s)")
+                            if (i + 1) % 5 == 0:
+                                print(f"Waiting for Docker to start... ({i + 1}/{max_wait}s)")
+                            time.sleep(1)
                         print("ERROR: Timeout waiting for Docker Desktop to start.")
                         print("Docker Desktop may be starting in the background.")
                         print("Please wait a moment and run this script again.")
@@ -239,13 +252,15 @@ class DockerTestRunner:
             if result.returncode == 0:
                 self._docker_started = True
                 # Wait for Docker to start
-                for i in range(10):  # 10 seconds timeout
-                    time.sleep(1)
-                    if self._check_docker_daemon():
+                max_wait = 30  # 30 seconds is safer for Linux startup
+                print(f"Waiting up to {max_wait} seconds for Docker daemon...")
+                for i in range(max_wait):
+                    if self._check_docker_daemon(timeout=2.0):
                         print("Docker daemon started successfully.")
                         return True
-                    if i % 2 == 0:
-                        print(f"Waiting for Docker daemon... ({i + 1}/10s)")
+                    if (i + 1) % 5 == 0:
+                        print(f"Waiting for Docker daemon... ({i + 1}/{max_wait}s)")
+                    time.sleep(1)
                 print("ERROR: Timeout waiting for Docker daemon to start.")
                 return False
             else:
@@ -260,11 +275,15 @@ class DockerTestRunner:
                 )
                 if result.returncode == 0:
                     self._docker_started = True
-                    for i in range(10):
-                        time.sleep(1)
-                        if self._check_docker_daemon():
+                    max_wait = 30
+                    print(f"Waiting up to {max_wait} seconds for Docker daemon (fallback)...")
+                    for i in range(max_wait):
+                        if self._check_docker_daemon(timeout=2.0):
                             print("Docker daemon started successfully.")
                             return True
+                        if (i + 1) % 5 == 0:
+                            print(f"Waiting for Docker daemon... ({i + 1}/{max_wait}s)")
+                        time.sleep(1)
                 print("ERROR: Failed to start Docker daemon.")
                 print("\nPlease install and start Docker manually:")
                 print("  1. Install Docker Engine:")
@@ -308,15 +327,40 @@ class DockerTestRunner:
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
             return False
 
-    def _start_container(self, container_name: str) -> bool:
+    def _check_container_exists(self, container_name: str) -> bool:
+        """Check if a Docker container exists.
+
+        Args:
+            container_name: Name of the container to check.
+
+        Returns:
+            True if Docker knows about the container, False otherwise.
+        """
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.Id}}", container_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0 and bool(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+            return False
+
+    def _start_container(self, version: str) -> bool:
         """Start a Docker container.
 
         Args:
-            container_name: Name of the container to start.
+            version: Python version whose container should be started.
 
         Returns:
             True if container started successfully, False otherwise.
         """
+        container_name = self.CONTAINER_NAMES[version]
+        if not self._check_container_exists(container_name):
+            print(f"Container {container_name} does not exist. Creating it with Docker Compose...")
+            return self._compose_up_service(version)
+
         try:
             result = subprocess.run(
                 ["docker", "start", container_name],
@@ -324,9 +368,52 @@ class DockerTestRunner:
                 text=True,
                 timeout=30,
             )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+            if result.returncode == 0:
+                return True
+
+            error = (result.stderr or result.stdout).strip()
+            if error:
+                print(f"docker start failed for {container_name}: {error}")
+            print(f"Falling back to Docker Compose for {container_name}...")
+            return self._compose_up_service(version)
+        except subprocess.TimeoutExpired:
+            print(f"docker start timed out for {container_name}. Falling back to Docker Compose...")
+            return self._compose_up_service(version)
+        except FileNotFoundError:
             return False
+
+    def _compose_up_service(self, version: str) -> bool:
+        """Create or start a Docker Compose service for a Python version."""
+        service_name = self.SERVICE_NAMES[version]
+        commands = (
+            ["docker", "compose", "up", "-d", "--build", service_name],
+            ["docker-compose", "up", "-d", "--build", service_name],
+        )
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.COMPOSE_TIMEOUT,
+                    cwd=self.project_root,
+                )
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                print(f"{' '.join(command)} timed out.")
+                return False
+
+            if result.returncode == 0:
+                return True
+
+            error = (result.stderr or result.stdout).strip()
+            if error:
+                print(f"{' '.join(command)} failed: {error}")
+
+        return False
 
     def _wait_for_container(self, container_name: str) -> bool:
         """Wait for container to be ready.
@@ -394,6 +481,8 @@ class DockerTestRunner:
                 pytest_cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.TEST_TIMEOUT,
                 cwd=self.project_root,
             )
@@ -419,6 +508,8 @@ class DockerTestRunner:
                 failed=stats.get("failed", 0),
                 errors=stats.get("errors", 0),
                 skipped=stats.get("skipped", 0),
+                xfailed=stats.get("xfailed", 0),
+                xpassed=stats.get("xpassed", 0),
                 total=stats.get("total", 0),
                 output=output,
                 error_output=error_output,
@@ -436,6 +527,8 @@ class DockerTestRunner:
                 failed=0,
                 errors=0,
                 skipped=0,
+                xfailed=0,
+                xpassed=0,
                 total=0,
                 output="",
                 error_output="Test execution timed out",
@@ -453,6 +546,8 @@ class DockerTestRunner:
                 failed=0,
                 errors=0,
                 skipped=0,
+                xfailed=0,
+                xpassed=0,
                 total=0,
                 output="",
                 error_output=str(e),
@@ -467,33 +562,61 @@ class DockerTestRunner:
         Returns:
             Dictionary with keys: passed, failed, errors, skipped, total.
         """
-        stats = {"passed": 0, "failed": 0, "errors": 0, "skipped": 0, "total": 0}
+        stats = {
+            "passed": 0,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0,
+            "xfailed": 0,
+            "xpassed": 0,
+            "total": 0,
+        }
+        summary_line: str | None = None
+        for line in reversed(output.splitlines()):
+            text = line.strip()
+            if " in " in text and any(
+                token in text
+                for token in (
+                    "passed",
+                    "failed",
+                    "error",
+                    "errors",
+                    "skipped",
+                    "xfailed",
+                    "xpassed",
+                )
+            ):
+                summary_line = text
+                break
+        if summary_line is None:
+            return stats
 
-        # Try to find summary line (e.g., "123 passed, 45 failed, 6 errors")
-        summary_patterns = [
-            r"(\d+) passed",
-            r"(\d+) failed",
-            r"(\d+) error",
-            r"(\d+) skipped",
-            r"(\d+) xfailed",
-            r"(\d+) xpassed",
-        ]
+        for count_text, label in re.findall(
+            r"(\d+)\s+(passed|failed|error|errors|skipped|xfailed|xpassed)\b",
+            summary_line,
+        ):
+            count = int(count_text)
+            if label == "passed":
+                stats["passed"] = count
+            elif label == "failed":
+                stats["failed"] = count
+            elif label in ("error", "errors"):
+                stats["errors"] = count
+            elif label == "skipped":
+                stats["skipped"] = count
+            elif label == "xfailed":
+                stats["xfailed"] = count
+            elif label == "xpassed":
+                stats["xpassed"] = count
 
-        for pattern in summary_patterns:
-            match = re.search(pattern, output)
-            if match:
-                count = int(match.group(1))
-                if "passed" in pattern:
-                    stats["passed"] = count
-                elif "failed" in pattern:
-                    stats["failed"] = count
-                elif "error" in pattern:
-                    stats["errors"] = count
-                elif "skipped" in pattern:
-                    stats["skipped"] = count
-
-        # Calculate total
-        stats["total"] = stats["passed"] + stats["failed"] + stats["errors"] + stats["skipped"]
+        stats["total"] = (
+            stats["passed"]
+            + stats["failed"]
+            + stats["errors"]
+            + stats["skipped"]
+            + stats["xfailed"]
+            + stats["xpassed"]
+        )
 
         return stats
 
@@ -519,6 +642,8 @@ class DockerTestRunner:
                     failed=0,
                     errors=0,
                     skipped=0,
+                    xfailed=0,
+                    xpassed=0,
                     total=0,
                     output="",
                     error_output="Container not running",
@@ -556,6 +681,8 @@ class DockerTestRunner:
                         failed=0,
                         errors=0,
                         skipped=0,
+                        xfailed=0,
+                        xpassed=0,
                         total=0,
                         output="",
                         error_output=str(e),
@@ -576,9 +703,18 @@ class DockerTestRunner:
         print("DOCKER TEST RESULTS")
         print("=" * 80)
         print()
+        check_symbol = "✓"
+        fail_symbol = "✗"
+        encoding = sys.stdout.encoding or "utf-8"
+        try:
+            check_symbol.encode(encoding)
+            fail_symbol.encode(encoding)
+        except UnicodeEncodeError:
+            check_symbol = "OK"
+            fail_symbol = "X"
         for version in sorted(results.keys()):
             result = results[version]
-            status_symbol = "✓" if result.status == TestStatus.SUCCESS else "✗"
+            status_symbol = check_symbol if result.status == TestStatus.SUCCESS else fail_symbol
             status_color = "\033[92m" if result.status == TestStatus.SUCCESS else "\033[91m"
             reset_color = "\033[0m"
 
@@ -592,6 +728,8 @@ class DockerTestRunner:
             print(f"    Failed: {result.failed}")
             print(f"    Errors: {result.errors}")
             print(f"    Skipped: {result.skipped}")
+            print(f"    XFailed: {result.xfailed}")
+            print(f"    XPassed: {result.xpassed}")
 
             if result.status != TestStatus.SUCCESS and result.error_output:
                 print(f"  Error: {result.error_output[:200]}")
@@ -607,6 +745,8 @@ class DockerTestRunner:
         total_failed = sum(r.failed for r in results.values())
         total_errors = sum(r.errors for r in results.values())
         total_skipped = sum(r.skipped for r in results.values())
+        total_xfailed = sum(r.xfailed for r in results.values())
+        total_xpassed = sum(r.xpassed for r in results.values())
         total_tests = sum(r.total for r in results.values())
 
         print(f"Total tests across all versions: {total_tests}")
@@ -614,16 +754,18 @@ class DockerTestRunner:
         print(f"  Failed: {total_failed}")
         print(f"  Errors: {total_errors}")
         print(f"  Skipped: {total_skipped}")
+        print(f"  XFailed: {total_xfailed}")
+        print(f"  XPassed: {total_xpassed}")
         print()
 
         successful_versions = sum(1 for r in results.values() if r.status == TestStatus.SUCCESS)
         print(f"Successful Python versions: {successful_versions}/{len(results)}")
 
         if successful_versions == len(results):
-            print("\n✓ All tests passed across all Python versions!")
+            print(f"\n{check_symbol} All tests passed across all Python versions!")
             return 0
         else:
-            print("\n✗ Some tests failed. See details above.")
+            print(f"\n{fail_symbol} Some tests failed. See details above.")
             return 1
 
 

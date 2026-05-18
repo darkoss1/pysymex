@@ -37,21 +37,24 @@ from typing import (
 
 import z3
 
+from pysymex._guards import is_dict_of_objects as is_dict_of_objects
+from pysymex._guards import is_list_of_objects as is_list_of_objects
+from pysymex._guards import is_set_of_objects
+from pysymex._guards import is_tuple_of_objects as is_tuple_of_objects
+from pysymex.core.types import AnySymbolic
+
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 K = TypeVar("K")
 V = TypeVar("V")
 
-
-from pysymex.core.types.scalars import AnySymbolic
-
 if TYPE_CHECKING:
-    from pysymex.core.types.floats import SymbolicFloat
+    from pysymex.core.types.floats import AdvancedSymbolicFloat
     from pysymex.core.solver.engine import SolverResult
-    from pysymex.core.types.containers import SymbolicIterator
+    from pysymex.core.types import SymbolicIterator
     from pysymex.core.exceptions.types import SymbolicException
 
-    _SymbolicFloatType = SymbolicFloat
+    _SymbolicFloatType = AdvancedSymbolicFloat
     _SymbolicIteratorType = SymbolicIterator
     _SymbolicExceptionType = SymbolicException
 else:
@@ -78,16 +81,12 @@ StackValue: TypeAlias = (
     | _SymbolicExceptionType
 )
 
-
 SideEffects: TypeAlias = dict[str, StackValue]
-
 
 ConstraintList: TypeAlias = Sequence[z3.ExprRef | z3.BoolRef]
 
-
 JsonValue: TypeAlias = int | str | bool | float | None | list["JsonValue"] | dict[str, "JsonValue"]
 JsonDict: TypeAlias = dict[str, JsonValue]
-
 
 UserCallable: TypeAlias = Callable[..., object]
 
@@ -140,9 +139,11 @@ class SymbolicTypeProtocol(Protocol):
 
 @runtime_checkable
 class SolverProtocol(Protocol):
-    """Abstract solver interface satisfied by IncrementalSolver, PortfolioSolver, etc."""
+    """Abstract solver interface satisfied by IncrementalSolver-compatible implementations."""
 
-    def check(self, *assumptions: z3.BoolRef) -> SolverResult | z3.CheckSatResult:
+    def check(
+        self, *assumptions: z3.BoolRef, need_model: bool = True
+    ) -> SolverResult | z3.CheckSatResult:
         """Check satisfiability of current constraints with optional assumptions."""
         ...
 
@@ -170,12 +171,28 @@ class SolverProtocol(Protocol):
         """Convenience SAT check for a standalone constraint list."""
         ...
 
+    def check_sat_result(
+        self,
+        constraints: Iterable[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
+        """Return a standalone constraint check without collapsing ``unknown``."""
+        ...
+
+    def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
+        """Return a satisfying model for a standalone constraint list."""
+        ...
+
     def get_stats(self) -> dict[str, object]:
         """Return implementation-defined solver statistics."""
         ...
 
     def constraint_optimizer(self) -> object:
         """Expose the associated constraint optimizer instance."""
+        ...
+
+    def set_deadline(self, deadline_time: float | None) -> None:
+        """Set an absolute solver deadline as a ``time.perf_counter()`` value."""
         ...
 
 
@@ -220,7 +237,7 @@ class StateViewProtocol(Protocol):
 
 def is_symbolic_value(obj: object) -> TypeGuard[SymbolicTypeProtocol]:
     """TypeGuard narrowing for any symbolic type (SymbolicValue from core.types)."""
-    from pysymex.core.types.scalars import SymbolicValue
+    from pysymex.core.types import SymbolicValue
 
     return isinstance(obj, SymbolicValue)
 
@@ -290,14 +307,14 @@ class SymbolicContainerProtocol(Protocol):
 
 def is_symbolic_string(obj: object) -> TypeGuard[SymbolicStringProtocol]:
     """TypeGuard narrowing for symbolic string types."""
-    from pysymex.core.types.containers import SymbolicString
+    from pysymex.core.types import SymbolicString
 
     return isinstance(obj, SymbolicString)
 
 
 def is_symbolic_container(obj: object) -> TypeGuard[SymbolicContainerProtocol]:
     """TypeGuard narrowing for symbolic container types (list, dict, set, tuple)."""
-    from pysymex.core.types.containers import (
+    from pysymex.core.types import (
         SymbolicDict,
         SymbolicList,
         SymbolicObject,
@@ -306,45 +323,12 @@ def is_symbolic_container(obj: object) -> TypeGuard[SymbolicContainerProtocol]:
     return isinstance(obj, (SymbolicList, SymbolicDict, SymbolicObject))
 
 
-def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """TypeGuard to narrow a value to list[object]."""
-    return isinstance(value, list)
-
-
-def is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
-    """TypeGuard to narrow a value to tuple[object, ...]."""
-    return isinstance(value, tuple)
-
-
-def is_dict_of_objects(value: object) -> TypeGuard[dict[object, object]]:
-    """TypeGuard to narrow a value to dict[object, object]."""
-    return isinstance(value, dict)
-
-
-def is_set_of_objects(value: object) -> TypeGuard[set[object]]:
-    """TypeGuard to narrow a value to set[object]."""
-    return isinstance(value, set)
-
-
-__all__ = [
-    "AnySymbolic",
-    "ConstraintList",
-    "Counterexample",
-    "DetectorProtocol",
-    "JsonDict",
-    "K",
-    "SideEffects",
-    "SolverProtocol",
-    "StackValue",
-    "StateViewProtocol",
-    "SymbolicContainerProtocol",
-    "SymbolicStringProtocol",
-    "SymbolicTypeProtocol",
-    "T",
-    "T_co",
-    "UserCallable",
-    "V",
-    "is_symbolic_container",
-    "is_symbolic_string",
-    "is_symbolic_value",
-]
+def to_string_set(value: object) -> set[str]:
+    """Normalize a dynamic set-like value to a set of strings."""
+    result: set[str] = set()
+    if is_set_of_objects(value):
+        raw_values: set[object] = value
+        for item in raw_values:
+            if isinstance(item, str):
+                result.add(item)
+    return result

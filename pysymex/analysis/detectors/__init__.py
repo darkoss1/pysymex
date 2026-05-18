@@ -23,6 +23,8 @@ from pysymex.analysis.detectors.base import (
     DetectorFn,
     DetectorInfo,
     DetectorRegistry,
+    GetModelFn,
+    IsSatFn,
     Issue,
     IssueKind,
 )
@@ -30,8 +32,6 @@ from pysymex.analysis.detectors.base import (
 from pysymex.analysis.detectors.runtime.assertion_error import AssertionErrorDetector
 from pysymex.analysis.detectors.runtime.attribute_error import AttributeErrorDetector
 from pysymex.analysis.detectors.runtime.division_by_zero import DivisionByZeroDetector
-from pysymex.analysis.detectors.runtime.enhanced_index_error import EnhancedIndexErrorDetector
-from pysymex.analysis.detectors.runtime.enhanced_type_error import EnhancedTypeErrorDetector
 from pysymex.analysis.detectors.runtime.index_error import IndexErrorDetector
 from pysymex.analysis.detectors.runtime.key_error import KeyErrorDetector
 from pysymex.analysis.detectors.runtime.none_dereference import NoneDereferenceDetector
@@ -39,6 +39,7 @@ from pysymex.analysis.detectors.runtime.overflow import OverflowDetector
 from pysymex.analysis.detectors.runtime.resource_leak import ResourceLeakDetector
 from pysymex.analysis.detectors.runtime.type_error import TypeErrorDetector
 from pysymex.analysis.detectors.runtime.unbound_variable import UnboundVariableDetector
+from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
 from pysymex.analysis.detectors.runtime.value_error import ValueErrorDetector
 
 from pysymex.analysis.detectors.specialized.infinite_loop import InfiniteLoopDetector
@@ -59,8 +60,6 @@ def _create_default_registry() -> DetectorRegistry:
     registry.register(AssertionErrorDetector)
     registry.register(AttributeErrorDetector)
     registry.register(DivisionByZeroDetector)
-    registry.register(EnhancedIndexErrorDetector)
-    registry.register(EnhancedTypeErrorDetector)
     registry.register(IndexErrorDetector)
     registry.register(KeyErrorDetector)
     registry.register(NoneDereferenceDetector)
@@ -68,13 +67,17 @@ def _create_default_registry() -> DetectorRegistry:
     registry.register(ResourceLeakDetector)
     registry.register(TypeErrorDetector)
     registry.register(UnboundVariableDetector)
+    registry.register(UserExceptionDetector)
     registry.register(ValueErrorDetector)
 
     # Specialized detectors
     registry.register(InfiniteLoopDetector)
-    registry.register(IntegerOverflowDetector)
-    registry.register(NullDereferenceDetector)
-    registry.register(UnreachableCodeDetector)
+    # Runtime OverflowDetector subsumes bounded-overflow semantics.
+    # Keep IntegerOverflowDetector available for opt-in compatibility only.
+    # registry.register(NullDereferenceDetector)  # Redundant with NoneDereferenceDetector + AttributeErrorDetector
+    # UNREACHABLE_CODE is handled by dedicated dead-code/static analyses.
+    # Keeping it out of the default runtime registry avoids symbolic-path
+    # approximation false positives on reachable code.
     registry.register(UseAfterFreeDetector)
     registry.register(FormatStringDetector)
 
@@ -91,12 +94,12 @@ __all__ = [
     "DetectorInfo",
     "DetectorRegistry",
     "DivisionByZeroDetector",
-    "EnhancedIndexErrorDetector",
-    "EnhancedTypeErrorDetector",
     "FormatStringDetector",
+    "GetModelFn",
     "IndexErrorDetector",
     "InfiniteLoopDetector",
     "IntegerOverflowDetector",
+    "IsSatFn",
     "Issue",
     "IssueKind",
     "KeyErrorDetector",
@@ -109,6 +112,7 @@ __all__ = [
     "UnboundVariableDetector",
     "UnreachableCodeDetector",
     "UseAfterFreeDetector",
+    "UserExceptionDetector",
     "ValueErrorDetector",
     "default_registry",
 ]

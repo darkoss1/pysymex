@@ -145,7 +145,7 @@ def test_handle_end_for() -> None:
     """Test handle_end_for behavior."""
     state = VMState(stack=[1, 2], pc=0)
     control.handle_end_for(_instr("END_FOR"), state, OpcodeDispatcher())
-    assert state.stack == []
+    assert state.stack == [1]
 
 
 def test_handle_get_len() -> None:

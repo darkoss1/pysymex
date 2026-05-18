@@ -1,4 +1,3 @@
-import pytest
 import z3
 from pysymex.analysis.concurrency.core import (
     ConcurrencyAnalyzer,
@@ -6,7 +5,6 @@ from pysymex.analysis.concurrency.core import (
     LockOrderChecker,
 )
 from pysymex.analysis.concurrency import (
-    ConcurrencyIssue,
     ConcurrencyIssueKind,
     ThreadState,
     OperationKind,
@@ -49,8 +47,10 @@ class TestConcurrencyAnalyzer:
         analyzer.create_thread("child")
         analyzer.start_thread("child", "parent")
         issue = analyzer.join_thread("child", "parent")
+        child = analyzer.get_thread("child")
         assert issue is None
-        assert analyzer.get_thread("child").state == ThreadState.TERMINATED
+        assert child is not None
+        assert child.state == ThreadState.TERMINATED
 
     def test_record_read(self) -> None:
         """Test record_read behavior."""
@@ -220,7 +220,7 @@ class TestLockOrderChecker:
         """Test set_lock_order behavior."""
         checker = LockOrderChecker()
         checker.set_lock_order(["L1", "L2"])
-        assert checker._lock_order == ["L1", "L2"]
+        assert checker._lock_order == ["L1", "L2"]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_acquire(self) -> None:
         """Test acquire behavior."""

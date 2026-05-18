@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t3_path/post_assignment.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t3_path.post_assignment import (
     PostAssignmentContradictionRule,
 )
@@ -35,3 +34,17 @@ class TestPostAssignmentContradictionRule:
         """Test basic initialization and properties."""
         assert PostAssignmentContradictionRule is not None
         assert PostAssignmentContradictionRule.__name__ == "PostAssignmentContradictionRule"
+
+    def test_matches_assignment_outside_known_bounds(self) -> None:
+        """Classify exact assignment facts that violate known bounds."""
+        value = z3.Int("value")
+        core = [value == 3, value > 3]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert PostAssignmentContradictionRule().matches(ctx)
+
+    def test_does_not_match_assignment_inside_known_bounds(self) -> None:
+        """Do not classify compatible post-assignment bounds."""
+        value = z3.Int("value")
+        core = [value == 3, value >= 0, value <= 10]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not PostAssignmentContradictionRule().matches(ctx)

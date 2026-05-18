@@ -31,10 +31,36 @@ class TestSymbolicListOps:
         result = pysymex.core.memory.collections.lists.SymbolicListOps.getitem([10, 20, 30], 1)
         assert result.value == 20
 
+    def test_getitem_accepts_negative_concrete_index(self) -> None:
+        """Scenario: negative concrete index lookup; expected CPython-compatible element."""
+        result = pysymex.core.memory.collections.lists.SymbolicListOps.getitem([10, 20, 30], -1)
+        assert result.value == 30
+
+    def test_getitem_symbolic_index_allows_negative_list_index(self) -> None:
+        """Scenario: symbolic index may be -1; expected feasible Python-list bounds."""
+        idx = z3.Int("idx")
+        result = pysymex.core.memory.collections.lists.SymbolicListOps.getitem([10, 20, 30], idx)
+        solver = z3.Solver()
+        solver.add(*result.constraints, idx == -1)
+        assert solver.check() == z3.sat
+
+    def test_getitem_symbolic_list_accepts_negative_concrete_index(self) -> None:
+        """Scenario: SymbolicList lookup at -1; expected feasible Python-list bounds."""
+        lst = pysymex.core.memory.collections.lists.SymbolicList.from_const([10, 20, 30])
+        result = pysymex.core.memory.collections.lists.SymbolicListOps.getitem(lst, -1)
+        solver = z3.Solver()
+        solver.add(*result.constraints)
+        assert solver.check() == z3.sat
+
     def test_setitem(self) -> None:
         """Scenario: concrete assignment in range; expected updated list snapshot."""
         result = pysymex.core.memory.collections.lists.SymbolicListOps.setitem([1, 2, 3], 1, 99)
         assert result.modified_collection == [1, 99, 3]
+
+    def test_setitem_accepts_negative_concrete_index(self) -> None:
+        """Scenario: negative concrete assignment; expected CPython-compatible update."""
+        result = pysymex.core.memory.collections.lists.SymbolicListOps.setitem([1, 2, 3], -1, 99)
+        assert result.modified_collection == [1, 2, 99]
 
     def test_append(self) -> None:
         """Scenario: append to concrete list; expected item added at tail."""
@@ -50,6 +76,12 @@ class TestSymbolicListOps:
         """Scenario: pop default index from concrete list; expected last item returned."""
         result = pysymex.core.memory.collections.lists.SymbolicListOps.pop([1, 2, 3])
         assert result.value == 3
+
+    def test_pop_accepts_negative_concrete_index(self) -> None:
+        """Scenario: pop with negative index; expected CPython-compatible removal."""
+        result = pysymex.core.memory.collections.lists.SymbolicListOps.pop([1, 2, 3], -1)
+        assert result.value == 3
+        assert result.modified_collection == [1, 2]
 
     def test_insert(self) -> None:
         """Scenario: insert into concrete list; expected shifted list state."""

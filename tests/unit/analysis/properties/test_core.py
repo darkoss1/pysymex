@@ -1,7 +1,29 @@
-import pytest
 import z3
-from pysymex.analysis.properties.core import PropertyProver, ArithmeticVerifier, EquivalenceChecker
-from pysymex.analysis.properties.types import PropertyKind
+from pysymex.analysis.properties.core import ArithmeticVerifier, EquivalenceChecker, PropertyProver
+
+
+def _add_expr(x: z3.ExprRef, y: z3.ExprRef) -> z3.ExprRef:
+    return x + y
+
+
+def _left_expr(x: z3.ExprRef, _y: z3.ExprRef) -> z3.ExprRef:
+    return x
+
+
+def _double_expr(x: z3.ExprRef) -> z3.ExprRef:
+    return x + x
+
+
+def _twice_expr(x: z3.ExprRef) -> z3.ExprRef:
+    return 2 * x
+
+
+def _positive_expr(x: z3.ExprRef) -> z3.BoolRef:
+    return x > 0
+
+
+def _greater_than_five_expr(x: z3.ExprRef) -> z3.BoolRef:
+    return x > 5
 
 
 class TestPropertyProver:
@@ -10,36 +32,32 @@ class TestPropertyProver:
     def test_prove_commutativity(self) -> None:
         """Test prove_commutativity behavior."""
         p = PropertyProver()
-        res = p.prove_commutativity(lambda x, y: x + y, z3.Int("a"), z3.Int("b"))
+        res = p.prove_commutativity(_add_expr, z3.Int("a"), z3.Int("b"))
         assert res.is_proven is True
 
     def test_prove_associativity(self) -> None:
         """Test prove_associativity behavior."""
         p = PropertyProver()
-        res = p.prove_associativity(lambda x, y: x + y, z3.Int("a"), z3.Int("b"), z3.Int("c"))
+        res = p.prove_associativity(_add_expr, z3.Int("a"), z3.Int("b"), z3.Int("c"))
         assert res.is_proven is True
 
     def test_prove_identity(self) -> None:
         """Test prove_identity behavior."""
         p = PropertyProver()
-        res = p.prove_identity(lambda x, y: x + y, z3.Int("a"), z3.IntVal(0))
+        res = p.prove_identity(_add_expr, z3.Int("a"), z3.IntVal(0))
         assert res.is_proven is True
 
     def test_prove_idempotence(self) -> None:
         """Test prove_idempotence behavior."""
         p = PropertyProver()
-
-        def op(x, y):
-            return x
-
-        res = p.prove_idempotence(lambda x, y: x, z3.Int("a"))
+        res = p.prove_idempotence(_left_expr, z3.Int("a"))
         assert res.is_proven is True
 
     def test_prove_monotonic_increasing(self) -> None:
         """Test prove_monotonic_increasing behavior."""
         p = PropertyProver()
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return x + 1
 
         res = p.prove_monotonic_increasing(f, z3.Int("x"), z3.Int("y"))
@@ -49,7 +67,7 @@ class TestPropertyProver:
         """Test prove_monotonic_decreasing behavior."""
         p = PropertyProver()
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return -x
 
         res = p.prove_monotonic_decreasing(f, z3.Int("x"), z3.Int("y"))
@@ -60,7 +78,7 @@ class TestPropertyProver:
         p = PropertyProver()
         x = z3.Int("x")
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return z3.If(x < 0, z3.IntVal(0), x)
 
         res = p.prove_lower_bound(f(x), z3.IntVal(0), {"x": x})
@@ -71,7 +89,7 @@ class TestPropertyProver:
         p = PropertyProver()
         x = z3.Int("x")
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return z3.If(x > 10, z3.IntVal(10), x)
 
         res = p.prove_upper_bound(f(x), z3.IntVal(10), {"x": x})
@@ -82,7 +100,7 @@ class TestPropertyProver:
         p = PropertyProver()
         x = z3.Int("x")
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return z3.If(x < 0, z3.IntVal(0), z3.If(x > 10, z3.IntVal(10), x))
 
         res = p.prove_bounded(f(x), z3.IntVal(0), z3.IntVal(10), {"x": x})
@@ -93,7 +111,7 @@ class TestPropertyProver:
         p = PropertyProver()
         x = z3.Int("x")
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return x * x
 
         res = p.prove_non_negative(f(x), {"x": x})
@@ -104,7 +122,7 @@ class TestPropertyProver:
         p = PropertyProver()
         x = z3.Int("x")
 
-        def f(x):
+        def f(x: z3.ExprRef) -> z3.ExprRef:
             return x * x + 1
 
         res = p.prove_positive(f(x), {"x": x})
@@ -185,11 +203,11 @@ class TestEquivalenceChecker:
     def test_check_equivalent(self) -> None:
         """Test check_equivalent behavior."""
         ec = EquivalenceChecker()
-        res = ec.check_equivalent(lambda x: x + x, lambda x: 2 * x, [z3.Int("x")])
+        res = ec.check_equivalent(_double_expr, _twice_expr, [z3.Int("x")])
         assert res.is_proven is True
 
     def test_check_refinement(self) -> None:
         """Test check_refinement behavior."""
         ec = EquivalenceChecker()
-        res = ec.check_refinement(lambda x: x > 0, lambda x: x > 5, [z3.Int("x")])
+        res = ec.check_refinement(_positive_expr, _greater_than_five_expr, [z3.Int("x")])
         assert res.is_proven is True

@@ -18,6 +18,7 @@
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
+from pysymex.core.solver.engine import is_satisfiable
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
     expr_contains_variable,
@@ -39,7 +40,11 @@ class LoopInvariantViolationRule(LogicRule):
             if not z3.is_const(lhs) or lhs.decl().kind() != z3.Z3_OP_UNINTERPRETED:
                 continue
             name = str(lhs.decl().name())
-            if expr_contains_variable(rhs, name) and str(rhs) != str(lhs):
+            if (
+                expr_contains_variable(rhs, name)
+                and str(rhs) != str(lhs)
+                and not is_satisfiable([expr])
+            ):
                 return True
 
         bounds = extract_bounds(ctx.core)

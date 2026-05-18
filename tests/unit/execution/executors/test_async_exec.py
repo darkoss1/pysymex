@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import pytest
 import pytest
 
 from pysymex.core.state import VMState
@@ -133,8 +131,6 @@ class TestAsyncSymbolicExecutor:
 
         async def sample(x: int) -> int:
             return x + 1
-
-        import pysymex.execution.opcodes  # Ensure opcodes are registered
 
         executor = AsyncSymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
         executor.execute_function(sample, {"x": "int"})

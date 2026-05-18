@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 """Type inference facade for the analysis.types package.
 
 This module provides the canonical type-inference entry points for the

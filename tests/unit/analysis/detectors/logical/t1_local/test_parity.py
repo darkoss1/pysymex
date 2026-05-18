@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t1_local/parity.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t1_local.parity import ParityContradictionRule
 
 
@@ -33,3 +32,17 @@ class TestParityContradictionRule:
         """Test basic initialization and properties."""
         assert ParityContradictionRule is not None
         assert ParityContradictionRule.__name__ == "ParityContradictionRule"
+
+    def test_matches_conflicting_even_odd_remainders(self) -> None:
+        """Classify explicit parity conflicts for the same variable."""
+        x = z3.Int("x")
+        core = [x % 2 == 0, x % 2 == 1]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert ParityContradictionRule().matches(ctx)
+
+    def test_does_not_match_single_parity_fact(self) -> None:
+        """Modulo by two alone is not a contradiction."""
+        x = z3.Int("x")
+        core = [x % 2 == 0]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        assert not ParityContradictionRule().matches(ctx)

@@ -20,8 +20,9 @@ from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionCont
 import z3
 from pysymex.analysis.detectors.logical.utils import (
     count_variables,
-    core_count_operator,
     core_has_operator,
+    extract_var_const_disequalities,
+    extract_var_const_equalities,
 )
 
 
@@ -45,4 +46,11 @@ class EqualityContradictionRule(LogicRule):
             },
         ):
             return False
-        return core_count_operator(ctx.core, {z3.Z3_OP_EQ}) >= 2
+        equalities = extract_var_const_equalities(ctx.core)
+        disequalities = extract_var_const_disequalities(ctx.core)
+        for var, values in equalities.items():
+            if len(values) > 1:
+                return True
+            if values & disequalities.get(var, set()):
+                return True
+        return False

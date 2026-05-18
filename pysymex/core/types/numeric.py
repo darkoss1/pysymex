@@ -30,8 +30,7 @@ from dataclasses import dataclass, field
 import z3
 
 from .base import SymbolicType, TypeTag, fresh_name
-
-_BV_WIDTH: int = 64
+from .scalars import bv_to_int, int_to_bv, py_floor_div, py_mod
 
 
 @dataclass
@@ -45,6 +44,16 @@ class SymbolicBool(SymbolicType):
 
     __hash__ = object.__hash__
 
+    def hash_value(self) -> int:
+        """Content-based hash for VMState path deduplication.
+
+        Python ``__hash__`` is identity-based (preserving soundness of
+        ``SymbolicBool`` as a dict/set key), but ``VMState.hash_value()``
+        routes through ``hash_value()`` specifically so that two states
+        holding structurally equivalent Z3 expressions compare equal.
+        """
+        return self.z3_bool.hash()
+
     def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("bool")
@@ -53,6 +62,10 @@ class SymbolicBool(SymbolicType):
     def type_tag(self) -> TypeTag:
         """Property returning the type_tag."""
         return TypeTag.BOOL
+
+    @property
+    def is_bool(self) -> z3.BoolRef:
+        return z3.BoolVal(True)
 
     @property
     def name(self) -> str:
@@ -111,6 +124,18 @@ class SymbolicInt(SymbolicType):
 
     __hash__ = object.__hash__
 
+    def hash_value(self) -> int:
+        """Content-based hash for VMState path deduplication.
+
+        See ``SymbolicBool.hash_value`` for rationale.
+        Hashes both the Z3 expression and the 64-bit bitvector cache when
+        present, since the BV cache encodes additional constraint structure.
+        """
+        h = self.z3_int.hash()
+        if self._bv_cache is not None:
+            h = (h * 31) ^ self._bv_cache.hash()
+        return h
+
     def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("int")
@@ -119,6 +144,10 @@ class SymbolicInt(SymbolicType):
     def type_tag(self) -> TypeTag:
         """Property returning the type_tag."""
         return TypeTag.INT
+
+    @property
+    def is_int(self) -> z3.BoolRef:
+        return z3.BoolVal(True)
 
     @property
     def name(self) -> str:
@@ -136,7 +165,7 @@ class SymbolicInt(SymbolicType):
     def as_bv(self) -> z3.BitVecRef:
         """Return cached 64-bit BitVec form of this integer."""
         if self._bv_cache is None:
-            self._bv_cache = z3.Int2BV(self.z3_int, _BV_WIDTH)
+            self._bv_cache = int_to_bv(self.z3_int)
         return self._bv_cache
 
     def is_truthy(self) -> z3.BoolRef:
@@ -193,15 +222,14 @@ class SymbolicInt(SymbolicType):
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer modulo by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
-        floor_div = z3.ToInt(z3.ToReal(self.z3_int) / z3.ToReal(safe_divisor))
-        return SymbolicInt(self.z3_int - floor_div * safe_divisor)
+        return SymbolicInt(py_mod(self.z3_int, safe_divisor))
 
     def __floordiv__(self, other: SymbolicInt) -> SymbolicInt:
         divisor = other.z3_int
         if z3.is_int_value(divisor) and divisor.as_long() == 0:
             raise ZeroDivisionError("integer division by zero")
         safe_divisor = z3.If(divisor == 0, z3.IntVal(1), divisor)
-        return SymbolicInt(z3.ToInt(z3.ToReal(self.z3_int) / z3.ToReal(safe_divisor)))
+        return SymbolicInt(py_floor_div(self.z3_int, safe_divisor))
 
     def __truediv__(self, other: SymbolicInt | SymbolicFloat) -> SymbolicFloat:
         if isinstance(other, SymbolicFloat):
@@ -252,27 +280,27 @@ class SymbolicInt(SymbolicType):
 
     def __and__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv & other.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     def __or__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv | other.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     def __xor__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv ^ other.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     def __invert__(self) -> SymbolicInt:
         bv_result = ~self.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     def __lshift__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv << other.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     def __rshift__(self, other: SymbolicInt) -> SymbolicInt:
         bv_result = self.as_bv >> other.as_bv
-        return SymbolicInt(z3.BV2Int(bv_result, is_signed=True))
+        return SymbolicInt(bv_to_int(bv_result))
 
     @staticmethod
     def symbolic(name: str | None = None) -> SymbolicInt:
@@ -298,6 +326,13 @@ class SymbolicFloat(SymbolicType):
 
     __hash__ = object.__hash__
 
+    def hash_value(self) -> int:
+        """Content-based hash for VMState path deduplication.
+
+        See ``SymbolicBool.hash_value`` for rationale.
+        """
+        return self.z3_real.hash()
+
     def __post_init__(self) -> None:
         if not self._name:
             self._name = fresh_name("float")
@@ -306,6 +341,10 @@ class SymbolicFloat(SymbolicType):
     def type_tag(self) -> TypeTag:
         """Property returning the type_tag."""
         return TypeTag.FLOAT
+
+    @property
+    def is_float(self) -> z3.BoolRef:
+        return z3.BoolVal(True)
 
     @property
     def name(self) -> str:

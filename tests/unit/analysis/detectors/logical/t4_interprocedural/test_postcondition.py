@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t4_interprocedural/postcondition.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t4_interprocedural.postcondition import (
     PostconditionContradictionRule,
 )
@@ -35,3 +34,17 @@ class TestPostconditionContradictionRule:
         """Test basic initialization and properties."""
         assert PostconditionContradictionRule is not None
         assert PostconditionContradictionRule.__name__ == "PostconditionContradictionRule"
+
+    def test_matches_result_bound_contradiction(self) -> None:
+        """Classify inconsistent postcondition bounds on result-like symbols."""
+        result_value = z3.Int("result_value")
+        core = [result_value >= 5, result_value < 5]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert PostconditionContradictionRule().matches(ctx)
+
+    def test_does_not_match_internal_type_marker_bounds(self) -> None:
+        """Type marker names are owned by return-type classification, not postconditions."""
+        result_is_int = z3.Int("result_is_int")
+        core = [result_is_int >= 1, result_is_int < 1]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not PostconditionContradictionRule().matches(ctx)

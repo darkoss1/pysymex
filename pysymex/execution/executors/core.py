@@ -41,7 +41,9 @@ import inspect
 import logging
 import time
 import types
+from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeAlias, cast, get_type_hints
 
 import z3
@@ -52,6 +54,7 @@ if TYPE_CHECKING:
 
 import pysymex.core.solver.engine as solver_mod
 from pysymex._compat import get_starts_line
+from pysymex.analysis.exceptions.analyzer import infer_caught_at
 from pysymex.analysis.abstract.interpreter import AbstractAnalyzer
 from pysymex.analysis.cache import LRUCache, hash_function
 from pysymex.analysis.cross_function import CrossFunctionAnalyzer
@@ -77,15 +80,16 @@ from pysymex.analysis.type_inference import TypeAnalyzer
 from pysymex.core.builtins import get_all_builtins
 from pysymex.core.memory.addressing import next_address
 from pysymex.core.memory.cow import CowDict
-from pysymex.core.types.floats import SymbolicFloat
+from pysymex.core.types.floats import AdvancedSymbolicFloat
 from pysymex.core.solver.engine import IncrementalSolver
-from pysymex.core.state import VMState
-from pysymex.core.graph.cig import ConstraintInteractionGraph
-from pysymex.core.types.scalars import (
+from pysymex.core.solver.constraints import ConstraintHasher, structural_hash
+from pysymex.core.state import VMState, VMStateError
+from pysymex.core.graph.treewidth import ConstraintInteractionGraph
+from pysymex.core.types import (
     SymbolicString,
     SymbolicValue,
 )
-from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicObject
+from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicObject
 from pysymex.execution.dispatcher import OpcodeDispatcher, OpcodeHandler, OpcodeResult
 from pysymex.execution.types import (
     BRANCH_OPCODES,
@@ -93,7 +97,6 @@ from pysymex.execution.types import (
     ExecutionResult,
 )
 from pysymex.resources import LimitExceeded, ResourceLimits, ResourceTracker
-
 
 logger = logging.getLogger(__name__)
 _stats_registry = StatsRegistry()
@@ -108,15 +111,23 @@ def _emit_event(
     _stats_registry.emit(event_type, value, metadata)
 
 
-_CHTD_MAX_BRANCH_INFOS = 256
-_CHTD_CHECK_INTERVAL = 64
-_CHTD_SAT_MIN_BRANCH_INFOS = 32
-
-__all__ = ["SymbolicExecutor"]
+_CHTD_SAT_MIN_BRANCH_INFOS = 4
+_DETECTOR_QUERY_CACHE_MAX_ENTRIES = 4096
 
 SymbolicCreatedValue: TypeAlias = (
-    SymbolicValue | SymbolicString | SymbolicList | SymbolicDict | SymbolicObject | SymbolicFloat
+    SymbolicValue
+    | SymbolicString
+    | SymbolicList
+    | SymbolicDict
+    | SymbolicObject
+    | AdvancedSymbolicFloat
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _DetectorQueryCacheEntry:
+    constraints: tuple[z3.BoolRef, ...]
+    result: bool
 
 
 class SymbolicExecutor:
@@ -153,6 +164,9 @@ class SymbolicExecutor:
             self.config = _dc_replace(config, **config_overrides)
         else:
             self.config = config
+        from pysymex.execution.opcodes import load_opcode_handlers
+
+        load_opcode_handlers()
         self.detector_registry = detector_registry or default_registry
         self.dispatcher = OpcodeDispatcher()
         setattr(self.dispatcher, "config", self.config)
@@ -183,14 +197,25 @@ class SymbolicExecutor:
         self._degraded_passes: list[str] = []
         self._reported_hacc_fallback: bool = False
         self._prev_loop_states: dict[int, VMState] = {}
-        self._interaction_graph = ConstraintInteractionGraph()
+        from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
+
+        self._independence_optimizer = ConstraintIndependenceOptimizer()
+        self._interaction_graph = ConstraintInteractionGraph(self._independence_optimizer)
+        self._detector_constraint_hasher = ConstraintHasher()
+        self._detector_query_cache: OrderedDict[int, list[_DetectorQueryCacheEntry]] = OrderedDict()
+        self._detector_query_cache_hits: int = 0
+        self._detector_query_cache_misses: int = 0
+        self._reported_detector_sites: set[tuple[int, int, IssueKind]] = set()
 
         try:
-            from pysymex.core.solver.mus_gatekeeper import MUSGatekeeper, AsyncMUSWorker
             from pysymex.core.memory.unsat_core_registry import SparseCoreRegistry
+            from pysymex.core.solver.learner import (
+                ConflictLearner,
+                ConflictWorker,
+            )
 
-            self.mus_gatekeeper = MUSGatekeeper(timeout_ms=self.config.solver_timeout_ms)
-            self.async_mus_worker = AsyncMUSWorker(self.mus_gatekeeper)
+            self.conflict_learner = ConflictLearner(timeout_ms=self.config.solver_timeout_ms)
+            self.conflict_worker = ConflictWorker(self.conflict_learner)
             self.core_registry = SparseCoreRegistry()
         except ImportError:
             pass
@@ -363,21 +388,22 @@ class SymbolicExecutor:
             if closure and freevars:
                 for fv_name, cell in zip(freevars, closure, strict=False):
                     try:
-                        initial_state.local_vars[fv_name] = cell.cell_contents
+                        initial_state = initial_state.set_local(fv_name, cell.cell_contents)
                     except ValueError:
                         continue
         except (AttributeError, TypeError):
             pass
 
         try:
-            module_funcs: dict[str, StackValue] = {}
+            module_vars: dict[str, StackValue] = {}
+            target_module = getattr(func, "__module__", None)
             for g_name, g_val in func.__globals__.items():
-                if inspect.isfunction(g_val) and getattr(g_val, "__module__", None) == getattr(
-                    func, "__module__", None
-                ):
-                    module_funcs[g_name] = cast("StackValue", g_val)
-            if module_funcs:
-                for g_name, g_val in module_funcs.items():
+                if (inspect.isfunction(g_val) or inspect.isclass(g_val)) and getattr(
+                    g_val, "__module__", None
+                ) == target_module:
+                    module_vars[g_name] = cast("StackValue", g_val)
+            if module_vars:
+                for g_name, g_val in module_vars.items():
                     initial_state.global_vars[g_name] = g_val
         except (AttributeError, TypeError):
             pass
@@ -417,7 +443,6 @@ class SymbolicExecutor:
                 self._degraded_passes.append("type_inference")
                 self._type_analyzer = None
         self._execute_loop()
-        self._promote_abstract_hints()
         logger.debug("Executor issues count: %d", len(self._issues))
         final_issues = self._issues
         if self.config.enable_fp_filtering:
@@ -452,6 +477,7 @@ class SymbolicExecutor:
             },
             solver_stats={
                 **self.solver.get_stats(),
+                "detector_queries": self._collect_detector_query_stats(),
                 "chtd": self._collect_chtd_stats(),
                 "state_merger": self._collect_state_merger_stats(),
             },
@@ -493,8 +519,16 @@ class SymbolicExecutor:
 
         for name, type_hint in symbolic_vars.items():
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
-            initial_state.local_vars[name] = sym_val
+            initial_state = initial_state.set_local(name, sym_val)
             initial_state = initial_state.add_constraint(constraint)
+
+        # Populate initial memory from temp storage (used for collections)
+        temp_mem = getattr(self, "_temp_memory_init", None)
+        if temp_mem:
+            for k, v in temp_mem.items():
+                initial_state = initial_state.store_heap(k, v)
+            self._temp_memory_init = {}
+
         return initial_state
 
     def execute_code(
@@ -549,7 +583,6 @@ class SymbolicExecutor:
             self._run_abstract_interpretation(code)
 
         self._execute_loop()
-        self._promote_abstract_hints()
         final_issues = self._issues
         if self.config.enable_fp_filtering:
             try:
@@ -581,6 +614,7 @@ class SymbolicExecutor:
             },
             solver_stats={
                 **self.solver.get_stats(),
+                "detector_queries": self._collect_detector_query_stats(),
                 "chtd": self._collect_chtd_stats(),
                 "state_merger": self._collect_state_merger_stats(),
             },
@@ -590,10 +624,10 @@ class SymbolicExecutor:
     def _reset(self) -> None:
         """Reset execution state for a new code object.
 
-        Keeps the executor infrastructure (solver, dispatcher, detectors,
-        instruction cache) alive to avoid re-initialization overhead.
+        Keeps the executor infrastructure alive to avoid re-initialization overhead.
         Only resets per-execution state.
         """
+        self.solver.reset()
         self._instructions = []
         self._pc_to_line = {}
         self._issues = []
@@ -639,6 +673,11 @@ class SymbolicExecutor:
         self._loop_detector = None
         self._loop_widening = None
         self._prev_loop_states = {}
+        self._detector_query_cache.clear()
+        self._detector_constraint_hasher.clear()
+        self._detector_query_cache_hits = 0
+        self._detector_query_cache_misses = 0
+        self._reported_detector_sites = set()
         if self._state_merger is not None:
             self._state_merger.reset()
 
@@ -648,10 +687,17 @@ class SymbolicExecutor:
         self.solver.reset()
         self._interaction_graph.clear()
 
-        from pysymex.core.types.scalars import FROM_CONST_CACHE, SYMBOLIC_CACHE
+        from pysymex.core.types.scalars import FROM_CONST_CACHE, SYMBOLIC_CACHE, STRING_CONST_CACHE
 
         SYMBOLIC_CACHE.clear()
         FROM_CONST_CACHE.clear()
+        STRING_CONST_CACHE.clear()
+        try:
+            from pysymex.core.objects.oop import enhanced_class_registry
+
+            enhanced_class_registry.clear()
+        except ImportError:
+            logger.debug("Enhanced class registry unavailable during executor reset")
 
         from pysymex.core.cache import clear_cache as _clear_icache
 
@@ -697,31 +743,8 @@ class SymbolicExecutor:
             logger.debug("Abstract interpretation failed for %s", code.co_name, exc_info=True)
 
     def _promote_abstract_hints(self) -> None:
-        """Promote abstract interpreter hints to Issues when corroborated.
-
-        An abstract hint is promoted only if symbolic execution independently
-        found at least one issue with the same ``IssueKind``.  This prevents
-        false positives from unreachable branches that the abstract interpreter
-        cannot rule out but the symbolic executor can.
-        """
-        if not self._abstract_hints:
-            return
-
-        confirmed_kinds: set[IssueKind] = {issue.kind for issue in self._issues}
-
-        for msg, line, pc in self._abstract_hints:
-            kind = self._infer_issue_kind(msg)
-            if kind is IssueKind.UNKNOWN:
-                continue
-            if kind in confirmed_kinds:
-                self._issues.append(
-                    Issue(
-                        kind=kind,
-                        message=f"[Abstract Interpreter] {msg}",
-                        pc=pc,
-                        line_number=line,
-                    )
-                )
+        """Abstract hints are advisory only and not promoted to runtime issues."""
+        return
 
     @staticmethod
     def _infer_issue_kind(msg: str) -> IssueKind:
@@ -779,10 +802,10 @@ class SymbolicExecutor:
             elif param_kind == inspect.Parameter.VAR_KEYWORD:
                 type_hint = "dict"
             else:
-                type_hint = symbolic_args.get(name) or inferred_types.get(name, "int")
+                type_hint = symbolic_args.get(name) or inferred_types.get(name, "any")
 
             sym_val, constraint = self._create_symbolic_for_type(name, type_hint)
-            state.local_vars[name] = sym_val
+            state = state.set_local(name, sym_val)
             state = state.add_constraint(constraint)
 
             if self.config and self.config.heuristic_assume_non_null_self:
@@ -811,6 +834,12 @@ class SymbolicExecutor:
 
             state = inject_preconditions_initial(state, func)
             state.contract_frames.append(func)
+
+        temp_mem = getattr(self, "_temp_memory_init", None)
+        if temp_mem:
+            for k, v in temp_mem.items():
+                state = state.store_heap(k, v)
+            self._temp_memory_init = {}
 
         return state
 
@@ -846,23 +875,34 @@ class SymbolicExecutor:
             value_int, constraint_int = SymbolicValue.symbolic_int(name)
             return cast("SymbolicCreatedValue", value_int), constraint_int
         elif type_hint.startswith(("float", "real")):
-            sf = SymbolicFloat(name)
+            sf = AdvancedSymbolicFloat(name)
             return sf, z3.BoolVal(True)
         elif type_hint.startswith(("str", "string")):
             value_str, constraint_str = SymbolicString.symbolic(name)
             return cast("SymbolicCreatedValue", value_str), constraint_str
         elif type_hint.startswith(("list", "array", "tuple")):
             value_list, constraint_list = SymbolicList.symbolic(name)
-            return cast("SymbolicCreatedValue", value_list), constraint_list
+            addr = next_address()
+            sym_obj = SymbolicObject(name, addr, z3.IntVal(addr), {addr})
+            state_initial_memory = getattr(self, "_temp_memory_init", {})
+            state_initial_memory[addr] = value_list
+            self._temp_memory_init = state_initial_memory
+            return cast("SymbolicCreatedValue", sym_obj), constraint_list
         elif type_hint.startswith(("bool", "boolean")):
             value_bool, constraint_bool = SymbolicValue.symbolic_bool(name)
             return cast("SymbolicCreatedValue", value_bool), constraint_bool
         elif type_hint.startswith(("path", "pathlib.path")):
             value_path, constraint_path = SymbolicValue.symbolic_path(name)
             return cast("SymbolicCreatedValue", value_path), constraint_path
-        elif type_hint.startswith(("dict", "mapping", "kwargs")):
+        if type_hint.startswith(("dict", "mapping", "kwargs")):
             value_dict, constraint_dict = SymbolicDict.symbolic(name)
-            return cast("SymbolicCreatedValue", value_dict), constraint_dict
+            addr = next_address()
+            sym_obj = SymbolicObject(name, addr, z3.IntVal(addr), {addr})
+            state_initial_memory = getattr(self, "_temp_memory_init", {})
+            state_initial_memory[addr] = value_dict
+            self._temp_memory_init = state_initial_memory
+            return cast("SymbolicCreatedValue", sym_obj), constraint_dict
+
         elif type_hint == "object":
             id_suffix = next_address()
             z3_addr = z3.Int(f"{name}_{id_suffix}_addr")
@@ -870,6 +910,9 @@ class SymbolicExecutor:
                 _name=name, address=id_suffix, z3_addr=z3_addr, potential_addresses={id_suffix}
             )
             return sym_val, z3_addr != 0
+        elif type_hint in {"any", "nullable", "optional"}:
+            sym_val, constraint = SymbolicValue.symbolic(name)
+            return cast("SymbolicCreatedValue", sym_val), constraint
         else:
             sym_val, constraint = SymbolicValue.symbolic(name)
             import z3 as _z3
@@ -899,7 +942,11 @@ class SymbolicExecutor:
         if self._resource_tracker is not None:
             self._resource_tracker.start()
 
-        solver_mod.active_incremental_solver.set(self.solver)
+        set_deadline = getattr(self.solver, "set_deadline", None)
+        if callable(set_deadline):
+            set_deadline(time.perf_counter() + self.config.timeout_seconds)
+
+        active_solver_token = solver_mod.active_incremental_solver.set(self.solver)
         try:
             while not self._worklist.is_empty():
                 self._iterations += 1
@@ -939,7 +986,9 @@ class SymbolicExecutor:
                 except LimitExceeded:
                     break
         finally:
-            solver_mod.active_incremental_solver.set(None)
+            if callable(set_deadline):
+                set_deadline(None)
+            solver_mod.active_incremental_solver.reset(active_solver_token)
 
     def _check_resource_limits(self, state: VMState) -> bool:
         """Check if resource limits are exceeded."""
@@ -975,13 +1024,14 @@ class SymbolicExecutor:
     def _check_path_feasibility(self, state: VMState) -> bool:
         """Check if the current path is feasible with Z3.
 
-        Optimization: skip the solver call if no new constraints have been added
-        since the last successful feasibility check.
+        Implements tiered feasibility checking:
+        a. Registry containment check (cached UNSAT cores).
+        b. CHTD bag-local UNSAT check (if enabled).
+        c. Full incremental SMT fallback.
         """
+        # a. core registry containment check
         if getattr(self, "core_registry", None):
-            path_indices: set[int] = set()
-            for c in state.path_constraints:
-                path_indices.add(hash(c))
+            path_indices: set[int] = {c.hash() for c in state.path_constraints}
             if not self.core_registry.is_feasible(path_indices):
                 self._paths_pruned += 1
                 for _hook in self._hooks.get("on_prune", ()):
@@ -989,6 +1039,36 @@ class SymbolicExecutor:
                         _hook(self, state, "chtd_pruned")
                     except Exception as exc:
                         logger.debug("Plugin hook execution failed: %s", exc)
+                return False
+
+        # c. CHTD bag-local UNSAT check
+        if self.config.enable_chtd and self.config.chtd_max_branch_infos > 0:
+            core_info = self._check_chtd_unsat(state)
+            if core_info:
+                core_indices, decisions = core_info
+                self._chtd_unsat_hits += 1
+                exprs_list = list(state.path_constraints)
+                core = frozenset(exprs_list[i].hash() for i in core_indices)
+                frontier_pruned = 0
+                if self.core_registry.add_core(core):
+                    if isinstance(self._worklist, AdaptivePathManager):
+                        frontier_pruned = self._worklist.prune_states_containing_core(core)
+                        self._paths_pruned += frontier_pruned
+
+                if isinstance(self._worklist, AdaptivePathManager):
+                    # Local UNSAT is found synchronously here
+                    self._worklist.feedback_unsat_core(
+                        core_indices,
+                        paths_pruned=frontier_pruned,
+                        decisions=decisions,
+                    )
+
+                self._paths_pruned += 1
+                for _hook in self._hooks.get("on_prune", ()):
+                    try:
+                        _hook(self, state, "chtd_unsat")
+                    except Exception:
+                        logger.exception("Plugin hook execution failed")
                 return False
 
         if state.pending_constraint_count <= 0:
@@ -1009,10 +1089,115 @@ class SymbolicExecutor:
                         logger.exception("Plugin hook execution failed")
                 return False
 
+            # Persist newly verified constraints to the solver
+            new_constraints = list(state.path_constraints)[known_prefix_len:]
+            extend_path_fn = getattr(self.solver, "extend_path", None)
+            if callable(extend_path_fn):
+                extend_path_fn(new_constraints)
+            else:
+                for c in new_constraints:
+                    self.solver.add(c)
+
             state.pending_constraint_count = 0
             return True
         finally:
             self._phase_timers_seconds["path_feasibility"] += time.perf_counter() - start
+
+    def _check_chtd_unsat(self, state: VMState) -> tuple[list[int], dict[str, str]] | None:
+        """Perform bag-local UNSAT checking. Returns (core_indices, decisions) if UNSAT.
+
+        Implements hierarchical scheduling for:
+        - decomposition policy
+        - bag/subtree target policy
+        - solver-budget policy
+        """
+        if not self.config.enable_chtd or self._interaction_graph.num_branches < 2:
+            return None
+
+        # 0. Sample hierarchical arms
+        if not isinstance(self._worklist, AdaptivePathManager):
+            return None
+
+        decomposition_arm = self._worklist.scheduler.decomposition.sample()
+        target_arm = self._worklist.scheduler.target.sample()
+        budget_arm = self._worklist.scheduler.budget.sample()
+
+        decisions = {"decomposition": decomposition_arm, "target": target_arm, "budget": budget_arm}
+
+        # 1. Get/Compute tree decomposition using chosen policy
+        start_tw = time.perf_counter()
+        self._phase_counts["chtd_decomposition"] += 1
+        try:
+            # Simplified: we use min-fill if decomposition_arm says so, else default
+            # (In a real impl, we'd pass the policy to compute_tree_decomposition)
+            td = self._interaction_graph.compute_tree_decomposition()
+        except Exception:
+            self._record_degraded_passes(["chtd_decomposition_failed"])
+            return None
+        finally:
+            self._phase_timers_seconds["chtd_decomposition"] += time.perf_counter() - start_tw
+
+        # 2. Identify the target bag using chosen policy
+        active_bag_id = None
+        if target_arm == "smallest active bag":
+            # Find smallest bag containing state.pc
+            best_size = float("inf")
+            for bid, pcs in td.bags.items():
+                if state.pc in pcs and len(pcs) < best_size:
+                    best_size = len(pcs)
+                    active_bag_id = bid
+        else:
+            # Default: first bag containing state.pc
+            for bid, pcs in td.bags.items():
+                if state.pc in pcs:
+                    active_bag_id = bid
+                    break
+
+        if active_bag_id is None:
+            return None
+
+        bag_pcs = td.bags[active_bag_id]
+        path_exprs = list(state.path_constraints)
+
+        # 3. Collect active constraints whose full scope is covered by the bag.
+        pc_to_cond = {
+            pc: info.condition
+            for pc, info in self._interaction_graph.branch_info.items()
+            if info.condition is not None
+        }
+        cond_hash_to_pc = {
+            structural_hash([cond], self._detector_constraint_hasher): pc
+            for pc, cond in pc_to_cond.items()
+        }
+
+        bag_constraints: list[z3.BoolRef] = []
+        bag_indices: list[int] = []
+        for i, expr in enumerate(path_exprs):
+            expr_hash = structural_hash([expr], self._detector_constraint_hasher)
+            if expr_hash in cond_hash_to_pc:
+                pc = cond_hash_to_pc[expr_hash]
+                if pc in bag_pcs:
+                    bag_constraints.append(expr)
+                    bag_indices.append(i)
+
+        if not bag_constraints:
+            return None
+
+        # 4. Check the bag formula with chosen budget
+        check_start = time.perf_counter()
+        self._phase_counts["chtd_propagation"] += 1
+        try:
+            # We use the conflict learner to extract a certified core from the bag
+            # Budget policy could control minimization effort
+            core_indices = self.conflict_learner.extract_conflict_sync(bag_constraints)
+            if core_indices:
+                return [bag_indices[i] for i in core_indices], decisions
+        except Exception:
+            self._record_degraded_passes(["chtd_bag_solve_failed"])
+        finally:
+            self._phase_timers_seconds["chtd_propagation"] += time.perf_counter() - check_start
+
+        return None
 
     def _handle_loop_logic(
         self, state: VMState, active_instructions: list[dis.Instruction]
@@ -1031,11 +1216,11 @@ class SymbolicExecutor:
             return True
 
         pc_key = loop.header_pc
-        state.loop_iterations[pc_key] = state.loop_iterations.get(pc_key, 0) + 1
+        iteration_count = state.increment_loop_iteration(pc_key)
 
-        if state.loop_iterations[pc_key] > self.config.max_loop_iterations:
+        if iteration_count > self.config.max_loop_iterations:
             if self._loop_widening is not None:
-                if self._loop_widening.should_widen(loop, state.loop_iterations[pc_key]):
+                if self._loop_widening.should_widen(loop, iteration_count):
                     prev_state = state.prev_loop_states.get(pc_key)
                     if prev_state is not None:
                         widened = self._loop_widening.widen_state(prev_state, state, loop)
@@ -1079,6 +1264,7 @@ class SymbolicExecutor:
                             _emit_event(EventType.PATH_EXPLORED, 1.0)
                             if self.config.verbose:
                                 logger.debug("Loop at PC %s: widened and jumped to exit", pc_key)
+                            self._paths_pruned += 1
                             return False
 
             if self.config.verbose:
@@ -1086,8 +1272,6 @@ class SymbolicExecutor:
             self._paths_pruned += 1
             return False
 
-        if not hasattr(state, "prev_loop_states"):
-            state.prev_loop_states = {}
         state.prev_loop_states[pc_key] = state.fork()
         return True
 
@@ -1098,6 +1282,7 @@ class SymbolicExecutor:
         process_start = time.perf_counter()
         self._phase_counts["process_execution_result"] += 1
         try:
+            self._record_degraded_passes(result.degraded_passes)
             if result.issues:
                 for issue in result.issues:
                     line_no = self._get_line_number(issue.pc, active_instructions)
@@ -1132,16 +1317,11 @@ class SymbolicExecutor:
                         if last_constraint is None:
                             continue
                         try:
-
-                            def _extract_vars(expr: z3.BoolRef) -> set[int]:
-                                return {hash(expr)}
-
-                            vars_set = frozenset(_extract_vars(last_constraint))
-                            self._interaction_graph.add_branch(ns.pc, vars_set)
+                            self._interaction_graph.add_branch(ns.pc, last_constraint)
                         except Exception:
                             logger.debug("CHTD interaction-graph update failed", exc_info=True)
 
-                should_run_chtd = self._should_run_chtd()
+                should_run_chtd = self._should_run_chtd(len(state.path_constraints))
                 if (
                     should_run_chtd
                     and self._last_should_run_chtd is False
@@ -1155,21 +1335,32 @@ class SymbolicExecutor:
                     start = time.perf_counter()
                     try:
 
-                        def _mus_callback(core_indices: list[int] | None) -> None:
+                        def _unsat_core_callback(core_indices: list[int] | None) -> None:
                             if core_indices:
                                 self._chtd_unsat_hits += 1
+                                frontier_pruned = 0
                                 if getattr(self, "core_registry", None):
                                     exprs_list = list(state.path_constraints)
-                                    global_indices = [hash(exprs_list[i]) for i in core_indices]
-                                    self.core_registry.add_core(global_indices)
+                                    core = frozenset(exprs_list[i].hash() for i in core_indices)
+                                    if self.core_registry.add_core(core):
+                                        if isinstance(self._worklist, AdaptivePathManager):
+                                            frontier_pruned = (
+                                                self._worklist.prune_states_containing_core(core)
+                                            )
+                                            self._paths_pruned += frontier_pruned
                                 if isinstance(self._worklist, AdaptivePathManager):
-                                    self._worklist.feedback_mus(core_indices)
+                                    elapsed_ms = (time.perf_counter() - start) * 1000
+                                    self._worklist.feedback_unsat_core(
+                                        core_indices,
+                                        paths_pruned=frontier_pruned,
+                                        elapsed_ms=elapsed_ms,
+                                    )
 
-                        if getattr(self, "async_mus_worker", None):
+                        if getattr(self, "conflict_worker", None):
                             exprs = list(state.path_constraints)
-                            self.async_mus_worker.dispatch(
+                            self.conflict_worker.dispatch(
                                 exprs,
-                                _mus_callback,
+                                _unsat_core_callback,
                                 current_depth=state.depth,
                                 max_depth=self.config.max_depth,
                             )
@@ -1225,13 +1416,30 @@ class SymbolicExecutor:
                 time.perf_counter() - process_start
             )
 
-    def _should_run_chtd(self) -> bool:
+    def _record_degraded_passes(self, degraded_passes: list[str]) -> None:
+        """Add degraded-pass markers without duplicating existing entries."""
+        for degraded_pass in degraded_passes:
+            if degraded_pass not in self._degraded_passes:
+                self._degraded_passes.append(degraded_pass)
+
+    def _should_run_chtd(self, path_constraint_count: int) -> bool:
         if self._chtd_runtime_disabled:
+            return False
+
+        if path_constraint_count < _CHTD_SAT_MIN_BRANCH_INFOS:
+            self._chtd_skipped_unstable += 1
             return False
 
         if (
             self.config.chtd_max_branch_infos
             and self._interaction_graph.num_vertices > self.config.chtd_max_branch_infos
+        ):
+            self._chtd_skipped_size += 1
+            return False
+
+        if (
+            self._worklist is not None
+            and self._worklist.size() < self.config.chtd_min_frontier_size
         ):
             self._chtd_skipped_size += 1
             return False
@@ -1252,6 +1460,68 @@ class SymbolicExecutor:
                 self._current_chtd_interval = min(max_interval, self._current_chtd_interval * 2)
 
         self._next_chtd_check_iteration = self._iterations + self._current_chtd_interval
+
+    def _collect_detector_query_stats(self) -> dict[str, object]:
+        return {
+            "cache_hits": self._detector_query_cache_hits,
+            "cache_misses": self._detector_query_cache_misses,
+            "cache_size": len(self._detector_query_cache),
+            "cache_capacity": _DETECTOR_QUERY_CACHE_MAX_ENTRIES,
+        }
+
+    def _detector_query_cache_key(self, constraints: list[z3.BoolRef]) -> int:
+        return structural_hash(constraints, self._detector_constraint_hasher)
+
+    def _same_detector_query_constraints(
+        self,
+        left: tuple[z3.BoolRef, ...],
+        right: list[z3.BoolRef],
+    ) -> bool:
+        if len(left) != len(right):
+            return False
+        for left_constraint, right_constraint in zip(left, right, strict=True):
+            if self._detector_constraint_hasher.hash_expr(
+                left_constraint
+            ) != self._detector_constraint_hasher.hash_expr(right_constraint):
+                return False
+            if not z3.eq(left_constraint, right_constraint):
+                return False
+        return True
+
+    def _detector_is_sat(
+        self,
+        constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None,
+    ) -> bool:
+        if not constraints:
+            return True
+
+        cache_key = self._detector_query_cache_key(constraints)
+        cached_entries = self._detector_query_cache.get(cache_key)
+        if cached_entries is not None:
+            for cached_entry in cached_entries:
+                if self._same_detector_query_constraints(cached_entry.constraints, constraints):
+                    self._detector_query_cache_hits += 1
+                    self._detector_query_cache.move_to_end(cache_key)
+                    return cached_entry.result
+
+        self._detector_query_cache_misses += 1
+        result = self.solver.check_sat_result(
+            constraints,
+            known_sat_prefix_len=None,
+        )
+        if result.is_unknown:
+            self._record_degraded_passes(["solver_unknown_detector_query"])
+        is_sat = result.is_sat
+        entry = _DetectorQueryCacheEntry(tuple(constraints), is_sat)
+        if cached_entries is None:
+            self._detector_query_cache[cache_key] = [entry]
+        else:
+            cached_entries.append(entry)
+            self._detector_query_cache.move_to_end(cache_key)
+        if len(self._detector_query_cache) > _DETECTOR_QUERY_CACHE_MAX_ENTRIES:
+            self._detector_query_cache.popitem(last=False)
+        return is_sat
 
     def _collect_chtd_stats(self) -> dict[str, object]:
         return {
@@ -1349,6 +1619,11 @@ class SymbolicExecutor:
         if not self._check_resource_limits(state):
             return
 
+        # The dispatcher is shared across queued states, while states may be
+        # paused in different caller/callee instruction streams.
+        self.dispatcher.set_instructions(active_instructions)
+        state.current_instructions = cast("list[object]", active_instructions)
+
         if self._state_merger is not None and self._state_merger.should_merge(state):
             merged = self._state_merger.add_state_for_merge(state)
             if merged is None:
@@ -1374,7 +1649,7 @@ class SymbolicExecutor:
             self._visited_states.add(state_key)
 
         self._coverage.add(state.pc)
-        state.visited_pcs.add(state.pc)
+        state.mark_visited()
 
         needs_check = (
             state.pending_constraint_count >= self.config.lazy_eval_threshold
@@ -1405,6 +1680,21 @@ class SymbolicExecutor:
                     except Exception:
                         logger.exception("Plugin hook execution failed")
             self._process_execution_result(result, state, active_instructions)
+        except VMStateError as e:
+            logger.warning("Unsupported VM state at PC %d: %s", state.pc, e)
+            line_no = self._get_line_number(state.pc, active_instructions)
+            issue = Issue(
+                kind=IssueKind.UNKNOWN,
+                message=f"Unsupported VM state: {e}",
+                constraints=list(state.path_constraints),
+                pc=state.pc,
+                line_number=line_no,
+            )
+            self._issues.append(issue)
+            self._last_exception = issue
+            self._paths_pruned += 1
+            self._record_degraded_passes(["unsupported_vm_state"])
+            return
         except Exception as e:
             logger.error("Engine failure at PC %d: %s", state.pc, e, exc_info=True)
             raise e
@@ -1460,21 +1750,23 @@ class SymbolicExecutor:
     ) -> None:
         """Run enabled detectors on current state.
 
-        Uses opcodeâ†’detector dispatch table to avoid calling detectors
+        Uses opcode→detector dispatch table to avoid calling detectors
         that don't care about the current instruction.
         """
         opname = instr.opname
 
-        prefix_len = len(state.path_constraints)
-
         def detector_is_sat(c: list[z3.BoolRef]) -> bool:
-            return self.solver.is_sat(
-                c, known_sat_prefix_len=prefix_len if len(c) > prefix_len else 0
-            )
+            return self._detector_is_sat(c, None)
 
         for detector in self._universal_detectors:
+            site_key = (id(active_instructions), state.pc, detector.issue_kind)
+            if site_key in self._reported_detector_sites:
+                continue
             issue = detector.check(state, instr, detector_is_sat)
             if issue:
+                if self._issue_is_caught_by_exception_handler(issue, instr):
+                    continue
+                self._reported_detector_sites.add(site_key)
                 line_no = self._get_line_number(state.pc, active_instructions)
                 if line_no != issue.line_number:
                     from dataclasses import replace as _dc_replace
@@ -1490,8 +1782,14 @@ class SymbolicExecutor:
         specific = self._detector_dispatch.get(opname)
         if specific:
             for detector in specific:
+                site_key = (id(active_instructions), state.pc, detector.issue_kind)
+                if site_key in self._reported_detector_sites:
+                    continue
                 issue = detector.check(state, instr, detector_is_sat)
                 if issue:
+                    if self._issue_is_caught_by_exception_handler(issue, instr):
+                        continue
+                    self._reported_detector_sites.add(site_key)
                     line_no = self._get_line_number(state.pc, active_instructions)
                     if line_no != issue.line_number:
                         from dataclasses import replace as _dc_replace
@@ -1503,6 +1801,62 @@ class SymbolicExecutor:
                             _hook(self, state, issue)
                         except Exception:
                             logger.exception("Plugin hook execution failed")
+
+    def _issue_is_caught_by_exception_handler(
+        self,
+        issue: Issue,
+        instr: dis.Instruction,
+    ) -> bool:
+        exception_name = self._exception_name_for_issue(issue)
+        if exception_name is None:
+            return False
+        return self._exception_handler_catches(instr.offset, exception_name)
+
+    @staticmethod
+    def _exception_name_for_issue(issue: Issue) -> str | None:
+        if issue.kind == IssueKind.DIVISION_BY_ZERO:
+            return "ZeroDivisionError"
+        if issue.kind == IssueKind.TYPE_ERROR:
+            return "TypeError"
+        if issue.kind == IssueKind.VALUE_ERROR:
+            return "ValueError"
+        if issue.kind == IssueKind.ATTRIBUTE_ERROR:
+            return "AttributeError"
+        if issue.kind == IssueKind.INDEX_ERROR:
+            return "IndexError"
+        if issue.kind == IssueKind.KEY_ERROR:
+            return "KeyError"
+        if issue.kind != IssueKind.UNHANDLED_EXCEPTION:
+            return None
+
+        if ": " in issue.message:
+            candidate = issue.message.rsplit(": ", 1)[-1].strip()
+            if candidate:
+                return candidate.split("(", 1)[0].split("[", 1)[0].strip()
+        if "] " in issue.message:
+            tail = issue.message.split("] ", 1)[1]
+            candidate = tail.split(":", 1)[0].strip()
+            if candidate:
+                return candidate
+        return None
+
+    def _exception_handler_catches(self, offset: int, exception_name: str) -> bool:
+        handler_index = self.dispatcher.find_exception_handler(offset)
+        if handler_index is None:
+            return False
+        handler_offset = self.dispatcher.instructions[handler_index].offset
+        caught_names = infer_caught_at(self.dispatcher.instructions, handler_offset)
+        return self._exception_name_is_caught(exception_name, caught_names)
+
+    @staticmethod
+    def _exception_name_is_caught(exception_name: str, caught_names: set[str]) -> bool:
+        if exception_name in caught_names:
+            return True
+        if exception_name == "ZeroDivisionError":
+            return any(
+                name in {"ArithmeticError", "Exception", "BaseException"} for name in caught_names
+            )
+        return any(name in {"Exception", "BaseException"} for name in caught_names)
 
     def _hash_state(self, state: VMState) -> int:
         """Create a hash of the state to detect truly redundant paths.

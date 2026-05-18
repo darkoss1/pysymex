@@ -87,15 +87,15 @@ class BenchmarkResult:
     @property
     def throughput(self) -> float:
         """Instructions per second."""
-        if self.elapsed_seconds > 0:
-            return self.instructions_executed / self.elapsed_seconds
+        if self.mean_seconds > 0:
+            return self.instructions_executed / self.mean_seconds
         return 0.0
 
     @property
     def paths_per_second(self) -> float:
         """Paths explored per second."""
-        if self.elapsed_seconds > 0:
-            return self.paths_explored / self.elapsed_seconds
+        if self.mean_seconds > 0:
+            return self.paths_explored / self.mean_seconds
         return 0.0
 
     def to_dict(self) -> dict[str, object]:
@@ -147,10 +147,3 @@ class RegressionResult:
         """Human-readable change description."""
         direction = "slower" if self.change_percent > 0 else "faster"
         return f"{abs(self.change_percent):.1f}% {direction}"
-
-
-__all__ = [
-    "BenchmarkCategory",
-    "BenchmarkResult",
-    "RegressionResult",
-]

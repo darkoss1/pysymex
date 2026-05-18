@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import sys
 import dis
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.version_info < (3, 13),
+    reason="Requires Python 3.13+",
+)
+from dataclasses import dataclass
+import types
 
 
-from pysymex.analysis.detectors import IssueKind
 from pysymex.core.state import VMState
 from pysymex.core.types.scalars import SymbolicValue
 from pysymex.execution.dispatcher import OpcodeDispatcher
@@ -15,10 +23,36 @@ def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instructi
     return base._replace(opname=opname, argval=argval, offset=offset)
 
 
-def test_try_block_can_raise() -> None:
-    """Test try_block_can_raise behavior."""
-    items = [_instr("LOAD_CONST"), _instr("CALL")]
-    assert exceptions.try_block_can_raise(items) is True
+def _code_object(source: str, name: str) -> types.CodeType:
+    module_code = compile(source, "<test>", "exec")
+    for const in module_code.co_consts:
+        if isinstance(const, types.CodeType) and const.co_name == name:
+            return const
+    raise AssertionError(f"missing code object {name}")
+
+
+def _instruction_by_offset(code: types.CodeType, offset: int) -> dis.Instruction:
+    for instruction in dis.get_instructions(code):
+        if instruction.offset == offset:
+            return instruction
+    raise AssertionError(f"missing instruction at offset {offset}")
+
+
+@dataclass(frozen=True)
+class _Entry:
+    start: int
+    end: int
+    target: int
+    depth: int
+    lasti: bool
+
+
+def _dispatcher_for(code: types.CodeType, entries: list[object]) -> OpcodeDispatcher:
+    dispatcher = OpcodeDispatcher()
+    instructions = list(dis.get_instructions(code))
+    dispatcher.set_instructions(instructions)
+    dispatcher.set_exception_entries(entries)
+    return dispatcher
 
 
 def test_handle_setup_finally() -> None:
@@ -45,6 +79,28 @@ def test_handle_push_exc_info() -> None:
     state = VMState(stack=["exc"], pc=0)
     exceptions.handle_push_exc_info(_instr("PUSH_EXC_INFO"), state, OpcodeDispatcher())
     assert len(state.stack) == 2
+
+
+def test_handle_push_exc_info_terminates_impossible_direct_handler_entry() -> None:
+    """A handler target cannot run without the exception-table jump payload."""
+    code = _code_object(
+        """
+def f():
+    try:
+        raise ValueError()
+    except ValueError:
+        return 1
+""",
+        "f",
+    )
+    instruction = next(i for i in dis.get_instructions(code) if i.opname == "PUSH_EXC_INFO")
+    dispatcher = _dispatcher_for(code, [_Entry(4, 34, instruction.offset, 0, False)])
+    state = VMState(pc=dispatcher.offset_to_index(instruction.offset) or 0)
+
+    result = exceptions.handle_push_exc_info(instruction, state, dispatcher)
+
+    assert result.terminal is True
+    assert result.new_states == []
 
 
 def test_handle_pop_except() -> None:
@@ -82,7 +138,63 @@ def test_handle_reraise() -> None:
     state = VMState(stack=["exc"], pc=0)
     result = exceptions.handle_reraise(_instr("RERAISE", 0), state, OpcodeDispatcher())
     assert result.terminal is True
-    assert result.issues[0].kind is IssueKind.EXCEPTION
+    assert len(result.issues) == 0
+
+
+def test_handle_raise_varargs_uses_exception_table_stack_shape() -> None:
+    """Raised exceptions enter handlers with the stack expected by PUSH_EXC_INFO."""
+    code = _code_object(
+        """
+def f(x):
+    try:
+        if x:
+            raise ValueError()
+    except ValueError:
+        return 1
+    return 0
+""",
+        "f",
+    )
+    instruction = next(i for i in dis.get_instructions(code) if i.opname == "RAISE_VARARGS")
+    handler = next(i for i in dis.get_instructions(code) if i.opname == "PUSH_EXC_INFO")
+    dispatcher = _dispatcher_for(
+        code,
+        [_Entry(instruction.offset, instruction.offset + 2, handler.offset, 0, False)],
+    )
+    state = VMState(stack=[ValueError], pc=0)
+
+    result = exceptions.handle_raise_varargs(instruction, state, dispatcher)
+
+    next_state = result.new_states[0]
+    assert len(next_state.stack) == 1
+    assert next_state.pc == dispatcher.offset_to_index(handler.offset)
+
+
+def test_handle_reraise_uses_exception_table_cleanup_stack_shape() -> None:
+    """Cleanup handlers with lasti metadata receive enough stack entries for COPY 3."""
+    outer = _code_object(
+        """
+def f():
+    def g():
+        try:
+            yield 1
+        except ValueError:
+            yield 2
+    return g
+""",
+        "f",
+    )
+    code = next(c for c in outer.co_consts if isinstance(c, types.CodeType) and c.co_name == "g")
+    instruction = _instruction_by_offset(code, 50)
+    dispatcher = _dispatcher_for(code, [_Entry(50, 52, 52, 1, True)])
+    exc = SymbolicValue.from_const(ValueError("boom"))
+    state = VMState(stack=[SymbolicValue.from_const(0), exc], pc=0)
+
+    result = exceptions.handle_reraise(instruction, state, dispatcher)
+
+    next_state = result.new_states[0]
+    assert len(next_state.stack) == 3
+    assert next_state.pc == dispatcher.offset_to_index(52)
 
 
 def test_handle_with_except_start() -> None:
@@ -183,7 +295,7 @@ def test_handle_raise_varargs() -> None:
         _instr("RAISE_VARARGS", 1, offset=0), state, OpcodeDispatcher()
     )
     assert result.terminal is True
-    assert len(result.issues) == 1
+    assert len(result.issues) == 0
 
 
 def test_handle_return_generator() -> None:

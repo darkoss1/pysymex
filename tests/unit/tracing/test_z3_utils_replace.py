@@ -14,7 +14,7 @@ class TestSubstituteAbstractNames:
         """Unknown k!N tokens should pass through unchanged."""
         registry = Z3SemanticRegistry()
         serializer = Z3Serializer(registry)
-        result = serializer._substitute_abstract_names("(+ k!99 k!100)")
+        result = serializer._substitute_abstract_names("(+ k!99 k!100)")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert "k!99" in result
         assert "k!100" in result
 
@@ -23,7 +23,7 @@ class TestSubstituteAbstractNames:
         registry = Z3SemanticRegistry()
         registry.update({"k!0": "x", "k!1": "y"})
         serializer = Z3Serializer(registry)
-        result = serializer._substitute_abstract_names("(+ k!0 k!1)")
+        result = serializer._substitute_abstract_names("(+ k!0 k!1)")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert "x" in result
         assert "y" in result
         assert "k!0" not in result
@@ -33,7 +33,7 @@ class TestSubstituteAbstractNames:
         registry = Z3SemanticRegistry()
         registry.update({"k!0": "alpha"})
         serializer = Z3Serializer(registry)
-        result = serializer._substitute_abstract_names("(bvadd !0 k!0)")
+        result = serializer._substitute_abstract_names("(bvadd !0 k!0)")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         # Both !0 and k!0 should map to "alpha" via fallback
         assert result.count("alpha") >= 1
 
@@ -43,7 +43,7 @@ class TestSubstituteAbstractNames:
         registry.update({"k!0": "replaced"})
         serializer = Z3Serializer(registry)
         # k!0 embedded in a word — regex uses word boundaries
-        result = serializer._substitute_abstract_names("(+ k!0 normal_var)")
+        result = serializer._substitute_abstract_names("(+ k!0 normal_var)")  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert "replaced" in result
         assert "normal_var" in result
 

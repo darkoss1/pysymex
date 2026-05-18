@@ -27,10 +27,11 @@ Contains the core prover/verifier/checker classes:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 import z3
 
+from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.analysis.properties.types import (
     ProofStatus,
     PropertyKind,
@@ -39,6 +40,42 @@ from pysymex.analysis.properties.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+ModelVariableSet = Mapping[str, z3.ExprRef] | Sequence[z3.ExprRef]
+
+
+def extract_model_values(
+    model: z3.ModelRef | None,
+    variables: ModelVariableSet,
+) -> dict[str, object]:
+    """Extract typed Python values from a Z3 model for named or positional expressions."""
+    if model is None:
+        return {}
+    if isinstance(variables, Mapping):
+        items: Iterable[tuple[str, z3.ExprRef]] = variables.items()
+    else:
+        items = ((str(expr), expr) for expr in variables)
+    result: dict[str, object] = {}
+    for name, expr in items:
+        try:
+            val = model.eval(expr, model_completion=True)
+            if z3.is_int_value(val):
+                result[name] = val.as_long()
+            elif z3.is_rational_value(val):
+                frac = val.as_fraction()
+                try:
+                    result[name] = float(frac)
+                except OverflowError:
+                    result[name] = str(frac)
+            elif z3.is_true(val):
+                result[name] = True
+            elif z3.is_false(val):
+                result[name] = False
+            else:
+                result[name] = str(val)
+        except z3.Z3Exception:
+            logger.debug("Model eval failed for variable %s", name, exc_info=True)
+    return result
 
 
 class PropertyProver:
@@ -52,8 +89,7 @@ class PropertyProver:
 
     def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
 
     def prove_commutativity(
         self,
@@ -398,16 +434,16 @@ class PropertyProver:
         import time
 
         start = time.time()
-        result = self._solver.check()
+        result = self._solver.check(need_model=True)
         elapsed = time.time() - start
-        if result == z3.unsat:
+        if result.is_unsat:
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.PROVEN,
                 time_seconds=elapsed,
             )
-        elif result == z3.sat:
-            model = self._solver.model()
+        elif result.is_sat:
+            model = result.model
             counterexample = self._extract_model(model, variables)
             return PropertyProof(
                 property=spec,
@@ -424,33 +460,7 @@ class PropertyProver:
                 time_seconds=elapsed,
             )
 
-    def _extract_model(
-        self,
-        model: z3.ModelRef,
-        variables: dict[str, z3.ExprRef],
-    ) -> dict[str, object]:
-        """Extract values from Z3 model."""
-        result: dict[str, object] = {}
-        for name, expr in variables.items():
-            try:
-                val = model.eval(expr, model_completion=True)
-                if z3.is_int_value(val):
-                    result[name] = val.as_long()
-                elif z3.is_rational_value(val):
-                    frac = val.as_fraction()
-                    try:
-                        result[name] = float(frac)
-                    except OverflowError:
-                        result[name] = str(frac)
-                elif z3.is_true(val):
-                    result[name] = True
-                elif z3.is_false(val):
-                    result[name] = False
-                else:
-                    result[name] = str(val)
-            except z3.Z3Exception:
-                logger.debug("Model eval failed for variable %s", name, exc_info=True)
-        return result
+    _extract_model = staticmethod(extract_model_values)
 
 
 class ArithmeticVerifier:
@@ -467,8 +477,7 @@ class ArithmeticVerifier:
         self.int_min = -(2 ** (int_bits - 1))
         self.int_max = 2 ** (int_bits - 1) - 1
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
 
     def check_overflow(
         self,
@@ -494,18 +503,11 @@ class ArithmeticVerifier:
         else:
             self._solver.add(z3.Or(expr < self.int_min, expr > self.int_max))
 
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
-        elif result == z3.sat:
-            model = self._solver.model()
-            counterexample: dict[str, object] = {}
-            for name, var in variables.items():
-                try:
-                    val = model.eval(var, model_completion=True)
-                    counterexample[name] = val.as_long() if z3.is_int_value(val) else str(val)
-                except z3.Z3Exception:
-                    logger.debug("Model eval failed in check_overflow for %s", name, exc_info=True)
+        elif result.is_sat:
+            counterexample = extract_model_values(result.model, variables)
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.DISPROVEN,
@@ -540,20 +542,11 @@ class ArithmeticVerifier:
         for constraint in constraints or []:
             self._solver.add(constraint)
         self._solver.add(divisor == 0)
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
-        elif result == z3.sat:
-            model = self._solver.model()
-            counterexample: dict[str, object] = {}
-            for name, var in variables.items():
-                try:
-                    val = model.eval(var, model_completion=True)
-                    counterexample[name] = val.as_long() if z3.is_int_value(val) else str(val)
-                except z3.Z3Exception:
-                    logger.debug(
-                        "Model eval failed in check_division_by_zero for %s", name, exc_info=True
-                    )
+        elif result.is_sat:
+            counterexample = extract_model_values(result.model, variables)
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.DISPROVEN,
@@ -585,20 +578,11 @@ class ArithmeticVerifier:
         )
 
         self._solver.add(z3.Or(index_int < 0, index_int >= length_int))
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
-        elif result == z3.sat:
-            model = self._solver.model()
-            counterexample: dict[str, object] = {}
-            for name, var in variables.items():
-                try:
-                    val = model.eval(var, model_completion=True)
-                    counterexample[name] = val.as_long() if z3.is_int_value(val) else str(val)
-                except z3.Z3Exception:
-                    logger.debug(
-                        "Model eval failed in check_array_bounds for %s", name, exc_info=True
-                    )
+        elif result.is_sat:
+            counterexample = extract_model_values(result.model, variables)
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.DISPROVEN,
@@ -618,8 +602,7 @@ class EquivalenceChecker:
 
     def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
 
     def check_equivalent(
         self,
@@ -640,20 +623,13 @@ class EquivalenceChecker:
         result1 = impl1(*args)
         result2 = impl2(*args)
         self._solver.add(result1 != result2)
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
-        elif result == z3.sat:
-            model = self._solver.model()
-            counterexample: dict[str, object] = {}
-            for i, arg in enumerate(args):
-                try:
-                    val = model.eval(arg, model_completion=True)
-                    counterexample[f"arg{i}"] = val.as_long() if z3.is_int_value(val) else str(val)
-                except z3.Z3Exception:
-                    logger.debug(
-                        "Model eval failed in check_equivalence for arg%d", i, exc_info=True
-                    )
+        elif result.is_sat:
+            counterexample = extract_model_values(
+                result.model, {f"arg{i}": arg for i, arg in enumerate(args)}
+            )
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.DISPROVEN,
@@ -684,20 +660,13 @@ class EquivalenceChecker:
         spec_result = spec_impl(*args)
         self._solver.add(actual_result)
         self._solver.add(z3.Not(spec_result))
-        result = self._solver.check()
-        if result == z3.unsat:
+        result = self._solver.check(need_model=True)
+        if result.is_unsat:
             return PropertyProof(property=spec, status=ProofStatus.PROVEN)
-        elif result == z3.sat:
-            model = self._solver.model()
-            counterexample: dict[str, object] = {}
-            for i, arg in enumerate(args):
-                try:
-                    val = model.eval(arg, model_completion=True)
-                    counterexample[f"arg{i}"] = val.as_long() if z3.is_int_value(val) else str(val)
-                except z3.Z3Exception:
-                    logger.debug(
-                        "Model eval failed in check_refinement for arg%d", i, exc_info=True
-                    )
+        elif result.is_sat:
+            counterexample = extract_model_values(
+                result.model, {f"arg{i}": arg for i, arg in enumerate(args)}
+            )
             return PropertyProof(
                 property=spec,
                 status=ProofStatus.DISPROVEN,
@@ -705,10 +674,3 @@ class EquivalenceChecker:
             )
         else:
             return PropertyProof(property=spec, status=ProofStatus.UNKNOWN)
-
-
-__all__ = [
-    "ArithmeticVerifier",
-    "EquivalenceChecker",
-    "PropertyProver",
-]

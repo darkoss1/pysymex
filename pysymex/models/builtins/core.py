@@ -39,15 +39,22 @@ from pysymex._typing import (
     is_tuple_of_objects,
 )
 
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicNone,
+    SymbolicObject,
     SymbolicString,
     SymbolicType,
     SymbolicValue,
 )
-from pysymex.core.types.containers import SymbolicDict, SymbolicList
+from pysymex.core.types import SymbolicDict, SymbolicList
+from pysymex.models.typed_results import (
+    model_bool_result,
+    model_int_result,
+    symbolic_bool_result,
+    symbolic_int_result,
+)
 
-from .base import FunctionModel, ModelResult
+from .base import FunctionModel, ModelResult, NoneResultFunctionModel
 
 
 def _safe_min_concrete(values: Sequence[StackValue]) -> StackValue:
@@ -70,6 +77,50 @@ def _safe_max_concrete(values: Sequence[StackValue]) -> StackValue:
     return None
 
 
+def _value_error_side_effect(source: str, message: str) -> dict[str, object]:
+    return {
+        "raised_exception": {
+            "issue_kind": "VALUE_ERROR",
+            "exception_type": "ValueError",
+            "message": message,
+            "source": source,
+        }
+    }
+
+
+def _type_error_side_effect(source: str, message: str) -> dict[str, object]:
+    return {
+        "raised_exception": {
+            "issue_kind": "TYPE_ERROR",
+            "exception_type": "TypeError",
+            "message": message,
+            "source": source,
+        }
+    }
+
+
+def _symbolic_list_len_is_zero(value: SymbolicList) -> bool:
+    return z3.is_true(z3.simplify(value.z3_len == 0))
+
+
+def _known_len_type_error(value: object) -> bool:
+    if isinstance(value, (int, float, bool)) or value is None:
+        return True
+    if isinstance(value, SymbolicValue):
+        if "[" in value.name or "]" in value.name:
+            return False
+        return value.affinity_type in {"int", "float", "bool", "none", "NoneType"}
+    return False
+
+
+def _resolve_heap_object(value: object, state: VMState) -> object:
+    if isinstance(value, SymbolicObject) and value.address != -1:
+        resolved = state.memory.get(value.address)
+        if resolved is not None:
+            return resolved
+    return value
+
+
 def _safe_sum_concrete(values: Sequence[StackValue], start: StackValue) -> StackValue:
     if not isinstance(start, (int, float, bool)):
         return None
@@ -77,6 +128,21 @@ def _safe_sum_concrete(values: Sequence[StackValue], start: StackValue) -> Stack
         return None
     numeric_values = cast("Sequence[int | float | bool]", values)
     return sum(numeric_values, start)
+
+
+def _constant_len(value: object) -> int | None:
+    """Return CPython length for concrete payloads, including symbolic constants."""
+    if isinstance(value, SymbolicValue):
+        value = value.value
+    if isinstance(value, (str, bytes, range)):
+        return len(value)
+    if is_list_of_objects(value) or is_tuple_of_objects(value):
+        return len(value)
+    if isinstance(value, dict):
+        return len(cast("dict[object, object]", value))
+    if isinstance(value, (set, frozenset)):
+        return len(cast("set[object] | frozenset[object]", value))
+    return None
 
 
 class LenModel(FunctionModel):
@@ -94,28 +160,33 @@ class LenModel(FunctionModel):
         """Apply len() model."""
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"len_{state.pc}")[0])
-        obj = args[0]
-        if isinstance(obj, SymbolicList):
-            result, constraint = SymbolicValue.symbolic(f"len_{obj.name}")
+        obj = _resolve_heap_object(args[0], state)
+        concrete_len = _constant_len(obj)
+        if concrete_len is not None:
+            return ModelResult(value=concrete_len)
+        if _known_len_type_error(obj):
+            result, constraint = SymbolicValue.symbolic(f"len_{state.pc}")
             return ModelResult(
                 value=result,
-                constraints=[
-                    constraint,
-                    result.is_int,
-                    result.z3_int == obj.z3_len,
-                    result.z3_int >= 0,
-                ],
+                constraints=[constraint],
+                side_effects=_type_error_side_effect(
+                    "builtins.len",
+                    f"object of type '{getattr(obj, 'type_tag', type(obj).__name__)}' has no len()",
+                ),
+            )
+        if isinstance(obj, SymbolicList):
+            result, constraints = symbolic_int_result(f"len_{obj.name}")
+            constraints.extend([result.z3_int == obj.z3_len, result.z3_int >= 0])
+            return ModelResult(
+                value=result,
+                constraints=constraints,
             )
         if isinstance(obj, SymbolicString):
-            result, constraint = SymbolicValue.symbolic(f"len_{obj.name}")
+            result, constraints = symbolic_int_result(f"len_{obj.name}")
+            constraints.extend([result.z3_int == obj.z3_len, result.z3_int >= 0])
             return ModelResult(
                 value=result,
-                constraints=[
-                    constraint,
-                    result.is_int,
-                    result.z3_int == obj.z3_len,
-                    result.z3_int >= 0,
-                ],
+                constraints=constraints,
             )
         if (
             getattr(obj, "_type", "") == "set"
@@ -125,21 +196,17 @@ class LenModel(FunctionModel):
         ):
             z3_len = getattr(obj, "z3_len", getattr(obj, "z3_int", None))
             if z3_len is not None:
-                result, constraint = SymbolicValue.symbolic(
+                result, constraints = symbolic_int_result(
                     f"len_{getattr(obj, '_name', 'container')}"
                 )
+                constraints.append(result.z3_int == z3_len)
                 return ModelResult(
                     value=result,
-                    constraints=[
-                        constraint,
-                        result.is_int,
-                        result.z3_int == z3_len,
-                    ],
+                    constraints=constraints,
                 )
-        result, constraint = SymbolicValue.symbolic(f"len_{state.pc}")
+        result, base_constraints = symbolic_int_result(f"len_{state.pc}")
         extra_constraints: list[z3.ExprRef | z3.BoolRef] = [
-            constraint,
-            result.is_int,
+            *base_constraints,
             result.z3_int >= 0,
         ]
 
@@ -191,9 +258,13 @@ class RangeModel(FunctionModel):
                 return None
             return len(seq), seq
 
+        bounded_entries = _bounded_range_entries(args)
+        if bounded_entries is not None and bounded_entries[0] <= 10:
+            _, entries = bounded_entries
+            return ModelResult(value=SymbolicList.from_const(list(entries)))
+
         result, constraint = SymbolicList.symbolic(f"range_{state.pc}")
         constraints = [constraint, result.z3_len >= 0]
-        bounded_entries = _bounded_range_entries(args)
         if bounded_entries is not None:
             _, entries = bounded_entries
             setattr(result, "_concrete_items", list(entries))
@@ -284,14 +355,11 @@ class AbsModel(FunctionModel):
             return ModelResult(SymbolicValue.symbolic(f"abs_{state.pc}")[0])
         x = args[0]
         if isinstance(x, SymbolicValue):
-            result, constraint = SymbolicValue.symbolic(f"abs_{x.name}")
+            result, constraints = symbolic_int_result(f"abs_{x.name}")
+            constraints.append(result.z3_int == z3.If(x.z3_int >= 0, x.z3_int, -x.z3_int))
             return ModelResult(
                 value=result,
-                constraints=[
-                    constraint,
-                    result.is_int,
-                    result.z3_int == z3.If(x.z3_int >= 0, x.z3_int, -x.z3_int),
-                ],
+                constraints=constraints,
             )
         if isinstance(x, (int, float, bool)):
             return ModelResult(value=abs(x))
@@ -314,16 +382,56 @@ class MinModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"min_{state.pc}")[0])
 
-        if len(args) == 1 and is_list_of_objects(args[0]):
-            seq = args[0]
+        first_arg = _resolve_heap_object(args[0], state) if len(args) == 1 else args[0]
+        has_default = "default" in kwargs
+
+        if (
+            len(args) == 1
+            and isinstance(first_arg, SymbolicList)
+            and _symbolic_list_len_is_zero(first_arg)
+        ):
+            if has_default:
+                return ModelResult(value=kwargs["default"])
+            result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
+            return ModelResult(
+                value=result,
+                constraints=[constraint],
+                side_effects=_value_error_side_effect(
+                    "builtins.min", "min() arg is an empty sequence"
+                ),
+            )
+        if len(args) == 1 and is_list_of_objects(first_arg):
+            seq = first_arg
+            if not seq:
+                if has_default:
+                    return ModelResult(value=kwargs["default"])
+                result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
+                return ModelResult(
+                    value=result,
+                    constraints=[constraint],
+                    side_effects=_value_error_side_effect(
+                        "builtins.min", "min() arg is an empty sequence"
+                    ),
+                )
             if all(
                 not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
             ):  # x is object from list[object]
                 concrete_min = _safe_min_concrete(cast("Sequence[StackValue]", seq))
                 if concrete_min is not None:
                     return ModelResult(value=concrete_min)
-        elif len(args) == 1 and is_tuple_of_objects(args[0]):
-            seq = args[0]
+        elif len(args) == 1 and is_tuple_of_objects(first_arg):
+            seq = first_arg
+            if not seq:
+                if has_default:
+                    return ModelResult(value=kwargs["default"])
+                result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
+                return ModelResult(
+                    value=result,
+                    constraints=[constraint],
+                    side_effects=_value_error_side_effect(
+                        "builtins.min", "min() arg is an empty sequence"
+                    ),
+                )
             if all(
                 not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
             ):  # x is object from tuple[object, ...]
@@ -339,18 +447,22 @@ class MinModel(FunctionModel):
                 if concrete_min is not None:
                     return ModelResult(value=concrete_min)
 
-            if len(args) == 2:
-                a, b = args
-                if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
-                    result, constraint = SymbolicValue.symbolic(f"min_{a.name}_{b.name}")
-                    return ModelResult(
-                        value=result,
-                        constraints=[
-                            constraint,
-                            result.is_int,
-                            result.z3_int == z3.If(a.z3_int <= b.z3_int, a.z3_int, b.z3_int),
-                        ],
-                    )
+            sym_args = [
+                arg if isinstance(arg, SymbolicValue) else SymbolicValue.from_const(arg)
+                for arg in args
+            ]
+
+            result, constraints = symbolic_int_result(f"min_{state.pc}")
+
+            expr = sym_args[0].z3_int
+            for i in range(1, len(sym_args)):
+                expr = z3.If(sym_args[i].z3_int < expr, sym_args[i].z3_int, expr)
+
+            constraints.append(result.z3_int == expr)
+            return ModelResult(
+                value=result,
+                constraints=constraints,
+            )
 
         result, constraint = SymbolicValue.symbolic(f"min_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
@@ -372,19 +484,55 @@ class MaxModel(FunctionModel):
         if not args:
             return ModelResult(SymbolicValue.symbolic(f"max_{state.pc}")[0])
 
-        if len(args) == 1 and is_list_of_objects(args[0]):
-            seq = args[0]
-            if all(
-                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
-            ):  # x is object from list[object]
+        first_arg = _resolve_heap_object(args[0], state) if len(args) == 1 else args[0]
+        has_default = "default" in kwargs
+
+        if (
+            len(args) == 1
+            and isinstance(first_arg, SymbolicList)
+            and _symbolic_list_len_is_zero(first_arg)
+        ):
+            if has_default:
+                return ModelResult(value=kwargs["default"])
+            result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
+            return ModelResult(
+                value=result,
+                constraints=[constraint],
+                side_effects=_value_error_side_effect(
+                    "builtins.max", "max() arg is an empty sequence"
+                ),
+            )
+        if len(args) == 1 and is_list_of_objects(first_arg):
+            seq = first_arg
+            if not seq:
+                if has_default:
+                    return ModelResult(value=kwargs["default"])
+                result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
+                return ModelResult(
+                    value=result,
+                    constraints=[constraint],
+                    side_effects=_value_error_side_effect(
+                        "builtins.max", "max() arg is an empty sequence"
+                    ),
+                )
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
                 concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", seq))
                 if concrete_max is not None:
                     return ModelResult(value=concrete_max)
-        elif len(args) == 1 and is_tuple_of_objects(args[0]):
-            seq = args[0]
-            if all(
-                not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq
-            ):  # x is object from tuple[object, ...]
+        elif len(args) == 1 and is_tuple_of_objects(first_arg):
+            seq = first_arg
+            if not seq:
+                if has_default:
+                    return ModelResult(value=kwargs["default"])
+                result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
+                return ModelResult(
+                    value=result,
+                    constraints=[constraint],
+                    side_effects=_value_error_side_effect(
+                        "builtins.max", "max() arg is an empty sequence"
+                    ),
+                )
+            if all(not isinstance(x, (SymbolicValue, SymbolicType)) for x in seq):
                 concrete_max = _safe_max_concrete(cast("Sequence[StackValue]", seq))
                 if concrete_max is not None:
                     return ModelResult(value=concrete_max)
@@ -397,18 +545,21 @@ class MaxModel(FunctionModel):
                 if concrete_max is not None:
                     return ModelResult(value=concrete_max)
 
-            if len(args) == 2:
-                a, b = args
-                if isinstance(a, SymbolicValue) and isinstance(b, SymbolicValue):
-                    result, constraint = SymbolicValue.symbolic(f"max_{a.name}_{b.name}")
-                    return ModelResult(
-                        value=result,
-                        constraints=[
-                            constraint,
-                            result.is_int,
-                            result.z3_int == z3.If(a.z3_int >= b.z3_int, a.z3_int, b.z3_int),
-                        ],
-                    )
+            sym_args = [
+                arg if isinstance(arg, SymbolicValue) else SymbolicValue.from_const(arg)
+                for arg in args
+            ]
+
+            result, constraints = symbolic_int_result(f"max_{state.pc}")
+            expr = sym_args[0].z3_int
+            for i in range(1, len(sym_args)):
+                expr = z3.If(sym_args[i].z3_int > expr, sym_args[i].z3_int, expr)
+
+            constraints.append(result.z3_int == expr)
+            return ModelResult(
+                value=result,
+                constraints=constraints,
+            )
 
         result, constraint = SymbolicValue.symbolic(f"max_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
@@ -431,16 +582,18 @@ class IntModel(FunctionModel):
             return ModelResult(value=0)
         x = args[0]
         if isinstance(x, SymbolicValue):
-            result, constraint = SymbolicValue.symbolic(f"int_{x.name}")
+            result, constraints = symbolic_int_result(f"int_{x.name}")
+            constraints.append(result.z3_int == x.z3_int)
             return ModelResult(
                 value=result,
-                constraints=[constraint, result.is_int, result.z3_int == x.z3_int],
+                constraints=constraints,
             )
         if isinstance(x, SymbolicString):
-            result, constraint = SymbolicValue.symbolic(f"int_{x.name}")
+            result, constraints = symbolic_int_result(f"int_{x.name}")
+            constraints.append(result.z3_int == z3.StrToInt(x.z3_str))
             return ModelResult(
                 value=result,
-                constraints=[constraint, result.is_int, result.z3_int == z3.StrToInt(x.z3_str)],
+                constraints=constraints,
             )
         if isinstance(x, (int, bool, float, str, bytes)):
             try:
@@ -509,40 +662,30 @@ class BoolModel(FunctionModel):
             return ModelResult(value=False)
         x = args[0]
         if isinstance(x, SymbolicValue):
-            result, constraint = SymbolicValue.symbolic(f"bool_{x.name}")
+            result, constraints = symbolic_bool_result(f"bool_{x.name}")
+            constraints.append(
+                result.z3_bool
+                == z3.If(
+                    x.is_int,
+                    x.z3_int != 0,
+                    x.z3_bool,
+                )
+            )
             return ModelResult(
                 value=result,
-                constraints=[
-                    constraint,
-                    result.is_bool,
-                    result.z3_bool
-                    == z3.If(
-                        x.is_int,
-                        x.z3_int != 0,
-                        x.z3_bool,
-                    ),
-                ],
+                constraints=constraints,
             )
         try:
             return ModelResult(value=bool(x))
         except (TypeError, ValueError, RecursionError):
-            result, constraint = SymbolicValue.symbolic(f"bool_{state.pc}")
-            return ModelResult(value=result, constraints=[constraint])
+            return model_bool_result(f"bool_{state.pc}")
 
 
-class PrintModel(FunctionModel):
+class PrintModel(NoneResultFunctionModel):
     """Model for print() - side effect only."""
 
     name = "print"
     qualname = "builtins.print"
-
-    def apply(
-        self,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult:
-        return ModelResult(value=SymbolicNone())
 
 
 class TypeModel(FunctionModel):
@@ -578,25 +721,40 @@ class IsinstanceModel(FunctionModel):
         if len(args) < 2:
             return ModelResult(value=False)
         obj, types = args[0], args[1]
+
+        # Determine the target Z3 constraint for the type check
+        type_expr = None
         if isinstance(obj, SymbolicValue):
             if types is int:
-                result, constraint = SymbolicValue.symbolic(f"isinstance_int_{obj.name}")
-                return ModelResult(
-                    value=result,
-                    constraints=[constraint, result.is_bool, result.z3_bool == obj.is_int],
-                )
+                type_expr = obj.is_int
             elif types is bool:
-                result, constraint = SymbolicValue.symbolic(f"isinstance_bool_{obj.name}")
-                return ModelResult(
-                    value=result,
-                    constraints=[constraint, result.is_bool, result.z3_bool == obj.is_bool],
-                )
+                type_expr = obj.is_bool
+            elif types is str:
+                type_expr = obj.is_str
+            elif types is float:
+                type_expr = obj.is_float
+            elif types is list:
+                type_expr = obj.is_list
+            elif types is dict:
+                type_expr = obj.is_dict
+
+        if type_expr is not None:
+            # We return a new symbolic boolean, but we tie its truth value
+            # EXACTLY to the type constraint of the object.
+            obj_name = str(getattr(obj, "name")) if hasattr(obj, "name") else "obj"
+            result, constraints = symbolic_bool_result(f"isinstance_check_{obj_name}_{state.pc}")
+            constraints.append(result.z3_bool == type_expr)
+            return ModelResult(
+                value=result,
+                constraints=constraints,
+            )
+
         if isinstance(obj, SymbolicString) and types is str:
             return ModelResult(value=True)
         if isinstance(obj, SymbolicList) and types is list:
             return ModelResult(value=True)
-        result, constraint = SymbolicValue.symbolic(f"isinstance_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
+
+        return model_bool_result(f"isinstance_{state.pc}")
 
 
 class SortedModel(FunctionModel):
@@ -665,8 +823,7 @@ class SumModel(FunctionModel):
                 if concrete_sum is not None:
                     return ModelResult(value=concrete_sum)
 
-        result, constraint = SymbolicValue.symbolic(f"sum_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_int])
+        return model_int_result(f"sum_{state.pc}")
 
 
 class EnumerateModel(FunctionModel):
@@ -751,10 +908,11 @@ class FloatModel(FunctionModel):
         if isinstance(val, SymbolicValue):
             if val.type_tag == "float":
                 return ModelResult(value=val)
-            elif val.type_tag == "int" or val.is_int:
-                from pysymex.core.types.floats import SymbolicFloat, get_fp_sort
+            elif val.type_tag == "int" or z3.is_true(val.is_int):
+                from pysymex.core.types.floats import AdvancedSymbolicFloat
+                from pysymex.core.types.floats import get_fp_sort
 
-                result = SymbolicFloat(f"float_{state.pc}")
+                result = AdvancedSymbolicFloat(f"float_{state.pc}")
                 rm = result.config.get_rounding_mode()
                 sort = get_fp_sort(result.config.precision)
                 fp_val = z3.fpToFP(rm, z3.ToReal(val.z3_int), sort)
@@ -763,12 +921,12 @@ class FloatModel(FunctionModel):
                     constraints=[z3.fpEQ(result.z3_expr, fp_val)],
                 )
         if isinstance(val, (int, float)):
-            from pysymex.core.types.floats import SymbolicFloat
+            from pysymex.core.types.floats import AdvancedSymbolicFloat
 
-            return ModelResult(value=SymbolicFloat(value=float(val)))
-        from pysymex.core.types.floats import SymbolicFloat
+            return ModelResult(value=AdvancedSymbolicFloat(value=float(val)))
+        from pysymex.core.types.floats import AdvancedSymbolicFloat
 
-        result = SymbolicFloat(f"float_{state.pc}")
+        result = AdvancedSymbolicFloat(f"float_{state.pc}")
         return ModelResult(value=result)
 
 

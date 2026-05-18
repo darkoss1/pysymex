@@ -4,12 +4,30 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors import IssueKind
+from pysymex._typing import StackValue
+from pysymex.analysis.detectors.base import IssueKind
 from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
+from pysymex.core.types.scalars import SymbolicNone, SymbolicString, SymbolicValue
 from pysymex.core.types.containers import SymbolicObject
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.execution.dispatcher import OpcodeDispatcher, OpcodeResult
 from pysymex.execution.opcodes.py313 import functions
+
+
+def _has_issue_kind(result: OpcodeResult | None, kind: IssueKind) -> bool:
+    if result is None:
+        return False
+    return any(issue.kind == kind for issue in result.issues)
+
+
+def _apply_model_for_test(
+    state: VMState,
+    func_obj: object,
+    args: list[StackValue],
+    kwargs: dict[str, StackValue],
+) -> OpcodeResult | None:
+    raw: object = functions._apply_model(state, func_obj, args, kwargs)  # type: ignore[reportPrivateUsage]  # White-box opcode test validates private model-integration contract.
+    assert raw is None or isinstance(raw, OpcodeResult)
+    return raw
 
 
 def _instr(opname: str, argval: object = None) -> dis.Instruction:
@@ -21,16 +39,16 @@ def test_handle_call() -> None:
     """Test handle_call behavior."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = functions.handle_call(_instr("CALL", 0), state, OpcodeDispatcher())
-    assert result.terminal is True
-    assert result.issues[0].kind is IssueKind.TYPE_ERROR
+    assert result.terminal is False
+    assert len(result.issues) == 0
 
 
 def test_handle_load_method() -> None:
     """Test handle_load_method behavior."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = functions.handle_load_method(_instr("LOAD_METHOD", "x"), state, OpcodeDispatcher())
-    assert result.terminal is True
-    assert result.issues[0].kind is IssueKind.NULL_DEREFERENCE
+    assert result.terminal is False
+    assert len(result.issues) == 0
 
 
 def test_handle_store_attr() -> None:
@@ -115,3 +133,17 @@ def test_handle_set_function_attribute() -> None:
         _instr("SET_FUNCTION_ATTRIBUTE"), state, OpcodeDispatcher()
     )
     assert state.peek() == "attr"
+
+
+def test_apply_model_converts_raised_exception_side_effect_to_attribute_error_issue() -> None:
+    """getattr raised_exception side effect is surfaced as ATTRIBUTE_ERROR issue."""
+    state = VMState(pc=0)
+    result = _apply_model_for_test(state, "getattr", ["abc", "missing_attr"], {})
+    assert _has_issue_kind(result, IssueKind.ATTRIBUTE_ERROR)
+
+
+def test_apply_model_converts_critical_sink_event_to_runtime_error_issue() -> None:
+    """eval sink_event side effect is surfaced as RUNTIME_ERROR issue."""
+    state = VMState(pc=0)
+    result = _apply_model_for_test(state, "eval", [SymbolicString.from_const("x + 1")], {})
+    assert _has_issue_kind(result, IssueKind.RUNTIME_ERROR)

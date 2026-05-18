@@ -32,15 +32,29 @@ import z3
 
 from pysymex.core.memory.addressing import next_address
 from pysymex.core.memory.heap import SymbolicArray
-from pysymex.core.types.numeric import SymbolicBool, SymbolicInt
-from pysymex.core.types.symbolic_containers import SymbolicList, SymbolicString
+from pysymex.core.types import SymbolicBool, SymbolicInt
+from pysymex.core.types import SymbolicList, SymbolicString
 
 _TList = TypeVar("_TList")
 
 
-def _empty_constraints() -> list[z3.BoolRef]:
+def empty_constraints() -> list[z3.BoolRef]:
     """Create a typed empty constraints list."""
     return []
+
+
+_empty_constraints = empty_constraints
+
+
+def _concrete_index_in_bounds(index: int, length: int) -> bool:
+    """Return whether an integer index is valid under Python list indexing rules."""
+    return -length <= index < length
+
+
+def _symbolic_index_in_bounds(index: z3.ArithRef, length: int | z3.ArithRef) -> z3.BoolRef:
+    """Return a Z3 constraint for Python list-style index bounds."""
+    z3_length = z3.IntVal(length) if isinstance(length, int) else length
+    return z3.And(index >= -z3_length, index < z3_length)
 
 
 @dataclass
@@ -80,7 +94,7 @@ class SymbolicListOps:
         if isinstance(lst, list):
             return OpResult(value=len(lst))
         elif isinstance(lst, SymbolicList):
-            return OpResult(value=lst.length)
+            return OpResult(value=lst.length())
         else:
             assert isinstance(lst, SymbolicArray)
             return OpResult(value=lst.length)
@@ -111,16 +125,13 @@ class SymbolicListOps:
                     return OpResult(value=None, error="IndexError: list index out of range")
             else:
                 result = SymbolicInt(z3.Int(f"list_item_{next_address()}"))
-                constraints: list[z3.BoolRef] = [idx >= 0, idx < len(lst)]
+                constraints: list[z3.BoolRef] = [_symbolic_index_in_bounds(idx, len(lst))]
                 return OpResult(value=result, constraints=constraints)
         elif isinstance(lst, SymbolicList):
             result_sl = lst[idx]
             z3_idx_sl = z3.IntVal(idx) if isinstance(idx, int) else idx
             lst_length = lst.length().z3_int
-            constraints_sl: list[z3.BoolRef] = [
-                z3_idx_sl >= 0,
-                z3_idx_sl < lst_length,
-            ]
+            constraints_sl: list[z3.BoolRef] = [_symbolic_index_in_bounds(z3_idx_sl, lst_length)]
             return OpResult(value=result_sl, constraints=constraints_sl)
         else:
             assert isinstance(lst, SymbolicArray)
@@ -151,7 +162,7 @@ class SymbolicListOps:
             concrete_lst = cast("list[object]", lst)
             if isinstance(idx, int) or z3.is_int_value(idx):
                 concrete_idx = idx if isinstance(idx, int) else idx.as_long()
-                if 0 <= concrete_idx < len(concrete_lst):
+                if _concrete_index_in_bounds(concrete_idx, len(concrete_lst)):
                     new_lst = concrete_lst.copy()
                     new_lst[concrete_idx] = value
                     return OpResult(value=None, modified_collection=new_lst)
@@ -228,7 +239,7 @@ class SymbolicListOps:
                     return OpResult(
                         value=None, error="Cannot pop with symbolic index from concrete list"
                     )
-                if idx < 0 or idx >= len(lst):
+                if not _concrete_index_in_bounds(idx, len(lst)):
                     return OpResult(value=None, error="IndexError: pop index out of range")
                 pop_value = lst.pop(idx)
             return OpResult(value=pop_value, modified_collection=lst)
@@ -241,7 +252,7 @@ class SymbolicListOps:
                 pop_idx = index
                 if isinstance(pop_idx, int):
                     pop_idx = z3.IntVal(pop_idx)
-                constraints.append(z3.And(pop_idx >= 0, pop_idx < lst.length))
+                constraints.append(lst.in_bounds(pop_idx))
             pop_val = lst.get(pop_idx)
 
             new_array = SymbolicArray(f"{lst.name}_popped", lst.element_sort)
@@ -359,9 +370,10 @@ class SymbolicListOps:
         """Get a slice of the list."""
         if isinstance(lst, list):
             concrete_lst = cast("list[object]", lst)
-            # Concrete lists can only be sliced with concrete indices
             if isinstance(start, z3.ArithRef) or isinstance(stop, z3.ArithRef):
-                raise TypeError("Cannot slice concrete list with symbolic indices")
+                return OpResult(
+                    value=None, error="Cannot use symbolic slice bounds on concrete list"
+                )
             result: list[object] = concrete_lst[start:stop:step]
             return OpResult(value=result)
         else:

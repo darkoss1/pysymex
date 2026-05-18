@@ -381,15 +381,17 @@ class SymbolicDescriptor:
     """Base class for symbolic descriptors (property, classmethod, etc.)."""
 
     def __get__(self, instance: SymbolicInstance | None, owner: SymbolicClass) -> object:
-        raise NotImplementedError
+        if instance is None:
+            return self
+        raise AttributeError("unreadable attribute")
 
     def __set__(self, instance: SymbolicInstance, value: object) -> None:
         """Set."""
-        raise NotImplementedError
+        raise AttributeError("can't set attribute")
 
     def __delete__(self, instance: SymbolicInstance) -> None:
         """Delete."""
-        raise NotImplementedError
+        raise AttributeError("can't delete attribute")
 
 
 class SymbolicProperty(SymbolicDescriptor):
@@ -427,17 +429,3 @@ class SymbolicProperty(SymbolicDescriptor):
         if self.fdel is None:
             raise AttributeError("can't delete attribute")
         self.fdel(instance)
-
-
-__all__ = [
-    "BoundMethod",
-    "ClassRegistry",
-    "MethodType",
-    "SymbolicAttribute",
-    "SymbolicClass",
-    "SymbolicDescriptor",
-    "SymbolicInstance",
-    "SymbolicMethod",
-    "SymbolicProperty",
-    "TypeChecker",
-]

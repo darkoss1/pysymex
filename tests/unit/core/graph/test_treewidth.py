@@ -19,9 +19,9 @@ class TestBranchInfo:
 
 
 def test_base_var_name_only_strips_generated_discriminators() -> None:
-    assert pysymex.core.graph.treewidth._base_var_name("x_42_int") == "x_42"
-    assert pysymex.core.graph.treewidth._base_var_name("x_42_is_bool") == "x_42"
-    assert pysymex.core.graph.treewidth._base_var_name("result_is_int") == "result_is_int"
+    assert pysymex.core.graph.treewidth._base_var_name("x_42_int") == "x_42"  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert pysymex.core.graph.treewidth._base_var_name("x_42_is_bool") == "x_42"  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert pysymex.core.graph.treewidth._base_var_name("result_is_int") == "result_is_int"  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestTreeDecomposition:
@@ -97,7 +97,7 @@ class TestConstraintInteractionGraph:
         graph.add_branch(1, x > 0)
         graph.add_branch(2, x > 1)
         graph.add_branch(3, x > 2)
-        graph._branches_since_last_tw_change = 4
+        graph._branches_since_last_tw_change = 4  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert graph.is_stabilized() is True
 
     def test_compute_tree_decomposition(self) -> None:

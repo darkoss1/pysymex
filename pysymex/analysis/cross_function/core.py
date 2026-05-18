@@ -21,16 +21,17 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from functools import lru_cache
 from types import CodeType
-from typing import TypeGuard
 import z3
 
+from pysymex._typing import is_set_of_objects
 from pysymex._compat import get_starts_line
 from pysymex.analysis.specialized.escape import EscapeAnalyzer, EscapeInfo
 from pysymex.core.solver.constraints import structural_hash_sorted
 from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
 from pysymex.core.cache import get_instructions as _cached_get_instructions
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.types import SymbolicValue
 
 from ..type_inference import PyType, TypeKind
 from .types import (
@@ -42,19 +43,19 @@ from .types import (
     EffectSummary,
 )
 
-__all__ = [
-    "CallGraph",
-    "CallGraphBuilder",
-    "ContextSensitiveAnalyzer",
-    "CrossFunctionAnalyzer",
-    "EffectAnalyzer",
-    "FunctionSummaryCache",
-]
+_is_set_of_objects = is_set_of_objects
 
 
-def _is_set_of_objects(value: object) -> TypeGuard[set[object]]:
-    """Type guard to narrow a value to set[object]."""
-    return isinstance(value, set)
+@lru_cache(maxsize=512)
+def _canonical_int_arg_symbol(index: int) -> z3.ArithRef:
+    """Return a stable canonical integer placeholder for argument index."""
+    return z3.Int(f"arg_{index}_int")
+
+
+@lru_cache(maxsize=512)
+def _canonical_bool_arg_symbol(index: int) -> z3.BoolRef:
+    """Return a stable canonical boolean placeholder for argument index."""
+    return z3.Bool(f"arg_{index}_bool")
 
 
 class FunctionSummaryCache:
@@ -104,25 +105,24 @@ class FunctionSummaryCache:
             arg_type = type(arg).__name__
             if isinstance(arg, SymbolicValue):
                 target_vars.add(arg.z3_int)
-                canonical_map.append((arg.z3_int, z3.Int(f"arg_{i}_int")))
+                canonical_map.append((arg.z3_int, _canonical_int_arg_symbol(i)))
                 target_vars.add(arg.z3_bool)
-                canonical_map.append((arg.z3_bool, z3.Bool(f"arg_{i}_bool")))
+                canonical_map.append((arg.z3_bool, _canonical_bool_arg_symbol(i)))
                 sym_args.append(str(arg_type))
             else:
                 sym_args.append(f"{arg_type}:{arg!s}")
 
-        if not path_constraints:
+        if (not path_constraints) or (not target_vars):
+            # Preserve existing semantics: concrete-only argument signatures
+            # intentionally ignore ambient path constraints.
             constraint_hash = 0
         else:
             optimizer = ConstraintIndependenceOptimizer()
             for c in path_constraints:
                 optimizer.register_constraint(c)
 
-            if target_vars:
-                dummy_query = z3.And(*[(v == v) for v in target_vars])
-                relevant_slice = optimizer.slice_for_query(path_constraints, dummy_query)
-            else:
-                relevant_slice = []
+            dummy_query = z3.And(*[(v == v) for v in target_vars])
+            relevant_slice = optimizer.slice_for_query(path_constraints, dummy_query)
 
             canonical_constraints: list[z3.BoolRef] = []
             for c in relevant_slice:

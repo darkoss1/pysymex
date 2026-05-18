@@ -39,9 +39,9 @@ from typing import TYPE_CHECKING
 import z3
 
 if TYPE_CHECKING:
-    from pysymex.core.types.containers import SymbolicList
+    from pysymex.core.types import SymbolicList
 else:
-    from pysymex.core.types.scalars import SymbolicList
+    from pysymex.core.types import SymbolicList
 
 
 def model_chain(*iterables: SymbolicList) -> SymbolicList:
@@ -210,7 +210,7 @@ def model_count(start: int = 0, step: int = 1) -> object:
 
     Returns an infinite iterator counting from start.
     """
-    from pysymex.core.types.scalars import SymbolicValue
+    from pysymex.core.types import SymbolicValue
 
     result, _ = SymbolicValue.symbolic("count")
     return result

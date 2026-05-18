@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 from __future__ import annotations
 
 import dis
@@ -28,9 +27,7 @@ if TYPE_CHECKING:
 
 from pysymex.core.solver.engine import get_model, is_satisfiable
 from pysymex.core.types.checks import is_overloaded_arithmetic
-from pysymex.core.types.scalars import (
-    SymbolicValue,
-)
+from pysymex.core.types import SymbolicValue
 from pysymex.analysis.detectors.base import (
     Detector,
     Issue,
@@ -38,6 +35,40 @@ from pysymex.analysis.detectors.base import (
     IsSatFn,
     GetModelFn,
 )
+from pysymex.analysis.detectors.runtime.overflow import resolve_binary_op_symbol
+
+
+def extract_argc(instruction: dis.Instruction) -> int:
+    """Extract argument count from call-like instructions."""
+    if isinstance(instruction.argval, int):
+        return instruction.argval
+    if isinstance(instruction.arg, int):
+        return instruction.arg
+    return 0
+
+
+def resolve_call_target_name(state: VMState, argc: int) -> str | None:
+    """Resolve call target name from stack around call arguments."""
+    candidate_indices = (len(state.stack) - argc - 2, len(state.stack) - argc - 1)
+    for index in candidate_indices:
+        if index < 0 or index >= len(state.stack):
+            continue
+        candidate = state.stack[index]
+        candidate_type_name = type(candidate).__name__
+        if candidate_type_name == "SymbolicNone":
+            continue
+        for attr in ("__name__", "__qualname__", "qualname", "name", "origin"):
+            value = getattr(candidate, attr, None)
+            if isinstance(value, str) and value:
+                lowered = value.lower()
+                if lowered in {"none", "null", "push_null_none"}:
+                    continue
+                return value
+    return None
+
+
+_extract_argc = extract_argc
+_resolve_call_target_name = resolve_call_target_name
 
 
 def pure_check_division_by_zero(
@@ -100,9 +131,20 @@ class DivisionByZeroDetector(Detector):
     description = "Detects division by zero"
     issue_kind = IssueKind.DIVISION_BY_ZERO
     relevant_opcodes = frozenset(
-        {"BINARY_OP", "BINARY_TRUE_DIVIDE", "BINARY_FLOOR_DIVIDE", "BINARY_MODULO"}
+        {
+            "BINARY_OP",
+            "BINARY_TRUE_DIVIDE",
+            "BINARY_FLOOR_DIVIDE",
+            "BINARY_MODULO",
+            "CALL",
+            "CALL_FUNCTION",
+            "CALL_METHOD",
+        }
     )
     DIVISION_OPS = {"BINARY_TRUE_DIVIDE", "BINARY_FLOOR_DIVIDE", "BINARY_MODULO"}
+    DIVISION_CALL_SUFFIXES = (".truediv", ".floordiv", ".mod", ".modulo")
+    BINARY_OP_DIVISION_SYMBOLS = frozenset({"/", "//", "%", "/=", "//=", "%="})
+    BINARY_OP_DIVISION_ARGS = frozenset({2, 6, 11, 15, 19, 24})
 
     def check(
         self,
@@ -111,9 +153,32 @@ class DivisionByZeroDetector(Detector):
         _solver_check: IsSatFn,
     ) -> Issue | None:
         """Check for division by zero or modulo zero."""
+        if instruction.opname in {"CALL", "CALL_FUNCTION", "CALL_METHOD"}:
+            argc = extract_argc(instruction)
+            if argc < 2 or len(state.stack) < argc:
+                return None
+            target_name = resolve_call_target_name(state, argc)
+            if target_name is None:
+                return None
+            lowered_target = target_name.lower()
+            if not lowered_target.endswith(self.DIVISION_CALL_SUFFIXES):
+                return None
+            divisor = state.stack[-1]
+            dividend = state.stack[-2]
+            return pure_check_division_by_zero(
+                divisor,
+                dividend,
+                list(state.path_constraints),
+                state.pc,
+                is_satisfiable_fn=_solver_check,
+            )
+
         if instruction.opname == "BINARY_OP":
-            op_name = instruction.argrepr or ""
-            if "/" not in op_name and "%" not in op_name:
+            op_symbol = resolve_binary_op_symbol(instruction)
+            if (
+                op_symbol not in self.BINARY_OP_DIVISION_SYMBOLS
+                and instruction.arg not in self.BINARY_OP_DIVISION_ARGS
+            ):
                 return None
         elif instruction.opname not in self.DIVISION_OPS:
             return None
@@ -129,4 +194,5 @@ class DivisionByZeroDetector(Detector):
             state.stack[-2],
             list(state.path_constraints),
             state.pc,
+            is_satisfiable_fn=_solver_check,
         )

@@ -1,4 +1,5 @@
 import dis
+from typing import cast
 from pysymex.analysis.control.cfg import (
     ExceptionEntryProtocol,
     EdgeKind,
@@ -33,6 +34,10 @@ class MockInstr:
         self.offset = offset
         self.argval = argval
         self.starts_line = 10
+
+
+def _instruction(opname: str, offset: int, argval: object = None) -> dis.Instruction:
+    return cast(dis.Instruction, MockInstr(opname, offset, argval))
 
 
 class TestExceptionEntryProtocol:
@@ -74,7 +79,7 @@ class TestBasicBlock:
     def test_add_instruction(self) -> None:
         """Test add_instruction behavior."""
         b = BasicBlock(id=1, start_pc=0, end_pc=0)
-        instr = MockInstr("LOAD_CONST", 2)
+        instr = _instruction("LOAD_CONST", 2)
         b.add_instruction(instr)
         assert len(b.instructions) == 1
         assert b.end_pc == 2
@@ -90,7 +95,7 @@ class TestBasicBlock:
         """Test get_terminator behavior."""
         b = BasicBlock(id=1, start_pc=0, end_pc=10)
         assert b.get_terminator() is None
-        instr = MockInstr("RETURN_VALUE", 10)
+        instr = _instruction("RETURN_VALUE", 10)
         b.add_instruction(instr)
         assert b.get_terminator() is instr
 
@@ -98,7 +103,7 @@ class TestBasicBlock:
         """Test is_conditional behavior."""
         b = BasicBlock(id=1, start_pc=0, end_pc=10)
         assert b.is_conditional() is False
-        instr = MockInstr("POP_JUMP_IF_TRUE", 10)
+        instr = _instruction("POP_JUMP_IF_TRUE", 10)
         b.add_instruction(instr)
         assert b.is_conditional() is True
 

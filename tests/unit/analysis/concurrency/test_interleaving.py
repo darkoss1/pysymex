@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.concurrency.interleaving import (
     Transition,
     InterleavingState,

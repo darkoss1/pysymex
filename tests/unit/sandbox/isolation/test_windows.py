@@ -35,6 +35,14 @@ class TestWindowsJobBackend:
     """Test suite for pysymex.sandbox.isolation.windows.WindowsJobBackend."""
 
     @pytest.mark.timeout(30)
+    def test_effective_active_process_limit_clamps_to_positive(self) -> None:
+        """Ensures Job Object process cap is never zero and honors stricter user limits."""
+        assert WindowsJobBackend.effective_active_process_limit(1) == 1
+        assert WindowsJobBackend.effective_active_process_limit(3) == 3
+        assert WindowsJobBackend.effective_active_process_limit(0) == 1
+        assert WindowsJobBackend.effective_active_process_limit(-5) == 1
+
+    @pytest.mark.timeout(30)
     @pytest.mark.skipif(not sys.platform == "win32", reason="Windows only")
     def test_is_available(self) -> None:
         """Test is_available behavior."""

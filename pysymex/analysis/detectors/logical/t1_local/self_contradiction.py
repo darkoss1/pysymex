@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
+from pysymex.analysis.detectors.logical.utils import count_variables
 import z3
 
 
@@ -28,7 +28,10 @@ class SelfContradictionRule(LogicRule):
     def matches(self, ctx: ContradictionContext) -> bool:
         if count_variables(ctx.core) != 1 or len(ctx.core) != 1:
             return False
-        has_not = core_has_operator(ctx.core, {z3.Z3_OP_NOT})
-        has_eq = core_has_operator(ctx.core, {z3.Z3_OP_EQ})
-        has_mod = core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM})
-        return has_not and has_eq and not has_mod
+        expr = ctx.core[0]
+        if not z3.is_not(expr) or expr.num_args() != 1:
+            return False
+        inner = expr.arg(0)
+        if not z3.is_app(inner) or inner.decl().kind() != z3.Z3_OP_EQ or inner.num_args() != 2:
+            return False
+        return bool(z3.eq(inner.arg(0), inner.arg(1)))

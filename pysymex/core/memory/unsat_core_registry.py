@@ -16,51 +16,71 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import List, Set, FrozenSet
+from collections.abc import Iterable
+
+CoreKey = frozenset[int]
 
 
 class SparseCoreRegistry:
     """
-    Registry for storing and checking sparse UNSAT cores.
-    Allows O(|C_MUS|) amortized path pruning via sparse subset operations.
-    Replaces dense bit-packing to support V > 100,000 without memory fragmentation.
+    Antichain registry for storing and checking sparse, certified UNSAT cores.
+
+    A path may be pruned only when it contains a learned UNSAT core. The registry
+    keeps cores as an antichain under subset ordering: if a smaller core is known,
+    larger supersets are redundant and are not retained.
     """
 
     __slots__ = ("_cores",)
 
     def __init__(self) -> None:
-        self._cores: Set[FrozenSet[int]] = set()
+        self._cores: set[CoreKey] = set()
 
-    def add_core(self, core_indices: List[int]) -> None:
+    def add_core(self, core_indices: Iterable[int]) -> bool:
         """
-        Registers a list of branch constraint indices as a known Minimum Unsatisfiable Subset (MUS).
-        Stores them as a sparse frozenset.
+        Register a solver-certified UNSAT core.
+
+        Returns True when the registry learned a new strongest core. Returns False
+        when the candidate is empty or already covered by an existing subset core.
         """
-        if not core_indices:
-            return
-        self._cores.add(frozenset(core_indices))
+        candidate = frozenset(core_indices)
+        if not candidate:
+            return False
 
-    def is_feasible(self, path_indices: Set[int]) -> bool:
+        for existing in self._cores:
+            if existing.issubset(candidate):
+                return False
+
+        supersets = {existing for existing in self._cores if candidate.issubset(existing)}
+        self._cores.difference_update(supersets)
+        self._cores.add(candidate)
+        return True
+
+    def contained_core(self, path_indices: set[int]) -> CoreKey | None:
         """
-        Checks if the given path indices are feasible against learned structural contradictions.
-
-        A path is INFEASIBLE if it contains all constraint indices of ANY known UNSAT core.
-        Mathematically: CoreSet.issubset(PathSet) -> path is structurally pruned.
-
-        This check executes in O(|C_MUS|) time per core, independent of the total branch
-        count (V), ensuring high-performance pruning even in massive programs.
-
-        Returns True if feasible, False if structurally pruned.
+        Return a learned UNSAT core contained in the path, if any.
         """
         for core_set in self._cores:
             if core_set.issubset(path_indices):
-                return False
-        return True
+                return core_set
+        return None
+
+    def is_feasible(self, path_indices: set[int]) -> bool:
+        """
+        Check if the given path avoids all learned structural contradictions.
+
+        Returns True if feasible, False if structurally pruned.
+        """
+        return self.contained_core(path_indices) is None
 
     @property
     def num_cores(self) -> int:
         """Returns the number of learned UNSAT cores."""
         return len(self._cores)
+
+    @property
+    def cores(self) -> tuple[CoreKey, ...]:
+        """Return a snapshot of learned UNSAT cores for diagnostics and tests."""
+        return tuple(self._cores)
 
     def clear(self) -> None:
         """Clears all learned cores."""

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from pysymex.stats.types import Event, EventType, _new_metadata
+from pysymex.stats.types import Event, EventType, Metadata, _new_metadata  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestTypes:
@@ -27,7 +27,7 @@ class TestTypes:
 
     def test_event_initialization_with_explicit_values(self) -> None:
         """Verify that Event initializes correctly with explicit timestamp and metadata."""
-        metadata = {"foo": "bar"}
+        metadata: Metadata = {"foo": "bar"}
         event = Event(
             type=EventType.SOLVER_SAT,
             value=42.0,

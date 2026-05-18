@@ -1,5 +1,3 @@
-import pytest
-from pysymex.analysis.solver.opcodes import OpcodeHandlersMixin
 from pysymex.analysis.solver.analyzer import FunctionAnalyzer
 from unittest.mock import Mock
 

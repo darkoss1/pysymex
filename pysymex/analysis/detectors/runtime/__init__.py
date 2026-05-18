@@ -25,9 +25,7 @@ from .attribute_error import AttributeErrorDetector
 from .overflow import OverflowDetector
 from .resource_leak import ResourceLeakDetector
 from .value_error import ValueErrorDetector
-from .enhanced_index_error import EnhancedIndexErrorDetector
 from .none_dereference import NoneDereferenceDetector
-from .enhanced_type_error import EnhancedTypeErrorDetector
 from .unbound_variable import UnboundVariableDetector
 
 __all__ = [
@@ -40,8 +38,6 @@ __all__ = [
     "OverflowDetector",
     "ResourceLeakDetector",
     "ValueErrorDetector",
-    "EnhancedIndexErrorDetector",
     "NoneDereferenceDetector",
-    "EnhancedTypeErrorDetector",
     "UnboundVariableDetector",
 ]

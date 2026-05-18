@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.specialized.assertions import (
     ContextType,
     AssertionAnalysis,
@@ -34,25 +33,25 @@ def test_analyze_function_name() -> None:
     assert ctx == ContextType.INPUT_VALIDATION
     assert conf == 0.9
 
-    ctx2, conf2 = analyze_function_name("authorize_access")
+    ctx2, _ = analyze_function_name("authorize_access")
     assert ctx2 == ContextType.PERMISSION_CHECK
 
-    ctx3, conf3 = analyze_function_name("do_something")
+    ctx3, _ = analyze_function_name("do_something")
     assert ctx3 == ContextType.UNKNOWN
 
 
 def test_analyze_source_context() -> None:
     """Test analyze_source_context behavior."""
     source = "if x is None:\n    raise ValueError"
-    ctx, conf = analyze_source_context(source)
+    ctx, _ = analyze_source_context(source)
     assert ctx == ContextType.NULL_GUARD
 
     source2 = "if not isinstance(x, int):\n    raise TypeError"
-    ctx2, conf2 = analyze_source_context(source2)
+    ctx2, _ = analyze_source_context(source2)
     assert ctx2 == ContextType.TYPE_GUARD
 
     source3 = "raise RuntimeError('db error')"
-    ctx3, conf3 = analyze_source_context(source3)
+    ctx3, _ = analyze_source_context(source3)
     assert ctx3 == ContextType.PRODUCTION_CHECK
 
 

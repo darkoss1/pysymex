@@ -18,8 +18,10 @@
 
 from __future__ import annotations
 
-from typing import Iterable, cast
+from typing import Iterable
 import z3
+
+from pysymex.core.solver.engine import is_satisfiable
 
 
 def get_variables(expr: z3.ExprRef, *, include_internal: bool = False) -> set[z3.ExprRef]:
@@ -195,6 +197,80 @@ def extract_var_var_comparisons(core: Iterable[z3.ExprRef]) -> list[tuple[str, s
         rname = _extract_symbol_name(rhs)
         if lname is not None and rname is not None and lname != rname:
             out.append((lname, op, rname))
+    return out
+
+
+def _collect_additive_var_names(expr: z3.ExprRef) -> tuple[str, ...] | None:
+    node = _unwrap_numeric(expr)
+    name = _extract_symbol_name(node)
+    if name is not None:
+        return (name,)
+    if not z3.is_app(node) or node.decl().kind() != z3.Z3_OP_ADD:
+        return None
+
+    names: list[str] = []
+    for child in node.children():
+        child_names = _collect_additive_var_names(child)
+        if child_names is None:
+            return None
+        names.extend(child_names)
+    return tuple(names)
+
+
+def extract_sum_const_comparisons(
+    core: Iterable[z3.ExprRef],
+) -> list[tuple[tuple[str, ...], str, int]]:
+    """Extract comparisons such as ``x + y <= 3`` for unit-coefficient sums."""
+    out: list[tuple[tuple[str, ...], str, int]] = []
+    for c in core:
+        cmp_data = _parse_cmp(c)
+        if cmp_data is None:
+            continue
+        op, lhs, rhs = cmp_data
+        left_names = _collect_additive_var_names(lhs)
+        right_names = _collect_additive_var_names(rhs)
+        left_const = _as_int_value(lhs)
+        right_const = _as_int_value(rhs)
+
+        if left_names is not None and right_const is not None and len(left_names) >= 2:
+            out.append((left_names, op, right_const))
+            continue
+        if right_names is not None and left_const is not None and len(right_names) >= 2:
+            out.append((right_names, _invert_comparison(op), left_const))
+    return out
+
+
+def _collect_product_var_names(expr: z3.ExprRef) -> tuple[str, str] | None:
+    node = _unwrap_numeric(expr)
+    if not z3.is_app(node) or node.decl().kind() != z3.Z3_OP_MUL or node.num_args() != 2:
+        return None
+    left = _extract_symbol_name(node.arg(0))
+    right = _extract_symbol_name(node.arg(1))
+    if left is None or right is None or left == right:
+        return None
+    return (left, right)
+
+
+def extract_product_const_comparisons(
+    core: Iterable[z3.ExprRef],
+) -> list[tuple[str, str, str, int]]:
+    """Extract comparisons such as ``x * y < 0``."""
+    out: list[tuple[str, str, str, int]] = []
+    for c in core:
+        cmp_data = _parse_cmp(c)
+        if cmp_data is None:
+            continue
+        op, lhs, rhs = cmp_data
+        left_product = _collect_product_var_names(lhs)
+        right_product = _collect_product_var_names(rhs)
+        left_const = _as_int_value(lhs)
+        right_const = _as_int_value(rhs)
+
+        if left_product is not None and right_const is not None:
+            out.append((*left_product, op, right_const))
+            continue
+        if right_product is not None and left_const is not None:
+            out.append((*right_product, _invert_comparison(op), left_const))
     return out
 
 
@@ -432,15 +508,16 @@ def is_sat_over_reals(core: list[z3.BoolRef]) -> bool:
     """Check if the core is SAT when integers are relaxed to reals.
     If it is UNSAT over Ints but SAT over Reals, it's an Arithmetic Impossibility (e.g. 2x=1).
     """
-    solver = z3.Solver()
     var_map: dict[z3.ExprRef, z3.ExprRef] = {}
+    relaxed_constraints: list[z3.BoolRef] = []
     for c in core:
         try:
             rc = relax_to_real(c, var_map)
-            solver.add(cast(z3.BoolRef, rc))
+            if isinstance(rc, z3.BoolRef):
+                relaxed_constraints.append(rc)
         except Exception:
             return False
-    return solver.check() == z3.sat
+    return is_satisfiable(relaxed_constraints)
 
 
 def get_variable_names(core: Iterable[z3.ExprRef]) -> set[str]:

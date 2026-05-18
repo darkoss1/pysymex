@@ -1,12 +1,14 @@
 import z3
 
 import pysymex.core.types.numeric as mod
+import pysymex.core.types.scalars as scalar_helpers
 
 
 class TestSymbolicBool:
     def test_type_tag(self) -> None:
         b = mod.SymbolicBool.symbolic("b")
         assert b.type_tag.name == "BOOL"
+        assert z3.is_true(b.is_bool)
 
     def test_name(self) -> None:
         b = mod.SymbolicBool.symbolic("myb")
@@ -23,6 +25,11 @@ class TestSymbolicBool:
     def test_is_falsy(self) -> None:
         b = mod.SymbolicBool.symbolic("b")
         assert z3.is_bool(b.is_falsy())
+
+    def test_canonical_truthiness_aliases_legacy_truthiness(self) -> None:
+        b = mod.SymbolicBool.symbolic("b")
+        assert z3.eq(b.could_be_truthy(), b.is_truthy())
+        assert z3.eq(b.could_be_falsy(), b.is_falsy())
 
     def test_symbolic_eq(self) -> None:
         b1 = mod.SymbolicBool.symbolic("b1")
@@ -41,6 +48,7 @@ class TestSymbolicInt:
     def test_type_tag(self) -> None:
         i = mod.SymbolicInt.symbolic("i")
         assert i.type_tag.name == "INT"
+        assert z3.is_true(i.is_int)
 
     def test_name(self) -> None:
         i = mod.SymbolicInt.symbolic("myi")
@@ -57,6 +65,7 @@ class TestSymbolicInt:
     def test_as_bv(self) -> None:
         i = mod.SymbolicInt.symbolic("i")
         assert z3.is_bv(i.as_bv)
+        assert z3.eq(i.as_bv, scalar_helpers.int_to_bv(i.z3_int))
 
     def test_is_truthy(self) -> None:
         i = mod.SymbolicInt.symbolic("i")
@@ -65,6 +74,11 @@ class TestSymbolicInt:
     def test_is_falsy(self) -> None:
         i = mod.SymbolicInt.symbolic("i")
         assert z3.is_bool(i.is_falsy())
+
+    def test_canonical_truthiness_aliases_legacy_truthiness(self) -> None:
+        i = mod.SymbolicInt.symbolic("i")
+        assert z3.eq(i.could_be_truthy(), i.is_truthy())
+        assert z3.eq(i.could_be_falsy(), i.is_falsy())
 
     def test_symbolic_eq(self) -> None:
         i1 = mod.SymbolicInt.symbolic("i1")
@@ -78,11 +92,30 @@ class TestSymbolicInt:
         i = mod.SymbolicInt.concrete(7)
         assert z3.is_int_value(i.z3_int)
 
+    def test_floor_division_reuses_python_semantics_helper(self) -> None:
+        left = mod.SymbolicInt.concrete(-3)
+        right = mod.SymbolicInt.concrete(2)
+        result = left // right
+        safe_divisor = z3.If(right.z3_int == 0, z3.IntVal(1), right.z3_int)
+        expected = scalar_helpers.py_floor_div(left.z3_int, safe_divisor)
+        assert z3.eq(result.z3_int, expected)
+        assert z3.simplify(result.z3_int).as_long() == -2
+
+    def test_modulo_reuses_python_semantics_helper(self) -> None:
+        left = mod.SymbolicInt.concrete(-3)
+        right = mod.SymbolicInt.concrete(2)
+        result = left % right
+        safe_divisor = z3.If(right.z3_int == 0, z3.IntVal(1), right.z3_int)
+        expected = scalar_helpers.py_mod(left.z3_int, safe_divisor)
+        assert z3.eq(result.z3_int, expected)
+        assert z3.simplify(result.z3_int).as_long() == 1
+
 
 class TestSymbolicFloat:
     def test_type_tag(self) -> None:
         f = mod.SymbolicFloat.symbolic("f")
         assert f.type_tag.name == "FLOAT"
+        assert z3.is_true(f.is_float)
 
     def test_name(self) -> None:
         f = mod.SymbolicFloat.symbolic("myf")
@@ -99,6 +132,11 @@ class TestSymbolicFloat:
     def test_is_falsy(self) -> None:
         f = mod.SymbolicFloat.symbolic("f")
         assert z3.is_bool(f.is_falsy())
+
+    def test_canonical_truthiness_aliases_legacy_truthiness(self) -> None:
+        f = mod.SymbolicFloat.symbolic("f")
+        assert z3.eq(f.could_be_truthy(), f.is_truthy())
+        assert z3.eq(f.could_be_falsy(), f.is_falsy())
 
     def test_symbolic_eq(self) -> None:
         f1 = mod.SymbolicFloat.symbolic("f1")

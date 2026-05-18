@@ -1,12 +1,22 @@
-from unittest.mock import Mock
 from pysymex.analysis.detectors.protocols import Protocol, ProtocolChecker
-from pysymex.analysis.type_constraints.types import SymbolicType
+from pysymex.analysis.type_constraints.checker import TypeConstraintChecker
+import z3
+from pysymex.analysis.type_constraints.types import SymbolicType, TypeKind
 
 
-class MockTypeChecker:
-    def is_subtype(self, actual: SymbolicType, expected: SymbolicType) -> tuple[bool, str]:
+class MockTypeChecker(TypeConstraintChecker):
+    def __init__(self) -> None:
+        pass
+
+    def is_subtype(
+        self,
+        sub: SymbolicType,
+        sup: SymbolicType,
+        path_constraints: list[z3.BoolRef] | None = None,
+    ) -> tuple[bool, str | None]:
         # For testing, consider them equal if they are the same object, else not subtype
-        if actual is expected:
+        _ = path_constraints
+        if sub is sup:
             return True, ""
         return False, "incompatible"
 
@@ -30,20 +40,24 @@ class TestProtocolChecker:
         tc = MockTypeChecker()
         checker = ProtocolChecker(tc)
 
-        t1 = Mock()
-        t2 = Mock()
+        t1 = SymbolicType(TypeKind.INT)
+        t2 = SymbolicType(TypeKind.STR)
 
         p = Protocol("Proto", required_methods={"m1": t1}, required_attributes={"a1": t2})
 
-        issues = checker.check_protocol_satisfaction(Mock(), p, {"m1": t1}, {"a1": t2})
+        issues = checker.check_protocol_satisfaction(
+            SymbolicType(TypeKind.OBJECT), p, {"m1": t1}, {"a1": t2}
+        )
         assert len(issues) == 0
 
-        issues2 = checker.check_protocol_satisfaction(Mock(), p, {}, {})
+        issues2 = checker.check_protocol_satisfaction(SymbolicType(TypeKind.OBJECT), p, {}, {})
         assert len(issues2) == 2
         assert any("Missing method" in i.message for i in issues2)
         assert any("Missing attribute" in i.message for i in issues2)
 
-        issues3 = checker.check_protocol_satisfaction(Mock(), p, {"m1": t2}, {"a1": t1})
+        issues3 = checker.check_protocol_satisfaction(
+            SymbolicType(TypeKind.OBJECT), p, {"m1": t2}, {"a1": t1}
+        )
         assert len(issues3) == 2
         assert any("incompatible type" in i.message for i in issues3)
 

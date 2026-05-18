@@ -194,27 +194,20 @@ class ModelRegistry:
         from pysymex.models.containers.lists import LIST_MODELS
         from pysymex.models.numeric import INT_FLOAT_MODELS
         from pysymex.models.containers.sets import SET_MODELS
+        from pysymex.models.containers.strings import STRING_MODELS
+        from pysymex.models.containers.tuples import TUPLE_MODELS
+
+        # Defer stdlib imports to avoid circular import
         from pysymex.models.stdlib import (
-            bisect_models,
             collections_models,
-            copy_models,
-            dataclasses_models,
             datetime_models,
-            enum_models,
-            functools_models,
-            heapq_models,
-            io_models,
-            itertools_models,
             json_models,
             math_models,
-            operator_models,
             ospath_models,
             random_models,
             re_models,
             types_models,
         )
-        from pysymex.models.containers.strings import STRING_MODELS
-        from pysymex.models.containers.tuples import TUPLE_MODELS
 
         all_models = [
             IntModel(),
@@ -282,25 +275,17 @@ class ModelRegistry:
             DirModel(),
             AsciiModel(),
             BreakpointModel(),
+            *create_exception_models(),
             ComplexModel(),
             SliceModel(),
             *math_models,
             *collections_models,
-            *itertools_models,
-            *functools_models,
             *ospath_models,
             *json_models,
             *re_models,
             *random_models,
             *datetime_models,
             *types_models,
-            *operator_models,
-            *copy_models,
-            *io_models,
-            *heapq_models,
-            *bisect_models,
-            *enum_models,
-            *dataclasses_models,
             *DICT_MODELS,
             *LIST_MODELS,
             *STRING_MODELS,
@@ -354,4 +339,19 @@ class ModelRegistry:
         return list({m.name for m in self._models.values()})
 
 
-default_model_registry = ModelRegistry()
+_default_model_registry: ModelRegistry | None = None
+
+
+def get_default_model_registry() -> ModelRegistry:
+    """Return the lazily initialized builtin model registry."""
+    global _default_model_registry
+    if _default_model_registry is None:
+        _default_model_registry = ModelRegistry()
+    return _default_model_registry
+
+
+def __getattr__(name: str) -> object:
+    """Lazy initialization of default_model_registry to avoid circular imports."""
+    if name == "default_model_registry":
+        return get_default_model_registry()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

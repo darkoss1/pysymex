@@ -14,32 +14,32 @@ class TestToInt:
 
     def test_int_passthrough(self) -> None:
         """Int value is returned as-is."""
-        assert mod._to_int(42, 0) == 42
+        assert mod._to_int(42, 0) == 42  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_float_truncated(self) -> None:
         """Float is truncated to int."""
-        assert mod._to_int(3.7, 0) == 3
+        assert mod._to_int(3.7, 0) == 3  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_bool_converted(self) -> None:
         """Bool is converted to 0 or 1."""
-        assert mod._to_int(True, 0) == 1
-        assert mod._to_int(False, 0) == 0
+        assert mod._to_int(True, 0) == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert mod._to_int(False, 0) == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_valid_string(self) -> None:
         """Numeric string is parsed."""
-        assert mod._to_int("123", 0) == 123
+        assert mod._to_int("123", 0) == 123  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_invalid_string_returns_default(self) -> None:
         """Non-numeric string returns default."""
-        assert mod._to_int("abc", 99) == 99
+        assert mod._to_int("abc", 99) == 99  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_none_returns_default(self) -> None:
         """None returns the default."""
-        assert mod._to_int(None, 77) == 77
+        assert mod._to_int(None, 77) == 77  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_list_returns_default(self) -> None:
         """Unsupported type returns default."""
-        assert mod._to_int([1, 2], 55) == 55
+        assert mod._to_int([1, 2], 55) == 55  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestToFloat:
@@ -47,27 +47,27 @@ class TestToFloat:
 
     def test_float_passthrough(self) -> None:
         """Float value is returned as-is."""
-        assert mod._to_float(3.14, 0.0) == 3.14
+        assert mod._to_float(3.14, 0.0) == 3.14  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_int_converted(self) -> None:
         """Int is converted to float."""
-        assert mod._to_float(5, 0.0) == 5.0
+        assert mod._to_float(5, 0.0) == 5.0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_bool_converted(self) -> None:
         """Bool is converted to 0.0 or 1.0."""
-        assert mod._to_float(True, 0.0) == 1.0
+        assert mod._to_float(True, 0.0) == 1.0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_valid_string(self) -> None:
         """Numeric string is parsed."""
-        assert mod._to_float("2.5", 0.0) == 2.5
+        assert mod._to_float("2.5", 0.0) == 2.5  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_invalid_string_returns_default(self) -> None:
         """Non-numeric string returns default."""
-        assert mod._to_float("abc", 9.9) == 9.9
+        assert mod._to_float("abc", 9.9) == 9.9  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_none_returns_default(self) -> None:
         """None returns default."""
-        assert mod._to_float(None, 1.1) == 1.1
+        assert mod._to_float(None, 1.1) == 1.1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestToBool:
@@ -75,31 +75,31 @@ class TestToBool:
 
     def test_bool_passthrough(self) -> None:
         """Bool returns itself."""
-        assert mod._to_bool(True, False) is True
-        assert mod._to_bool(False, True) is False
+        assert mod._to_bool(True, False) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert mod._to_bool(False, True) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_int_truthy(self) -> None:
         """Non-zero int is truthy."""
-        assert mod._to_bool(1, False) is True
-        assert mod._to_bool(0, True) is False
+        assert mod._to_bool(1, False) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert mod._to_bool(0, True) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_string_true_variants(self) -> None:
         """Various truthy strings are recognized."""
         for s in ("true", "True", "TRUE", "1", "yes", "on"):
-            assert mod._to_bool(s, False) is True, f"Failed for {s!r}"
+            assert mod._to_bool(s, False) is True, f"Failed for {s!r}"  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_string_false_variants(self) -> None:
         """Various falsy strings are recognized."""
         for s in ("false", "False", "FALSE", "0", "no", "off"):
-            assert mod._to_bool(s, True) is False, f"Failed for {s!r}"
+            assert mod._to_bool(s, True) is False, f"Failed for {s!r}"  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_invalid_string_returns_default(self) -> None:
         """Unrecognized string returns default."""
-        assert mod._to_bool("maybe", True) is True
+        assert mod._to_bool("maybe", True) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_none_returns_default(self) -> None:
         """None returns default."""
-        assert mod._to_bool(None, True) is True
+        assert mod._to_bool(None, True) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 class TestIsObjectMapping:
@@ -107,15 +107,15 @@ class TestIsObjectMapping:
 
     def test_dict_returns_true(self) -> None:
         """A dict is a Mapping."""
-        assert mod._is_object_mapping({"a": 1}) is True
+        assert mod._is_object_mapping({"a": 1}) is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_list_returns_false(self) -> None:
         """A list is not a Mapping."""
-        assert mod._is_object_mapping([1, 2]) is False
+        assert mod._is_object_mapping([1, 2]) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_none_returns_false(self) -> None:
         """None is not a Mapping."""
-        assert mod._is_object_mapping(None) is False
+        assert mod._is_object_mapping(None) is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
 
 # The analyze/check/format functions invoke the full execution engine which

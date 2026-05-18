@@ -33,19 +33,43 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicList, SymbolicString, SymbolicValue
+from pysymex.core.types import SymbolicList, SymbolicString, SymbolicValue
 from pysymex.models.builtins.base import FunctionModel, ModelResult
+from pysymex.models.typed_results import (
+    model_bool_result,
+    symbolic_int_result,
+)
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
     from pysymex.core.state import VMState
 
 
-def _get_symbolic_string(arg: object) -> SymbolicString | None:
+def get_symbolic_string(arg: object) -> SymbolicString | None:
     """Extract SymbolicString from argument, handling method calls (self is first arg)."""
     if isinstance(arg, SymbolicString):
         return arg
     return None
+
+
+_get_symbolic_string = get_symbolic_string
+
+
+def symbolic_isascii_result(state: VMState) -> ModelResult:
+    """Return the shared symbolic boolean result for isascii container models."""
+    return model_bool_result(f"isascii_{state.pc}")
+
+
+class SymbolicIsasciiModel(FunctionModel):
+    """Shared model implementation for str, bytes, and bytearray isascii."""
+
+    def apply(
+        self,
+        args: list[StackValue],
+        kwargs: dict[str, StackValue],
+        state: VMState,
+    ) -> ModelResult:
+        return symbolic_isascii_result(state)
 
 
 class StrLowerModel(FunctionModel):
@@ -335,11 +359,7 @@ class StrStartswithModel(FunctionModel):
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"startswith_{state.pc}")
-        return ModelResult(
-            value=result,
-            constraints=[constraint, result.is_bool],
-        )
+        return model_bool_result(f"startswith_{state.pc}")
 
 
 class StrEndswithModel(FunctionModel):
@@ -366,11 +386,7 @@ class StrEndswithModel(FunctionModel):
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"endswith_{state.pc}")
-        return ModelResult(
-            value=result,
-            constraints=[constraint, result.is_bool],
-        )
+        return model_bool_result(f"endswith_{state.pc}")
 
 
 class StrFindModel(FunctionModel):
@@ -406,10 +422,11 @@ class StrFindModel(FunctionModel):
                 z3.Implies(idx >= 0, idx + substring.z3_len <= original.z3_len),
             ]
             return ModelResult(value=result, constraints=constraints)
-        result, constraint = SymbolicValue.symbolic(f"find_{state.pc}")
+        result, constraints = symbolic_int_result(f"find_{state.pc}")
+        constraints.append(result.z3_int >= -1)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= -1],
+            constraints=constraints,
         )
 
 
@@ -427,7 +444,6 @@ class StrIndexModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        pass
         original = _get_symbolic_string(args[0]) if args else None
         substring = _get_symbolic_string(args[1]) if len(args) > 1 else None
         side_effects: dict[str, object] = {}
@@ -455,10 +471,11 @@ class StrIndexModel(FunctionModel):
                 constraints=constraints,
                 side_effects=side_effects,
             )
-        result, constraint = SymbolicValue.symbolic(f"index_{state.pc}")
+        result, constraints = symbolic_int_result(f"index_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= 0],
+            constraints=constraints,
         )
 
 
@@ -480,8 +497,8 @@ class StrCountModel(FunctionModel):
     ) -> ModelResult:
         original = _get_symbolic_string(args[0]) if args else None
         substring = _get_symbolic_string(args[1]) if len(args) > 1 else None
-        result, constraint = SymbolicValue.symbolic(f"count_{state.pc}")
-        constraints = [constraint, result.is_int, result.z3_int >= 0]
+        result, constraints = symbolic_int_result(f"count_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         if original is not None:
             constraints.append(result.z3_int <= original.z3_len)
             if substring is not None:
@@ -805,8 +822,7 @@ class StrContainsModel(FunctionModel):
                 is_bool=z3.BoolVal(True),
             )
             return ModelResult(value=result, constraints=[])
-        result, constraint = SymbolicValue.symbolic(f"contains_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
+        return model_bool_result(f"contains_{state.pc}")
 
 
 class StrRsplitModel(FunctionModel):
@@ -1004,7 +1020,7 @@ class StrMaketransModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        from pysymex.core.types.scalars import SymbolicDict
+        from pysymex.core.types import SymbolicDict
 
         result, constraint = SymbolicDict.symbolic(f"maketrans_{state.pc}")
         return ModelResult(value=result, constraints=[constraint])
@@ -1202,18 +1218,9 @@ STRING_MODELS: list[FunctionModel] = [
 ]
 
 
-class StrIsasciiModel(FunctionModel):
+class StrIsasciiModel(SymbolicIsasciiModel):
     name = "isascii"
     qualname = "str.isascii"
-
-    def apply(
-        self,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"isascii_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
 
 
 STRING_MODELS.extend([StrIsasciiModel()])

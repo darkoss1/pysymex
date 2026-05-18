@@ -17,22 +17,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .analyzer import StaticAnalyzer
-from .division_by_zero import StaticDivisionByZeroDetector
-from .key_error import StaticKeyErrorDetector
-from .index_error import StaticIndexErrorDetector
-from .type_error import StaticTypeErrorDetector
-from .attribute_error import StaticAttributeErrorDetector
-from .assertion_error import StaticAssertionErrorDetector
 from .dead_code import DeadCodeDetector
 
 
 __all__ = [
     "StaticAnalyzer",
-    "StaticDivisionByZeroDetector",
-    "StaticKeyErrorDetector",
-    "StaticIndexErrorDetector",
-    "StaticTypeErrorDetector",
-    "StaticAttributeErrorDetector",
-    "StaticAssertionErrorDetector",
     "DeadCodeDetector",
 ]

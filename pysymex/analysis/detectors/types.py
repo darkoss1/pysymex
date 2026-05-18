@@ -34,8 +34,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import TypeGuard
 
+from pysymex._typing import is_set_of_objects, to_string_set
 from pysymex.analysis.specialized.flow import FlowContext
 from pysymex.analysis.patterns import (
     FunctionPatternInfo,
@@ -47,21 +47,8 @@ from pysymex.analysis.type_inference import (
     TypeKind,
 )
 
-
-def _is_set_of_objects(value: object) -> TypeGuard[set[object]]:
-    """Type guard to narrow a value to set[object]."""
-    return isinstance(value, set)
-
-
-def _to_string_set(value: object) -> set[str]:
-    """Normalize a dynamic value to a set of strings."""
-    result: set[str] = set()
-    if _is_set_of_objects(value):
-        raw_values: set[object] = value
-        for item in raw_values:
-            if isinstance(item, str):
-                result.add(item)
-    return result
+_is_set_of_objects = is_set_of_objects
+_to_string_set = to_string_set
 
 
 class IssueKind(Enum):

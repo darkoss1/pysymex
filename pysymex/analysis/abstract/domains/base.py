@@ -30,7 +30,6 @@ from typing import (
     TypeVar,
 )
 
-
 import z3
 
 T = TypeVar("T")
@@ -262,9 +261,8 @@ class Interval(AbstractValue["Interval"]):
             result = self.lo * other.lo
             return Interval(result, result)
 
-        endpoints = [self.lo, self.hi, other.lo, other.hi]
-
-        if any(e is None for e in endpoints):
+        # Optimization: Direct check instead of building list/generator for endpoints
+        if self.lo is None or self.hi is None or other.lo is None or other.hi is None:
             if self.is_constant() and self.lo == 0:
                 return Interval(0, 0)
             if other.is_constant() and other.lo == 0:
@@ -273,8 +271,8 @@ class Interval(AbstractValue["Interval"]):
             corners: list[int] = []
             unbounded_lo = False
             unbounded_hi = False
-            for a, a_is_lo in [(self.lo, True), (self.hi, False)]:
-                for b, b_is_lo in [(other.lo, True), (other.hi, False)]:
+            for a, a_is_lo in ((self.lo, True), (self.hi, False)):
+                for b, b_is_lo in ((other.lo, True), (other.hi, False)):
                     if a is not None and b is not None:
                         corners.append(a * b)
                     elif a is not None and b is None:
@@ -313,13 +311,12 @@ class Interval(AbstractValue["Interval"]):
                 result_hi = None
             return Interval(result_lo, result_hi)
 
-        corners = []
-        for a in [self.lo, self.hi]:
-            for b in [other.lo, other.hi]:
-                if a is not None and b is not None:
-                    corners.append(a * b)
-        if not corners:
-            return Interval.top()
+        corners = [
+            self.lo * other.lo,
+            self.lo * other.hi,
+            self.hi * other.lo,
+            self.hi * other.hi,
+        ]
         return Interval(min(corners), max(corners))
 
     def __neg__(self) -> Interval:

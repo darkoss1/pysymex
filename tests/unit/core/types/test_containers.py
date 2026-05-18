@@ -15,6 +15,7 @@ class TestSymbolicList:
     def test_name(self) -> None:
         s, _ = mod.SymbolicList.symbolic("lst")
         assert s.name == "lst"
+        assert z3.is_true(s.is_list)
 
     def test_to_z3(self) -> None:
         s, _ = mod.SymbolicList.symbolic("lst")
@@ -52,6 +53,23 @@ class TestSymbolicList:
         s, _ = mod.SymbolicList.symbolic("lst")
         appended = s.append(SymbolicValue.from_const(1))
         assert isinstance(appended, mod.SymbolicList)
+        # z3_len is an expression (lst_len + 1), not a constant value.
+        assert z3.is_expr(appended.z3_len)
+
+    def test_prepend(self) -> None:
+        s, _ = mod.SymbolicList.symbolic("lst")
+        prepended = s.prepend(SymbolicValue.from_const(1))
+        assert isinstance(prepended, mod.SymbolicList)
+        # In a symbolic list, we can't easily assert the value without a solver,
+        # but we can check the Z3 expression structure if we really wanted to.
+        # For now, asserting it returns a SymbolicList is the baseline.
+
+    def test_rotate(self) -> None:
+        s = mod.SymbolicList.from_const([1, 2, 3])
+        rotated = s.rotate(1)
+        assert isinstance(rotated, mod.SymbolicList)
+        if rotated.concrete_items:
+            assert rotated.concrete_items == [3, 1, 2]
 
     def test_extend(self) -> None:
         s, _ = mod.SymbolicList.symbolic("lst")
@@ -66,6 +84,23 @@ class TestSymbolicList:
         s, _ = mod.SymbolicList.symbolic("lst")
         assert z3.is_bool(s.in_bounds(SymbolicValue.from_const(0)))
 
+    def test_in_bounds_accepts_valid_negative_index(self) -> None:
+        s = mod.SymbolicList.from_const([1, 2, 3])
+        solver = z3.Solver()
+        solver.add(s.in_bounds(SymbolicValue.from_const(-1)))
+        assert solver.check() == z3.sat
+
+    def test_setitem_preserves_concrete_items_for_negative_index(self) -> None:
+        s = mod.SymbolicList.from_const([1, 2, 3])
+        updated = s.__setitem__(-1, 99)
+
+        assert updated.concrete_items is not None
+        assert updated.concrete_items[0] == 1
+        assert updated.concrete_items[1] == 2
+        replacement = updated.concrete_items[2]
+        assert isinstance(replacement, SymbolicValue)
+        assert replacement.value == 99
+
     def test_conditional_merge(self) -> None:
         a, _ = mod.SymbolicList.symbolic("a")
         b, _ = mod.SymbolicList.symbolic("b")
@@ -77,6 +112,7 @@ class TestSymbolicDict:
     def test_name(self) -> None:
         d, _ = mod.SymbolicDict.symbolic("d")
         assert d.name == "d"
+        assert z3.is_true(d.is_dict)
 
     def test_to_z3(self) -> None:
         d, _ = mod.SymbolicDict.symbolic("d")
@@ -154,6 +190,14 @@ class TestSymbolicObject:
         o, _ = mod.SymbolicObject.symbolic("o", -1)
         assert z3.is_false(o.is_path)
 
+    def test_is_list(self) -> None:
+        o, _ = mod.SymbolicObject.symbolic("o", -1)
+        assert z3.is_false(o.is_list)
+
+    def test_is_dict(self) -> None:
+        o, _ = mod.SymbolicObject.symbolic("o", -1)
+        assert z3.is_false(o.is_dict)
+
     def test_to_z3(self) -> None:
         o, _ = mod.SymbolicObject.symbolic("o", -1)
         assert z3.is_expr(o.to_z3())
@@ -208,3 +252,33 @@ class TestSymbolicIterator:
     def test_advance(self) -> None:
         it = mod.SymbolicIterator("it", [])
         assert it.advance().index == 1
+
+
+class TestSymbolicBytes:
+    def test_name(self) -> None:
+        b = mod.SymbolicBytes.symbolic("b")
+        assert b.name == "b"
+
+    def test_to_z3(self) -> None:
+        b = mod.SymbolicBytes.symbolic("b")
+        assert isinstance(b.to_z3(), z3.SeqRef)
+
+    def test_hash_value(self) -> None:
+        b = mod.SymbolicBytes.symbolic("b")
+        assert isinstance(b.hash_value(), int)
+
+    def test_could_be_truthy(self) -> None:
+        b = mod.SymbolicBytes.symbolic("b")
+        assert z3.is_bool(b.could_be_truthy())
+
+    def test_could_be_falsy(self) -> None:
+        b = mod.SymbolicBytes.symbolic("b")
+        assert z3.is_bool(b.could_be_falsy())
+
+    def test_concrete_caching(self) -> None:
+        b1 = mod.SymbolicBytes.concrete(b"hello")
+        b2 = mod.SymbolicBytes.concrete(b"hello")
+        assert b1 is b2  # Cache hits perfectly!
+
+        b3 = mod.SymbolicBytes.concrete(b"world")
+        assert b1 is not b3  # Different bytes return different instances!

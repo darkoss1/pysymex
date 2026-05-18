@@ -41,17 +41,27 @@ from pysymex.models.stdlib.regex import (
     ReSearchModel,
     ReSplitModel,
     ReSubModel,
+    REGEX_MODELS as REGEX_MODELS,
+    PatternCompiler as PatternCompiler,
+    compile_pattern as compile_pattern,
+)
+from pysymex.models.stdlib.dataclasses import (
+    DATACLASSES_MODELS as DATACLASSES_MODELS,
+    FieldInfo as FieldInfo,
+    asdict_model as asdict_model,
+    astuple_model as astuple_model,
+    dataclass_model as dataclass_model,
+    field_model as field_model,
+    fields_model as fields_model,
+    get_dataclasses_model as get_dataclasses_model,
+    is_dataclass_model as is_dataclass_model,
+    make_dataclass_model as make_dataclass_model,
+    replace_model as replace_model,
 )
 from pysymex.models.stdlib.data import (
     dataclasses_models,
     enum_models,
     operator_models,
-)
-from pysymex.models.stdlib.io import (
-    bisect_models,
-    copy_models,
-    heapq_models,
-    io_models,
 )
 from pysymex.models.stdlib.math import (
     math_models,
@@ -90,6 +100,12 @@ class ExtendedStdlibRegistry:
 
     def _register_all(self) -> None:
         """Register all stdlib models."""
+        from pysymex.models.stdlib.io import (
+            bisect_models,
+            copy_models,
+            heapq_models,
+            io_models,
+        )
         from pysymex.models.stdlib.pathlib import PATHLIB_MODELS
         from pysymex.models.containers.sets import SET_MODELS
 
@@ -162,3 +178,37 @@ def list_stdlib_models() -> list[str]:
 def list_stdlib_modules() -> dict[str, list[str]]:
     """List stdlib models by module."""
     return extended_stdlib_registry.list_modules()
+
+
+__all__ = [
+    "DATACLASSES_MODELS",
+    "ExtendedStdlibRegistry",
+    "FieldInfo",
+    "PatternCompiler",
+    "REGEX_MODELS",
+    "ReCompileModel",
+    "ReEscapeModel",
+    "ReFindallModel",
+    "ReMatchModel",
+    "ReSearchModel",
+    "ReSplitModel",
+    "ReSubModel",
+    "asdict_model",
+    "astuple_model",
+    "collections_models",
+    "compile_pattern",
+    "dataclass_model",
+    "extended_stdlib_registry",
+    "field_model",
+    "fields_model",
+    "functools_models",
+    "get_dataclasses_model",
+    "get_stdlib_model",
+    "is_dataclass_model",
+    "itertools_models",
+    "list_stdlib_models",
+    "list_stdlib_modules",
+    "make_dataclass_model",
+    "re_models",
+    "replace_model",
+]

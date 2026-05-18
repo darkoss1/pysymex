@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.dead_code.types import (
     DeadCodeKind,
     DeadCode,
@@ -30,9 +29,6 @@ class Regular:
 
 def test_is_class_body() -> None:
     """Test is_class_body behavior."""
-
-    class Dummy:
-        pass
 
     def func() -> None:
         pass

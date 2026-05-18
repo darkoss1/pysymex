@@ -24,10 +24,6 @@ Phase 20: Builders, registry, composition, analysis.
 from __future__ import annotations
 
 import threading
-from typing import (
-    cast,
-)
-
 import z3
 
 from pysymex.analysis.summaries.types import (
@@ -38,7 +34,7 @@ from pysymex.analysis.summaries.types import (
     ParameterInfo,
     ReadVariable,
 )
-from pysymex.core.solver.engine import create_solver
+from pysymex.core.solver.engine import get_model
 
 
 class SummaryBuilder:
@@ -381,7 +377,9 @@ def create_builtin_summaries() -> list[FunctionSummary]:
         .mark_pure()
         .build()
     )
-    len_summary.return_constraint = cast("z3.ArithRef", len_summary.return_var) >= 0
+    if not isinstance(len_summary.return_var, z3.ArithRef):
+        raise TypeError("len summary return variable must be arithmetic")
+    len_summary.return_constraint = len_summary.return_var >= 0
     summaries.append(len_summary)
     abs_summary = (
         SummaryBuilder("abs")
@@ -392,7 +390,9 @@ def create_builtin_summaries() -> list[FunctionSummary]:
         .build()
     )
     x = abs_summary.parameters[0].to_z3()
-    result = cast("z3.ArithRef", abs_summary.return_var)
+    if not isinstance(abs_summary.return_var, z3.ArithRef):
+        raise TypeError("abs summary return variable must be arithmetic")
+    result = abs_summary.return_var
     abs_summary.postconditions.append(result >= 0)
     abs_summary.postconditions.append(z3.Or(result == x, result == -x))
     summaries.append(abs_summary)
@@ -513,12 +513,8 @@ class SummaryAnalyzer:
             return True, None
         kw = kwargs or {}
         pre, _, _ = instantiate_summary(summary, args, kw)
-        solver = create_solver()
-        for pc in path_constraints:
-            solver.add(pc)
-        solver.add(z3.Not(pre))
-        if solver.check() == z3.sat:
-            model = solver.model()
-            counterexample = {str(d.name()): model[d] for d in model.decls()}
-            return False, cast("dict[str, object]", counterexample)
+        model = get_model([*path_constraints, z3.Not(pre)])
+        if model is not None:
+            counterexample: dict[str, object] = {str(d.name()): model[d] for d in model.decls()}
+            return False, counterexample
         return True, None

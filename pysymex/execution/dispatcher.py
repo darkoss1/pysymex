@@ -26,7 +26,7 @@ from __future__ import annotations
 import dis
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,32 +40,46 @@ class OpcodeResult:
     Attributes:
         new_states: List of new VM states to explore.
         issues: List of issues detected during execution.
+        degraded_passes: List of precision loss markers.
         terminal: bool: Whether this opcode terminates execution.
     """
 
     new_states: list[VMState]
     issues: list[Issue]
+    degraded_passes: list[str] = field(default_factory=lambda: [])
     terminal: bool = False
 
     @classmethod
-    def continue_with(cls, state: VMState) -> OpcodeResult:
+    def continue_with(
+        cls, state: VMState, degraded_passes: list[str] | None = None
+    ) -> OpcodeResult:
         """Continue execution with a single state."""
-        return cls(new_states=[state], issues=[])
+        return cls(new_states=[state], issues=[], degraded_passes=degraded_passes or [])
 
     @classmethod
-    def branch(cls, states: list[VMState], issues: list[Issue] | None = None) -> OpcodeResult:
+    def branch(
+        cls,
+        states: list[VMState],
+        issues: list[Issue] | None = None,
+        degraded_passes: list[str] | None = None,
+    ) -> OpcodeResult:
         """Branch into multiple states."""
         all_issues = list(issues) if issues is not None else []
-        return cls(new_states=states, issues=all_issues)
+        return cls(new_states=states, issues=all_issues, degraded_passes=degraded_passes or [])
 
     @classmethod
-    def fork(cls, states: list[VMState], issues: list[Issue | None]) -> OpcodeResult:
+    def fork(
+        cls,
+        states: list[VMState],
+        issues: list[Issue | None],
+        degraded_passes: list[str] | None = None,
+    ) -> OpcodeResult:
         """Fork into multiple states with specific issues for some states."""
         all_issues: list[Issue] = []
         for issue in issues:
             if issue is not None:
                 all_issues.append(issue)
-        return cls(new_states=states, issues=all_issues)
+        return cls(new_states=states, issues=all_issues, degraded_passes=degraded_passes or [])
 
     @staticmethod
     def terminate() -> OpcodeResult:
@@ -73,14 +87,20 @@ class OpcodeResult:
         return OpcodeResult(new_states=[], issues=[], terminal=True)
 
     @classmethod
-    def with_issue(cls, state: VMState, issue: Issue) -> OpcodeResult:
+    def with_issue(
+        cls, state: VMState, issue: Issue, degraded_passes: list[str] | None = None
+    ) -> OpcodeResult:
         """Continue with an issue detected."""
-        return cls(new_states=[state], issues=[issue])
+        return cls(new_states=[state], issues=[issue], degraded_passes=degraded_passes or [])
 
     @classmethod
-    def error(cls, issue: Issue, state: VMState | None = None) -> OpcodeResult:
+    def error(
+        cls, issue: Issue, state: VMState | None = None, degraded_passes: list[str] | None = None
+    ) -> OpcodeResult:
         """Terminate with an error."""
-        return cls(new_states=[], issues=[issue], terminal=True)
+        return cls(
+            new_states=[], issues=[issue], terminal=True, degraded_passes=degraded_passes or []
+        )
 
 
 OpcodeHandler = Callable[[dis.Instruction, "VMState", "OpcodeDispatcher"], OpcodeResult]
@@ -145,6 +165,8 @@ class OpcodeDispatcher:
         Args:
             instructions: List of disassembled instructions.
         """
+        if instructions is self._instructions:
+            return
         self._instructions = instructions
         self._offset_to_index = {instr.offset: idx for idx, instr in enumerate(instructions)}
 
@@ -157,17 +179,35 @@ class OpcodeDispatcher:
 
         Returns the instruction index of the handler, or None.
         """
+        best_idx: int | None = None
+        best_start: int | None = None
+        best_end: int | None = None
         for entry in self._exception_entries:
             start = getattr(entry, "start", None)
             end = getattr(entry, "end", None)
             target = getattr(entry, "target", None)
-            if start is not None and end is not None and target is not None:
-                if start <= offset < end:
-                    idx = self._offset_to_index.get(target)
-                    if idx is not None:
-                        return idx
+            if start is None or end is None or target is None:
+                continue
+            if not (start <= offset < end):
+                continue
+            idx = self._offset_to_index.get(target)
+            if idx is None:
+                continue
+            if best_start is None:
+                best_idx = idx
+                best_start = start
+                best_end = end
+                continue
+            if start > best_start:
+                best_idx = idx
+                best_start = start
+                best_end = end
+                continue
+            if start == best_start and best_end is not None and end < best_end:
+                best_idx = idx
+                best_end = end
 
-        return None
+        return best_idx
 
     def get_instruction(self, index: int) -> dis.Instruction | None:
         """Get instruction by index."""
@@ -187,7 +227,7 @@ class OpcodeDispatcher:
         if handler is None:
             if self._fallback_handler is not None:
                 return self._fallback_handler(instr, state, self)
-            raise NotImplementedError(f"Opcode not supported: {instr.opname}")
+            raise RuntimeError(f"Opcode not supported: {instr.opname}")
         return handler(instr, state, self)
 
     def has_handler(self, opcode: str) -> bool:
@@ -202,6 +242,14 @@ class OpcodeDispatcher:
     def register_global(cls, opcode: str, handler: OpcodeHandler) -> None:
         """Register a handler globally for all dispatcher instances."""
         cls._global_handlers[opcode] = handler
+
+    @classmethod
+    def global_handler_module(cls, opcode: str) -> str | None:
+        """Return the module name for a globally registered opcode handler."""
+        handler = cls._global_handlers.get(opcode)
+        if handler is None:
+            return None
+        return handler.__module__
 
     @classmethod
     def clear_global_handlers(cls) -> None:

@@ -34,13 +34,13 @@ from dataclasses import asdict, dataclass
 
 import z3
 
-from pysymex.analysis.utils.math import wilson_upper_95
+from pysymex.utils.math import wilson_upper_95
 
 from pysymex.analysis.detectors.runtime import KeyErrorDetector
 from pysymex.core.solver.engine import is_satisfiable
 from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
-from pysymex.core.types.containers import SymbolicDict, SymbolicList
+from pysymex.core.types import SymbolicString, SymbolicValue
+from pysymex.core.types import SymbolicDict, SymbolicList
 
 from pysymex.analysis.detectors.runtime.division_by_zero import pure_check_division_by_zero
 from pysymex.analysis.detectors.runtime.index_error import pure_check_index_bounds
@@ -491,7 +491,6 @@ def _oracle_none_risk(is_none: bool, name: str) -> bool:
         return False
     try:
         raise AttributeError
-        return False
     except AttributeError:
         return True
 

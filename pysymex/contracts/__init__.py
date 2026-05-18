@@ -43,9 +43,9 @@ Lazy-loaded: quantifier symbols are resolved on first access via ``__getattr__``
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import TYPE_CHECKING
 
+from pysymex._lazy import lazy_getattr
 
 from pysymex.contracts.compiler import And_, ContractCompiler, Implies_, Not_, Or_
 from pysymex.contracts.decorators import (
@@ -70,12 +70,9 @@ from pysymex.contracts.types import (
     Severity,
     VerificationResult,
 )
-from pysymex.contracts.verifier import (
-    ContractVerifier,
-    VerificationReport,
-)
 
 if TYPE_CHECKING:
+    from pysymex.contracts.verifier import ContractVerifier, VerificationReport
     from pysymex.contracts.quantifiers import (
         BoundSpec,
         ConditionTranslator,
@@ -112,55 +109,20 @@ _QUANTIFIER_EXPORTS: dict[str, tuple[str, str]] = {
         "pysymex.contracts.quantifiers",
         "replace_quantifiers_with_z3",
     ),
-}
-
-_STATIC_SYMBOLS: dict[str, object] = {
-    "assigns": assigns,
-    "assumes": assumes,
-    "ensures": ensures,
-    "function_contracts": function_contracts,
-    "get_function_contract": get_function_contract,
-    "invariant": invariant,
-    "loop_invariant": loop_invariant,
-    "pure": pure,
-    "requires": requires,
-    "And_": And_,
-    "Implies_": Implies_,
-    "Not_": Not_,
-    "Or_": Or_,
-    "Contract": Contract,
-    "ContractKind": ContractKind,
-    "ContractPredicate": ContractPredicate,
-    "ContractViolation": ContractViolation,
-    "EffectKind": EffectKind,
-    "FunctionContract": FunctionContract,
-    "InjectionPoint": InjectionPoint,
-    "Severity": Severity,
-    "VerificationResult": VerificationResult,
-    "ContractCompiler": ContractCompiler,
-    "ContractVerifier": ContractVerifier,
-    "VerificationReport": VerificationReport,
+    "ContractVerifier": ("pysymex.contracts.verifier", "ContractVerifier"),
+    "VerificationReport": ("pysymex.contracts.verifier", "VerificationReport"),
 }
 
 
 def __getattr__(name: str) -> object:
     """Lazy-load quantifier symbols on first access."""
-    target = _QUANTIFIER_EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module 'pysymex.contracts' has no attribute {name!r}")
-    module_path, attr_name = target
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+    return lazy_getattr(name, __name__, _QUANTIFIER_EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
     """List all exported names, including lazy ones."""
     return list(__all__)
 
-
-_STATIC_EXPORTS: list[str] = list(_STATIC_SYMBOLS.keys())
 
 __all__: list[str] = [
     "And_",

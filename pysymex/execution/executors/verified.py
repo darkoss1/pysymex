@@ -20,8 +20,10 @@ from __future__ import annotations
 import dis
 import inspect
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, TypedDict, Unpack
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, TypedDict, Unpack, cast
+
+import z3
 
 from pysymex.contracts.types import Contract, ContractKind, VerificationResult
 from pysymex.contracts.verifier import ContractVerifier
@@ -30,7 +32,6 @@ from pysymex.analysis.detectors import DetectorRegistry, Issue, default_registry
 from pysymex.analysis.properties import ArithmeticVerifier, PropertyProver
 from pysymex.core.solver.engine import IncrementalSolver
 from pysymex.execution.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes import py_version  # type: ignore[unused-import]  # triggers opcode handler registration
 from pysymex.execution.strategies.manager import ExplorationStrategy, PathManager
 from pysymex.execution.termination import (
     RankingFunction as _RankingFunction,
@@ -251,7 +252,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
 RankingFunction = _RankingFunction
 
 
@@ -267,6 +267,134 @@ def _extract_docstring_contracts(func: Callable[..., object]) -> tuple[int, int]
         elif stripped.startswith(":ensures:"):
             ensures_count += 1
     return requires_count, ensures_count
+
+
+def _symbol_for_contract_parameter(name: str, type_name: str | None) -> z3.ExprRef:
+    if type_name == "bool":
+        return z3.Bool(name)
+    if type_name == "float":
+        return z3.Real(name)
+    if type_name == "str":
+        return z3.String(name)
+    return z3.Int(name)
+
+
+def _build_contract_validation_symbols(
+    func: Callable[..., object], symbolic_args: dict[str, str]
+) -> dict[str, z3.ExprRef]:
+    symbols: dict[str, z3.ExprRef] = {}
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        signature = None
+
+    if signature is not None:
+        for name, parameter in signature.parameters.items():
+            annotation = parameter.annotation
+            type_name = symbolic_args.get(name)
+            if type_name is None and annotation is not inspect.Signature.empty:
+                if annotation is bool:
+                    type_name = "bool"
+                elif annotation is float:
+                    type_name = "float"
+                elif annotation is str:
+                    type_name = "str"
+                else:
+                    type_name = "int"
+            symbols[name] = _symbol_for_contract_parameter(name, type_name)
+
+    result = z3.Int("__result__")
+    symbols["__result__"] = result
+    symbols["result"] = result
+    symbols["return"] = result
+    symbols["__return__"] = result
+    return symbols
+
+
+def _extract_counterexample_from_model(model: object) -> dict[str, object]:
+    """Helper to convert a Z3 ModelRef or dict to a formatted counterexample."""
+    if isinstance(model, Mapping):
+        mapping = cast("Mapping[object, object]", model)
+        return {str(key): value for key, value in mapping.items()}
+    if not isinstance(model, z3.ModelRef):
+        return {}
+
+    def _is_true_model_value(value: object) -> bool:
+        return (isinstance(value, z3.BoolRef) and z3.is_true(value)) or str(value) == "True"
+
+    def _model_value_to_int_or_str(value: object) -> int | str:
+        as_long = getattr(value, "as_long", None)
+        if callable(as_long):
+            long_value: object = as_long()
+            if isinstance(long_value, int):
+                return long_value
+        return str(value)
+
+    result: dict[str, dict[str, object]] = {}
+    for decl in model.decls():
+        name = decl.name()
+        value: object = model[decl]
+        if name.endswith("_int"):
+            base = name[:-4]
+            bucket = result.setdefault(base, {})
+            bucket["int"] = value
+        elif name.endswith("_bool"):
+            base = name[:-5]
+            bucket = result.setdefault(base, {})
+            bucket["bool"] = value
+        elif name.endswith("_is_int"):
+            base = name[:-7]
+            bucket = result.setdefault(base, {})
+            bucket["is_int"] = value
+        elif name.endswith("_is_bool"):
+            base = name[:-8]
+            bucket = result.setdefault(base, {})
+            bucket["is_bool"] = value
+        elif name.endswith("_str"):
+            base = name[:-4]
+            bucket = result.setdefault(base, {})
+            bucket["str"] = value
+        elif name.endswith("_len"):
+            base = name[:-4]
+            bucket = result.setdefault(base, {})
+            bucket["len"] = value
+        else:
+            result[name] = {"value": value}
+
+    formatted: dict[str, object] = {}
+    for var, info in result.items():
+        is_int_val = info.get("is_int")
+        if _is_true_model_value(is_int_val):
+            val = info.get("int")
+            formatted[var] = _model_value_to_int_or_str(val)
+            continue
+
+        is_bool_val = info.get("is_bool")
+        if _is_true_model_value(is_bool_val):
+            val = info.get("bool")
+            formatted[var] = _is_true_model_value(val) if hasattr(val, "decl") else bool(val)
+            continue
+
+        if "str" in info:
+            val = info.get("str")
+            val_str = str(val)
+            if val_str.startswith('"') and val_str.endswith('"'):
+                val_str = val_str[1:-1]
+            formatted[var] = val_str
+        elif "int" in info:
+            val = info.get("int")
+            formatted[var] = _model_value_to_int_or_str(val)
+        elif "value" in info:
+            val = info["value"]
+            if hasattr(val, "as_long"):
+                formatted[var] = _model_value_to_int_or_str(val)
+            elif hasattr(val, "decl"):
+                formatted[var] = _is_true_model_value(val)
+            else:
+                formatted[var] = str(val)
+        else:
+            formatted[var] = str(info)
+    return formatted
 
 
 class VerifiedExecutor:
@@ -361,6 +489,22 @@ class VerifiedExecutor:
         contracts_checked = len(preconditions) + len(postconditions) + doc_requires + doc_ensures
 
         contract_issues: list[ContractIssue] = []
+        validation_symbols = _build_contract_validation_symbols(func, symbolic_args)
+        for contract in preconditions:
+            try:
+                contract.compile(validation_symbols)
+            except (TypeError, ValueError, z3.Z3Exception) as exc:
+                contract_issues.append(
+                    ContractIssue(
+                        kind=ContractKind.REQUIRES,
+                        condition=contract.condition,
+                        message=f"Precondition could not be checked: {exc}",
+                        line_number=contract.line_number,
+                        function_name=func_name,
+                        counterexample={},
+                        result=VerificationResult.UNKNOWN,
+                    )
+                )
 
         # Unwrap the function so the VM traces the actual code, not the decorator wrapper
         unwrapped_func = inspect.unwrap(func)
@@ -394,7 +538,7 @@ class VerifiedExecutor:
                             expression=iss.message,
                             message=iss.message,
                             line_number=iss.line_number,
-                            counterexample=(iss.model if isinstance(iss.model, dict) else {}),
+                            counterexample=_extract_counterexample_from_model(iss.model),
                         )
                     )
                 elif iss.kind.name == "CONTRACT_VIOLATION":
@@ -405,8 +549,26 @@ class VerifiedExecutor:
                             condition=iss.message,
                             message=iss.message,
                             line_number=iss.line_number,
-                            counterexample=(iss.model if isinstance(iss.model, dict) else {}),
+                            counterexample=_extract_counterexample_from_model(iss.model),
                             result=VerificationResult.VIOLATED,
+                        )
+                    )
+                elif iss.kind.name == "UNKNOWN" and "condition" in iss.message.lower():
+                    lower_message = iss.message.lower()
+                    kind = (
+                        ContractKind.REQUIRES
+                        if "precondition" in lower_message
+                        else ContractKind.ENSURES
+                    )
+                    contract_issues.append(
+                        ContractIssue(
+                            kind=kind,
+                            condition=iss.message,
+                            message=iss.message,
+                            line_number=iss.line_number,
+                            function_name=iss.function_name,
+                            counterexample={},
+                            result=VerificationResult.UNKNOWN,
                         )
                     )
                 else:

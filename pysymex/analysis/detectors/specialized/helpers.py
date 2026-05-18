@@ -46,8 +46,14 @@ def resolve_target_name(state: VMState, argc: int) -> str | None:
         if index < 0 or index >= len(state.stack):
             continue
         candidate = state.stack[index]
-        for attr in ("qualname", "name", "origin"):
+        candidate_type_name = type(candidate).__name__
+        if candidate_type_name == "SymbolicNone":
+            continue
+        for attr in ("__name__", "__qualname__", "qualname", "name", "origin"):
             value = getattr(candidate, attr, None)
             if isinstance(value, str) and value:
+                lowered = value.lower()
+                if lowered in {"none", "null", "push_null_none"}:
+                    continue
                 return value
     return None

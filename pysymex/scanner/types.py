@@ -29,6 +29,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias, TypeGuard, TypedDict
 
+from pysymex.config import is_object_dict
+
+_is_object_dict = is_object_dict
+
 logger = logging.getLogger(__name__)
 
 SerializedScalar: TypeAlias = str | int | float | bool | None
@@ -53,11 +57,6 @@ class SessionSummary(TypedDict):
 def _new_issue_records() -> list[IssueRecord]:
     """Create an empty typed list of scanner issues."""
     return []
-
-
-def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
-    """Return True when *value* is a dictionary with object-like entries."""
-    return isinstance(value, dict)
 
 
 def _is_object_sequence(
@@ -92,7 +91,7 @@ class ScanResult:
             """Serialize."""
             if isinstance(obj, (str, int, float, bool, type(None))):
                 return obj
-            if _is_object_dict(obj):
+            if is_object_dict(obj):
                 serialized_map: dict[str, SerializedValue] = {}
                 for key_obj, value_obj in obj.items():
                     serialized_map[str(key_obj)] = _serialize(value_obj)

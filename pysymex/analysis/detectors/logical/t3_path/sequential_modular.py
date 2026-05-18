@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
-from pysymex.analysis.detectors.logical.utils import core_has_operator
+from pysymex.analysis.detectors.logical.utils import core_has_operator, extract_modulo_equalities
 import z3
 
 
@@ -26,7 +26,18 @@ class SequentialModularRule(LogicRule):
     tier = 3
 
     def matches(self, ctx: ContradictionContext) -> bool:
-        has_mod = core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM})
-        has_mul = core_has_operator(ctx.core, {z3.Z3_OP_MUL})
-        # Sequential modular contradictions stem from arithmetic substitutions under modulo.
-        return has_mod and has_mul
+        if not core_has_operator(ctx.core, {z3.Z3_OP_MUL}):
+            return False
+
+        seen: dict[tuple[str, int], int] = {}
+        for var, modulus, remainder in extract_modulo_equalities(ctx.core):
+            normalized_modulus = abs(modulus)
+            if normalized_modulus == 0:
+                continue
+            key = (var, normalized_modulus)
+            normalized_remainder = remainder % normalized_modulus
+            previous = seen.get(key)
+            if previous is not None and previous != normalized_remainder:
+                return True
+            seen[key] = normalized_remainder
+        return False

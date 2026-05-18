@@ -1,4 +1,3 @@
-import pytest
 import pysymex.analysis.abstract.interpreter.values
 from pysymex.analysis.abstract.interpreter.values import Sign, SignValue, Interval, Congruence
 
@@ -156,12 +155,12 @@ class TestSignValue:
 
     def test_div(self) -> None:
         """Test div behavior."""
-        res, may_raise = SignValue.from_const(1).div(SignValue.from_const(0))
+        _, may_raise = SignValue.from_const(1).div(SignValue.from_const(0))
         assert may_raise is True
 
     def test_mod(self) -> None:
         """Test mod behavior."""
-        res, may_raise = SignValue.from_const(1).mod(SignValue.from_const(0))
+        _, may_raise = SignValue.from_const(1).mod(SignValue.from_const(0))
         assert may_raise is True
 
 
@@ -266,12 +265,12 @@ class TestInterval:
 
     def test_div(self) -> None:
         """Test div behavior."""
-        res, may_raise = Interval.const(6).div(Interval.const(2))
+        res, _ = Interval.const(6).div(Interval.const(2))
         assert res.get_const() == 3
 
     def test_mod(self) -> None:
         """Test mod behavior."""
-        res, may_raise = Interval.const(7).mod(Interval.const(2))
+        res, _ = Interval.const(7).mod(Interval.const(2))
         assert res.get_const() == 1
 
 

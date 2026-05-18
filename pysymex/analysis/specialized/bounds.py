@@ -33,7 +33,6 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
-
 if TYPE_CHECKING:
     import z3
 
@@ -44,17 +43,13 @@ from enum import Enum, auto
 
 import z3
 
+from pysymex.analysis.properties.core import extract_model_values
 from pysymex.core.solver.engine import get_model, is_satisfiable
+from pysymex.core.memory.collections.lists import empty_constraints
+from pysymex.analysis.specialized.arithmetic import empty_counterexample
 
-
-def _empty_constraints() -> list[z3.BoolRef]:
-    """Create a typed empty constraints list."""
-    return []
-
-
-def _empty_counterexample() -> dict[str, object]:
-    """Create a typed empty counterexample map."""
-    return {}
+_empty_constraints = empty_constraints
+_empty_counterexample = empty_counterexample
 
 
 def _empty_dimensions() -> list[z3.ArithRef]:
@@ -209,13 +204,10 @@ class BoundsChecker:
         self.timeout_ms = timeout_ms
         self.check_off_by_one = check_off_by_one
         self.strict_slice_bounds = strict_slice_bounds
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
         self._issues: list[BoundsIssue] = []
 
     def reset(self) -> None:
         """Reset checker state."""
-        self._solver.reset()
         self._issues.clear()
 
     def check_index(
@@ -675,27 +667,7 @@ class BoundsChecker:
         else:
             return (True, None)
 
-    def _extract_model(
-        self,
-        model: z3.ModelRef | None,
-        vars: list[z3.ExprRef],
-    ) -> dict[str, object]:
-        """Extract variable values from Z3 model."""
-        if model is None:
-            return {}
-        result: dict[str, object] = {}
-        for var in vars:
-            try:
-                val = model.eval(var, model_completion=True)
-                if z3.is_int_value(val):
-                    result[str(var)] = val.as_long()
-                elif z3.is_rational_value(val):
-                    result[str(var)] = float(val.as_fraction())
-                else:
-                    result[str(var)] = str(val)
-            except z3.Z3Exception:
-                logger.error("Z3Exception during model evaluation in BoundsChecker", exc_info=True)
-        return result
+    _extract_model = staticmethod(extract_model_values)
 
 
 class ListBoundsChecker(BoundsChecker):
@@ -808,14 +780,3 @@ class NumpyBoundsChecker(BoundsChecker):
                 )
             result_shape.append(z3.If(d1 > d2, d1, d2))
         return (result_shape, issues)
-
-
-__all__ = [
-    "BoundsChecker",
-    "BoundsIssue",
-    "BoundsIssueKind",
-    "ListBoundsChecker",
-    "NumpyBoundsChecker",
-    "SymbolicArray",
-    "SymbolicBuffer",
-]

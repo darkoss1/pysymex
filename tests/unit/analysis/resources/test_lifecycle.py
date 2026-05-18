@@ -1,6 +1,5 @@
-import pytest
 import z3
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, patch
 from pysymex.analysis.resources.lifecycle import (
     ResourceStateMachine,
     TrackedResource,
@@ -157,11 +156,12 @@ class TestResourceLifecycleChecker:
         assert c.suggest_context_manager("f") is not None
 
     @patch("pysymex.analysis.resources.lifecycle.z3.Solver.check", return_value=z3.unsat)
-    def test_prove_resource_safety(self, mock_check) -> None:
+    def test_prove_resource_safety(self, mock_check: MagicMock) -> None:
         """Test prove_resource_safety behavior."""
+        _ = mock_check
         c = ResourceLifecycleChecker()
         c.create_resource("f", ResourceKind.FILE)
-        safe, msg = c.prove_resource_safety("f")
+        safe, _ = c.prove_resource_safety("f")
         assert safe is True
 
     def test_get_all_issues(self) -> None:
@@ -185,7 +185,7 @@ class TestFileResourceChecker:
     def test_open_file(self) -> None:
         """Test open_file behavior."""
         c = FileResourceChecker()
-        res, issue = c.open_file("f", "w")
+        res, _ = c.open_file("f", "w")
         assert res.state == ResourceState.FILE_OPEN_WRITE
 
     def test_read_file(self) -> None:
@@ -233,7 +233,7 @@ class TestLockResourceChecker:
         """Test set_lock_order behavior."""
         c = LockResourceChecker()
         c.set_lock_order(["l1"])
-        assert c._lock_order == ["l1"]
+        assert c._lock_order == ["l1"]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_check_current_lock_order(self) -> None:
         """Test check_current_lock_order behavior."""
@@ -243,5 +243,5 @@ class TestLockResourceChecker:
         c.set_lock_order(["l1", "l2"])
         c.acquire_lock("l2")
         c.acquire_lock("l1")
-        c._held_locks = {"l1", "l2"}
+        c._held_locks = {"l1", "l2"}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
         assert c.check_lock_ordering(["l2", "l1"], ["l1", "l2"]) is not None

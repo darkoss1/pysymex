@@ -63,7 +63,6 @@ P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
 
-
 _contract_registry: dict[str, FunctionContract] = {}
 _registry_lock = threading.Lock()
 _class_invariant_registry: dict[type[object], list[Contract]] = {}
@@ -80,13 +79,15 @@ def _get_function_key(func: Callable[..., object]) -> str:
 
 def _get_or_create_contract(func: Callable[..., object]) -> FunctionContract:
     """Get or create a FunctionContract for the given function."""
+    existing = getattr(func, "__contract__", None)
+    if isinstance(existing, FunctionContract):
+        return existing
+
     key = _get_function_key(func)
     with _registry_lock:
-        if key not in _contract_registry:
-            _contract_registry[key] = FunctionContract(
-                function_name=getattr(func, "__name__", repr(func))
-            )
-        return _contract_registry[key]
+        contract = FunctionContract(function_name=getattr(func, "__name__", repr(func)))
+        _contract_registry[key] = contract
+        return contract
 
 
 def get_function_contract(func: Callable[..., object]) -> FunctionContract | None:
@@ -98,6 +99,10 @@ def get_function_contract(func: Callable[..., object]) -> FunctionContract | Non
     Returns:
         The associated ``FunctionContract``, or ``None``.
     """
+    existing = getattr(func, "__contract__", None)
+    if isinstance(existing, FunctionContract):
+        return existing
+
     key = _get_function_key(func)
     with _registry_lock:
         return _contract_registry.get(key)
@@ -334,16 +339,3 @@ def loop_invariant(
         predicate=predicate,
         message=message or f"Loop invariant: {condition_repr or '<callable>'}",
     )
-
-
-__all__ = [
-    "assigns",
-    "assumes",
-    "ensures",
-    "function_contracts",
-    "get_function_contract",
-    "invariant",
-    "loop_invariant",
-    "pure",
-    "requires",
-]

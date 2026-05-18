@@ -43,6 +43,26 @@ def _ensure_z3_expr(val: object) -> z3.ExprRef | None:
         return z3.RealVal(val)
     if isinstance(val, str):
         return z3.StringVal(val)
+
+    # Respect the affinity type of unified SymbolicValue to prevent sort mismatches
+    affinity = getattr(val, "affinity_type", None)
+    if affinity == "bool":
+        expr = getattr(val, "z3_bool", None)
+        if isinstance(expr, z3.ExprRef):
+            return expr
+    elif affinity == "str":
+        expr = getattr(val, "z3_str", None)
+        if isinstance(expr, z3.ExprRef):
+            return expr
+    elif affinity == "float":
+        expr = getattr(val, "z3_float", None)
+        if isinstance(expr, z3.ExprRef):
+            return expr
+    elif affinity == "int":
+        expr = getattr(val, "z3_int", None)
+        if isinstance(expr, z3.ExprRef):
+            return expr
+
     for attr in ("z3_int", "z3_bool", "z3_str", "z3_addr"):
         expr = getattr(val, attr, None)
         if isinstance(expr, z3.ExprRef):
@@ -50,10 +70,28 @@ def _ensure_z3_expr(val: object) -> z3.ExprRef | None:
     return None
 
 
+def _unknown_contract_issue(
+    *,
+    message: str,
+    state: VMState,
+    line_number: int | None = None,
+    function_name: str | None = None,
+) -> Issue:
+    return Issue(
+        kind=IssueKind.UNKNOWN,
+        message=message,
+        constraints=list(state.path_constraints),
+        model=None,
+        pc=state.pc,
+        line_number=line_number,
+        function_name=function_name,
+    )
+
+
 def inject_preconditions_initial(state: VMState, func: Callable[..., object]) -> VMState:
-    """Inject preconditions into the initial state."""
+    """Inject preconditions and assumptions into the initial state."""
     contract = get_function_contract(func)
-    if not contract or not contract.preconditions:
+    if not contract:
         return state
 
     symbols: dict[str, z3.ExprRef] = {}
@@ -62,12 +100,21 @@ def inject_preconditions_initial(state: VMState, func: Callable[..., object]) ->
         if expr is not None:
             symbols[name] = expr
 
-    for clause in contract.preconditions:
-        try:
-            cond = clause.compile(symbols)
-            state = state.add_constraint(cond)
-        except Exception as e:
-            logger.warning(f"Failed to compile precondition {clause.condition}: {e}")
+    if contract.preconditions:
+        for clause in contract.preconditions:
+            try:
+                cond = clause.compile(symbols)
+                state = state.add_constraint(cond)
+            except Exception:
+                logger.debug("Failed to compile precondition %s", clause.condition, exc_info=True)
+
+    if contract.assumptions:
+        for clause in contract.assumptions:
+            try:
+                cond = clause.compile(symbols)
+                state = state.add_constraint(cond)
+            except Exception:
+                logger.debug("Failed to compile assumption %s", clause.condition, exc_info=True)
 
     return state
 
@@ -96,17 +143,44 @@ def inject_postconditions(
     for clause in contract.postconditions:
         try:
             cond = clause.compile(symbols)
-            from pysymex.core.solver.engine import is_satisfiable
+            from pysymex.core.solver.engine import active_incremental_solver, IncrementalSolver
 
-            if is_satisfiable([z3.Not(cond)]):
+            constraints = list(state.path_constraints) + [z3.Not(cond)]
+            solver = active_incremental_solver.get()
+            if solver is None:
+                solver = IncrementalSolver(timeout_ms=5000, use_cache=False)
+
+            res = solver.check_sat_result(
+                constraints, known_sat_prefix_len=len(state.path_constraints)
+            )
+            if res.is_sat:
                 return Issue(
                     kind=IssueKind.CONTRACT_VIOLATION,
                     message=f"Postcondition '{clause.condition}' may be violated",
+                    constraints=constraints,
+                    line_number=clause.line_number,
+                    model=res.model,
+                    pc=state.pc,
+                    function_name=getattr(func, "__name__", "unknown"),
+                )
+            elif res.is_unknown:
+                return Issue(
+                    kind=IssueKind.UNKNOWN,
+                    message=f"Postcondition '{clause.condition}' check returned unknown (timeout or complex theories)",
+                    constraints=constraints,
                     line_number=clause.line_number,
                     model=None,
+                    pc=state.pc,
+                    function_name=getattr(func, "__name__", "unknown"),
                 )
         except Exception as e:
-            logger.warning(f"Failed to compile postcondition {clause.condition}: {e}")
+            logger.debug("Failed to compile postcondition %s", clause.condition, exc_info=True)
+            return _unknown_contract_issue(
+                message=f"Postcondition '{clause.condition}' could not be checked: {e}",
+                state=state,
+                line_number=clause.line_number,
+                function_name=getattr(func, "__name__", "unknown"),
+            )
 
     return None
 
@@ -141,19 +215,42 @@ def inject_call_preconditions(
     for clause in contract.preconditions:
         try:
             cond = clause.compile(symbols)
-            from pysymex.core.solver.engine import is_satisfiable, get_model
+            from pysymex.core.solver.engine import active_incremental_solver, IncrementalSolver
 
             constraints = list(state.path_constraints) + [z3.Not(cond)]
-            if is_satisfiable(constraints):
+            solver = active_incremental_solver.get()
+            if solver is None:
+                solver = IncrementalSolver(timeout_ms=5000, use_cache=False)
+
+            res = solver.check_sat_result(constraints)
+            if res.is_sat:
                 return Issue(
                     kind=IssueKind.CONTRACT_VIOLATION,
                     message=f"Precondition '{clause.condition}' of {getattr(func, '__name__', 'unknown')} may be violated",
                     constraints=constraints,
-                    model=get_model(constraints),
+                    model=res.model,
+                    pc=state.pc,
+                    function_name=getattr(func, "__name__", "unknown"),
+                )
+            elif res.is_unknown:
+                return Issue(
+                    kind=IssueKind.UNKNOWN,
+                    message=f"Precondition '{clause.condition}' of {getattr(func, '__name__', 'unknown')} check returned unknown (timeout or complex theories)",
+                    constraints=constraints,
+                    model=None,
                     pc=state.pc,
                     function_name=getattr(func, "__name__", "unknown"),
                 )
         except Exception as e:
-            logger.warning(f"Failed to compile call precondition {clause.condition}: {e}")
+            logger.debug("Failed to compile call precondition %s", clause.condition, exc_info=True)
+            return _unknown_contract_issue(
+                message=(
+                    f"Precondition '{clause.condition}' of "
+                    f"{getattr(func, '__name__', 'unknown')} could not be checked: {e}"
+                ),
+                state=state,
+                line_number=clause.line_number,
+                function_name=getattr(func, "__name__", "unknown"),
+            )
 
     return None

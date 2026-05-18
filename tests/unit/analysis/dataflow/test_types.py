@@ -1,4 +1,3 @@
-import pytest
 from pysymex.analysis.dataflow.types import (
     Definition,
     Use,

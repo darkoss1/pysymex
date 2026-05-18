@@ -5,6 +5,7 @@ import dis
 import z3
 
 from pysymex.core.state import VMState
+from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicObject
 from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
 from pysymex.execution.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py313 import control
@@ -161,7 +162,7 @@ def test_handle_end_for() -> None:
     """Test handle_end_for behavior."""
     state = VMState(stack=[1, 2], pc=0)
     control.handle_end_for(_instr("END_FOR"), state, OpcodeDispatcher())
-    assert state.stack == []
+    assert state.stack == [1]
 
 
 def test_handle_to_bool() -> None:
@@ -176,6 +177,30 @@ def test_handle_get_len() -> None:
     state = VMState(stack=["abc"], pc=0)
     control.handle_get_len(_instr("GET_LEN"), state, OpcodeDispatcher())
     assert isinstance(state.peek(), SymbolicValue)
+
+
+def test_handle_get_len_uses_concrete_list_length() -> None:
+    """GET_LEN must not make concrete non-empty lists look empty."""
+    state = VMState(stack=[[1, 2, 3]], pc=0)
+
+    control.handle_get_len(_instr("GET_LEN"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_true(z3.simplify(result.z3_int == z3.IntVal(3)))
+
+
+def test_handle_get_len_resolves_heap_backed_symbolic_list() -> None:
+    """GET_LEN should use symbolic container length through object handles."""
+    subject, _constraint = SymbolicObject.symbolic("list_obj", 11)
+    storage = SymbolicList.empty("items")
+    state = VMState(stack=[subject], memory={11: storage}, pc=0)
+
+    control.handle_get_len(_instr("GET_LEN"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_true(z3.simplify(result.z3_int == storage.z3_len))
 
 
 def test_handle_enter_executor() -> None:
@@ -206,6 +231,30 @@ def test_handle_match_mapping() -> None:
     assert isinstance(state.peek(), SymbolicValue)
 
 
+def test_handle_match_mapping_rejects_plain_symbolic_object() -> None:
+    """Plain objects do not match mapping patterns in CPython."""
+    subject, _constraint = SymbolicObject.symbolic("obj", 7)
+    state = VMState(stack=[subject], pc=0)
+
+    control.handle_match_mapping(_instr("MATCH_MAPPING"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_false(z3.simplify(result.z3_bool))
+
+
+def test_handle_match_mapping_accepts_heap_backed_symbolic_dict() -> None:
+    """SymbolicObject handles backed by dict storage still match mapping patterns."""
+    subject, _constraint = SymbolicObject.symbolic("dict_obj", 8)
+    state = VMState(stack=[subject], memory={8: SymbolicDict.empty()}, pc=0)
+
+    control.handle_match_mapping(_instr("MATCH_MAPPING"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_true(z3.simplify(result.z3_bool))
+
+
 def test_handle_match_sequence() -> None:
     """Test handle_match_sequence behavior."""
     state = VMState(stack=[[1]], pc=0)
@@ -213,11 +262,63 @@ def test_handle_match_sequence() -> None:
     assert isinstance(state.peek(), SymbolicValue)
 
 
+def test_handle_match_sequence_rejects_plain_symbolic_object() -> None:
+    """Plain objects do not match sequence patterns in CPython."""
+    subject, _constraint = SymbolicObject.symbolic("obj", 9)
+    state = VMState(stack=[subject], pc=0)
+
+    control.handle_match_sequence(_instr("MATCH_SEQUENCE"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_false(z3.simplify(result.z3_bool))
+
+
+def test_handle_match_sequence_accepts_heap_backed_symbolic_list() -> None:
+    """SymbolicObject handles backed by list storage still match sequence patterns."""
+    subject, _constraint = SymbolicObject.symbolic("list_obj", 10)
+    state = VMState(stack=[subject], memory={10: SymbolicList.empty()}, pc=0)
+
+    control.handle_match_sequence(_instr("MATCH_SEQUENCE"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_true(z3.simplify(result.z3_bool))
+
+
 def test_handle_match_keys() -> None:
     """Test handle_match_keys behavior."""
     state = VMState(stack=[{}, ("a",)], pc=0)
     res = control.handle_match_keys(_instr("MATCH_KEYS"), state, OpcodeDispatcher())
     assert res is not None
+
+
+def test_handle_match_keys_rejects_missing_key_on_heap_backed_symbolic_dict() -> None:
+    """Heap-backed dict handles must not satisfy impossible mapping-key patterns."""
+    subject, _constraint = SymbolicObject.symbolic("dict_obj", 12)
+    state = VMState(stack=[subject, ("missing",)], memory={12: SymbolicDict.empty()}, pc=0)
+
+    control.handle_match_keys(_instr("MATCH_KEYS"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_false(z3.simplify(result.z3_bool))
+
+
+def test_handle_match_keys_accepts_present_key_on_heap_backed_symbolic_dict() -> None:
+    """Heap-backed dict handles should use stored key membership facts."""
+    subject, _constraint = SymbolicObject.symbolic("dict_obj", 13)
+    state = VMState(
+        stack=[subject, ("present",)],
+        memory={13: SymbolicDict.from_const({"present": 1})},
+        pc=0,
+    )
+
+    control.handle_match_keys(_instr("MATCH_KEYS"), state, OpcodeDispatcher())
+
+    result = state.peek()
+    assert isinstance(result, SymbolicValue)
+    assert z3.is_true(z3.simplify(result.z3_bool))
 
 
 def test_handle_match_class() -> None:

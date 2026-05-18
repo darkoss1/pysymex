@@ -1,9 +1,6 @@
 """Tests for pysymex/analysis/detectors/logical/t1_local/__init__.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
 from pysymex.analysis.detectors.logical.t1_local import __all__
 
 

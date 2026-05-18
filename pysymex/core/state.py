@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeGuard, TypeVar
 
@@ -70,6 +71,11 @@ class _UnboundType:
 
 UNBOUND: _UnboundType = _UnboundType()
 
+
+class VMStateError(RuntimeError):
+    """Raised when bytecode execution would violate VM state invariants."""
+
+
 if TYPE_CHECKING:
 
     def is_bound(value: StackValue | _UnboundType) -> TypeGuard[StackValue]:
@@ -92,6 +98,7 @@ def _is_hashable_value(value: object) -> TypeGuard[HashableValue]:
 
 K = TypeVar("K")
 T = TypeVar("T")
+S = TypeVar("S", bound=Hashable)
 
 
 def wrap_cow_dict(val: dict[K, T] | CowDict[K, T] | None) -> CowDict[K, T]:
@@ -101,7 +108,7 @@ def wrap_cow_dict(val: dict[K, T] | CowDict[K, T] | None) -> CowDict[K, T]:
     return CowDict(val) if val else CowDict()
 
 
-def wrap_cow_set(val: set[int] | CowSet | None) -> CowSet:
+def wrap_cow_set(val: set[S] | CowSet[S] | None) -> CowSet[S]:
     """Wrap a set in CowSet if it isn't already."""
     if isinstance(val, CowSet):
         return val
@@ -118,22 +125,31 @@ def _copy_summary_builder(builder: object) -> object:
     inside those lists are immutable and safe to share.
     """
     try:
+        builder_clone = getattr(builder, "clone", None)
+        if callable(builder_clone):
+            return builder_clone()
+
         new = copy.copy(builder)
 
         if hasattr(builder, "summary"):
-            setattr(new, "summary", copy.copy(getattr(builder, "summary")))
-            for attr in (
-                "parameters",
-                "preconditions",
-                "postconditions",
-                "modified",
-                "reads",
-                "calls",
-                "may_raise",
-            ):
-                summary = getattr(new, "summary")
-                if hasattr(summary, attr):
-                    setattr(summary, attr, list(getattr(summary, attr)))
+            summary_obj = getattr(builder, "summary")
+            summary_clone = getattr(summary_obj, "clone", None)
+            if callable(summary_clone):
+                setattr(new, "summary", summary_clone())
+            else:
+                setattr(new, "summary", copy.copy(summary_obj))
+                for attr in (
+                    "parameters",
+                    "preconditions",
+                    "postconditions",
+                    "modified",
+                    "reads",
+                    "calls",
+                    "may_raise",
+                ):
+                    summary = getattr(new, "summary")
+                    if hasattr(summary, attr):
+                        setattr(summary, attr, list(getattr(summary, attr)))
         return new
     except (TypeError, AttributeError, RecursionError):
         return builder
@@ -179,6 +195,8 @@ class CallFrame:
     stack_depth: int
     caller_instructions: list[object] | None = None
     summary_builder: object | None = None
+    is_init_call: bool = False
+    init_instance: StackValue | None = None
 
     def hash_value(self) -> int:
         """Stable content-aware hash of the call frame.
@@ -232,10 +250,13 @@ class VMState:
         "contract_frames",
         "current_instructions",
         "depth",
+        "freed_vars",
         "global_vars",
         "local_vars",
+        "loop_counters",
         "loop_iterations",
         "memory",
+        "open_resources",
         "path_constraints",
         "path_id",
         "pc",
@@ -244,6 +265,9 @@ class VMState:
         "prev_loop_states",
         "stack",
         "visited_pcs",
+        "_cached_hash",
+        "current_coro_id",
+        "awaitable_results",
     )
 
     def __init__(
@@ -256,16 +280,19 @@ class VMState:
         block_stack: list[BlockInfo] | None = None,
         call_stack: list[CallFrame] | None = None,
         contract_frames: list[object] | None = None,
-        visited_pcs: set[int] | CowSet | None = None,
+        visited_pcs: set[int] | CowSet[int] | None = None,
         memory: dict[int, StackValue] | CowDict[int, StackValue] | None = None,
         object_state: ObjectState | None = None,
         path_id: int = 0,
         depth: int = 0,
         current_instructions: list[object] | None = None,
         pending_constraint_count: int = 0,
-        loop_iterations: dict[int, int] | None = None,
-        prev_loop_states: dict[int, VMState] | None = None,
+        loop_iterations: dict[int, int] | CowDict[int, int] | None = None,
+        loop_counters: dict[int, int] | CowDict[int, int] | None = None,
+        freed_vars: set[str] | CowSet[str] | None = None,
+        prev_loop_states: dict[int, VMState] | CowDict[int, VMState] | None = None,
         branch_trace: BranchChain | None = None,
+        open_resources: int | None = None,
         _path_counter: int = 0,
     ) -> None:
         """Initialize a fresh VM state.
@@ -288,6 +315,7 @@ class VMState:
             prev_loop_states: Snapshots of prior loop entry points for state merging.
             branch_trace: A historical log of branch decisions (O(1) chain).
         """
+        self._cached_hash = None
         self.stack = stack if stack is not None else []
         self.local_vars = wrap_cow_dict(local_vars)
         self.global_vars = wrap_cow_dict(global_vars)
@@ -310,12 +338,17 @@ class VMState:
         self.depth = depth
         self.current_instructions = current_instructions
         self.pending_constraint_count = pending_constraint_count
-        self.loop_iterations = dict(loop_iterations) if loop_iterations is not None else {}
-        self.prev_loop_states = dict(prev_loop_states) if prev_loop_states is not None else {}
+        self.loop_iterations = wrap_cow_dict(loop_iterations)
+        self.loop_counters = wrap_cow_dict(loop_counters)
+        self.freed_vars = wrap_cow_set(freed_vars)
+        self.prev_loop_states = wrap_cow_dict(prev_loop_states)
         self.branch_trace = branch_trace if branch_trace is not None else BranchChain.empty()
+        self.open_resources = open_resources if open_resources is not None else 0
         self.pending_kw_names: tuple[str, ...] | None = None
         self._building_class: bool = False
         self._class_registry: dict[str, object] | EnhancedClassRegistry = {}
+        self.current_coro_id: str | None = None
+        self.awaitable_results: dict[int, StackValue] = {}
 
     @property
     def building_class(self) -> bool:
@@ -354,35 +387,70 @@ class VMState:
         """
         child = self.fork()
         for attr, value in changes.items():
-            object.__setattr__(child, attr, value)
+            setattr(child, attr, value)
         return child
 
     def push(self, value: StackValue) -> VMState:
         """Push *value* onto the operand stack.  Returns ``self``."""
         self.stack.append(value)
+        self._cached_hash = None
         return self
 
     def pop(self) -> StackValue:
         """Pop a value from the operand stack."""
         if not self.stack:
-            raise RuntimeError("Stack underflow")
+            raise VMStateError("Stack underflow")
+        self._cached_hash = None
         return self.stack.pop()
 
     def peek(self, n: int = 0) -> StackValue:
         """Peek at the n-th value from the top of the stack (read-only)."""
         if len(self.stack) <= n:
-            raise RuntimeError(f"Stack underflow: cannot peek at position {n}")
+            raise VMStateError(f"Stack underflow: cannot peek at position {n}")
         return self.stack[-(n + 1)]
 
     def advance_pc(self, delta: int = 1) -> VMState:
         """Increment ``pc`` by *delta*.  Returns ``self``."""
         self.pc += delta
+        self._cached_hash = None
         return self
 
     def set_pc(self, target: int) -> VMState:
         """Set ``pc`` to *target*.  Returns ``self``."""
         self.pc = target
+        self._cached_hash = None
         return self
+
+    def increment_loop_iteration(self, pc: int) -> int:
+        """Increment loop iteration count for *pc*. Returns new count.
+
+        Invalidates hash to ensure loop detection logic sees the updated state.
+        """
+        current_count = self.loop_iterations.get(pc)
+        count = (current_count if current_count is not None else 0) + 1
+        self.loop_iterations[pc] = count
+        self._cached_hash = None
+        return count
+
+    def record_freed_var(self, name: str) -> VMState:
+        """Mark a variable as freed/deleted. Returns ``self``."""
+        if name not in self.freed_vars:
+            self.freed_vars.add(name)
+            self._cached_hash = None
+        return self
+
+    def store_heap(self, address: int, value: StackValue) -> VMState:
+        """Store a value in symbolic memory at *address*. Returns ``self``.
+
+        Invalidates the cached state hash to ensure correct path deduplication.
+        """
+        self.memory[address] = value
+        self._cached_hash = None
+        return self
+
+    def load_heap(self, address: int, default: StackValue | None = None) -> StackValue | None:
+        """Load a value from symbolic memory at *address*."""
+        return self.memory.get(address, default)
 
     def set_local(self, name: str, value: StackValue | _UnboundType) -> VMState:
         """Set local variable *name* to *value*.  Returns ``self``.
@@ -392,13 +460,17 @@ class VMState:
         if value is UNBOUND:
             if name in self.local_vars:
                 del self.local_vars[name]
+                self._cached_hash = None
+            self.record_freed_var(name)
             return self
-        self.local_vars[name] = value  # type: ignore[index]  # StackValue is the expected type
+        self.local_vars[name] = value  # type: ignore[index]
+        self._cached_hash = None
         return self
 
     def set_global(self, name: str, value: StackValue) -> VMState:
         """Set global variable *name* to *value*.  Returns ``self``."""
         self.global_vars[name] = value
+        self._cached_hash = None
         return self
 
     def add_constraint(self, constraint: z3.BoolRef) -> VMState:
@@ -408,6 +480,7 @@ class VMState:
 
         if not (z3.is_true(constraint) or z3.is_false(constraint)):
             self.pending_constraint_count += 1
+        self._cached_hash = None
         return self
 
     def record_branch(self, condition: z3.BoolRef, taken: bool, pc: int) -> VMState:
@@ -429,6 +502,7 @@ class VMState:
         if self.pc in self.visited_pcs:
             return True
         self.visited_pcs.add(self.pc)
+        self._cached_hash = None
         return False
 
     def enter_block(self, block: BlockInfo) -> VMState:
@@ -496,6 +570,9 @@ class VMState:
         Essential for path deduplication and loop detection (FLAW 4 fix).
         Uses stable content-based hashing instead of object identity.
         """
+        if self._cached_hash is not None:
+            return self._cached_hash
+
         h = self.pc * 2654435761
         h ^= self.constraint_hash() * 999999937
 
@@ -509,6 +586,10 @@ class VMState:
         h ^= self.global_vars.hash_value() * 1000003
         h ^= self.memory.hash_value() * 82520
         h ^= self.visited_pcs.hash_value() * 12345
+        h ^= self.loop_iterations.hash_value() * 131
+        h ^= self.loop_counters.hash_value() * 137
+        h ^= self.freed_vars.hash_value() * 139
+        h ^= self.prev_loop_states.hash_value() * 149
 
         for v in self.stack:
             if _is_hashable_value(v):
@@ -519,7 +600,9 @@ class VMState:
                 except TypeError:
                     h = (h * 31) ^ 0
 
-        return h & 0xFFFFFFFFFFFFFFFF
+        res = h & 0xFFFFFFFFFFFFFFFF
+        self._cached_hash = res
+        return res
 
     def fork(self) -> VMState:
         """Create a copy-on-write fork of this state for branching.
@@ -549,38 +632,41 @@ class VMState:
                         if f.summary_builder is not None
                         else None
                     ),
+                    is_init_call=f.is_init_call,
+                    init_instance=f.init_instance,
                 )
                 for f in self.call_stack
             ]
 
-        child = VMState(
-            stack=list(self.stack),
-            local_vars=self.local_vars.cow_fork(),
-            global_vars=self.global_vars.cow_fork(),
-            path_constraints=self.path_constraints,
-            pc=self.pc,
-            block_stack=list(self.block_stack),
-            call_stack=new_call_stack,
-            contract_frames=list(self.contract_frames),
-            visited_pcs=self.visited_pcs.cow_fork(),
-            memory=self.memory.cow_fork(),
-            object_state=(
-                self._object_state.clone()
-                if self._object_state is not None
-                and hasattr(self._object_state, "clone")
-                and callable(getattr(self._object_state, "clone", None))
-                else copy.copy(self.object_state)
-                if self._object_state is not None
-                else None
-            ),
-            path_id=new_path_id,
-            depth=self.depth,
-            current_instructions=self.current_instructions,
-            pending_constraint_count=self.pending_constraint_count,
-            loop_iterations=dict(self.loop_iterations),
-            prev_loop_states=dict(self.prev_loop_states),
-            branch_trace=self.branch_trace,
+        child = VMState.__new__(VMState)
+        child.stack = list(self.stack)
+        child.local_vars = self.local_vars.cow_fork()
+        child.global_vars = self.global_vars.cow_fork()
+        child.path_constraints = self.path_constraints
+        child.pc = self.pc
+        child.block_stack = list(self.block_stack)
+        child.call_stack = new_call_stack
+        child.contract_frames = list(self.contract_frames)
+        child.visited_pcs = self.visited_pcs.cow_fork()
+        child.memory = self.memory.cow_fork()
+        child.path_id = new_path_id
+        child.depth = self.depth
+        child.current_instructions = self.current_instructions
+        child.pending_constraint_count = self.pending_constraint_count
+        child.loop_iterations = self.loop_iterations.cow_fork()
+        child.loop_counters = self.loop_counters.cow_fork()
+        child.freed_vars = self.freed_vars.cow_fork()
+        child.prev_loop_states = self.prev_loop_states.cow_fork()
+        child.branch_trace = self.branch_trace
+        child.open_resources = self.open_resources
+        child._object_state = (
+            self._object_state.clone()
+            if self._object_state is not None and hasattr(self._object_state, "clone")
+            else copy.copy(self._object_state)
+            if self._object_state is not None
+            else None
         )
+        child._cached_hash = self._cached_hash
 
         child.building_class = self.building_class
         child.class_registry = (
@@ -589,6 +675,8 @@ class VMState:
             else self.class_registry
         )
         child.pending_kw_names = getattr(self, "pending_kw_names", None)
+        child.current_coro_id = self.current_coro_id
+        child.awaitable_results = dict(self.awaitable_results)
         return child
 
     def copy(self) -> VMState:

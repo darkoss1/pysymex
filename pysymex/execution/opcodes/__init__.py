@@ -23,13 +23,37 @@ to the appropriate opcode directory for the running Python version.
 
 import logging
 import sys
+from importlib import import_module, reload
 from types import ModuleType
+from threading import Lock
+
+from pysymex.execution.dispatcher import OpcodeDispatcher
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_VERSIONS = [(3, 11), (3, 12), (3, 13)]
 MIN_VERSION = (3, 11)
 MAX_VERSION = (3, 13)
+_handlers_lock = Lock()
+_handlers_loaded = False
+_loaded_module_name: str | None = None
+
+
+def _registered_handlers_match(module_name: str) -> bool:
+    """Return True when global opcode handlers point at the active version package."""
+    handler_module = OpcodeDispatcher.global_handler_module("STORE_FAST")
+    if handler_module is None:
+        return False
+    return handler_module.startswith(module_name)
+
+
+def _refresh_version_handlers(module: ModuleType) -> None:
+    """Reload version submodules so decorator-based global handlers are current."""
+    exported_names = getattr(module, "__all__", ())
+    for export_name in exported_names:
+        exported = getattr(module, export_name, None)
+        if isinstance(exported, ModuleType):
+            reload(exported)
 
 
 def _detect_python_version() -> tuple[int, int]:
@@ -96,12 +120,54 @@ def _route_to_opcode_dir(version: tuple[int, int]) -> ModuleType:
     return py_version
 
 
-# Detect version and route
-_detected_version = _detect_python_version()
-py_version = _route_to_opcode_dir(_detected_version)
+def _normalize_supported_version(version: tuple[int, int]) -> tuple[int, int]:
+    """Normalize Python version to the closest supported opcode version."""
+    if version < MIN_VERSION:
+        raise ImportError(
+            f"Python {version[0]}.{version[1]} is not supported by pysymex. "
+            f"Minimum required version: {MIN_VERSION[0]}.{MIN_VERSION[1]}"
+        )
+    if version > MAX_VERSION:
+        return MAX_VERSION
+    return version
+
+
+def load_opcode_handlers(version: tuple[int, int] | None = None) -> ModuleType:
+    """Load opcode handler modules for a target Python version.
+
+    This function guarantees that decorator-based opcode registrations are
+    materialized before bytecode execution starts.
+    """
+    global _handlers_loaded
+    global _loaded_module_name
+
+    requested_version = version if version is not None else _detect_python_version()
+    target_version = _normalize_supported_version(requested_version)
+    module_map = {
+        11: "pysymex.execution.opcodes.py311",
+        12: "pysymex.execution.opcodes.py312",
+        13: "pysymex.execution.opcodes.py313",
+    }
+    module_name = module_map[target_version[1]]
+
+    with _handlers_lock:
+        module = import_module(module_name)
+        if (
+            _handlers_loaded
+            and _loaded_module_name == module_name
+            and _registered_handlers_match(module_name)
+        ):
+            return module
+        _refresh_version_handlers(module)
+        if target_version == (3, 12):
+            import_module("pysymex.execution.opcodes.py312.instrumentation")
+        _handlers_loaded = True
+        _loaded_module_name = module_name
+        return module
+
 
 __all__ = [
-    "py_version",
+    "load_opcode_handlers",
     "_detect_python_version",
     "_validate_version",
     "_route_to_opcode_dir",

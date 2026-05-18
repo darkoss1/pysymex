@@ -33,7 +33,7 @@ from __future__ import annotations
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.types import SymbolicValue
 from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
 
 if TYPE_CHECKING:

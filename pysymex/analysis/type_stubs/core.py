@@ -26,8 +26,6 @@ from pathlib import Path
 
 from pysymex.analysis.type_stubs.types import ClassStub, FunctionStub, ModuleStub, StubType
 
-__all__ = ["BuiltinStubs", "StubBasedTypeResolver", "StubParser", "StubRepository"]
-
 
 class StubParser:
     """
@@ -229,7 +227,7 @@ class StubParser:
             left = self._parse_type(node.left)
             right = self._parse_type(node.right)
             members: list[StubType] = []
-            for t in [left, right]:
+            for t in (left, right):
                 if t.is_union:
                     members.extend(t.union_members)
                 else:

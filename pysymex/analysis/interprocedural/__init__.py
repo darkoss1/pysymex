@@ -41,10 +41,6 @@ from pysymex.analysis.interprocedural.summaries import (
     create_builtin_summaries,
     instantiate_summary,
 )
-from pysymex.analysis.interprocedural.types import (
-    CallGraphEdge,
-    CallGraphNode,
-)
 
 __all__ = [
     "CallContext",

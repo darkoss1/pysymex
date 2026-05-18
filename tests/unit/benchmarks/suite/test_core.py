@@ -1,16 +1,12 @@
+# pysymex: Python Symbolic Execution & Formal Verification
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 from pysymex.benchmarks.suite.core import (
     Benchmark,
-    BenchmarkComparator,
-    BenchmarkReporter,
     BenchmarkSuite,
     benchmark,
 )
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult
+from pysymex.benchmarks.suite.types import BenchmarkCategory
 
 
 def test_benchmark_run_collects_result_metrics() -> None:
@@ -52,25 +48,3 @@ def test_benchmark_decorator_registers_benchmark_metadata() -> None:
     bench_obj = getattr(task, "_benchmark")
     assert isinstance(bench_obj, Benchmark)
     assert bench_obj.name == "decorated"
-
-
-def test_reporter_and_comparator_outputs(tmp_path: Path) -> None:
-    baseline = [
-        BenchmarkResult("b1", BenchmarkCategory.OPCODES, elapsed_seconds=1.0, mean_seconds=1.0),
-    ]
-    current = [
-        BenchmarkResult("b1", BenchmarkCategory.OPCODES, elapsed_seconds=1.3, mean_seconds=1.3),
-    ]
-
-    regressions = BenchmarkComparator(threshold_percent=10.0).compare(baseline, current)
-    assert len(regressions) == 1
-    assert regressions[0].is_regression is True
-
-    as_json = BenchmarkReporter.to_json(current)
-    as_md = BenchmarkReporter.to_markdown(current)
-    out = tmp_path / "bench.json"
-    BenchmarkReporter.to_json_file(current, out)
-
-    assert json.loads(as_json)[0]["name"] == "b1"
-    assert "| Benchmark |" in as_md
-    assert out.exists()

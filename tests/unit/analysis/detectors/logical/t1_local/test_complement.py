@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t1_local/complement.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t1_local.complement import ComplementContradictionRule
 
 
@@ -33,3 +32,17 @@ class TestComplementContradictionRule:
         """Test basic initialization and properties."""
         assert ComplementContradictionRule is not None
         assert ComplementContradictionRule.__name__ == "ComplementContradictionRule"
+
+    def test_matches_boolean_complement_conflict(self) -> None:
+        """Classify explicit boolean complement conflicts."""
+        flag = z3.Bool("flag")
+        core = [flag, z3.Not(flag)]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert ComplementContradictionRule().matches(ctx)
+
+    def test_does_not_match_single_negated_fact(self) -> None:
+        """A single negated boolean fact is not a contradiction."""
+        flag = z3.Bool("flag")
+        core = [z3.Not(flag)]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        assert not ComplementContradictionRule().matches(ctx)

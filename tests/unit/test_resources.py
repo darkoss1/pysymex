@@ -273,20 +273,20 @@ class TestResourceTracker:
             t.check_all_limits()
 
     def test_memory_usage_mb_non_negative(self) -> None:
-        """memory_usage_mb returns a non-negative float."""
-        assert ResourceTracker().memory_usage_mb >= 0.0
+        """memory_usage_mb returns a positive float."""
+        assert ResourceTracker().memory_usage_mb > 0.0
 
     def test_add_warning_callback(self) -> None:
         """add_warning_callback registers a callback."""
         t = ResourceTracker()
-        t.add_warning_callback(lambda rt, c, l: None)
-        assert len(t._warning_callbacks) == 1
+        t.add_warning_callback(lambda rt, current, limit: None)
+        assert len(t._warning_callbacks) == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_soft_limit_triggers_callback(self) -> None:
         """Soft path limit triggers warning callback."""
         t = ResourceTracker(ResourceLimits(max_paths=10, soft_path_ratio=0.5))
         warnings: list[ResourceType] = []
-        t.add_warning_callback(lambda rt, c, l: warnings.append(rt))
+        t.add_warning_callback(lambda rt, current, limit: warnings.append(rt))
         for _ in range(6):
             t.record_path()
         t.check_path_limit()

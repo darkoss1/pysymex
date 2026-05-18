@@ -21,48 +21,10 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 
-def create_parser() -> argparse.ArgumentParser:
-    """Create the argument parser with subcommands."""
-    parser = argparse.ArgumentParser(
-        prog="pysymex",
-        description=" pysymex - Symbolic Execution Engine for Python",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  pysymex scan path/to/file.py          Scan a file (symbolic mode)
-  pysymex scan path/to/dir -r           Scan directory recursively
-  pysymex scan path/ --mode static      Static analysis mode
-  pysymex scan path/ --mode pipeline    Full pipeline mode
-  pysymex analyze file.py -f func_name  Analyze specific function
-  pysymex verify file.py                Verify function contracts
-  pysymex concolic file.py -f func -n 50  Concolic test generation
-  pysymex benchmark                      Run benchmark suite
-        """,
-    )
-
-    from importlib.metadata import version as pkg_version
-
-    try:
-        __version__ = pkg_version("pysymex")
-    except Exception:
-        __version__ = "0.1.0a4"
-
-    parser.add_argument(
-        "-V",
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-    )
-    parser.add_argument(
-        "--generate-completion",
-        choices=["bash", "zsh", "fish"],
-        help="Generate shell completion script",
-    )
-
-    subparsers = parser.add_subparsers(dest="command", metavar="command")
-
+def _add_scan_parser(subparsers: Any) -> None:
     scan_parser = subparsers.add_parser(
         "scan",
         help="Scan file or directory",
@@ -77,43 +39,25 @@ Examples:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["text", "json", "sarif", "rich"],
+        choices=["text", "json", "sarif", "rich", "html", "markdown"],
         default="text",
         help="Output format (default: text)",
     )
+    scan_parser.add_argument("-o", "--output", help="Write report to file")
     scan_parser.add_argument(
-        "-o",
-        "--output",
-        help="Write report to file",
+        "-r", "--recursive", action="store_true", help="Scan directories recursively"
     )
-    scan_parser.add_argument(
-        "-r",
-        "--recursive",
-        action="store_true",
-        help="Scan directories recursively",
-    )
-    scan_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
+    scan_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     scan_parser.add_argument(
         "--stats",
         action="store_true",
         help="Show detailed performance statistics (time, memory)",
     )
     scan_parser.add_argument(
-        "--max-paths",
-        type=int,
-        default=200,
-        help="Maximum paths to explore (default: 200)",
+        "--max-paths", type=int, default=5000, help="Maximum paths to explore (default: 5000)"
     )
     scan_parser.add_argument(
-        "--timeout",
-        type=int,
-        default=30,
-        help="Timeout per function in seconds (default: 30)",
+        "--timeout", type=int, default=5, help="Timeout per function in seconds (default: 5)"
     )
     scan_parser.add_argument(
         "--workers",
@@ -125,16 +69,7 @@ Examples:
             "1 = sequential (no subprocess overhead)."
         ),
     )
-    scan_parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Watch for file changes and re-scan",
-    )
-    scan_parser.add_argument(
-        "--auto",
-        action="store_true",
-        help="Auto-tune analysis configuration",
-    )
+    scan_parser.add_argument("--auto", action="store_true", help="Auto-tune analysis configuration")
     scan_parser.add_argument(
         "--no-cache",
         action="store_true",
@@ -147,14 +82,10 @@ Examples:
         help="Maximum total iterations per function (0 = auto-calculate)",
     )
     scan_parser.add_argument(
-        "--reproduce",
-        action="store_true",
-        help="Generate reproduction scripts for findings",
+        "--reproduce", action="store_true", help="Generate reproduction scripts for findings"
     )
     scan_parser.add_argument(
-        "--visualize",
-        action="store_true",
-        help="Show real-time progress visualization",
+        "--visualize", action="store_true", help="Show real-time progress visualization"
     )
     scan_parser.add_argument(
         "--async",
@@ -163,9 +94,7 @@ Examples:
         help="Use async scanner with TaskGroup-based structured concurrency",
     )
     scan_parser.add_argument(
-        "--trace",
-        action="store_true",
-        help="Emit execution traces for symbolic scan runs",
+        "--trace", action="store_true", help="Emit execution traces for symbolic scan runs"
     )
     scan_parser.add_argument(
         "--trace-output-dir",
@@ -197,10 +126,7 @@ Examples:
         help="Use deterministic non-dynamic exploration for reproducible runs",
     )
     scan_parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for deterministic runs (default: 42)",
+        "--seed", type=int, default=42, help="Random seed for deterministic runs (default: 42)"
     )
     scan_parser.add_argument(
         "--no-chtd",
@@ -209,41 +135,30 @@ Examples:
         help="Disable CHTD pruning for maximum stability on extreme path-explosion workloads",
     )
     scan_parser.add_argument(
-        "--no-h-acceleration",
+        "--no-acceleration",
         dest="use_h_acceleration",
         action="store_false",
-        help="Disable H-acceleration backend for symbolic scan",
+        help="Disable acceleration backend for symbolic scan",
     )
     scan_parser.set_defaults(use_chtd=True, use_h_acceleration=True)
 
+
+def _add_analyze_parser(subparsers: Any) -> None:
     analyze_parser = subparsers.add_parser(
         "analyze",
         help="Analyze specific function",
         description="Perform symbolic execution on a specific function",
     )
     analyze_parser.add_argument("file", help="Python file to analyze")
-    analyze_parser.add_argument(
-        "-f",
-        "--function",
-        required=True,
-        help="Function to analyze",
-    )
-    analyze_parser.add_argument(
-        "--args",
-        nargs="*",
-        help="Symbolic arguments (name:type)",
-    )
+    analyze_parser.add_argument("-f", "--function", required=True, help="Function to analyze")
+    analyze_parser.add_argument("--args", nargs="*", help="Symbolic arguments (name:type)")
     analyze_parser.add_argument(
         "--format",
         choices=["text", "json", "sarif", "html", "markdown", "rich"],
         default="text",
         help="Output format (default: text)",
     )
-    analyze_parser.add_argument(
-        "-o",
-        "--output",
-        help="Write report to file",
-    )
+    analyze_parser.add_argument("-o", "--output", help="Write report to file")
     analyze_parser.add_argument(
         "--max-paths",
         type=int,
@@ -251,23 +166,17 @@ Examples:
         help="Maximum execution paths to explore (default: unlimited with CHTD)",
     )
     analyze_parser.add_argument(
-        "--timeout",
-        type=int,
-        default=60,
-        help="Maximum analysis time in seconds (default: 60)",
+        "--timeout", type=int, default=60, help="Maximum analysis time in seconds (default: 60)"
     )
-    analyze_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
+    analyze_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     analyze_parser.add_argument(
         "--stats",
         action="store_true",
         help="Show detailed performance statistics (time, memory)",
     )
 
+
+def _add_verify_parser(subparsers: Any) -> None:
     verify_parser = subparsers.add_parser(
         "verify",
         help="Verify function contracts",
@@ -275,16 +184,16 @@ Examples:
     )
     verify_parser.add_argument("file", help="Python file with contracts")
     verify_parser.add_argument(
-        "-f",
-        "--function",
-        help="Specific function to verify (default: all with contracts)",
+        "-f", "--function", help="Specific function to verify (default: all with contracts)"
     )
     verify_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
+        "--format",
+        choices=["text", "json", "sarif", "rich", "html", "markdown"],
+        default="text",
+        help="Output format (default: text)",
     )
+    verify_parser.add_argument("-o", "--output", help="Write report to file")
+    verify_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     verify_parser.add_argument(
         "--sandbox",
         dest="sandbox",
@@ -299,31 +208,19 @@ Examples:
     )
     verify_parser.set_defaults(sandbox=True)
 
+
+def _add_concolic_parser(subparsers: Any) -> None:
     concolic_parser = subparsers.add_parser(
         "concolic",
         help="Concolic test generation",
         description="Generate test inputs using concolic execution",
     )
     concolic_parser.add_argument("file", help="Python file")
+    concolic_parser.add_argument("-f", "--function", required=True, help="Function to test")
     concolic_parser.add_argument(
-        "-f",
-        "--function",
-        required=True,
-        help="Function to test",
+        "-n", "--iterations", type=int, default=100, help="Maximum iterations (default: 100)"
     )
-    concolic_parser.add_argument(
-        "-n",
-        "--iterations",
-        type=int,
-        default=100,
-        help="Maximum iterations (default: 100)",
-    )
-    concolic_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
+    concolic_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     concolic_parser.add_argument(
         "--sandbox",
         dest="sandbox",
@@ -338,6 +235,8 @@ Examples:
     )
     concolic_parser.set_defaults(sandbox=True)
 
+
+def _add_bench_parser(subparsers: Any) -> None:
     bench_parser = subparsers.add_parser(
         "benchmark",
         help="Run benchmark suite",
@@ -349,54 +248,73 @@ Examples:
         default="text",
         help="Output format (default: text)",
     )
+    bench_parser.add_argument("-o", "--output", help="Write results to file")
+    bench_parser.add_argument("--baseline", help="Compare against baseline file")
     bench_parser.add_argument(
-        "-o",
-        "--output",
-        help="Write results to file",
+        "-n", "--iterations", type=int, default=5, help="Iterations per benchmark (default: 5)"
     )
-    bench_parser.add_argument(
-        "--baseline",
-        help="Compare against baseline file",
-    )
-    bench_parser.add_argument(
-        "-n",
-        "--iterations",
-        type=int,
-        default=5,
-        help="Iterations per benchmark (default: 5)",
-    )
-    bench_parser.add_argument(
-        "--case",
-        type=str,
-        help="Run a specific benchmark case by name",
-    )
+    bench_parser.add_argument("--case", type=str, help="Run a specific benchmark case by name")
 
+
+def _add_check_parser(subparsers: Any) -> None:
     check_parser = subparsers.add_parser(
         "check",
         help="Run CI-friendly check (exit code reflects severity)",
         description="Run pysymex analysis suitable for CI/CD pipelines",
     )
-    check_parser.add_argument(
-        "paths",
-        nargs="+",
-        help="Python files or directories to check",
-    )
+    check_parser.add_argument("paths", nargs="+", help="Python files or directories to check")
     check_parser.add_argument(
         "--fail-on",
         choices=["low", "medium", "high", "critical"],
         default="high",
         help="Minimum severity to cause a non-zero exit (default: high)",
     )
-    check_parser.add_argument(
-        "--sarif",
-        type=str,
-        help="Path to write SARIF report",
+    check_parser.add_argument("--sarif", type=str, help="Path to write SARIF report")
+    check_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create the argument parser with subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="pysymex",
+        description=" pysymex - Symbolic Execution Engine for Python",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  pysymex scan path/to/file.py          Scan a file (symbolic mode)
+  pysymex scan path/to/dir -r           Scan directory recursively
+  pysymex scan path/ --mode static      Static analysis mode
+  pysymex scan path/ --mode pipeline    Full pipeline mode
+  pysymex analyze file.py -f func_name  Analyze specific function
+  pysymex verify file.py                Verify function contracts
+  pysymex concolic file.py -f func -n 50  Concolic test generation
+  pysymex benchmark                      Run benchmark suite
+        """,
     )
-    check_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
+
+    from pysymex.config import VERSION
+
+    __version__ = VERSION
+
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
+    parser.add_argument(
+        "--generate-completion",
+        choices=["bash", "zsh", "fish"],
+        help="Generate shell completion script",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    _add_scan_parser(subparsers)
+    _add_analyze_parser(subparsers)
+    _add_verify_parser(subparsers)
+    _add_concolic_parser(subparsers)
+    _add_bench_parser(subparsers)
+    _add_check_parser(subparsers)
 
     return parser

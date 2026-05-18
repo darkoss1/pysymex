@@ -18,7 +18,11 @@
 
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
-from pysymex.analysis.detectors.logical.utils import count_variables, core_has_operator
+from pysymex.analysis.detectors.logical.utils import (
+    count_variables,
+    core_has_operator,
+    extract_modulo_equalities,
+)
 
 
 class ParityContradictionRule(LogicRule):
@@ -31,23 +35,13 @@ class ParityContradictionRule(LogicRule):
         if not core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM}):
             return False
 
-        # Check if there is a modulo by 2
-        for c in ctx.core:
-            worklist: list[z3.ExprRef] = [c]
-            seen = {c.get_id()}
-            while worklist:
-                node = worklist.pop()
-                if z3.is_app(node) and node.decl().kind() in (z3.Z3_OP_MOD, z3.Z3_OP_REM):
-                    if node.num_args() == 2:
-                        arg1 = node.arg(1)
-                        if z3.is_int_value(arg1):
-                            try:
-                                if arg1.as_long() == 2:
-                                    return True
-                            except Exception:
-                                pass
-                for child in node.children():
-                    if child.get_id() not in seen:
-                        seen.add(child.get_id())
-                        worklist.append(child)
+        seen: dict[str, int] = {}
+        for var, modulus, remainder in extract_modulo_equalities(ctx.core):
+            if abs(modulus) != 2:
+                continue
+            normalized = remainder % 2
+            previous = seen.get(var)
+            if previous is not None and previous != normalized:
+                return True
+            seen[var] = normalized
         return False

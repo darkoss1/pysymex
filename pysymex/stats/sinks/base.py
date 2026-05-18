@@ -28,3 +28,9 @@ class StatsSink(abc.ABC):
     def write(self, metrics: dict[str, float | int | str]) -> None:
         """Write or persist the computed metrics."""
         raise RuntimeError("StatsSink.write must be implemented by subclasses")
+
+    def start(self) -> None:
+        """Called when the stats registry starts collecting. Override for setup."""
+
+    def stop(self) -> None:
+        """Called when the stats registry stops collecting. Override for teardown."""

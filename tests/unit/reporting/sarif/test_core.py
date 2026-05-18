@@ -19,6 +19,7 @@ def test_severity_mapping_functions() -> None:
 
 def test_vuln_type_to_rule_id_unknown() -> None:
     from pysymex.reporting.sarif.core import vuln_type_to_rule_id
+
     assert vuln_type_to_rule_id("something_new") == "SVM999"
 
 

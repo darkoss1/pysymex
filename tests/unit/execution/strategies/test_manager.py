@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
-from pysymex.core.graph.cig import ConstraintInteractionGraph
+import pytest
+import z3
+
+from pysymex.core.graph.treewidth import ConstraintInteractionGraph
 from pysymex.core.state import VMState
 from pysymex.execution.strategies.manager import (
     AdaptivePathManager,
@@ -45,7 +49,7 @@ class TestExplorationStrategy:
         """Test basic initialization."""
         names = {item.name for item in ExplorationStrategy}
         assert "ADAPTIVE" in names
-        assert "CHTD_NATIVE" in names
+        assert len(names) == 1
 
 
 class TestPathManager:
@@ -135,17 +139,72 @@ class TestAdaptivePathManager:
     def test_reheat_arm_recovers_structural_prior_mass(self) -> None:
         """Test reheating pulls a poisoned arm back toward its prior."""
         manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=False)
-        manager.tts.last_arm = manager.ARM_STRUCTURAL
+        manager.add_state(VMState(pc=1))
+        assert manager.get_next_state() is not None
         for _ in range(25):
             manager.record_reward(-5.0)
-        before = manager.get_stats()["arms"]["topological"]
+        arms_before = cast("dict[str, dict[str, float]]", manager.get_stats()["arms"])
+        before = arms_before[manager.ARM_STRUCTURAL]
         manager.reheat_arm(manager.ARM_STRUCTURAL, strength=0.5)
-        after = manager.get_stats()["arms"]["topological"]
+        arms_after = cast("dict[str, dict[str, float]]", manager.get_stats()["arms"])
+        after = arms_after[manager.ARM_STRUCTURAL]
         assert after["alpha"] < before["alpha"]
         assert after["beta"] < before["beta"]
+
+    def test_feedback_unsat_core_uses_real_pruning_runtime_telemetry(self) -> None:
+        """Thompson reward should reflect actual certified frontier pruning yield."""
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+        manager.add_state(VMState(pc=1))
+        assert manager.get_next_state() is not None
+        before = cast("float", manager.get_stats()["total_rewards"])
+
+        manager.feedback_unsat_core([], paths_pruned=3, elapsed_ms=2.0)
+
+        after = cast("float", manager.get_stats()["total_rewards"])
+        assert isinstance(before, float)
+        assert isinstance(after, float)
+        assert after > before
+
+    def test_feedback_mus_alias_is_deprecated(self) -> None:
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+        manager.add_state(VMState(pc=1))
+        assert manager.get_next_state() is not None
+
+        with pytest.warns(DeprecationWarning, match="feedback_mus"):
+            manager.feedback_mus([1, 2])
+
+        assert cast("float", manager.get_stats()["total_rewards"]) > 0.0
+
+    def test_prune_states_containing_core_removes_only_certified_core_supersets(self) -> None:
+        """Frontier pruning removes queued states only when they contain the certified core."""
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+        x = z3.Int("frontier_core_x")
+        y = z3.Int("frontier_core_y")
+        core_left = x > 0
+        core_right = x < 0
+        unrelated = y > 0
+
+        killed_state = VMState(pc=1)
+        killed_state.add_constraint(core_left)
+        killed_state.add_constraint(core_right)
+        kept_state = VMState(pc=2)
+        kept_state.add_constraint(core_left)
+        kept_state.add_constraint(unrelated)
+
+        manager.add_state(killed_state)
+        manager.add_state(kept_state)
+
+        killed = manager.prune_states_containing_core(
+            frozenset({core_left.hash(), core_right.hash()})
+        )
+
+        assert killed == 1
+        assert manager.size() == 1
+        remaining = manager.get_next_state()
+        assert remaining is kept_state
 
 
 def test_create_path_manager() -> None:
     """Test create_path_manager behavior."""
-    manager = create_path_manager(ExplorationStrategy.RANDOM, deterministic=True)
+    manager = create_path_manager(ExplorationStrategy.ADAPTIVE, deterministic=True)
     assert isinstance(manager, AdaptivePathManager)

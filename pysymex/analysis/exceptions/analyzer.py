@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 import ast
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import TypeVar
 
 from pysymex._compat import get_starts_line
 from pysymex.analysis.exceptions.types import (
@@ -45,6 +46,21 @@ from pysymex.analysis.exceptions.types import (
     TryBlock,
 )
 from pysymex.core.cache import get_instructions as _cached_get_instructions
+
+WarningT = TypeVar("WarningT")
+
+
+def analyze_nested_code_objects(
+    code: CodeType,
+    file_path: str,
+    warnings: list[WarningT],
+    analyze_function: Callable[[CodeType, str], list[WarningT]],
+) -> None:
+    """Analyze nested code objects with the supplied bytecode analyzer."""
+    for const in code.co_consts:
+        if hasattr(const, "co_code"):
+            warnings.extend(analyze_function(const, file_path))
+            analyze_nested_code_objects(const, file_path, warnings, analyze_function)
 
 
 def _try_body_calls_crashy_api(try_node: ast.Try) -> bool:
@@ -532,23 +548,52 @@ def _infer_caught_at(
     """Infer caught exception types from handler starting at *handler_target*."""
     caught: set[str] = set()
     started = False
+    type_stack: list[list[str]] = []
+    saw_match_check = False
+    saw_bare_handler_exit = False
+    saw_reraise = False
     for instr in instructions:
         if instr.offset == handler_target:
             started = True
         if not started:
             continue
         if instr.opname in {"LOAD_GLOBAL", "LOAD_NAME"}:
-            caught.add(str(instr.argval))
-        elif instr.opname in {
-            "POP_EXCEPT",
-            "END_FINALLY",
-            "RERAISE",
-            "JUMP_FORWARD",
-            "JUMP_ABSOLUTE",
-        }:
+            type_stack.append([str(instr.argval)])
+            continue
+        if instr.opname == "LOAD_CONST":
+            value = instr.argval
+            if isinstance(value, type):
+                type_stack.append([value.__name__])
+            continue
+        if instr.opname == "BUILD_TUPLE":
+            count = instr.arg if isinstance(instr.arg, int) else 0
+            if count <= 0 or count > len(type_stack):
+                type_stack.clear()
+                continue
+            merged: list[str] = []
+            for _ in range(count):
+                merged.extend(type_stack.pop())
+            type_stack.append(merged)
+            continue
+        if instr.opname == "CHECK_EXC_MATCH":
+            saw_match_check = True
+            if type_stack:
+                caught.update(type_stack[-1])
+            continue
+        if instr.opname == "RERAISE":
+            saw_reraise = True
+            break
+        if instr.opname in {"POP_EXCEPT", "END_FINALLY", "JUMP_FORWARD", "JUMP_ABSOLUTE"}:
+            saw_bare_handler_exit = True
+            break
+        if instr.opname.startswith("RETURN"):
+            saw_bare_handler_exit = True
             break
     if not caught:
-        caught = {"Exception"}
+        if saw_match_check or saw_reraise:
+            return set()
+        if saw_bare_handler_exit:
+            caught = {"BaseException"}
     return caught
 
 
@@ -606,7 +651,7 @@ class ExceptionAnalyzer:
             warnings = self.analyze_source(source, file_path)
             code = compile(source, file_path, "exec")
             warnings.extend(self.analyze_function(code, file_path))
-            self._analyze_nested(code, file_path, warnings)
+            analyze_nested_code_objects(code, file_path, warnings, self.analyze_function)
             return warnings
         except SyntaxError as e:
             return [
@@ -619,18 +664,6 @@ class ExceptionAnalyzer:
             ]
         except OSError:
             return []
-
-    def _analyze_nested(
-        self,
-        code: CodeType,
-        file_path: str,
-        warnings: list[ExceptionWarning],
-    ) -> None:
-        """Analyze nested functions."""
-        for const in code.co_consts:
-            if hasattr(const, "co_code"):
-                warnings.extend(self.analyze_function(const, file_path))
-                self._analyze_nested(const, file_path, warnings)
 
     def get_potential_exceptions(
         self,

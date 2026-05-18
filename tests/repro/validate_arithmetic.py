@@ -7,10 +7,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from tests.repro.opcode_validator import validate_opcode
 
 
-def run_tests():
-    findings = []
+def run_tests() -> None:
+    findings: list[str] = []
 
-    def check(success, msg):
+    def check(success: bool, msg: str) -> None:
         if not success:
             findings.append(msg)
 

@@ -24,10 +24,11 @@ interact with to execute untrusted code safely.
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from .errors import (
     SandboxError,
@@ -44,13 +45,11 @@ from .types import (
 if TYPE_CHECKING:
     from .isolation import IsolationBackend
 
-
 _SUSPICIOUS_RE: re.Pattern[str] = re.compile(
     r"__subclasses__|__globals__|__bases__|__mro__|__builtins__|"
     r"__loader__|__spec__|__import__|_io\.FileIO|"
     r"os\.system|os\.popen|os\.exec|os\.spawn|codecs\.open"
 )
-
 
 _SAFE_FILENAME_CHARS: frozenset[str] = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-."
@@ -370,7 +369,7 @@ class SandboxRunner:
         suspicious = _pre_screen_code(code)
         if suspicious:
             return SandboxResult(
-                status=cast("SandboxStatus", _import_status().SECURITY_VIOLATION),  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # SECURITY_VIOLATION exists in enum
+                status=_import_status().SECURITY_VIOLATION,  # type: ignore[reportUnknownArgumentType]  # Lazy import returns dynamic type
                 error_message=(
                     f"Code rejected by pre-screening: suspicious patterns {suspicious!r}"
                 ),
@@ -467,15 +466,4 @@ def _check_windows_job_support() -> bool:
 
 def _check_wasm_support() -> bool:
     """Check if wasmtime is available."""
-    try:
-        import wasmtime  # type: ignore[reportUnusedImport]  # Import to check availability
-
-        return True
-    except ImportError:
-        return False
-
-
-__all__ = [
-    "SandboxRunner",
-    "SecureSandbox",
-]
+    return find_spec("wasmtime") is not None

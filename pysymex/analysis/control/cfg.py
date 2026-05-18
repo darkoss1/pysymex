@@ -35,7 +35,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol, runtime_checkable
 
-
 from pysymex._compat import get_starts_line
 from pysymex.core.cache import get_instructions as _cached_get_instructions
 from pysymex.analysis.type_inference import TypeState
@@ -62,13 +61,6 @@ class _BytecodeWithExceptionEntries(Protocol):
 
 
 _get_line_number = get_starts_line
-
-__all__ = [
-    "BasicBlock",
-    "CFGBuilder",
-    "ControlFlowGraph",
-    "EdgeKind",
-]
 
 
 class EdgeKind(Enum):
@@ -223,7 +215,7 @@ class ControlFlowGraph:
 
     def dominates(self, dominator_id: int, dominated_id: int) -> bool:
         """Check if dominator dominates dominated."""
-        dom_set = self.dominators.get(dominated_id, set())
+        dom_set = self.dominators.get(dominated_id, ())
         return dominator_id in dom_set
 
     def get_immediate_dominator(self, block_id: int) -> int | None:
@@ -239,7 +231,8 @@ class ControlFlowGraph:
 
     def get_loop_body(self, header_id: int) -> set[int]:
         """Get blocks in a loop's body."""
-        return self.natural_loops.get(header_id, set())
+        res = self.natural_loops.get(header_id)
+        return res if res is not None else set()
 
     def iter_blocks_forward(self) -> Iterable[BasicBlock]:
         """Iterate blocks in forward order (entry to exit)."""
@@ -353,7 +346,7 @@ class CFGBuilder:
         cfg = self._create_blocks(instructions, leaders)
         self._add_edges(cfg, instructions, exception_entries)
         self._compute_dominators(cfg)
-        self._identify_loops(cfg)
+        self._identify_loops(cfg, instructions)
         return cfg
 
     def _find_leaders(
@@ -562,44 +555,39 @@ class CFGBuilder:
             for d in candidates:
                 is_immediate = True
                 for other in candidates:
-                    if other != d and d in cfg.dominators.get(other, set()):
+                    if other != d and d in cfg.dominators.get(other, ()):
                         is_immediate = False
                         break
                 if is_immediate:
                     block.immediate_dominator = d
                     break
 
-    def _identify_loops(self, cfg: ControlFlowGraph) -> None:
-        """Identify natural loops in the CFG."""
-        for block in cfg.blocks.values():
-            for succ_id in block.successors:
-                if cfg.dominates(succ_id, block.id):
-                    cfg.loop_back_edges.add((block.id, succ_id))
-                    cfg.loop_headers.add(succ_id)
-                    block.successor_edges[succ_id] = EdgeKind.LOOP_BACK
-                    loop_body = self._find_natural_loop(cfg, succ_id, block.id)
-                    cfg.natural_loops[succ_id] = loop_body
-        for header_id in cfg.loop_headers:
-            block = cfg.blocks.get(header_id)
-            if block:
-                block.is_loop_header = True
+    def _identify_loops(
+        self, cfg: ControlFlowGraph, instructions: Sequence[dis.Instruction]
+    ) -> None:
+        """Identify natural loops in the CFG using the main LoopDetector."""
+        from pysymex.analysis.loops.core import LoopDetector
 
-    def _find_natural_loop(
-        self,
-        cfg: ControlFlowGraph,
-        header_id: int,
-        back_edge_source: int,
-    ) -> set[int]:
-        """Find all blocks in a natural loop."""
-        loop_body = {header_id, back_edge_source}
-        worklist = [back_edge_source]
-        while worklist:
-            block_id = worklist.pop()
-            block = cfg.blocks.get(block_id)
-            if not block:
+        detector = LoopDetector()
+        loops = detector.analyze_cfg(list(instructions), entry_pc=cfg.entry_block_id)
+
+        for loop in loops:
+            header_block = cfg.get_block_at_pc(loop.header_pc)
+            back_block = cfg.get_block_at_pc(loop.back_edge_pc)
+
+            if not header_block or not back_block:
                 continue
-            for pred_id in block.predecessors:
-                if pred_id not in loop_body:
-                    loop_body.add(pred_id)
-                    worklist.append(pred_id)
-        return loop_body
+
+            cfg.loop_headers.add(header_block.id)
+            cfg.loop_back_edges.add((back_block.id, header_block.id))
+
+            # Map loop body PCs to block IDs
+            body_block_ids: set[int] = set()
+            for pc in loop.body_pcs:
+                block = cfg.get_block_at_pc(pc)
+                if block is not None:
+                    body_block_ids.add(block.id)
+            cfg.natural_loops[header_block.id] = body_block_ids | {header_block.id}
+
+            header_block.is_loop_header = True
+            back_block.successor_edges[header_block.id] = EdgeKind.LOOP_BACK

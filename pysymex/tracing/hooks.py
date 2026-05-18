@@ -51,11 +51,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from pysymex.plugins.base import HookPlugin, PluginMetadata, PluginPriority, PluginType
+from pysymex.config import VERSION
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
     from pysymex.execution.executors.core import SymbolicExecutor
-    from pysymex.execution.executors.core import SymbolicExecutor as SymbolicEngine
     from pysymex.tracing.tracer import ExecutionTracer
 
 
@@ -74,7 +74,7 @@ class TracingHookPlugin(HookPlugin):
 
     metadata: PluginMetadata = PluginMetadata(
         name="pysymex-execution-tracer",
-        version="0.1.0",
+        version=VERSION,
         description="LLM-optimised observability layer for SymbolicExecutor",
         author="pysymex",
         plugin_type=PluginType.HOOK,
@@ -108,7 +108,7 @@ class TracingHookPlugin(HookPlugin):
             "state_fork": _wrap_on_fork(t),
         }
 
-    def activate(self, engine: SymbolicEngine) -> None:
+    def activate(self, engine: SymbolicExecutor) -> None:
         """Register all hooks and wrap the solver.
 
         Delegates to :meth:`ExecutionTracer.install` so both registration

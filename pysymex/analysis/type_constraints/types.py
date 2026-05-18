@@ -67,7 +67,7 @@ class Variance(Enum):
 
 
 @dataclass(frozen=True)
-class SymbolicType:
+class TypeConstraintType:
     """
     Symbolic representation of a type for Z3 analysis.
     Immutable to allow use as dict keys and in sets.
@@ -75,55 +75,57 @@ class SymbolicType:
 
     kind: TypeKind
     name: str = ""
-    args: tuple[SymbolicType, ...] = ()
-    bounds: tuple[SymbolicType, ...] | None = None
+    args: tuple[TypeConstraintType, ...] = ()
+    bounds: tuple[TypeConstraintType, ...] | None = None
     literal_values: frozenset[object] | None = None
     variance: Variance = Variance.INVARIANT
 
     @classmethod
-    def int_type(cls) -> SymbolicType:
+    def int_type(cls) -> TypeConstraintType:
         return cls(TypeKind.INT, "int")
 
     @classmethod
-    def float_type(cls) -> SymbolicType:
+    def float_type(cls) -> TypeConstraintType:
         return cls(TypeKind.FLOAT, "float")
 
     @classmethod
-    def bool_type(cls) -> SymbolicType:
+    def bool_type(cls) -> TypeConstraintType:
         return cls(TypeKind.BOOL, "bool")
 
     @classmethod
-    def str_type(cls) -> SymbolicType:
+    def str_type(cls) -> TypeConstraintType:
         return cls(TypeKind.STR, "str")
 
     @classmethod
-    def none_type(cls) -> SymbolicType:
+    def none_type(cls) -> TypeConstraintType:
         return cls(TypeKind.NONE, "None")
 
     @classmethod
-    def any_type(cls) -> SymbolicType:
+    def any_type(cls) -> TypeConstraintType:
         return cls(TypeKind.ANY, "Any")
 
     @classmethod
-    def never_type(cls) -> SymbolicType:
+    def never_type(cls) -> TypeConstraintType:
         return cls(TypeKind.NEVER, "Never")
 
     @classmethod
-    def list_of(cls, element_type: SymbolicType) -> SymbolicType:
+    def list_of(cls, element_type: TypeConstraintType) -> TypeConstraintType:
         return cls(TypeKind.LIST, "list", (element_type,))
 
     @classmethod
-    def dict_of(cls, key_type: SymbolicType, value_type: SymbolicType) -> SymbolicType:
+    def dict_of(
+        cls, key_type: TypeConstraintType, value_type: TypeConstraintType
+    ) -> TypeConstraintType:
         return cls(TypeKind.DICT, "dict", (key_type, value_type))
 
     @classmethod
-    def tuple_of(cls, *element_types: SymbolicType) -> SymbolicType:
+    def tuple_of(cls, *element_types: TypeConstraintType) -> TypeConstraintType:
         return cls(TypeKind.TUPLE, "tuple", element_types)
 
     @classmethod
-    def union_of(cls, *types: SymbolicType) -> SymbolicType:
+    def union_of(cls, *types: TypeConstraintType) -> TypeConstraintType:
         """Union of."""
-        flat_types: set[SymbolicType] = set()
+        flat_types: set[TypeConstraintType] = set()
         for t in types:
             if t.kind == TypeKind.UNION:
                 flat_types.update(t.args)
@@ -136,26 +138,30 @@ class SymbolicType:
         return cls(TypeKind.UNION, "Union", tuple(sorted(flat_types, key=str)))
 
     @classmethod
-    def optional_of(cls, inner_type: SymbolicType) -> SymbolicType:
+    def optional_of(cls, inner_type: TypeConstraintType) -> TypeConstraintType:
         """Shorthand for Union[T, None]."""
         return cls.union_of(inner_type, cls.none_type())
 
     @classmethod
-    def callable_type(cls, params: list[SymbolicType], return_type: SymbolicType) -> SymbolicType:
+    def callable_type(
+        cls, params: list[TypeConstraintType], return_type: TypeConstraintType
+    ) -> TypeConstraintType:
         return cls(TypeKind.CALLABLE, "Callable", (*tuple(params), return_type))
 
     @classmethod
     def type_var(
-        cls, name: str, *bounds: SymbolicType, variance: Variance = Variance.INVARIANT
-    ) -> SymbolicType:
+        cls, name: str, *bounds: TypeConstraintType, variance: Variance = Variance.INVARIANT
+    ) -> TypeConstraintType:
         return cls(TypeKind.TYPE_VAR, name, bounds=bounds or None, variance=variance)
 
     @classmethod
-    def literal(cls, *values: object) -> SymbolicType:
+    def literal(cls, *values: object) -> TypeConstraintType:
         return cls(TypeKind.LITERAL, "Literal", literal_values=frozenset(values))
 
     @classmethod
-    def class_type(cls, name: str, bases: tuple[SymbolicType, ...] = ()) -> SymbolicType:
+    def class_type(
+        cls, name: str, bases: tuple[TypeConstraintType, ...] = ()
+    ) -> TypeConstraintType:
         return cls(TypeKind.CLASS, name, bases)
 
     def __str__(self) -> str:
@@ -206,8 +212,8 @@ class TypeIssue:
 
     kind: TypeIssueKind
     message: str
-    expected_type: SymbolicType | None = None
-    actual_type: SymbolicType | None = None
+    expected_type: TypeConstraintType | None = None
+    actual_type: TypeConstraintType | None = None
     location: str | None = None
     line_number: int | None = None
     constraints: list[object] = field(default_factory=list[object])
@@ -223,10 +229,5 @@ class TypeIssue:
         return f"[{self.kind.name}]{loc}: {self.message}{types}"
 
 
-__all__ = [
-    "SymbolicType",
-    "TypeIssue",
-    "TypeIssueKind",
-    "TypeKind",
-    "Variance",
-]
+# Backward-compatible alias for older imports.
+SymbolicType = TypeConstraintType

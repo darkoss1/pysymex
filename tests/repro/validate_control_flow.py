@@ -1,8 +1,13 @@
-import dis
 from tests.repro.opcode_validator import validate_opcode
 
 
-def run_test(description, code, symbolic_vars=None, initial_values=None, expected_locals=None):
+def run_test(
+    description: str,
+    code: str,
+    symbolic_vars: dict[str, str] | None = None,
+    initial_values: dict[str, object] | None = None,
+    expected_locals: dict[str, object] | None = None,
+) -> bool:
     success, msg = validate_opcode(
         code,
         symbolic_vars=symbolic_vars,
@@ -14,7 +19,7 @@ def run_test(description, code, symbolic_vars=None, initial_values=None, expecte
     return success
 
 
-def validate_comparisons():
+def validate_comparisons() -> None:
     print("\n--- Validating Comparison Opcodes ---")
 
     # COMPARE_OP
@@ -81,7 +86,7 @@ def validate_comparisons():
     )
 
 
-def validate_control_flow():
+def validate_control_flow() -> None:
     print("\n--- Validating Control Flow Opcodes ---")
 
     code_if = """
@@ -131,7 +136,7 @@ while i < 3:
     )
 
 
-def validate_iteration():
+def validate_iteration() -> None:
     print("\n--- Validating Iteration Opcodes ---")
 
     code_for = """

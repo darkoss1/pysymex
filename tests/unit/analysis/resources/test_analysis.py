@@ -1,18 +1,17 @@
-import pytest
-import dis
 from unittest.mock import Mock, patch
+
 from pysymex.analysis.resources.analysis import (
-    ResourceKind,
-    ResourceState,
-    Resource,
-    ResourceWarning,
-    ResourceLeakDetector,
     ContextManagerAnalyzer,
+    GeneratorCleanupAnalyzer,
+    LockSafetyAnalyzer,
     ObjectNode,
     ReferenceCycleDetector,
-    LockSafetyAnalyzer,
-    GeneratorCleanupAnalyzer,
+    Resource,
     ResourceAnalyzer,
+    ResourceKind,
+    ResourceLeakDetector,
+    ResourceState,
+    ResourceWarning,
 )
 
 
@@ -75,7 +74,7 @@ class TestResourceLeakDetector:
     """Test suite for pysymex.analysis.resources.analysis.ResourceLeakDetector."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions")
-    def test_detect(self, mock_instrs) -> None:
+    def test_detect(self, mock_instrs: Mock) -> None:
         """Test detect behavior."""
         d = ResourceLeakDetector()
         mock_instrs.return_value = [
@@ -93,7 +92,7 @@ class TestContextManagerAnalyzer:
     """Test suite for pysymex.analysis.resources.analysis.ContextManagerAnalyzer."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions")
-    def test_analyze(self, mock_instrs) -> None:
+    def test_analyze(self, mock_instrs: Mock) -> None:
         """Test analyze behavior."""
         c = ContextManagerAnalyzer()
         mock_instrs.return_value = [
@@ -119,7 +118,7 @@ class TestReferenceCycleDetector:
     """Test suite for pysymex.analysis.resources.analysis.ReferenceCycleDetector."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions")
-    def test_detect(self, mock_instrs) -> None:
+    def test_detect(self, mock_instrs: Mock) -> None:
         """Test detect behavior."""
         d = ReferenceCycleDetector()
         mock_instrs.return_value = [
@@ -136,7 +135,7 @@ class TestLockSafetyAnalyzer:
     """Test suite for pysymex.analysis.resources.analysis.LockSafetyAnalyzer."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions")
-    def test_analyze(self, mock_instrs) -> None:
+    def test_analyze(self, mock_instrs: Mock) -> None:
         """Test analyze behavior."""
         d = LockSafetyAnalyzer()
         mock_instrs.return_value = [
@@ -153,7 +152,7 @@ class TestGeneratorCleanupAnalyzer:
     """Test suite for pysymex.analysis.resources.analysis.GeneratorCleanupAnalyzer."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions")
-    def test_analyze(self, mock_instrs) -> None:
+    def test_analyze(self, mock_instrs: Mock) -> None:
         """Test analyze behavior."""
         d = GeneratorCleanupAnalyzer()
         mock_instrs.return_value = [MockInstr("LOAD_GLOBAL", "open"), MockInstr("YIELD_VALUE")]
@@ -165,21 +164,21 @@ class TestResourceAnalyzer:
     """Test suite for pysymex.analysis.resources.analysis.ResourceAnalyzer."""
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions", return_value=[])
-    def test_analyze_function(self, mock_instr) -> None:
+    def test_analyze_function(self, mock_instr: Mock) -> None:
         """Test analyze_function behavior."""
         analyzer = ResourceAnalyzer()
         warnings = analyzer.analyze_function(Mock(co_firstlineno=1, co_flags=0, co_consts=[]))
         assert isinstance(warnings, list)
 
     @patch("pysymex.analysis.resources.analysis._cached_get_instructions", return_value=[])
-    def test_analyze_module(self, mock_instr) -> None:
+    def test_analyze_module(self, mock_instr: Mock) -> None:
         """Test analyze_module behavior."""
         analyzer = ResourceAnalyzer()
         warnings = analyzer.analyze_module(Mock(co_firstlineno=1, co_flags=0, co_consts=[]))
         assert isinstance(warnings, list)
 
     @patch("builtins.open", side_effect=OSError)
-    def test_analyze_file(self, mock_open) -> None:
+    def test_analyze_file(self, mock_open: Mock) -> None:
         """Test analyze_file behavior."""
         analyzer = ResourceAnalyzer()
         warnings = analyzer.analyze_file("missing.py")

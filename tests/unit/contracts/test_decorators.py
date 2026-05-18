@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 from pysymex.contracts.decorators import (
     assigns,
     assumes,
@@ -11,6 +14,18 @@ from pysymex.contracts.decorators import (
     requires,
 )
 from pysymex.contracts.types import ContractKind, EffectKind
+
+
+_CONTRACT_DECORATORS = {"requires", "ensures", "invariant", "pure", "assumes", "assigns"}
+
+
+def _decorator_name(node: ast.expr) -> str | None:
+    target = node.func if isinstance(node, ast.Call) else node
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    return None
 
 
 class TestDecorators:
@@ -103,3 +118,33 @@ class TestDecorators:
 
         assert get_function_contract(undecorated) is None
         assert get_function_contract(decorated) is not None
+
+    def test_contract_verifier_package_export_is_lazy(self) -> None:
+        """Verify the public package export works without eager solver import cycles."""
+        from pysymex.contracts import ContractVerifier
+
+        assert ContractVerifier.__name__ == "ContractVerifier"
+
+    def test_production_contract_coverage_has_required_sites(self) -> None:
+        """Verify production contract hardening keeps at least 50 meaningful sites."""
+        repo_root = Path(__file__).resolve().parents[3]
+        paths = [
+            repo_root / "pysymex" / "accel" / "core_index.py",
+            repo_root / "pysymex" / "accel" / "evaluator.py",
+            repo_root / "pysymex" / "accel" / "types.py",
+            repo_root / "pysymex" / "accel" / "worker.py",
+            repo_root / "pysymex" / "core" / "solver" / "constraints.py",
+            repo_root / "pysymex" / "core" / "solver" / "learner.py",
+            repo_root / "pysymex" / "core" / "solver" / "unsat.py",
+        ]
+
+        decorated_functions = 0
+        for path in paths:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    names = {_decorator_name(decorator) for decorator in node.decorator_list}
+                    if names & _CONTRACT_DECORATORS:
+                        decorated_functions += 1
+
+        assert decorated_functions >= 50

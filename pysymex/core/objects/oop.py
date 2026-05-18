@@ -49,8 +49,8 @@ from pysymex.core.objects import (
     SymbolicObject,
     SymbolicProperty,
 )
-from pysymex.core.types.scalars import SymbolicValue
-from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicString
+from pysymex.core.types import SymbolicValue
+from pysymex.core.types import SymbolicDict, SymbolicList, SymbolicString
 
 
 def _empty_dataclass_fields() -> dict[str, tuple[str, object]]:
@@ -79,7 +79,7 @@ class EnhancedMethod:
     name: str = ""
     qualname: str = ""
     owner: SymbolicClass | None = None
-    bound_to: SymbolicObject | SymbolicClass | None = None
+    bound_to: object | None = None
     parameters: list[str] = field(default_factory=list[str])
     defaults: dict[str, object] = field(default_factory=dict[str, object])
     annotations: dict[str, str] = field(default_factory=dict[str, str])
@@ -88,12 +88,21 @@ class EnhancedMethod:
     def is_bound(self) -> bool:
         return self.bound_to is not None
 
-    def bind_to_instance(self, instance: SymbolicObject) -> EnhancedMethod:
+    def bind_to_instance(self, instance: object) -> EnhancedMethod:
         """Bind method to an instance."""
         if self.method_type == MethodType.STATIC:
             return self
         if self.method_type == MethodType.CLASS:
-            return self.bind_to_class(instance.cls)
+            if isinstance(instance, SymbolicObject):
+                return self.bind_to_class(instance.cls)
+            try:
+                enhanced = object.__getattribute__(instance, "_enhanced_object")
+            except AttributeError:
+                enhanced = None
+            enhanced_cls = getattr(enhanced, "cls", None)
+            if isinstance(enhanced_cls, SymbolicClass):
+                return self.bind_to_class(enhanced_cls)
+            return self
         return EnhancedMethod(
             func=self.func,
             method_type=self.method_type,
@@ -133,9 +142,36 @@ class EnhancedMethod:
             return args, kwargs
         if self.method_type == MethodType.CLASS:
             if self.bound_to and isinstance(self.bound_to, SymbolicClass):
+                if args:
+                    first_arg = args[0]
+                    first_enhanced = None
+                    if isinstance(first_arg, SymbolicValue):
+                        try:
+                            first_enhanced = object.__getattribute__(first_arg, "_enhanced_object")
+                        except AttributeError:
+                            first_enhanced = None
+                    if first_arg is self.bound_to or (
+                        first_enhanced is not None
+                        and getattr(first_enhanced, "base", None) is self.bound_to
+                    ):
+                        return args, kwargs
                 return (self.bound_to, *args), kwargs
+
             return args, kwargs
-        if self.bound_to and isinstance(self.bound_to, SymbolicObject):
+        if self.bound_to is not None:
+            # Check if self/cls is already the first argument to avoid double-binding.
+            # This is common in Python 3.11+ stack protocol where the receiver is pushed separately.
+            if args:
+                first_arg = args[0]
+                # Match against the bound object itself or its symbolic wrapper
+                if first_arg is self.bound_to:
+                    return args, kwargs
+                if (
+                    isinstance(first_arg, SymbolicValue)
+                    and getattr(first_arg, "_enhanced_object", None) is self.bound_to
+                ):
+                    return args, kwargs
+
             return (self.bound_to, *args), kwargs
         return args, kwargs
 
@@ -303,12 +339,22 @@ class EnhancedObject:
         """Property returning the cls."""
         return self.base.cls
 
-    def get_attribute(self, name: str) -> tuple[object, bool]:
+    @property
+    def modified_attrs(self) -> set[str]:
+        return self._modified_attrs
+
+    @property
+    def accessed_attrs(self) -> set[str]:
+        return self._accessed_attrs
+
+    def get_attribute(self, name: str, bound_instance: object | None = None) -> tuple[object, bool]:
         """
         Get attribute with full descriptor protocol.
         Returns (value, found).
         """
         self._accessed_attrs.add(name)
+        bind_target = bound_instance if bound_instance is not None else self.base
+
         if name in self.enhanced_class.properties:
             prop = self.enhanced_class.properties[name]
             if prop.fget is not None:
@@ -320,7 +366,7 @@ class EnhancedObject:
                 return attr.value, True
         method = self.enhanced_class.get_method(name)
         if method:
-            return method.bind_to_instance(self.base), True
+            return method.bind_to_instance(bind_target), True
         if name in self.enhanced_class.class_vars:
             return self.enhanced_class.class_vars[name], True
         attr = self.base.get_attribute(name, check_class=True)
@@ -328,7 +374,9 @@ class EnhancedObject:
             value = attr.value
             if attr.is_method and isinstance(value, (SymbolicMethod, EnhancedMethod)):
                 if isinstance(value, EnhancedMethod):
-                    return value.bind_to_instance(self.base), True
+                    return value.bind_to_instance(bind_target), True
+                if isinstance(bind_target, SymbolicObject):
+                    return value.bind(bind_target), True
                 return value.bind(self.base), True
             return value, True
         return None, False
@@ -382,6 +430,7 @@ class EnhancedClassRegistry:
     def __init__(self) -> None:
         self._classes: dict[str, EnhancedClass] = {}
         self._by_code: dict[int, EnhancedClass] = {}
+        self._by_code_object: dict[int, tuple[object, EnhancedClass]] = {}
 
     def register_class(
         self,
@@ -416,6 +465,34 @@ class EnhancedClassRegistry:
     def get_by_code(self, code_id: int) -> EnhancedClass | None:
         """Get class by code object ID."""
         return self._by_code.get(code_id)
+
+    def register_code_object(
+        self,
+        code_obj: object,
+        enhanced: EnhancedClass,
+    ) -> None:
+        """Register class by code object identity with reuse validation."""
+        code_id = id(code_obj)
+        self._by_code_object[code_id] = (code_obj, enhanced)
+        self._by_code[code_id] = enhanced
+
+    def get_by_code_object(self, code_obj: object) -> EnhancedClass | None:
+        """Get class for a live code object without accepting stale ID reuse."""
+        code_id = id(code_obj)
+        entry = self._by_code_object.get(code_id)
+        if entry is None:
+            return None
+        registered_code, enhanced = entry
+        if registered_code is code_obj:
+            return enhanced
+        self._by_code_object.pop(code_id, None)
+        return None
+
+    def clear(self) -> None:
+        """Clear all registered enhanced class state."""
+        self._classes.clear()
+        self._by_code.clear()
+        self._by_code_object.clear()
 
     def list_classes(self) -> list[str]:
         """List all registered class names."""
@@ -483,7 +560,7 @@ def extract_init_params(code_obj: object) -> list[InitParameter]:
     defaults_obj = getattr(code_any, "co_defaults", ())
     defaults: tuple[object, ...] = tuple(defaults_obj) if isinstance(defaults_obj, tuple) else ()  # type: ignore[misc]  # defaults_obj element type unknown
     default_offset = arg_count - len(defaults)
-    for i, name in enumerate(varnames):
+    for i, name in enumerate(varnames[:arg_count]):
         is_self = i == 0 and name in ("self", "cls")
         has_default = i >= default_offset
         default = defaults[i - default_offset] if has_default else None

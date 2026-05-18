@@ -22,6 +22,7 @@ from pysymex.execution.strategies.manager import (
     AdaptivePathManager,
     ExplorationStrategy,
     PathManager,
+    TopologicalThompsonPathManager,
     create_path_manager,
 )
 from pysymex.execution.strategies.merger import (
@@ -38,6 +39,7 @@ __all__ = [
     "MergeStatistics",
     "PathManager",
     "StateMerger",
+    "TopologicalThompsonPathManager",
     "create_path_manager",
     "create_state_merger",
 ]

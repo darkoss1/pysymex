@@ -1,21 +1,21 @@
-from pysymex.analysis.detectors.base import IssueKind
-
 """Tests for pysymex/analysis/detectors/runtime/unbound_variable.py."""
 
-from unittest.mock import Mock, patch
-import z3
+from __future__ import annotations
+
 import dis
-import pytest
+
 from pysymex.analysis.detectors.runtime.unbound_variable import UnboundVariableDetector
+from pysymex.core.state import VMState, UNBOUND
 
 
-def MockInstr(
+def _make_instruction(
     opname: str, argval: object = None, argrepr: str = "", arg: int = 0, offset: int = 10
 ) -> dis.Instruction:
-    import dis
+    """Create a deterministic instruction for detector unit tests."""
 
     def _dummy() -> None:
-        pass
+        """Provide bytecode for a template instruction."""
+        return None
 
     template = next(dis.get_instructions(_dummy))
     return template._replace(
@@ -31,14 +31,36 @@ def MockInstr(
 class TestUnboundVariableDetector:
     """Test suite for pysymex.analysis.detectors.base.UnboundVariableDetector."""
 
-    def test_check(self) -> None:
-        """Test check behavior."""
-        d = UnboundVariableDetector()
-        instr = MockInstr("LOAD_FAST", "x")
-        from pysymex.core.state import UNBOUND
-
-        state = Mock(path_constraints=[], pc=1)
-        state.get_local.return_value = UNBOUND
-        issue = d.check(state, instr, lambda c: True)
+    def test_check_reports_unbound_load_fast(self) -> None:
+        """Report UNBOUND_VARIABLE for LOAD_FAST when local is UNBOUND."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_FAST", "x")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+        state.set_local("x", UNBOUND)
+        issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
-        assert issue.kind.name == "UNBOUND_VARIABLE"
+
+    def test_check_reports_unbound_load_name(self) -> None:
+        """Report UNBOUND_VARIABLE for LOAD_NAME missing in locals/globals."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_NAME", "missing_name")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+        issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is not None
+
+    def test_check_ignores_bound_load_name_in_globals(self) -> None:
+        """Return None for LOAD_NAME when symbol exists in globals."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_NAME", "configured")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+        state.set_global("configured", 1)
+        issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_ignores_builtin_name(self) -> None:
+        """Return None for builtins resolved by LOAD_NAME."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_NAME", "len")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+        issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None

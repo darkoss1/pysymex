@@ -4,7 +4,7 @@ import z3
 
 from pysymex._typing import StackValue
 from pysymex.core.state import VMState
-from pysymex.core.types.containers import SymbolicList
+from pysymex.core.types.containers import SymbolicList, SymbolicObject
 from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
 from pysymex.models.builtins import core
 
@@ -19,6 +19,35 @@ class TestLenModel:
     def test_apply(self) -> None:
         """Test apply behavior."""
         core.LenModel().apply([], {}, _state())
+
+    def test_apply_resolves_symbolic_object_container_length(self) -> None:
+        """len(symbolic-list-object) must share the underlying list length."""
+        symbolic_list, list_constraint = SymbolicList.symbolic("items")
+        obj = SymbolicObject("items", 101, z3.IntVal(101), {101})
+        state = VMState(memory={101: symbolic_list})
+
+        result = core.LenModel().apply([obj], {}, state)
+
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(list_constraint, *result.constraints)
+        solver.add(result.value.z3_int != symbolic_list.z3_len)
+        assert solver.check() == z3.unsat
+
+    def test_apply_returns_concrete_len_for_symbolic_constant_tuple(self) -> None:
+        """len(SymbolicValue.from_const(tuple)) must match CPython's tuple length."""
+        obj = SymbolicValue.from_const((10, 20, 30))
+
+        result = core.LenModel().apply([obj], {}, _state())
+
+        assert result.value == 3
+        assert result.constraints == ()
+
+    def test_apply_int_emits_type_error_side_effect(self) -> None:
+        """len(int) raises TypeError in CPython."""
+        result = core.LenModel().apply([SymbolicValue.from_const(1)], {}, _state())
+
+        assert "raised_exception" in result.side_effects
 
 
 class TestRangeModel:
@@ -54,6 +83,30 @@ class TestMinModel:
         values: list[StackValue] = [4, 1, 6]
         assert core.MinModel().apply(values, {}, _state()).value == 1
 
+    def test_apply_empty_sequence_emits_value_error_side_effect(self) -> None:
+        """min([]) raises ValueError in CPython."""
+        result = core.MinModel().apply([[]], {}, _state())
+
+        assert "raised_exception" in result.side_effects
+
+    def test_apply_empty_symbolic_list_emits_value_error_side_effect(self) -> None:
+        """VM-built empty lists also raise ValueError through min()."""
+        values = SymbolicList.empty("items")
+
+        result = core.MinModel().apply([values], {}, _state())
+
+        assert "raised_exception" in result.side_effects
+
+    def test_apply_empty_heap_list_handle_emits_value_error_side_effect(self) -> None:
+        """Scanner BUILD_LIST handles are resolved before min() checks emptiness."""
+        values = SymbolicList.from_const([])
+        obj = SymbolicObject("items", 101, z3.IntVal(101), {101})
+        state = VMState(memory={101: values})
+
+        result = core.MinModel().apply([obj], {}, state)
+
+        assert "raised_exception" in result.side_effects
+
 
 class TestMaxModel:
     """Test suite for pysymex.models.builtins.core.MaxModel."""
@@ -62,6 +115,30 @@ class TestMaxModel:
         """Test apply behavior."""
         values: list[StackValue] = [4, 1, 6]
         assert core.MaxModel().apply(values, {}, _state()).value == 6
+
+    def test_apply_empty_sequence_emits_value_error_side_effect(self) -> None:
+        """max([]) raises ValueError in CPython."""
+        result = core.MaxModel().apply([[]], {}, _state())
+
+        assert "raised_exception" in result.side_effects
+
+    def test_apply_empty_symbolic_list_emits_value_error_side_effect(self) -> None:
+        """VM-built empty lists also raise ValueError through max()."""
+        values = SymbolicList.empty("items")
+
+        result = core.MaxModel().apply([values], {}, _state())
+
+        assert "raised_exception" in result.side_effects
+
+    def test_apply_empty_heap_list_handle_emits_value_error_side_effect(self) -> None:
+        """Scanner BUILD_LIST handles are resolved before max() checks emptiness."""
+        values = SymbolicList.from_const([])
+        obj = SymbolicObject("items", 101, z3.IntVal(101), {101})
+        state = VMState(memory={101: values})
+
+        result = core.MaxModel().apply([obj], {}, state)
+
+        assert "raised_exception" in result.side_effects
 
 
 class TestIntModel:

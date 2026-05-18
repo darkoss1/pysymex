@@ -37,6 +37,43 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+            ("PrivateUsage", ctypes.c_size_t),
+        ]
+
+    try:
+        GetProcessMemoryInfo = ctypes.windll.psapi.GetProcessMemoryInfo
+        GetCurrentProcess = ctypes.windll.kernel32.GetCurrentProcess
+        GetCurrentProcess.restype = wintypes.HANDLE
+        GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(PROCESS_MEMORY_COUNTERS_EX),
+            wintypes.DWORD,
+        ]
+        GetProcessMemoryInfo.restype = wintypes.BOOL
+    except Exception:
+        GetProcessMemoryInfo = None
+        GetCurrentProcess = None
+else:
+    PROCESS_MEMORY_COUNTERS_EX = None
+    GetProcessMemoryInfo = None
+    GetCurrentProcess = None
+
 from pysymex.stats import EventType, emit
 
 logger = logging.getLogger(__name__)
@@ -313,6 +350,15 @@ class ResourceTracker:
                 if sys_resource is not None:
                     usage = sys_resource.getrusage(sys_resource.RUSAGE_SELF)
                     return usage.ru_maxrss / 1024
+            elif GetProcessMemoryInfo is not None and GetCurrentProcess is not None:
+                try:
+                    counters = PROCESS_MEMORY_COUNTERS_EX()
+                    counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
+                    handle = GetCurrentProcess()
+                    if GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+                        return float(counters.WorkingSetSize) / (1024 * 1024)
+                except Exception:
+                    pass
 
             return 0.0
         except OSError:
@@ -644,18 +690,3 @@ def create_partial_result(
         else:
             result.reason = str(error)
     return result
-
-
-__all__ = [
-    "AnalysisTimeoutError",
-    "GracefulDegradation",
-    "LimitExceeded",
-    "PartialResult",
-    "ResourceLimits",
-    "ResourceSnapshot",
-    "ResourceTracker",
-    "ResourceType",
-    "TimeoutError",
-    "create_partial_result",
-    "timeout_context",
-]

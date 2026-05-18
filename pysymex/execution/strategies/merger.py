@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     import dis
 
     from pysymex.core.state import CallFrame, VMState
-    from pysymex.core.types.scalars import SymbolicValue
+    from pysymex.core.types import SymbolicValue
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +114,15 @@ class StateMerger:
         policy: MergePolicy = MergePolicy.MODERATE,
         max_constraints_for_merge: int = 50,
         similarity_threshold: float = 0.7,
+        max_symbolic_merge_candidates: int = 32,
+        disable_after_unproductive_attempts: int = 128,
     ) -> None:
         self.policy = policy
         self.max_constraints_for_merge = max_constraints_for_merge
         self.similarity_threshold = similarity_threshold
+        self.max_symbolic_merge_candidates = max(1, max_symbolic_merge_candidates)
+        self.disable_after_unproductive_attempts = max(1, disable_after_unproductive_attempts)
+        self._disabled_for_execution = False
         self.stats = MergeStatistics()
         self._join_points: set[int] = set()
         self._pending_states: dict[int, dict[int, list[VMState]]] = {}
@@ -143,6 +148,7 @@ class StateMerger:
         import dis as _dis
 
         predecessor_counts: dict[int, int] = {}
+        backward_jump_targets: set[int] = set()
         offset_to_index: dict[int, int] = {
             instr.offset: idx for idx, instr in enumerate(instructions)
         }
@@ -154,7 +160,10 @@ class StateMerger:
             if instr.opcode in _dis.hasjabs or instr.opcode in _dis.hasjrel:
                 jump_target = instr.argval
                 if isinstance(jump_target, int) and jump_target in offset_to_index:
-                    successors.add(offset_to_index[jump_target])
+                    target_index = offset_to_index[jump_target]
+                    successors.add(target_index)
+                    if target_index <= idx:
+                        backward_jump_targets.add(target_index)
 
             has_fallthrough = True
             if opname.startswith("RETURN") or opname in {"RAISE_VARARGS", "RERAISE"}:
@@ -176,7 +185,11 @@ class StateMerger:
             for succ in successors:
                 predecessor_counts[succ] = predecessor_counts.get(succ, 0) + 1
 
-        self._join_points = {idx for idx, count in predecessor_counts.items() if count > 1}
+        self._join_points = {
+            idx
+            for idx, count in predecessor_counts.items()
+            if count > 1 and idx not in backward_jump_targets
+        }
         return self._join_points
 
     def is_join_point(self, pc: int) -> bool:
@@ -185,6 +198,8 @@ class StateMerger:
 
     def should_merge(self, state: VMState) -> bool:
         """Determine if the state should be considered for merging."""
+        if self._disabled_for_execution:
+            return False
         if not self.is_join_point(state.pc):
             return False
         if len(state.path_constraints) > self.max_constraints_for_merge:
@@ -215,8 +230,22 @@ class StateMerger:
         pending = self._pending_states[pc][target_hash]
         self.stats.states_before_merge += 1
 
+        if (
+            self.stats.states_before_merge > self.disable_after_unproductive_attempts
+            and self.stats.merge_operations == 0
+            and self.stats.subsumption_hits == 0
+        ):
+            self._disabled_for_execution = True
+            pending.append(state)
+            self.stats.states_after_merge += 1
+            return state
+
         i = 0
+        subsumption_start = max(0, len(pending) - self.max_symbolic_merge_candidates)
         while i < len(pending):
+            if i < subsumption_start:
+                i += 1
+                continue
             existing = pending[i]
 
             if self._state_payload_equal(existing, state):
@@ -230,11 +259,12 @@ class StateMerger:
                     continue
             i += 1
 
-        for i, existing in enumerate(pending):
+        symbolic_start = max(0, len(pending) - self.max_symbolic_merge_candidates)
+        for offset, existing in enumerate(pending[symbolic_start:]):
             if self._can_merge_symbolically(state, existing):
                 merged = self._merge_states_symbolically(state, existing)
                 if merged:
-                    pending.pop(i)
+                    pending.pop(symbolic_start + offset)
                     pending.append(merged)
                     self.stats.merge_operations += 1
                     return merged
@@ -377,6 +407,9 @@ class StateMerger:
             if b1.block_type != b2.block_type or b1.handler_pc != b2.handler_pc:
                 return False
 
+        if state1.visited_pcs.hash_value() != state2.visited_pcs.hash_value():
+            return False
+
         cons1 = state1.path_constraints.to_list()
         cons2 = state2.path_constraints.to_list()
         if len(cons1) != len(cons2):
@@ -398,14 +431,18 @@ class StateMerger:
             right: StackValue,
             merge_condition: z3.BoolRef,
         ) -> StackValue | None:
-            from pysymex.core.types.scalars import SymbolicValue
+            from pysymex.core.types import SymbolicValue
 
             from pysymex.core.types.containers import (
                 SymbolicDict,
+                SymbolicIterator,
                 SymbolicList,
                 SymbolicObject,
                 SymbolicString,
             )
+
+            if isinstance(left, SymbolicIterator) or isinstance(right, SymbolicIterator):
+                return None
 
             _CONTAINER_TYPES = (SymbolicList, SymbolicDict, SymbolicString, SymbolicObject)
             left_is_container = isinstance(left, _CONTAINER_TYPES)
@@ -557,6 +594,8 @@ class StateMerger:
         """Check structural equality of SymbolicValue instances."""
         if bool(getattr(left, "_h_active", False)) != bool(getattr(right, "_h_active", False)):
             return False
+        if getattr(left, "_enhanced_object", None) is not getattr(right, "_enhanced_object", None):
+            return False
         if left.affinity_type != right.affinity_type:
             return False
         if left.min_val != right.min_val or left.max_val != right.max_val:
@@ -605,7 +644,7 @@ class StateMerger:
         if isinstance(left, z3.ExprRef):
             return isinstance(right, z3.ExprRef) and z3.eq(left, right)
 
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         if isinstance(left, SymbolicValue):
             if not isinstance(right, SymbolicValue):
@@ -646,6 +685,7 @@ class StateMerger:
     def reset(self) -> None:
         """Reset merger state."""
         self._pending_states.clear()
+        self._disabled_for_execution = False
         self.stats = MergeStatistics()
 
 

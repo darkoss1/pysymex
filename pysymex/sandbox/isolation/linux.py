@@ -51,7 +51,6 @@ from .harness import HARNESS_FILENAME, generate_harness_script
 if TYPE_CHECKING:
     from ..types import SandboxConfig
 
-
 _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
     {
         0,
@@ -64,9 +63,7 @@ _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
         10,
         11,
         12,
-        13,
         14,
-        15,
         17,
         21,
         28,
@@ -88,7 +85,6 @@ _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
         218,
         228,
         231,
-        234,
         257,
         262,
         273,
@@ -96,7 +92,6 @@ _SYSCALL_ALLOWLIST_X86_64: frozenset[int] = frozenset(
         318,
         332,
         334,
-        435,
         439,
     }
 )
@@ -202,8 +197,6 @@ class LinuxNamespaceBackend(IsolationBackend):
             restrict_builtins=self.config.harness_restrict_builtins,
             install_audit_hook=self.config.harness_install_audit_hook,
             block_ast_imports=self.config.harness_block_ast_imports,
-            install_seccomp=enable_seccomp,
-            seccomp_allowlist=tuple(_SYSCALL_ALLOWLIST_X86_64),
         )
         harness_path = self._jail_path / HARNESS_FILENAME
         harness_path.write_text(harness, encoding="utf-8")
@@ -318,12 +311,13 @@ class LinuxNamespaceBackend(IsolationBackend):
         return self.config.harness_install_audit_hook and is_x86_64
 
     def _make_preexec_fn(self):
-        """Create a preexec_fn that sets no_new_privs and rlimits.
+        """Create a preexec_fn that sets no_new_privs, rlimits, and seccomp.
 
         This function runs in the *child* process immediately after
         ``fork()`` and before ``exec()``.
         """
         limits = self.config.limits
+        enable_seccomp = self._should_enable_seccomp()
 
         def _apply_restrictions() -> None:
             import ctypes
@@ -335,6 +329,88 @@ class LinuxNamespaceBackend(IsolationBackend):
             if rc != 0:
                 err = ctypes.get_errno()
                 raise OSError(err, "prctl(PR_SET_NO_NEW_PRIVS) failed")
+
+            if enable_seccomp:
+                _PR_SET_SECCOMP = 22
+                _SECCOMP_SET_MODE_FILTER = 1
+                _SECCOMP_RET_KILL_PROCESS = 0x80000000
+                _SECCOMP_RET_ALLOW = 0x7FFF0000
+                _BPF_LD = 0x00
+                _BPF_JMP = 0x05
+                _BPF_RET = 0x06
+                _BPF_W = 0x00
+                _BPF_ABS = 0x20
+                _BPF_JEQ = 0x10
+                _BPF_K = 0x00
+                _AUDIT_ARCH_X86_64 = 0xC000003E
+
+                class _SockFilter(ctypes.Structure):
+                    _fields_ = [
+                        ("code", ctypes.c_ushort),
+                        ("jt", ctypes.c_ubyte),
+                        ("jf", ctypes.c_ubyte),
+                        ("k", ctypes.c_uint),
+                    ]
+
+                class _SockFprog(ctypes.Structure):
+                    _fields_ = [
+                        ("len", ctypes.c_ushort),
+                        ("filter", ctypes.POINTER(_SockFilter)),
+                    ]
+
+                def _stmt(_code: int, _k: int) -> tuple[int, int, int, int]:
+                    return (_code, 0, 0, _k)
+
+                def _jump(
+                    _code: int,
+                    _k: int,
+                    _jt: int,
+                    _jf: int,
+                ) -> tuple[int, int, int, int]:
+                    return (_code, _jt, _jf, _k)
+
+                _ins: list[tuple[int, int, int, int]] = []
+                _ins.append(_stmt(_BPF_LD | _BPF_W | _BPF_ABS, 4))
+                _ins.append(
+                    _jump(
+                        _BPF_JMP | _BPF_JEQ | _BPF_K,
+                        _AUDIT_ARCH_X86_64,
+                        0,
+                        1,
+                    )
+                )
+                _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_KILL_PROCESS))
+                _ins.append(_stmt(_BPF_LD | _BPF_W | _BPF_ABS, 0))
+
+                _sorted = sorted(_SYSCALL_ALLOWLIST_X86_64)
+                _remaining = len(_sorted)
+                for _nr in _sorted:
+                    _remaining -= 1
+                    _ins.append(
+                        _jump(
+                            _BPF_JMP | _BPF_JEQ | _BPF_K,
+                            int(_nr),
+                            _remaining + 1,
+                            0,
+                        )
+                    )
+
+                _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_KILL_PROCESS))
+                _ins.append(_stmt(_BPF_RET | _BPF_K, _SECCOMP_RET_ALLOW))
+
+                _arr_t = _SockFilter * len(_ins)
+                _arr = _arr_t(*(_SockFilter(_c, _jt, _jf, _k) for _c, _jt, _jf, _k in _ins))
+                _prog = _SockFprog(len(_ins), _arr)
+                _rc = libc.prctl(
+                    _PR_SET_SECCOMP,
+                    _SECCOMP_SET_MODE_FILTER,
+                    ctypes.byref(_prog),
+                    0,
+                    0,
+                )
+                if _rc != 0:
+                    _err = ctypes.get_errno()
+                    raise OSError(_err, "prctl(PR_SET_SECCOMP) failed in preexec")
 
             setrlimit_candidate = getattr(resource, "setrlimit", None)
             setrlimit_fn: Callable[[int, tuple[int, int]], object] | None = None
@@ -391,10 +467,7 @@ class LinuxNamespaceBackend(IsolationBackend):
         if returncode == 0:
             return ExecutionStatus.SUCCESS
         if returncode == -_SIGKILL:
-            return ExecutionStatus.MEMORY_EXCEEDED
+            return ExecutionStatus.SECURITY_VIOLATION
         if returncode == -_SIGXCPU:
             return ExecutionStatus.CPU_EXCEEDED
         return ExecutionStatus.FAILED
-
-
-__all__ = ["LinuxNamespaceBackend"]

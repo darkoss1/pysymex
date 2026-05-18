@@ -32,13 +32,12 @@ Requires Python 3.11+ for native ``TaskGroup`` support.
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from pysymex.execution.executors import ExecutionResult
+from pysymex.scanner.types import ScanResult
 
 if TYPE_CHECKING:
     from pysymex.execution.types import ExecutionConfig
@@ -59,11 +58,9 @@ class AnalyzeConfigKwargs(TypedDict, total=False):
 
 
 def _timeout_from_kwargs(kwargs: AnalyzeConfigKwargs) -> float:
+    """Return the analysis timeout from typed async API keyword arguments."""
     timeout_val = kwargs.get("timeout", 60.0)
     return float(timeout_val)
-
-
-logger = logging.getLogger(__name__)
 
 
 async def analyze_async(
@@ -157,14 +154,7 @@ async def scan_directory_async(
     max_concurrency: int | None = None,
     auto_tune: bool = False,
 ) -> list[object]:
-    """Async directory scanner using ``asyncio.TaskGroup``.
-
-    Scans all matching Python files concurrently using structured
-    concurrency.  A ``Semaphore`` limits the number of files being
-    analysed simultaneously to avoid overwhelming system resources.
-
-    Each scanning task handles its own exceptions; errors are collected
-    and raised as an ``ExceptionGroup`` at the end (if any occurred).
+    """Async directory scanner delegated to the scanner async SSoT.
 
     Args:
         dir_path: Path to directory.
@@ -179,77 +169,15 @@ async def scan_directory_async(
     Returns:
         List of :class:`ScanResult`, one per file.
     """
-    from pysymex.scanner.core import scan_file
+    from pysymex.scanner.async_scanner import scan_directory_async as _scan_directory_async
 
-    dir_path = Path(dir_path)
-    files = sorted(dir_path.glob(pattern))
-    if not files:
-        if verbose:
-            print(f"No Python files found in {dir_path}")
-        return []
-
-    if max_concurrency is None:
-        max_concurrency = max(1, os.cpu_count() or 1)
-
-    semaphore = asyncio.Semaphore(max_concurrency)
-    results: list[object] = []
-    errors: list[Exception] = []
-    results_lock = asyncio.Lock()
-    completed = 0
-    total = len(files)
-
-    async def _scan_one(file_path: Path) -> None:
-        """Scan one."""
-        nonlocal completed
-        async with semaphore:
-            try:
-                result = await asyncio.to_thread(
-                    scan_file,
-                    file_path,
-                    verbose=False,
-                    max_paths=max_paths,
-                    timeout=timeout,
-                    auto_tune=auto_tune,
-                )
-                async with results_lock:
-                    results.append(result)
-                    completed += 1
-                    if verbose:
-                        pct = completed * 100 // total
-                        status = "OK"
-                        if result.error:
-                            status = "ERROR"
-                        elif result.issues:
-                            status = f"{len(result.issues)} issue(s)"
-                        print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                async with results_lock:
-                    errors.append(exc)
-                    completed += 1
-
-    if verbose:
-        print(
-            f"Scanning {total} file{'s' if total != 1 else ''} "
-            f"async (concurrency={max_concurrency})..."
-        )
-
-    async with asyncio.TaskGroup() as tg:
-        for file_path in files:
-            tg.create_task(_scan_one(file_path))
-
-    if errors:
-        logger.warning("async scan: %d file(s) had errors", len(errors))
-        for err in errors:
-            logger.debug("  %s: %s", type(err).__name__, err)
-
-    return results
-
-
-__all__ = [
-    "analyze_async",
-    "analyze_code_async",
-    "analyze_file_async",
-    "scan_directory_async",
-]
+    results: list[ScanResult] = await _scan_directory_async(
+        dir_path,
+        pattern=pattern,
+        verbose=verbose,
+        max_paths=max_paths,
+        timeout=timeout,
+        max_concurrency=max_concurrency,
+        auto_tune=auto_tune,
+    )
+    return list(results)

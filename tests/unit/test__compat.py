@@ -28,7 +28,8 @@ class TestBatched:
 
     def test_empty_iterable(self) -> None:
         """Batching an empty iterable yields nothing."""
-        result = list(batched([], 3))
+        values: list[int] = []
+        result = list(batched(values, 3))
         assert result == []
 
     def test_batch_size_larger_than_input(self) -> None:

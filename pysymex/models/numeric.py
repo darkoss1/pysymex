@@ -30,6 +30,11 @@ import z3
 
 from pysymex.core.types.scalars import SymbolicList, SymbolicString, SymbolicValue
 from pysymex.models.builtins.base import FunctionModel, ModelResult
+from pysymex.models.typed_results import (
+    model_bool_result,
+    model_int_result,
+    symbolic_int_result,
+)
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -48,13 +53,18 @@ class IntBitLengthModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bit_length_{state.pc}")
-        constraints = [constraint, result.is_int, result.z3_int >= 0]
+        """Return a faithful concrete result for Python ints and safe symbolic constraints otherwise."""
+        if args and isinstance(args[0], int):
+            return ModelResult(value=args[0].bit_length())
+
+        result, constraints = symbolic_int_result(f"bit_length_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         if args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
-                constraints.append(z3.Implies(val == 0, result.z3_int == 0))
-                constraints.append(z3.Implies(val != 0, result.z3_int >= 1))
+                abs_val: z3.ArithRef = z3.If(val < 0, -val, val)
+                constraints.append(z3.Implies(abs_val == 0, result.z3_int == 0))
+                constraints.append(z3.Implies(abs_val > 0, result.z3_int >= 1))
         return ModelResult(value=result, constraints=constraints)
 
 
@@ -70,12 +80,17 @@ class IntBitCountModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"bit_count_{state.pc}")
-        constraints = [constraint, result.is_int, result.z3_int >= 0]
+        """Return a faithful concrete result for Python ints and safe symbolic constraints otherwise."""
+        if args and isinstance(args[0], int):
+            return ModelResult(value=args[0].bit_count())
+
+        result, constraints = symbolic_int_result(f"bit_count_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         if args:
-            val = getattr(args[0], "z3_int", None)
+            val: z3.ArithRef | None = getattr(args[0], "z3_int", None)
             if val is not None:
-                constraints.append(z3.Implies(val == 0, result.z3_int == 0))
+                abs_val: z3.ArithRef = z3.If(val < 0, -val, val)
+                constraints.append(z3.Implies(abs_val == 0, result.z3_int == 0))
         return ModelResult(value=result, constraints=constraints)
 
 
@@ -112,9 +127,7 @@ class IntFromBytesModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"from_bytes_{state.pc}")
-        constraints = [constraint, result.is_int]
-        return ModelResult(value=result, constraints=constraints)
+        return model_int_result(f"from_bytes_{state.pc}")
 
 
 class IntAsIntegerRatioModel(FunctionModel):
@@ -148,8 +161,7 @@ class IntConjugateModel(FunctionModel):
     ) -> ModelResult:
         if args:
             return ModelResult(value=args[0])
-        result, constraint = SymbolicValue.symbolic(f"conjugate_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_int])
+        return model_int_result(f"conjugate_{state.pc}")
 
 
 class FloatIsIntegerModel(FunctionModel):
@@ -164,8 +176,7 @@ class FloatIsIntegerModel(FunctionModel):
         kwargs: dict[str, StackValue],
         state: VMState,
     ) -> ModelResult:
-        result, constraint = SymbolicValue.symbolic(f"is_integer_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
+        return model_bool_result(f"is_integer_{state.pc}")
 
 
 class FloatAsIntegerRatioModel(FunctionModel):

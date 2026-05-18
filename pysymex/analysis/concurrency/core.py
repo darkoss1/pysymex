@@ -24,6 +24,7 @@ Detects data races, deadlocks, atomicity violations, and await cycles.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ from itertools import pairwise
 
 import z3
 
-from pysymex.analysis.concurrency import (
+from pysymex.core.solver.engine import IncrementalSolver
+from .types import (
     ConcurrencyIssue,
     ConcurrencyIssueKind,
     HappensBeforeGraph,
@@ -55,8 +57,7 @@ class ConcurrencyAnalyzer:
 
     def __init__(self, timeout_ms: int = 10000) -> None:
         self.timeout_ms = timeout_ms
-        self._solver = z3.Solver()
-        self._solver.set("timeout", timeout_ms)
+        self._solver = IncrementalSolver(timeout_ms=timeout_ms)
         self._threads: dict[str, Thread] = {}
         self._main_thread: str | None = None
         self._shared_variables: set[str] = set()
@@ -450,7 +451,7 @@ class ConcurrencyAnalyzer:
                     return None
                 visited.add(node)
                 path.append(node)
-                for neighbor in lock_order_graph.get(node, set()):
+                for neighbor in lock_order_graph.get(node, ()):
                     result = dfs(neighbor)
                     if result:
                         return result
@@ -520,7 +521,7 @@ class ConcurrencyAnalyzer:
 
             result = self._solver.check()
             self._solver.pop()
-            return result == z3.sat
+            return result.is_sat
         except z3.Z3Exception:
             try:
                 self._solver.pop()
@@ -530,7 +531,7 @@ class ConcurrencyAnalyzer:
 
     def detect_await_cycles(
         self,
-        await_graph: dict[str, str | None],
+        await_graph: Mapping[str, str | None],
     ) -> list[ConcurrencyIssue]:
         """Detect circular await chains in async code.
 
@@ -643,7 +644,7 @@ class ConcurrencyAnalyzer:
             for c in constraints:
                 self._solver.add(c)
             self._solver.add(order_vars[w2_id] < order_vars[w1_id])
-            can_reorder = self._solver.check() == z3.sat
+            can_reorder = self._solver.check().is_sat
             self._solver.pop()
             if can_reorder:
                 return (
@@ -678,9 +679,9 @@ class ConcurrencyAnalyzer:
         for c in constraints:
             self._solver.add(c)
         self._solver.add(z3.Not(assertion))
-        result = self._solver.check()
-        if result == z3.sat:
-            model = self._solver.model()
+        result = self._solver.check(need_model=True)
+        if result.is_sat and result.model is not None:
+            model = result.model
             self._solver.pop()
             schedule: list[tuple[int, str, str]] = []
             for op_id, op in all_ops:
@@ -816,18 +817,3 @@ class LockOrderChecker:
         held = self._thread_held_locks.get(thread_id, [])
         if lock_name in held:
             held.remove(lock_name)
-
-
-__all__ = [
-    "ConcurrencyAnalyzer",
-    "ConcurrencyIssue",
-    "ConcurrencyIssueKind",
-    "HappensBeforeGraph",
-    "LockOrderChecker",
-    "MemoryOperation",
-    "MemoryOrder",
-    "OperationKind",
-    "Thread",
-    "ThreadSafetyChecker",
-    "ThreadState",
-]

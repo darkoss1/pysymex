@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t1_local/arithmetic.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t1_local.arithmetic import ArithmeticImpossibilityRule
 
 
@@ -33,3 +32,17 @@ class TestArithmeticImpossibilityRule:
         """Test basic initialization and properties."""
         assert ArithmeticImpossibilityRule is not None
         assert ArithmeticImpossibilityRule.__name__ == "ArithmeticImpossibilityRule"
+
+    def test_matches_integer_only_linear_impossibility(self) -> None:
+        """Classify equations impossible over integers but satisfiable over reals."""
+        x = z3.Int("x")
+        core = [2 * x == 1]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        assert ArithmeticImpossibilityRule().matches(ctx)
+
+    def test_does_not_match_satisfiable_arithmetic_equality(self) -> None:
+        """Do not classify arithmetic equalities that have integer models."""
+        x = z3.Int("x")
+        core = [x + 1 == 2]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        assert not ArithmeticImpossibilityRule().matches(ctx)

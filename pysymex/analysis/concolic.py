@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 import z3
 
-from pysymex.core.solver.engine import create_solver
+from pysymex.core.solver.engine import get_model
 
 
 @dataclass
@@ -203,14 +203,8 @@ class ConcolicExecutor:
         return inputs
 
     def _get_next_input(self) -> tuple[ConcreteInput, int]:
-        """Get the next input from the worklist based on strategy."""
-        if self.strategy in {"adaptive", "chtd_native"}:
-            return self._worklist.pop()
-        elif self.strategy == "random":
-            idx = random.randint(0, len(self._worklist) - 1)
-            return self._worklist.pop(idx)
-        else:
-            return self._worklist.pop()
+        """Get the next input from the worklist using adaptive strategy."""
+        return self._worklist.pop()
 
     def _execute_concrete(
         self,
@@ -252,10 +246,8 @@ class ConcolicExecutor:
         for i, branch in enumerate(trace.branches):
             prefix = [b.condition if b.taken else z3.Not(b.condition) for b in trace.branches[:i]]
             prefix.append(branch.negate())
-            solver = create_solver()
-            solver.add(*prefix)
-            if solver.check() == z3.sat:
-                model = solver.model()
+            model = get_model(prefix)
+            if model is not None:
                 new_values: dict[str, object] = {}
                 for name, value in trace.input.values.items():
                     for decl in model.decls():
@@ -349,7 +341,7 @@ class GenerationalSearch:
         Generation 0: Run with initial input
         Generation N: Run with inputs derived from generation N-1
         """
-        executor = ConcolicExecutor(strategy="coverage")
+        executor = ConcolicExecutor()
         gen0 = ConcreteInput(values=initial_input, generation=0)
         self._generations.append([gen0])
         all_traces: list[ExecutionTrace] = []
@@ -371,13 +363,3 @@ class GenerationalSearch:
             if next_gen:
                 self._generations.append(next_gen)
         return all_traces
-
-
-__all__ = [
-    "BranchRecord",
-    "ConcolicExecutor",
-    "ConcolicResult",
-    "ConcreteInput",
-    "ExecutionTrace",
-    "GenerationalSearch",
-]

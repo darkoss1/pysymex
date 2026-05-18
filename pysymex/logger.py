@@ -122,10 +122,10 @@ class LogEntry:
         if self.level == LogLevel.QUIET:
             return ""
         indicators = {
-            LogLevel.NORMAL: ("•", Colors.WHITE),
-            LogLevel.VERBOSE: ("→", Colors.BLUE),
-            LogLevel.DEBUG: ("⚙", Colors.MAGENTA),
-            LogLevel.TRACE: ("⋯", Colors.GRAY),
+            LogLevel.NORMAL: ("*", Colors.WHITE),
+            LogLevel.VERBOSE: (">", Colors.BLUE),
+            LogLevel.DEBUG: ("D", Colors.MAGENTA),
+            LogLevel.TRACE: (".", Colors.GRAY),
         }
         char, col = indicators.get(self.level, ("", ""))
         if color:
@@ -223,9 +223,9 @@ class PysymexLogger:
         """Log a success message with green checkmark."""
         if self._should_log(LogLevel.NORMAL):
             if self._color:
-                self._stream.write(f"{Colors.GREEN}✓{Colors.RESET} {message}\n")
+                self._stream.write(f"{Colors.GREEN}[OK]{Colors.RESET} {message}\n")
             else:
-                self._stream.write(f"✓ {message}\n")
+                self._stream.write(f"[OK] {message}\n")
             self._stream.flush()
 
     def warning(self, message: str) -> None:
@@ -233,12 +233,12 @@ class PysymexLogger:
         entry = LogEntry(level=LogLevel.NORMAL, message=message, category="warning")
         self._entries.append(entry)
         if self._color:
-            self._stream.write(f"{Colors.YELLOW}⚠{Colors.RESET} {message}\n")
+            self._stream.write(f"{Colors.YELLOW}[WARN]{Colors.RESET} {message}\n")
         else:
-            self._stream.write(f"⚠ {message}\n")
-        self._stream.flush()
+            self._stream.write(f"[WARN] {message}\n")
+            self._stream.flush()
         if self._file_handle:
-            self._file_handle.write(f"⚠ {message}\n")
+            self._file_handle.write(f"[WARN] {message}\n")
             self._file_handle.flush()
 
     def error(self, message: str) -> None:
@@ -246,12 +246,12 @@ class PysymexLogger:
         entry = LogEntry(level=LogLevel.QUIET, message=message, category="error")
         self._entries.append(entry)
         if self._color:
-            self._stream.write(f"{Colors.RED}✗{Colors.RESET} {message}\n")
+            self._stream.write(f"{Colors.RED}[ERR]{Colors.RESET} {message}\n")
         else:
-            self._stream.write(f"✗ {message}\n")
+            self._stream.write(f"[ERR] {message}\n")
         self._stream.flush()
         if self._file_handle:
-            self._file_handle.write(f"✗ {message}\n")
+            self._file_handle.write(f"[ERR] {message}\n")
             self._file_handle.flush()
 
     def header(self, message: str) -> None:
@@ -259,13 +259,13 @@ class PysymexLogger:
         if self._should_log(LogLevel.NORMAL):
             if self._color:
                 self._stream.write(f"\n{Colors.BOLD}{Colors.CYAN}{message}{Colors.RESET}\n")
-                self._stream.write(f"{Colors.CYAN}{'─' * len(message)}{Colors.RESET}\n")
+                self._stream.write(f"{Colors.CYAN}{'-' * len(message)}{Colors.RESET}\n")
             else:
                 self._stream.write(f"\n{message}\n")
-                self._stream.write(f"{'─' * len(message)}\n")
+                self._stream.write(f"{'-' * len(message)}\n")
             self._stream.flush()
 
-    def rule(self, char: str = "─") -> None:
+    def rule(self, char: str = "-") -> None:
         """Print a horizontal rule."""
         if self._should_log(LogLevel.NORMAL):
             width = 60
@@ -292,7 +292,7 @@ class PysymexLogger:
         pct = (current / total * 100) if total > 0 else 0
         bar_width = 30
         filled = int(bar_width * current / total) if total > 0 else 0
-        bar = "█" * filled + "░" * (bar_width - filled)
+        bar = "=" * filled + "-" * (bar_width - filled)
         if self._color:
             status = f"\r{Colors.CYAN}[{bar}]{Colors.RESET} {pct:5.1f}%"
         else:
@@ -416,16 +416,3 @@ def setup_python_logging(level: int = logging.INFO) -> None:
     logger = logging.getLogger("pysymex")
     logger.setLevel(level)
     logger.addHandler(PythonLoggingBridge(get_logger()))
-
-
-__all__ = [
-    "Colors",
-    "LogEntry",
-    "LogLevel",
-    "PysymexLogger",
-    "configure_logging",
-    "get_logger",
-    "set_logger",
-    "setup_python_logging",
-    "supports_color",
-]

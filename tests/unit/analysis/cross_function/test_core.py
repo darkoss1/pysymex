@@ -1,6 +1,5 @@
-import pytest
 import z3
-import ast
+from types import CodeType
 from pysymex.analysis.cross_function.core import (
     FunctionSummaryCache,
     CallGraph,
@@ -13,7 +12,7 @@ from pysymex.analysis.cross_function.types import CallContext
 from pysymex.core.types.scalars import SymbolicValue
 
 
-def make_dummy_code() -> object:
+def make_dummy_code() -> CodeType:
     def my_func() -> None:
         print("hello")
 
@@ -27,7 +26,7 @@ class TestFunctionSummaryCache:
         """Test get behavior."""
         cache = FunctionSummaryCache()
         assert cache.get("f", [], []) is None
-        assert cache._misses == 1
+        assert cache._misses == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
 
     def test_put(self) -> None:
         """Test put behavior."""
@@ -36,7 +35,29 @@ class TestFunctionSummaryCache:
         cache.put("f", [1], [sym > 0], "summary1")
         res = cache.get("f", [1], [sym > 0])
         assert res == "summary1"
-        assert cache._hits == 1
+        assert cache._hits == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+
+    def test_compute_key_canonicalizes_symbolic_argument_names(self) -> None:
+        """Symbolic argument names should not affect summary key canonicalization."""
+        cache = FunctionSummaryCache()
+        x1, _ = SymbolicValue.symbolic_int("x")
+        y1, _ = SymbolicValue.symbolic_int("y")
+        key1 = cache._compute_key("f", [x1, y1], [x1.z3_int > y1.z3_int])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+
+        x2, _ = SymbolicValue.symbolic_int("left")
+        y2, _ = SymbolicValue.symbolic_int("right")
+        key2 = cache._compute_key("f", [x2, y2], [x2.z3_int > y2.z3_int])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+
+        assert key1 == key2
+
+    def test_compute_key_ignores_constraints_when_arguments_are_concrete(self) -> None:
+        """Concrete-only calls keep current behavior and hash constraints as zero."""
+        cache = FunctionSummaryCache()
+        x = z3.Int("x")
+        key1 = cache._compute_key("f", [1, "a"], [x > 0])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        key2 = cache._compute_key("f", [1, "a"], [x < 0, x != 3])  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+
+        assert key1 == key2
 
 
 class TestCallGraph:

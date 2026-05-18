@@ -6,7 +6,6 @@ from pysymex.analysis.contracts.decorators import (
     ensures,
     invariant,
     loop_invariant,
-    function_contracts,
 )
 from pysymex.analysis.contracts.types import ContractKind
 

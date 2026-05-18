@@ -60,12 +60,78 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections import OrderedDict
+from typing import Protocol, TypeGuard
 
+import z3
 import z3 as _z3
+from pysymex.core.types.base import safe_z3_eq
 
-if TYPE_CHECKING:
-    import z3
+
+class Z3Convertible(Protocol):
+    """Protocol for symbolic objects that can expose a Z3 expression."""
+
+    def to_z3(self) -> z3.ExprRef:
+        """Return the Z3 expression represented by this object."""
+        raise TypeError("Protocol method Z3Convertible.to_z3() is not callable at runtime")
+
+
+def has_to_z3(value: object) -> TypeGuard[Z3Convertible]:
+    """Return True when a value has a callable to_z3 method."""
+    return hasattr(value, "to_z3") and callable(getattr(value, "to_z3", None))
+
+
+_Z3Convertible = Z3Convertible
+_has_to_z3 = has_to_z3
+
+
+def _decl_dependency_token(decl: z3.FuncDeclRef) -> str:
+    """Return a stable dependency token for an uninterpreted function declaration."""
+    domain = ",".join(str(decl.domain(i)) for i in range(decl.arity()))
+    return f"uf:{decl.name()}({domain})->{decl.range()}"
+
+
+def _expr_theory_signature(expr: z3.ExprRef) -> tuple[str, ...]:
+    """Return a compact theory/sort signature for a Z3 expression."""
+    tokens: set[str] = set()
+    worklist: list[z3.ExprRef] = [expr]
+    seen_ids: set[int] = {expr.get_id()}
+    while worklist:
+        node = worklist.pop()
+        try:
+            tokens.add(f"sort:{node.sort()}")
+        except z3.Z3Exception:
+            tokens.add("sort:<unknown>")
+        if z3.is_quantifier(node):
+            tokens.add("kind:quantifier_forall" if node.is_forall() else "kind:quantifier_exists")
+            body = node.body()
+            body_id = body.get_id()
+            if body_id not in seen_ids:
+                seen_ids.add(body_id)
+                worklist.append(body)
+            continue
+        if not z3.is_app(node):
+            tokens.add("kind:non_app")
+            continue
+        decl = node.decl()
+        tokens.add(f"kind:{decl.kind()}")
+        if decl.kind() == z3.Z3_OP_UNINTERPRETED:
+            tokens.add(_decl_dependency_token(decl))
+        for child in node.children():
+            child_id = child.get_id()
+            if child_id not in seen_ids:
+                seen_ids.add(child_id)
+                worklist.append(child)
+    return tuple(sorted(tokens))
+
+
+def _as_z3_expr(value: object) -> z3.ExprRef | None:
+    """Normalize a Z3 or symbolic expression candidate."""
+    if isinstance(value, z3.ExprRef):
+        return value
+    if _has_to_z3(value):
+        return value.to_z3()
+    return None
 
 
 class UnionFind:
@@ -186,27 +252,59 @@ class ConstraintIndependenceOptimizer:
     """
 
     __slots__ = (
+        "_adaptive_disable_min_queries",
+        "_adaptive_disable_min_reduction",
         "_extract_cached",
         "_extract_full",
-        "_uf",
-        "_var_cache",
         "_constraint_index",
-        "_var_to_constraint_indices",
+        "_prefix_theory_signature_cache",
+        "_slice_cache",
+        "_slice_cache_hits",
+        "_slice_cache_max_size",
+        "_slice_cache_misses",
+        "_slicing_disabled",
+        "_slicing_disabled_count",
         "_temporal_window",
+        "_theory_signature_cache",
+        "_theory_signature_cached",
+        "_theory_signature_full",
+        "_uf",
+        "_var_to_constraint_indices",
+        "_var_cache",
         "sliced_queries",
         "total_constraints_after",
         "total_constraints_before",
         "total_queries",
     )
 
-    def __init__(self, temporal_window: int = 10) -> None:
+    def __init__(
+        self,
+        temporal_window: int = 10,
+        slice_cache_size: int = 1024,
+        adaptive_disable_min_queries: int = 32,
+        adaptive_disable_min_reduction: float = 0.02,
+    ) -> None:
         self._uf = UnionFind()
         self._var_cache: dict[int, list[tuple[_z3.ExprRef, frozenset[str]]]] = {}
+        self._theory_signature_cache: dict[int, list[tuple[_z3.ExprRef, tuple[str, ...]]]] = {}
+        self._prefix_theory_signature_cache: dict[tuple[int, ...], frozenset[str]] = {}
+        self._slice_cache: OrderedDict[
+            int, list[tuple[tuple[z3.BoolRef, ...], z3.BoolRef, tuple[int, ...]]]
+        ] = OrderedDict()
         self._constraint_index = 0
         self._var_to_constraint_indices: dict[str, list[int]] = {}
         self._temporal_window = temporal_window
+        self._slice_cache_max_size = max(1, slice_cache_size)
+        self._adaptive_disable_min_queries = max(1, adaptive_disable_min_queries)
+        self._adaptive_disable_min_reduction = max(0.0, adaptive_disable_min_reduction)
         self._extract_full = 0
         self._extract_cached = 0
+        self._theory_signature_full = 0
+        self._theory_signature_cached = 0
+        self._slice_cache_hits = 0
+        self._slice_cache_misses = 0
+        self._slicing_disabled = False
+        self._slicing_disabled_count = 0
         self.sliced_queries = 0
         self.total_queries = 0
         self.total_constraints_before = 0
@@ -216,10 +314,19 @@ class ConstraintIndependenceOptimizer:
         """Reset all internal state.  Call between analysis units."""
         self._uf = UnionFind()
         self._var_cache.clear()
+        self._theory_signature_cache.clear()
+        self._prefix_theory_signature_cache.clear()
+        self._slice_cache.clear()
         self._constraint_index = 0
         self._var_to_constraint_indices.clear()
         self._extract_full = 0
         self._extract_cached = 0
+        self._theory_signature_full = 0
+        self._theory_signature_cached = 0
+        self._slice_cache_hits = 0
+        self._slice_cache_misses = 0
+        self._slicing_disabled = False
+        self._slicing_disabled_count = 0
         self.sliced_queries = 0
         self.total_queries = 0
         self.total_constraints_before = 0
@@ -231,12 +338,16 @@ class ConstraintIndependenceOptimizer:
 
     def _extract_variables(self, expr: z3.ExprRef) -> frozenset[str]:
         """Extract free variables from Z3 expression, with caching."""
-        key = self._cache_key(expr)
+        z3_expr = _as_z3_expr(expr)
+        if z3_expr is None:
+            return frozenset()
+
+        key = self._cache_key(z3_expr)
         cached_bucket = self._var_cache.get(key)
         if cached_bucket is not None:
             for cached_expr, cached_vars in cached_bucket:
                 try:
-                    if _z3.eq(expr, cached_expr):
+                    if z3_expr is cached_expr or safe_z3_eq(z3_expr, cached_expr):
                         self._extract_cached += 1
                         return cached_vars
                 except _z3.Z3Exception:
@@ -245,20 +356,31 @@ class ConstraintIndependenceOptimizer:
         self._extract_full += 1
 
         names: set[str] = set()
-        worklist: list[_z3.ExprRef] = [expr]
-        seen_ids: set[int] = {expr.get_id()}
+        worklist: list[_z3.ExprRef] = [z3_expr]
+        seen_ids: set[int] = {z3_expr.get_id()}
 
         keepalive: list[_z3.ExprRef] = []
 
         while worklist:
             node = worklist.pop()
+            if _z3.is_quantifier(node):
+                body = node.body()
+                keepalive.append(body)
+                body_id = body.get_id()
+                if body_id not in seen_ids:
+                    seen_ids.add(body_id)
+                    worklist.append(body)
+                continue
+            if not _z3.is_app(node):
+                continue
+            decl = node.decl()
+            kind = decl.kind()
 
-            if _z3.is_const(node) and node.decl().arity() == 0:
-                kind = node.decl().kind()
-
-                if kind == _z3.Z3_OP_UNINTERPRETED:
-                    names.add(node.decl().name())
+            if kind == _z3.Z3_OP_UNINTERPRETED:
+                if decl.arity() == 0:
+                    names.add(decl.name())
                     continue
+                names.add(_decl_dependency_token(decl))
 
             children = node.children()
             if children:
@@ -271,9 +393,9 @@ class ConstraintIndependenceOptimizer:
 
         result = frozenset(names)
         if cached_bucket is None:
-            self._var_cache[key] = [(expr, result)]
+            self._var_cache[key] = [(z3_expr, result)]
         else:
-            cached_bucket.append((expr, result))
+            cached_bucket.append((z3_expr, result))
         return result
 
     def register_constraint(self, constraint: z3.BoolRef) -> frozenset[str]:
@@ -286,9 +408,9 @@ class ConstraintIndependenceOptimizer:
         *eagerly*, so that ``slice_for_query`` can run in near-O(n) time
         rather than needing a full transitive-closure walk.
 
-        Implements temporal locality: only union variables from constraints
-        that remain within the recent temporal window. This keeps loop-heavy
-        paths from collapsing into one giant cluster too early.
+        Soundness requires dependency closure, so all variables in a constraint
+        are unioned. The temporal_window constructor argument is retained for
+        API compatibility but does not weaken closure.
 
         Args:
             constraint: A Z3 boolean constraint.
@@ -300,7 +422,12 @@ class ConstraintIndependenceOptimizer:
             O(|vars(constraint)| · α(N)) amortized.
         """
 
-        var_names = self._extract_variables(constraint)
+        z3_c = _as_z3_expr(constraint)
+        if z3_c is None:
+            self._constraint_index += 1
+            return frozenset()
+
+        var_names = self._extract_variables(z3_c)
 
         it = iter(var_names)
         first = next(it, None)
@@ -312,12 +439,7 @@ class ConstraintIndependenceOptimizer:
                 self._var_to_constraint_indices.setdefault(v, []).append(current_idx)
 
             for v in it:
-                v_indices = self._var_to_constraint_indices.get(v, [])
-                recent_indices = [
-                    idx for idx in v_indices if idx >= current_idx - self._temporal_window
-                ]
-                if not recent_indices or len(recent_indices) <= 1:
-                    self._uf.union(first, v)
+                self._uf.union(first, v)
 
         self._constraint_index += 1
         return var_names
@@ -341,7 +463,123 @@ class ConstraintIndependenceOptimizer:
 
         Complexity: O(1) if cached, O(|AST|) on first extraction.
         """
-        return self._extract_variables(constraint)
+        z3_c = _as_z3_expr(constraint)
+        if z3_c is None:
+            return frozenset()
+        return self._extract_variables(z3_c)
+
+    def _get_theory_signature(self, expr: z3.ExprRef) -> tuple[str, ...]:
+        """Return cached theory/sort signature for a verified Z3 AST."""
+        key = self._cache_key(expr)
+        cached_bucket = self._theory_signature_cache.get(key)
+        if cached_bucket is not None:
+            for cached_expr, cached_signature in cached_bucket:
+                try:
+                    if expr is cached_expr or safe_z3_eq(expr, cached_expr):
+                        self._theory_signature_cached += 1
+                        return cached_signature
+                except _z3.Z3Exception:
+                    continue
+
+        self._theory_signature_full += 1
+        signature = _expr_theory_signature(expr)
+        if cached_bucket is None:
+            self._theory_signature_cache[key] = [(expr, signature)]
+        else:
+            cached_bucket.append((expr, signature))
+        return signature
+
+    def _slice_cache_key(
+        self,
+        path_constraints: list[z3.BoolRef],
+        query: z3.BoolRef,
+        query_vars: frozenset[str],
+    ) -> int:
+        path_hashes = tuple(c.hash() for c in path_constraints)
+        prefix_sig = self._prefix_theory_signature_cache.get(path_hashes)
+        if prefix_sig is None:
+            tokens: set[str] = set()
+            for c in path_constraints:
+                tokens.update(self._get_theory_signature(c))
+            prefix_sig = frozenset(tokens)
+            self._prefix_theory_signature_cache[path_hashes] = prefix_sig
+
+        query_sig = self._get_theory_signature(query)
+        theory_signature = tuple(sorted(prefix_sig.union(query_sig)))
+
+        return hash(
+            (
+                len(path_constraints),
+                path_hashes,
+                query.hash(),
+                tuple(sorted(query_vars)),
+                theory_signature,
+            )
+        )
+
+    def _lookup_slice_cache(
+        self,
+        cache_key: int,
+        path_constraints: list[z3.BoolRef],
+        query: z3.BoolRef,
+    ) -> list[z3.BoolRef] | None:
+        bucket = self._slice_cache.get(cache_key)
+        if bucket is None:
+            self._slice_cache_misses += 1
+            return None
+
+        self._slice_cache.move_to_end(cache_key)
+        for cached_path, cached_query, cached_indices in bucket:
+            if len(cached_path) != len(path_constraints):
+                continue
+            try:
+                if cached_query is not query and not safe_z3_eq(cached_query, query):
+                    continue
+                if not all(
+                    cached is current or safe_z3_eq(cached, current)
+                    for cached, current in zip(cached_path, path_constraints, strict=True)
+                ):
+                    continue
+            except z3.Z3Exception:
+                continue
+            self._slice_cache_hits += 1
+            if len(cached_indices) == len(path_constraints):
+                return path_constraints
+            return [path_constraints[index] for index in cached_indices]
+
+        self._slice_cache_misses += 1
+        return None
+
+    def _store_slice_cache(
+        self,
+        cache_key: int,
+        path_constraints: list[z3.BoolRef],
+        query: z3.BoolRef,
+        relevant_indices: tuple[int, ...],
+    ) -> None:
+        entry = (tuple(path_constraints), query, relevant_indices)
+        bucket = self._slice_cache.get(cache_key)
+        if bucket is None:
+            self._slice_cache[cache_key] = [entry]
+        else:
+            bucket.append(entry)
+            self._slice_cache.move_to_end(cache_key)
+        while len(self._slice_cache) > self._slice_cache_max_size:
+            self._slice_cache.popitem(last=False)
+
+    def _maybe_disable_slicing(self) -> None:
+        if self._slicing_disabled or self.total_queries < self._adaptive_disable_min_queries:
+            return
+        if self.total_constraints_before <= 0:
+            return
+
+        reduction_ratio = 1.0 - (self.total_constraints_after / self.total_constraints_before)
+        cache_attempts = self._slice_cache_hits + self._slice_cache_misses
+        cache_hit_rate = self._slice_cache_hits / cache_attempts if cache_attempts else 0.0
+
+        if reduction_ratio < self._adaptive_disable_min_reduction and cache_hit_rate < 0.70:
+            self._slicing_disabled = True
+            self._slicing_disabled_count += 1
 
     def slice_for_query(
         self,
@@ -383,40 +621,67 @@ class ConstraintIndependenceOptimizer:
 
         if n_input == 0:
             self.total_constraints_after += 0
+            self._maybe_disable_slicing()
             return []
 
+        if self._slicing_disabled:
+            self.total_constraints_after += n_input
+            return path_constraints
+
         query_vars = self.get_variables(query)
+        cache_key = self._slice_cache_key(path_constraints, query, query_vars)
+        cached = self._lookup_slice_cache(cache_key, path_constraints, query)
+        if cached is not None:
+            n_cached = len(cached)
+            self.total_constraints_after += n_cached
+            if n_cached < n_input:
+                self.sliced_queries += 1
+            self._maybe_disable_slicing()
+            return cached
+
         if not query_vars:
             self.total_constraints_after += 0
             self.sliced_queries += 1
+            self._store_slice_cache(cache_key, path_constraints, query, ())
+            self._maybe_disable_slicing()
             return []
 
         query_roots: set[str] = set()
+        uf_find = self._uf.find
         for v in query_vars:
-            query_roots.add(self._uf.find(v))
+            query_roots.add(uf_find(v))
 
-        relevant: list[z3.BoolRef] = []
-        for constraint in path_constraints:
+        relevant_indices: list[int] = []
+        root_cache: dict[str, str] = {}
+        for index, constraint in enumerate(path_constraints):
             c_vars = self.get_variables(constraint)
             if not c_vars:
-                relevant.append(constraint)
+                relevant_indices.append(index)
                 continue
 
             for v in c_vars:
-                if self._uf.find(v) in query_roots:
-                    relevant.append(constraint)
+                root = root_cache.get(v)
+                if root is None:
+                    root = uf_find(v)
+                    root_cache[v] = root
+                if root in query_roots:
+                    relevant_indices.append(index)
                     break
 
-        n_output = len(relevant)
+        n_output = len(relevant_indices)
         self.total_constraints_after += n_output
 
         if n_output < n_input:
             self.sliced_queries += 1
 
+        relevant_indices_tuple = tuple(relevant_indices)
+        self._store_slice_cache(cache_key, path_constraints, query, relevant_indices_tuple)
+        self._maybe_disable_slicing()
+
         if n_output == n_input:
             return path_constraints
 
-        return relevant
+        return [path_constraints[index] for index in relevant_indices]
 
     def get_stats(self) -> dict[str, object]:
         """Return optimizer statistics for diagnostics.
@@ -429,6 +694,10 @@ class ConstraintIndependenceOptimizer:
             reduction_ratio = 1.0 - (self.total_constraints_after / self.total_constraints_before)
         else:
             reduction_ratio = 0.0
+        slice_cache_attempts = self._slice_cache_hits + self._slice_cache_misses
+        slice_cache_hit_rate = (
+            self._slice_cache_hits / slice_cache_attempts if slice_cache_attempts else 0.0
+        )
 
         return {
             "total_queries": self.total_queries,
@@ -436,8 +705,19 @@ class ConstraintIndependenceOptimizer:
             "total_constraints_before": self.total_constraints_before,
             "total_constraints_after": self.total_constraints_after,
             "reduction_ratio": round(reduction_ratio, 4),
+            "slice_cache_hits": self._slice_cache_hits,
+            "slice_cache_misses": self._slice_cache_misses,
+            "slice_cache_hit_rate": round(slice_cache_hit_rate, 4),
+            "slice_cache_size": len(self._slice_cache),
+            "slicing_disabled": self._slicing_disabled,
+            "slicing_disabled_count": self._slicing_disabled_count,
             "registered_constraints": sum(len(bucket) for bucket in self._var_cache.values()),
             "var_cache_size": sum(len(bucket) for bucket in self._var_cache.values()),
             "full_extractions": self._extract_full,
             "cached_extractions": self._extract_cached,
+            "theory_signature_cache_size": sum(
+                len(bucket) for bucket in self._theory_signature_cache.values()
+            ),
+            "theory_signature_full": self._theory_signature_full,
+            "theory_signature_cached": self._theory_signature_cached,
         }

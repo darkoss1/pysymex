@@ -26,8 +26,6 @@ abstract symbolic execution results and concrete, runnable code.
 
 import ast
 import os
-from typing import cast
-
 from pysymex.analysis.detectors import Issue
 
 TYPE_DEFAULTS = {
@@ -47,8 +45,47 @@ TYPE_DEFAULTS = {
 class ReproductionGenerator:
     """Generates Python scripts to reproduce detected issues."""
 
-    def __init__(self, output_dir: str = ".") -> None:
+    def __init__(self, output_dir: str | None = None) -> None:
+        if output_dir is None:
+            # Default to .pysymex/reproduction in the current working directory
+            output_dir = os.path.join(".pysymex", "reproduction")
+
         self.output_dir = output_dir
+        self._ensure_output_dir()
+
+    def _ensure_output_dir(self) -> None:
+        """Create the output directory if it doesn't exist."""
+        try:
+            os.makedirs(self.output_dir, exist_ok=True)
+            # Create __init__.py to make it a package
+            init_file = os.path.join(self.output_dir, "__init__.py")
+            if not os.path.exists(init_file):
+                with open(init_file, "w") as f:
+                    f.write("# pysymex reproductions package\n")
+            from pysymex.pathing import ensure_pysymex_gitignore
+
+            ensure_pysymex_gitignore(self.output_dir)
+        except OSError:
+            pass
+
+    def generate_script(self, issue: Issue) -> str | None:
+        """
+        Convenience wrapper for generate() using metadata from an Issue object.
+
+        Args:
+            issue: The detected issue.
+
+        Returns:
+            Path to the generated script, or None if generation failed.
+        """
+        if not issue.function_name or not issue.filename:
+            return None
+        return self.generate(
+            issue=issue,
+            func_name=issue.function_name,
+            source_file=issue.filename,
+            class_name=issue.class_name,
+        )
 
     def generate(
         self, issue: Issue, func_name: str, source_file: str, class_name: str | None = None
@@ -71,7 +108,7 @@ class ReproductionGenerator:
         if not module_name:
             return None
         args_list = self._build_args_list(issue.counterexample, source_file, func_name, class_name)
-        args_code = ",\n        ".join(args_list)
+        args_code = ",\n            ".join(args_list)
         clean_args = [arg.split("#")[0].strip() for arg in args_list]
         args_display = ", ".join(clean_args)
         script_content = self._create_script_content(
@@ -83,7 +120,9 @@ class ReproductionGenerator:
             issue_kind=issue.kind.name,
             message=issue.message,
         )
-        filename = f"reproduce_{issue.kind.name.lower()}_{func_name}.py"
+        # Cleaner filename: [kind]_[func].py
+        kind_tag = issue.kind.name.lower().replace("_error", "")
+        filename = f"repro_{kind_tag}_{func_name}.py"
         filepath = os.path.join(self.output_dir, filename)
         try:
             with open(filepath, "w") as f:
@@ -98,7 +137,6 @@ class ReproductionGenerator:
             rel_path = os.path.relpath(source_file)
         except ValueError:
             # On Windows, ValueError is raised when paths are on different drives
-            # Fall back to using the basename as the module name
             basename = os.path.basename(source_file)
             name, _ = os.path.splitext(basename)
             return name
@@ -198,7 +236,7 @@ class ReproductionGenerator:
                     elif value is None:
                         args.append(f"{arg_name}=None")
                     elif isinstance(value, (list, dict, tuple, set)):
-                        args.append(f"{arg_name}={cast('object', value)!r}")
+                        args.append(f"{arg_name}={value!r}")
                     else:
                         args.append(f"{arg_name}=None")
                 else:
@@ -220,19 +258,13 @@ class ReproductionGenerator:
                 elif value is None:
                     args.append(f"{name}=None")
                 elif isinstance(value, (list, dict, tuple, set)):
-                    args.append(f"{name}={cast('object', value)!r}")
+                    args.append(f"{name}={value!r}")
                 else:
                     args.append(f"{name}=None")
         return args
 
-    def _generate_init_args_code(self, class_name: str) -> str:
+    def _generate_init_args_code(self) -> str:
         """Emit helper code that inspects ``__init__`` at runtime.
-
-        The generated code is embedded in the reproduction script and
-        builds default arguments based on type-hint introspection.
-
-        Args:
-            class_name: Fully-qualified class name.
 
         Returns:
             Python source snippet to embed in the script.
@@ -270,8 +302,6 @@ def _build_init_args(cls):
             args[name] = defaults[type_name]
         else:
             args[name] = None  # Fallback
-            print(f"    [!] Warning: Unknown type for {name}, using None")
-
     return args
 '''
 
@@ -285,88 +315,71 @@ def _build_init_args(cls):
         issue_kind: str,
         message: str,
     ) -> str:
-        """Assemble the full reproduction-script source.
-
-        Args:
-            module_name: Importable module path.
-            func_name: Target function name.
-            class_name: Owning class, or ``None`` for top-level functions.
-            args_code: Formatted argument assignment lines.
-            args_display: Human-readable argument summary.
-            issue_kind: Issue category string.
-            message: Issue description.
-
-        Returns:
-            Complete Python source for the reproduction script.
-        """
+        """Assemble the full reproduction-script source."""
         if class_name:
-            parts = class_name.split(".")
-            root_class = parts[0]
-            import_stmt = f"from {module_name} import {root_class}"
-            import_msg = f"Importing {root_class} from {module_name}..."
-            init_helper = self._generate_init_args_code(class_name)
-            class_ref = class_name
-            setup_code = f"""
-    # Build constructor arguments dynamically
-    init_args = _build_init_args({class_ref})
-
-    # Instantiate Class
-    print("[*] Instantiating {class_name}...")
-    if init_args:
-        print(f"    Using init args: {{init_args}}")
-        instance = {class_ref}(**init_args)
-    else:
-        instance = {class_ref}()
-
-    target_name = "{class_name}.{func_name}"
-
-    # Method Call
-    print(f"[*] Invoking {{target_name}} with payload...")
-    instance.{func_name}({args_code})
-"""
+            import_stmt = f"from {module_name} import {class_name.split('.')[0]}"
+            init_helper = self._generate_init_args_code().strip()
+            setup_code = f"""# Instantiate {class_name}
+        init_args = _build_init_args({class_name})
+        instance = {class_name}(**init_args)
+        
+        # Invoke target method
+        print(f"[*] Calling {class_name}.{func_name}({args_display})...")
+        instance.{func_name}(
+                {args_code}
+            )"""
         else:
             import_stmt = f"from {module_name} import {func_name}"
-            import_msg = f"Importing {func_name} from {module_name}..."
             init_helper = ""
-            setup_code = f"""
-    target_name = "{func_name}"
+            setup_code = f"""# Invoke target function
+        print(f"[*] Calling {func_name}({args_display})...")
+        {func_name}(
+                {args_code}
+            )"""
 
-    # Function Call
-    print(f"[*] Invoking {{target_name}} with payload...")
-    {func_name}({args_code})
-"""
         return f'''"""
-pysymex Reproduction Script
-Auto-generated proof-of-concept for issue: {issue_kind}
+pysymex Automated Reproduction Script
+Issue: {issue_kind}
+Message: {message}
 
-Run this script to reproduce the crash:
-    python {module_name.split(".")[-1]}.py
+This script was automatically generated to reproduce a defect detected by pysymex.
 """
 import sys
 import os
-sys.path.insert(0, os.getcwd())
+import traceback
+
+# Ensure the project root is in the path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 {init_helper}
-try:
-    {import_stmt}
-    print(f"[*] {import_msg}")
-except ImportError as e:
-    print(f"[!] Failed to import target: {{e}}")
-    print("    Check your PYTHONPATH or run from the project root.")
-    sys.exit(1)
-print("-" * 50)
-print(f"[*] Target: {class_name + "." + func_name if class_name else func_name}")
-print(f"[*] Injection Payload: {args_display}")
-print(f"[*] Expected Issue:  {issue_kind}")
-print("-" * 50)
-print("\\n[*] Attempting to trigger crash...")
-try:
-    {setup_code}
 
-    print("\\n[?] Execution finished without crashing.")
-    print("    This might be a false positive or handled exception.")
+def reproduce():
+    print("=" * 60)
+    print(f"pysymex REPRODUCTION: {issue_kind}")
+    print(f"Message: {message}")
+    print("-" * 60)
+    
+    try:
+        {import_stmt}
+    except ImportError as e:
+        print(f"[!] Import Error: {{e}}")
+        print("    Ensure you are running this script from a correctly configured environment.")
+        return
 
-except Exception as e:
-    print(f"\\n[+] Crash Reproduced! SUCCESS")
-    print(f"    Caught expected exception: {{type(e).__name__}}")
-    print(f"    Message: {{e}}")
+    try:
+        {setup_code.strip()}
+        print("-" * 60)
+        print("[?] Result: No exception raised. Execution finished normally.")
+        print("    This could indicate a false positive or a handled exception.")
+        
+    except Exception as e:
+        print("-" * 60)
+        print(f"[+] CRASH REPRODUCED: {{type(e).__name__}}")
+        print(f"    Message: {{e}}")
+        print("\\nDetailed Traceback:")
+        traceback.print_exc()
+        print("=" * 60)
+
+if __name__ == "__main__":
+    reproduce()
 '''

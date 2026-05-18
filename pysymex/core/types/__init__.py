@@ -28,21 +28,29 @@ from .base import (
     SymbolicType,
     TypeTag,
     fresh_name,
-    reset_counters,
+    safe_z3_eq,
 )
-from .symbolic_containers import (
+from .containers import (
     SymbolicBytes,
     SymbolicDict,
+    SymbolicIterator,
     SymbolicList,
+    SymbolicObject,
     SymbolicSet,
-    SymbolicString,
     SymbolicTuple,
+)
+from .scalars import (
+    AnySymbolic,
+    SymbolicNone,
+    SymbolicString,
+    SymbolicValue,
 )
 from .numeric import (
     SymbolicBool,
     SymbolicFloat,
     SymbolicInt,
 )
+from .floats import AdvancedSymbolicFloat
 
 
 def coerce_to_bool(value: SymbolicType) -> SymbolicBool:
@@ -85,10 +93,10 @@ def coerce_to_string(value: SymbolicType) -> SymbolicString:
     elif isinstance(value, SymbolicInt):
         return SymbolicString(z3.IntToStr(value.z3_int))
     else:
-        return SymbolicString.symbolic(f"str_{value.name}")
+        return SymbolicString.symbolic(f"str_{value.name}")[0]
 
 
-def symbolic_from_python(value: object) -> SymbolicType:
+def symbolic_from_python(value: object) -> object:
     """Create a symbolic value from a Python value."""
     match value:
         case None:
@@ -100,7 +108,7 @@ def symbolic_from_python(value: object) -> SymbolicType:
         case float() as v:
             return SymbolicFloat.concrete(v)
         case str() as v:
-            return SymbolicString.concrete(v)
+            return SymbolicString.from_const(v)
         case bytes() as v:
             return SymbolicBytes.concrete(v)
         case tuple() as v:  # type: ignore[misc]  # pattern match variable type unknown
@@ -123,7 +131,7 @@ def symbolic_from_python(value: object) -> SymbolicType:
             return SymbolicInt.symbolic(f"unknown_{type(value).__name__}")
 
 
-def symbolic_for_type(type_hint: type, name: str | None = None) -> SymbolicType:
+def symbolic_for_type(type_hint: type, name: str | None = None) -> object:
     """Create a fresh symbolic value for a type hint."""
     match type_hint:
         case t if t is type(None):
@@ -135,7 +143,7 @@ def symbolic_for_type(type_hint: type, name: str | None = None) -> SymbolicType:
         case t if t is float:
             return SymbolicFloat.symbolic(name)
         case t if t is str:
-            return SymbolicString.symbolic(name)
+            return SymbolicString.symbolic(name or fresh_name("str"))[0]
         case t if t is bytes:
             return SymbolicBytes.symbolic(name)
         case t if t is list:
@@ -176,17 +184,23 @@ def get_common_type(a: SymbolicType, b: SymbolicType) -> TypeTag:
 
 __all__ = [
     "SYMBOLIC_NONE",
+    "AnySymbolic",
     "SymbolicBool",
     "SymbolicBytes",
     "SymbolicDict",
+    "AdvancedSymbolicFloat",
     "SymbolicFloat",
     "SymbolicInt",
+    "SymbolicIterator",
     "SymbolicList",
-    "SymbolicNoneType",
+    "SymbolicNone",
+    "SymbolicNoneType",  # Deprecated: use SymbolicNone from scalars instead
+    "SymbolicObject",
     "SymbolicSet",
     "SymbolicString",
     "SymbolicTuple",
     "SymbolicType",
+    "SymbolicValue",
     "TypeTag",
     "coerce_to_bool",
     "coerce_to_float",
@@ -197,7 +211,7 @@ __all__ = [
     "is_collection",
     "is_numeric",
     "is_sequence",
-    "reset_counters",
+    "safe_z3_eq",
     "symbolic_for_type",
     "symbolic_from_python",
 ]

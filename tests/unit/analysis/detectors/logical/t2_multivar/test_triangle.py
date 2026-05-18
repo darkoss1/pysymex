@@ -1,9 +1,8 @@
 """Tests for pysymex/analysis/detectors/logical/t2_multivar/triangle.py."""
 
-from unittest.mock import Mock, patch
-import z3
 import dis
-import pytest
+import z3
+from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t2_multivar.triangle import TriangleImpossibilityRule
 
 
@@ -33,3 +32,21 @@ class TestTriangleImpossibilityRule:
         """Test basic initialization and properties."""
         assert TriangleImpossibilityRule is not None
         assert TriangleImpossibilityRule.__name__ == "TriangleImpossibilityRule"
+
+    def test_matches_three_variable_sum_below_known_lower_bound(self) -> None:
+        """Classify only explicit three-variable bound contradictions."""
+        x = z3.Int("x")
+        y = z3.Int("y")
+        z = z3.Int("z")
+        core = [x >= 2, y >= 3, z >= 4, x + y + z < 9]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert TriangleImpossibilityRule().matches(ctx)
+
+    def test_does_not_match_three_variable_sum_without_contradiction(self) -> None:
+        """Do not classify a satisfiable triangle-shaped sum by arity alone."""
+        x = z3.Int("x")
+        y = z3.Int("y")
+        z = z3.Int("z")
+        core = [x >= 2, y >= 3, z >= 4, x + y + z >= 9]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert not TriangleImpossibilityRule().matches(ctx)

@@ -25,24 +25,125 @@ Provides:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections import OrderedDict
+from typing import cast
+import weakref
 
-if TYPE_CHECKING:
-    import z3
+import z3
+
+from pysymex.contracts.decorators import ensures, requires
+from pysymex.core.types.base import safe_z3_eq
+
+_INT_CACHE: dict[int, z3.IntNumRef] = {}
+
+
+def _is_z3_expr(value: object) -> bool:
+    return isinstance(value, z3.ExprRef)
+
+
+def _is_z3_bool_list(value: object) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, z3.BoolRef) for item in cast("list[object]", value)
+    )
+
+
+def _is_z3_expr_list(value: object) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, z3.ExprRef) for item in cast("list[object]", value)
+    )
+
+
+def _is_z3_expr_or_bool_list(value: object) -> bool:
+    return _is_z3_bool_list(value) or _is_z3_expr_list(value)
+
+
+def _is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and value > 0
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int)
+
+
+def _is_non_negative_int(value: object) -> bool:
+    return isinstance(value, int) and value >= 0
+
+
+@requires("val == val")
+def get_int_val(val: int) -> z3.IntNumRef:
+    """Return a cached Z3 integer constant."""
+    if val in _INT_CACHE:
+        return _INT_CACHE[val]
+    z3_val = z3.IntVal(val)
+    if -256 <= val <= 2048:
+        _INT_CACHE[val] = z3_val
+    return z3_val
 
 
 class ConstraintHasher:
-    """Stateful hasher that safely uses id() for performance.
+    """Stateful hasher for Z3 expressions with id-reuse protection."""
 
-    Create a new instance for each major solving phase or batch of constraints
-    to ensure garbage collection doesn't cause id() collisions. The local cache
-    dies with the instance, preventing stale id() lookups from memory reuse.
-    """
+    @requires(_is_positive_int)
+    def __init__(self, max_cache_size: int = 1_000_000) -> None:
+        """Initialize a new constraint hasher with empty cache.
 
-    def __init__(self) -> None:
-        """Initialize a new constraint hasher with empty cache."""
-        self._cache: dict[int, int] = {}
+        Args:
+            max_cache_size: Maximum number of cached expression ids before
+                the cache is cleared to avoid long-lived stale-id reuse.
+        """
+        if max_cache_size <= 0:
+            raise ValueError("max_cache_size must be > 0")
+        self._cache: dict[int, tuple[weakref.ReferenceType[z3.ExprRef], int]] = {}
+        self._max_cache_size = max_cache_size
 
+    def clear(self) -> None:
+        """Clear the internal id->hash cache."""
+        self._cache.clear()
+
+    @ensures(_is_non_negative_int)
+    def cache_size(self) -> int:
+        """Return the current number of cached expression hashes."""
+        self._prune_dead_entries()
+        return len(self._cache)
+
+    def _prune_dead_entries(self) -> None:
+        """Remove entries whose Z3 wrapper has been garbage-collected."""
+        stale_ids: list[int] = [
+            expr_id for expr_id, (expr_ref, _) in self._cache.items() if expr_ref() is None
+        ]
+        for expr_id in stale_ids:
+            del self._cache[expr_id]
+
+    @requires(_is_z3_expr)
+    @ensures(_is_int)
+    def hash_expr(self, constraint: z3.ExprRef) -> int:
+        """Return a cached structural hash for a single Z3 expression."""
+        h: int | None = getattr(constraint, "_symex_hash", None)
+        if h is not None:
+            return h
+
+        constraint_id = id(constraint)
+        cached = self._cache.get(constraint_id)
+        if cached is not None:
+            cached_expr, cached_hash = cached
+            if cached_expr() is constraint:
+                return cached_hash
+
+        if len(self._cache) >= self._max_cache_size:
+            self._prune_dead_entries()
+        if len(self._cache) >= self._max_cache_size:
+            self._cache.clear()
+        computed = constraint.hash()
+        self._cache[constraint_id] = (weakref.ref(constraint), computed)
+
+        try:
+            setattr(constraint, "_symex_hash", computed)
+        except AttributeError:
+            return computed
+        return computed
+
+    @requires(_is_z3_expr_or_bool_list)
+    @ensures(_is_int)
     def structural_hash(self, constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
         """Compute a structural hash of Z3 constraints using scoped id() cache.
 
@@ -60,10 +161,7 @@ class ConstraintHasher:
 
         hashes: list[int] = []
         for c in constraints:
-            c_id = id(c)
-            if c_id not in self._cache:
-                self._cache[c_id] = c.hash()
-            hashes.append(self._cache[c_id])
+            hashes.append(self.hash_expr(c))
 
         return hash(tuple(hashes))
 
@@ -88,6 +186,59 @@ def structural_hash(
     return hasher.structural_hash(constraints)
 
 
+_QUICK_CONTRADICTION_CACHE_MAX_SIZE = 4096
+_QUICK_CONTRADICTION_HASHER = ConstraintHasher(max_cache_size=250_000)
+_QUICK_CONTRADICTION_CACHE: OrderedDict[int, list[tuple[tuple[z3.BoolRef, ...], bool]]] = (
+    OrderedDict()
+)
+
+
+def _same_constraint_sequence(left: tuple[z3.BoolRef, ...], right: list[z3.BoolRef]) -> bool:
+    """Return True only for structurally identical Z3 constraint sequences."""
+    if len(left) != len(right):
+        return False
+    for left_constraint, right_constraint in zip(left, right, strict=True):
+        if left_constraint is right_constraint:
+            continue
+        if safe_z3_eq(left_constraint, right_constraint):
+            continue
+        if _QUICK_CONTRADICTION_HASHER.hash_expr(
+            left_constraint
+        ) != _QUICK_CONTRADICTION_HASHER.hash_expr(right_constraint):
+            return False
+        if not safe_z3_eq(left_constraint, right_constraint):
+            return False
+    return True
+
+
+@requires("cache_key == cache_key")
+@requires("len(constraints) >= 0")
+def _lookup_quick_contradiction_cache(cache_key: int, constraints: list[z3.BoolRef]) -> bool | None:
+    bucket = _QUICK_CONTRADICTION_CACHE.get(cache_key)
+    if bucket is None:
+        return None
+    _QUICK_CONTRADICTION_CACHE.move_to_end(cache_key)
+    for cached_constraints, cached_result in bucket:
+        if _same_constraint_sequence(cached_constraints, constraints):
+            return cached_result
+    return None
+
+
+def _store_quick_contradiction_cache(
+    cache_key: int, constraints: list[z3.BoolRef], result: bool
+) -> None:
+    entry = (tuple(constraints), result)
+    bucket = _QUICK_CONTRADICTION_CACHE.get(cache_key)
+    if bucket is None:
+        _QUICK_CONTRADICTION_CACHE[cache_key] = [entry]
+    else:
+        bucket.append(entry)
+        _QUICK_CONTRADICTION_CACHE.move_to_end(cache_key)
+    while len(_QUICK_CONTRADICTION_CACHE) > _QUICK_CONTRADICTION_CACHE_MAX_SIZE:
+        _QUICK_CONTRADICTION_CACHE.popitem(last=False)
+
+
+@requires("len(constraints) >= 0")
 def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
     """Compute an order-independent structural hash of Z3 constraints.
 
@@ -106,6 +257,7 @@ def structural_hash_sorted(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> 
     return hash(tuple(hashes))
 
 
+@requires("len(constraints) >= 0")
 def structural_digest(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
     """Collision-resistant digest for correctness-critical cache keys.
 
@@ -117,9 +269,22 @@ def structural_digest(constraints: list[z3.BoolRef] | list[z3.ExprRef]) -> int:
     return hash(tuple(digest_hashes))
 
 
-import z3
+@requires("expr == expr")
+def simplify_expr(expr: z3.ExprRef) -> z3.ExprRef:
+    """Simplify one Z3 expression through the constraint simplification SSoT."""
+    return z3.simplify(expr)
 
 
+@requires("expr == expr")
+def simplify_bool_expr(expr: z3.BoolRef) -> z3.BoolRef:
+    """Simplify one Boolean Z3 expression and preserve the BoolRef contract."""
+    simplified = simplify_expr(expr)
+    if not isinstance(simplified, z3.BoolRef):
+        raise TypeError("simplified Boolean expression did not produce a BoolRef")
+    return simplified
+
+
+@requires("len(constraints) >= 0")
 def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     """Simplify a list of Z3 constraints.
 
@@ -141,7 +306,7 @@ def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
             continue
         if z3.is_false(c):
             return [z3.BoolVal(False)]
-        simplified = z3.simplify(c)
+        simplified = simplify_bool_expr(c)
         if z3.is_true(simplified):
             continue
         if z3.is_false(simplified):
@@ -157,6 +322,7 @@ def simplify_constraints(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     return _tactic_simplify(filtered)
 
 
+@requires("len(constraints) >= 0")
 def _tactic_simplify(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     """Use Z3 tactics for deeper simplification of large constraint sets.
 
@@ -186,6 +352,16 @@ def _tactic_simplify(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
         return constraints
 
 
+@requires("expr == expr")
+def _z3_decl_kind(expr: z3.ExprRef) -> int | None:
+    """Return a Z3 declaration kind for application expressions."""
+    try:
+        return expr.decl().kind()
+    except (AttributeError, z3.Z3Exception):
+        return None
+
+
+@requires("len(constraints) >= 0")
 def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
     """Fast check for obvious contradictions without invoking the solver.
 
@@ -207,13 +383,24 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
     if not constraints:
         return False
 
-    by_hash: dict[int, list[z3.BoolRef]] = {}
     has_not = False
     for c in constraints:
-        if z3.is_false(c):
+        kind = _z3_decl_kind(c)
+        if kind == z3.Z3_OP_FALSE:
             return True
-        if z3.is_not(c):
+        if kind == z3.Z3_OP_NOT:
             has_not = True
+
+    if not has_not:
+        return False
+
+    cache_key = structural_hash(constraints, _QUICK_CONTRADICTION_HASHER)
+    cached = _lookup_quick_contradiction_cache(cache_key, constraints)
+    if cached is not None:
+        return cached
+
+    by_hash: dict[int, list[z3.BoolRef]] = {}
+    for c in constraints:
         h = c.hash()
         bucket = by_hash.get(h)
         if bucket is None:
@@ -221,23 +408,23 @@ def quick_contradiction_check(constraints: list[z3.BoolRef]) -> bool:
         else:
             bucket.append(c)
 
-    if not has_not:
-        return False
-
     for c in constraints:
-        if z3.is_not(c):
+        if _z3_decl_kind(c) == z3.Z3_OP_NOT:
             arg = c.arg(0)
             arg_h = arg.hash()
             candidates = by_hash.get(arg_h)
             if candidates is None:
                 continue
             for candidate in candidates:
-                if z3.eq(arg, candidate):
+                if arg is candidate or safe_z3_eq(arg, candidate):
+                    _store_quick_contradiction_cache(cache_key, constraints, True)
                     return True
 
+    _store_quick_contradiction_cache(cache_key, constraints, False)
     return False
 
 
+@requires("len(constraints) >= 0")
 def remove_subsumed(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
     """Remove structurally duplicate constraints.
 
@@ -264,12 +451,9 @@ def remove_subsumed(constraints: list[z3.BoolRef]) -> list[z3.BoolRef]:
             continue
         is_dup = False
         for existing in bucket:
-            try:
-                if z3.eq(c, existing):
-                    is_dup = True
-                    break
-            except z3.Z3Exception:
-                continue
+            if c is existing or safe_z3_eq(c, existing):
+                is_dup = True
+                break
         if is_dup:
             continue
         bucket.append(c)

@@ -31,7 +31,7 @@ Design principles:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Union
@@ -207,7 +207,7 @@ class Contract:
         """
         return self._condition_repr
 
-    def compile(self, symbols: dict[str, z3.ExprRef]) -> z3.BoolRef:
+    def compile(self, symbols: Mapping[str, z3.ExprRef]) -> z3.BoolRef:
         """Compile this contract's predicate to a Z3 boolean expression.
 
         Delegates to :class:`ContractCompiler` which selects the symbolic
@@ -361,21 +361,8 @@ class FunctionContract:
 
     def set_assigns(self, locations: frozenset[str]) -> None:
         """Set the assigns frame condition."""
-        object.__setattr__(self, "assigns_set", locations)
+        self.assigns_set = locations
 
     def set_pure(self) -> None:
         """Mark this function as pure (no side effects)."""
         self.effect_type = EffectKind.PURE
-
-
-__all__ = [
-    "Contract",
-    "ContractKind",
-    "ContractPredicate",
-    "ContractViolation",
-    "EffectKind",
-    "FunctionContract",
-    "InjectionPoint",
-    "Severity",
-    "VerificationResult",
-]

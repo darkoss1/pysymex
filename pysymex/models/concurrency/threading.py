@@ -114,7 +114,7 @@ class LockModel:
             ModelResult with symbolic result and constraints
         """
         from pysymex.models.numeric import ModelResult
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types import SymbolicValue
 
         result, constraint = SymbolicValue.symbolic(f"lock_call_{state.pc}_{state.path_id}")
         return ModelResult(value=result, constraints=[constraint])

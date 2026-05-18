@@ -27,9 +27,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Protocol, TypeGuard, cast
+from typing import Protocol, cast
 
 import z3
+from pysymex.core.types.scalars import is_list_of_objects
 
 
 class ExceptionCategory(Enum):
@@ -71,7 +72,6 @@ EXCEPTION_CATEGORIES: dict[type[BaseException], ExceptionCategory] = {
     AssertionError: ExceptionCategory.ASSERTION,
     StopIteration: ExceptionCategory.STOP_ITERATION,
 }
-
 
 EXCEPTION_HIERARCHY: dict[type[BaseException], tuple[type[BaseException], ...]] = {
     UnicodeDecodeError: (ValueError, Exception, BaseException),
@@ -516,14 +516,10 @@ def raises(
     """
     contract = RaisesContract(exc_type, when, message)
 
-    def _is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-        """Type guard to narrow a value to list[object]."""
-        return isinstance(value, list)
-
     def _ensure_raises_list(annotated: _RaisesAnnotated) -> list[RaisesContract]:
         """Get a typed raises-contract list attached to a callable."""
         existing_attr = getattr(annotated, "__raises__", None)
-        if _is_list_of_objects(existing_attr):
+        if is_list_of_objects(existing_attr):
             normalized: list[RaisesContract] = []
             for item in existing_attr:  # type: ignore[misc]  # TypeGuard ensures list[object]
                 if isinstance(item, RaisesContract):

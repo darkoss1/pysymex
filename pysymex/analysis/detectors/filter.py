@@ -31,10 +31,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 import re
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, TypeGuard, TypeVar
+
+from pysymex._typing import is_list_of_objects
 
 
 class IssueLike(Protocol):
@@ -60,15 +63,15 @@ class IssueLike(Protocol):
 TIssue = TypeVar("TIssue", bound=IssueLike)
 
 
+def _filters_disabled() -> bool:
+    """Return True when issue filtering/deduplication must be bypassed."""
+    return os.getenv("PYSYMEX_DISABLE_FP_FILTER", "0") in {"1", "true", "TRUE"}
+
+
 class _DeclLike(Protocol):
     """Small protocol for Z3 model declarations."""
 
     def name(self) -> str: ...
-
-
-def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """Type guard to narrow a value to list[object]."""
-    return isinstance(value, list)
 
 
 def _is_decl_list(value: object) -> TypeGuard[list[_DeclLike]]:
@@ -224,18 +227,18 @@ def detect_assertion_context(
         return AssertionContext.UNKNOWN
 
     message_lower = issue.message.lower()
-    if any(word in message_lower for word in ["validate", "sanitize", "check", "verify", "ensure"]):
+    if any(word in message_lower for word in ("validate", "sanitize", "check", "verify", "ensure")):
         return AssertionContext.VALIDATION
 
     if issue.function_name:
         func_lower = issue.function_name.lower()
         if any(
             word in func_lower
-            for word in ["validate", "sanitize", "check", "verify", "ensure", "guard"]
+            for word in ("validate", "sanitize", "check", "verify", "ensure", "guard")
         ):
             return AssertionContext.VALIDATION
 
-        if any(word in func_lower for word in ["security", "auth", "permission"]):
+        if any(word in func_lower for word in ("security", "auth", "permission")):
             return AssertionContext.SECURITY_GUARD
 
     if source_code:
@@ -364,6 +367,9 @@ def filter_issues(
     Returns:
         Filtered list of issues
     """
+    if _filters_disabled():
+        return list(issues)
+
     confidence_order = [Confidence.LOW, Confidence.MEDIUM, Confidence.HIGH]
     min_idx = confidence_order.index(min_confidence)
 
@@ -392,28 +398,106 @@ def filter_issues(
     return filtered
 
 
-def deduplicate_issues(issues: Sequence[TIssue]) -> list[TIssue]:
-    """Remove duplicate issues based on location and type.
+from collections import defaultdict
+import dataclasses
 
-    Args:
-        issues: List of issues to deduplicate
+ISSUE_PRIORITIES: dict[str, int] = {
+    "NULL_DEREFERENCE": 100,
+    "ATTRIBUTE_ERROR": 80,
+    "KEY_ERROR": 70,
+    "TYPE_ERROR": 50,
+    "DIVISION_BY_ZERO": 40,
+    "INDEX_ERROR": 40,
+    "ASSERTION_ERROR": 30,
+}
 
-    Returns:
-        List with duplicates removed
+NULL_FAMILY = frozenset({"NULL_DEREFERENCE", "ATTRIBUTE_ERROR", "TYPE_ERROR"})
+
+
+def _get_kind_str(kind: object) -> str:
+    """Safely convert an issue kind (Enum or otherwise) to a string."""
+    return str(kind.name) if isinstance(kind, Enum) else str(kind)
+
+
+def _get_issue_rank(issue: IssueLike) -> tuple[int, float, int]:
+    """Rank issues for selection: Priority > Confidence > Message Simplicity."""
+    kind_str = _get_kind_str(issue.kind)
+    priority = ISSUE_PRIORITIES.get(kind_str, 0)
+    confidence = getattr(issue, "confidence", 0.0)
+    return (priority, confidence, -len(issue.message))
+
+
+def _get_message_skeleton(msg: str) -> str:
+    """Generate a structural skeleton by masking numeric constants and signs.
+
+    This allows 'x + 2' and 'x - 2' to share the same skeleton 'x ? #'.
     """
-    seen: set[tuple[object, ...]] = set()
-    result: list[TIssue] = []
+    skeleton = re.sub(r"\d+", "#", msg)
+    skeleton = re.sub(r"[+-]\s*#", "? #", skeleton)
+    return skeleton
+
+
+def _merge_variants(variants: list[TIssue]) -> TIssue:
+    """Select the best variant and intelligently append a structural note if needed."""
+    best = max(variants, key=_get_issue_rank)
+    if len(variants) <= 1:
+        return best
+
+    messages = [v.message for v in variants]
+    has_plus = any("+" in m for m in messages)
+    has_minus = any("-" in m for m in messages)
+
+    variant_note = f" (+ {len(variants) - 1} similar path variations)"
+
+    if has_plus and has_minus and len(variants) == 2:
+        s1, s2 = messages[0], messages[1]
+        if len(s1) == len(s2):
+            diffs = [i for i in range(len(s1)) if s1[i] != s2[i]]
+            if len(diffs) == 1 and s1[diffs[0]] in "+-" and s2[diffs[0]] in "+-":
+                variant_note = " (Detected in both '+' and '-' path variations)"
+
+    if dataclasses.is_dataclass(best):
+        try:
+            return dataclasses.replace(best, message=best.message + variant_note)
+        except Exception:
+            pass
+
+    return best
+
+
+def deduplicate_issues(issues: Sequence[TIssue]) -> list[TIssue]:
+    """Remove duplicate issues and unify structurally similar variants.
+
+    This filter ensures that each unique bug site (PC + line) only reports
+    the most relevant issue. It groups paths by structural skeletons to
+    unify variations (e.g. +2 vs -2) and suppresses lesser bugs if multiple
+    related errors (like NULL and ATTR) occur at the exact same location.
+    """
+    if _filters_disabled():
+        return list(issues)
+
+    variant_groups: dict[tuple[int | None, int, str, str], list[TIssue]] = defaultdict(list)
 
     for issue in issues:
-        message_key = issue.message or ""
-        key = (
-            issue.kind,
-            issue.line_number,
-            issue.pc,
-            message_key,
-        )
-        if key not in seen:
-            seen.add(key)
-            result.append(issue)
+        kind_str = _get_kind_str(issue.kind)
+        skel = _get_message_skeleton(issue.message)
 
-    return result
+        bucket_key = (issue.line_number, issue.pc, kind_str, skel)
+        variant_groups[bucket_key].append(issue)
+
+    merged_variants = [_merge_variants(group) for group in variant_groups.values()]
+
+    family_buckets: dict[tuple[int | None, int, str], TIssue] = {}
+
+    for issue in merged_variants:
+        kind_str = _get_kind_str(issue.kind)
+
+        family = "NULL_FAMILY" if kind_str in NULL_FAMILY else kind_str
+        family_key = (issue.line_number, issue.pc, family)
+
+        if family_key not in family_buckets:
+            family_buckets[family_key] = issue
+        elif _get_issue_rank(issue) > _get_issue_rank(family_buckets[family_key]):
+            family_buckets[family_key] = issue
+
+    return sorted(family_buckets.values(), key=lambda x: (x.line_number or 0, x.pc))

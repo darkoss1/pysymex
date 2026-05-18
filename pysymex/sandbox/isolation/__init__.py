@@ -25,6 +25,7 @@ backends must implement.
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -65,6 +66,7 @@ class IsolationBackend(ABC):
         self.config = config
         self._jail_path: Path | None = None
         self._is_setup: bool = False
+        self._process: subprocess.Popen[bytes] | None = None
 
     @property
     def name(self) -> str:
@@ -191,34 +193,36 @@ class IsolationBackend(ABC):
 
         return env
 
-    @abstractmethod
     def setup(self) -> None:
-        """Initialize the sandbox environment.
+        """Create the filesystem jail."""
+        try:
+            self._jail_path = self._create_jail()
+            self._is_setup = True
+        except Exception as exc:
+            from ..errors import SandboxSetupError
 
-        This method is called once before any executions. It should:
-            - Create the filesystem jail
-            - Initialize any OS-level isolation mechanisms
-            - Prepare the execution environment
+            self.cleanup()
+            raise SandboxSetupError(f"Failed to create jail: {exc}") from exc
 
-        Raises:
-            SandboxSetupError: If setup fails
-        """
-        ...
-
-    @abstractmethod
     def cleanup(self) -> None:
-        """Clean up all sandbox resources.
+        """Remove the filesystem jail and kill any running processes."""
+        if self._process is not None:
+            try:
+                self._process.kill()
+                self._process.wait(timeout=5.0)
+            except Exception:
+                pass
+            self._process = None
 
-        This method is called when exiting the context manager.
-        It should:
-            - Remove the filesystem jail and all contents
-            - Release any OS-level resources
-            - Kill any lingering processes
+        self._destroy_jail()
+        self._is_setup = False
 
-        This method should not raise exceptions; cleanup failures
-        should be logged but not propagated.
-        """
-        ...
+    def _kill_and_drain(self) -> tuple[bytes, bytes]:
+        """Kill the child process and drain remaining output."""
+        if self._process is not None:
+            self._process.kill()
+            return self._process.communicate()
+        return b"", b""
 
     @abstractmethod
     def execute(

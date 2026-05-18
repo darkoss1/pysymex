@@ -1,5 +1,3 @@
-import pytest
-import z3
 from pysymex.analysis.properties.types import PropertyKind, ProofStatus, PropertySpec, PropertyProof
 
 

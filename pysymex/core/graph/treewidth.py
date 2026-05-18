@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Hashable, Set as AbstractSet
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -167,7 +168,11 @@ class ConstraintInteractionGraph:
         "_var_branches",
     )
 
-    def __init__(self, optimizer: ConstraintIndependenceOptimizer) -> None:
+    def __init__(self, optimizer: ConstraintIndependenceOptimizer | None = None) -> None:
+        if optimizer is None:
+            from pysymex.core.solver.independence import ConstraintIndependenceOptimizer
+
+            optimizer = ConstraintIndependenceOptimizer()
         self._optimizer = optimizer
         self._branch_info: dict[int, BranchInfo] = {}
         self._var_branches: dict[str, set[int]] = defaultdict(set)
@@ -185,10 +190,32 @@ class ConstraintInteractionGraph:
         self._branches_since_last_tw_change = 0
         self._cached_td = None
 
+    def clear(self) -> None:
+        """Alias for reset() for compatibility."""
+        self.reset()
+
     @property
     def num_branches(self) -> int:
         """Number of branch points registered."""
         return len(self._branch_info)
+
+    @property
+    def num_vertices(self) -> int:
+        """Alias for num_branches for compatibility."""
+        return self.num_branches
+
+    @property
+    def num_edges(self) -> int:
+        """Total number of edges in the interaction graph."""
+        return sum(len(ns) for ns in self._adjacency.values()) // 2
+
+    def get_degree(self, pc: int) -> int:
+        """Get the degree of a branch point in the interaction graph."""
+        return len(self._adjacency.get(pc, ()))
+
+    def get_neighbors(self, pc: int) -> set[int]:
+        """Get neighboring branch PCs for compatibility with older graph callers."""
+        return set(self._adjacency.get(pc, set()))
 
     @property
     def estimated_treewidth(self) -> int:
@@ -205,12 +232,13 @@ class ConstraintInteractionGraph:
         """Read-only view of the interaction graph adjacency map."""
         return self._adjacency
 
-    def add_branch(self, pc: int, condition: z3.BoolRef) -> BranchInfo:
+    def add_branch(self, pc: int, condition: z3.BoolRef | AbstractSet[Hashable]) -> BranchInfo:
         """Register a new branch and update the interaction graph.
 
         Args:
             pc: Program counter of the branch instruction.
-            condition: The Z3 boolean expression for the branch.
+            condition: The Z3 boolean expression for the branch, or an explicit
+                variable-name set for compatibility with older graph callers.
 
         Returns:
             BranchInfo with the extracted variable sets.
@@ -218,11 +246,16 @@ class ConstraintInteractionGraph:
         if pc in self._branch_info:
             return self._branch_info[pc]
 
-        raw_vars = self._optimizer.get_variables(condition)
+        if isinstance(condition, AbstractSet):
+            raw_vars = frozenset(str(var) for var in condition)
+            stored_condition: z3.BoolRef | None = None
+        else:
+            raw_vars = self._optimizer.get_variables(condition)
+            stored_condition = condition
         base_vars = frozenset(_base_var_name(v) for v in raw_vars)
 
         self._cached_td = None
-        info = BranchInfo(pc=pc, raw_vars=raw_vars, base_vars=base_vars, condition=condition)
+        info = BranchInfo(pc=pc, raw_vars=raw_vars, base_vars=base_vars, condition=stored_condition)
         self._branch_info[pc] = info
 
         old_max_degree = max((len(neighbors) for neighbors in self._adjacency.values()), default=0)
@@ -305,7 +338,7 @@ class ConstraintInteractionGraph:
 
             max_min_degree = max(max_min_degree, degree[v])
             remaining.discard(v)
-            for neighbor in self._adjacency.get(v, set()):
+            for neighbor in self._adjacency.get(v, ()):
                 if neighbor in remaining:
                     old_deg = degree[neighbor]
                     new_deg = max(0, old_deg - 1)
@@ -437,7 +470,7 @@ class ConstraintInteractionGraph:
                     continue
                 visited.add(v)
                 component.add(v)
-                for neighbor in self._adjacency.get(v, set()):
+                for neighbor in self._adjacency.get(v, ()):
                     if neighbor not in visited:
                         queue.append(neighbor)
             groups.append(frozenset(component))

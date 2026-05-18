@@ -23,17 +23,20 @@ pysymex - Core detectors, advanced detectors, and registry.
 from __future__ import annotations
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import dis
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
 import z3
+
+from pysymex._typing import is_list_of_objects as is_list_of_objects
+from pysymex._typing import is_tuple_of_objects as is_tuple_of_objects
+from pysymex.core.memory.collections.lists import empty_constraints
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pysymex.core.state import VMState
@@ -45,17 +48,7 @@ GetModelFn = Callable[[list[z3.BoolRef]], z3.ModelRef | None]
 
 def _empty_constraints() -> list[z3.BoolRef]:
     """Create a typed empty constraint list for Issue defaults."""
-    return []
-
-
-def is_list_of_objects(value: object) -> TypeGuard[list[object]]:
-    """Type guard to narrow a value to list[object]."""
-    return isinstance(value, list)
-
-
-def is_tuple_of_objects(value: object) -> TypeGuard[tuple[object, ...]]:
-    """Type guard to narrow a value to tuple[object, ...]."""
-    return isinstance(value, tuple)
+    return empty_constraints()
 
 
 if TYPE_CHECKING:
@@ -68,19 +61,6 @@ A ``DetectorFn`` receives the current VM state, the instruction being
 executed and a satisfiability-check callback, and returns an ``Issue``
 when a bug is found (or ``None``).
 """
-
-__all__ = [
-    "Detector",
-    "DetectorFn",
-    "DetectorInfo",
-    "DetectorRegistry",
-    "GetModelFn",
-    "IsSatFn",
-    "Issue",
-    "IssueKind",
-    "is_list_of_objects",
-    "is_tuple_of_objects",
-]
 
 
 class IssueKind(Enum):
@@ -134,6 +114,7 @@ class Issue:
         class_name: Enclosing class name, if applicable.
         full_path: Absolute file path.
         counterexample: Concrete variable assignments triggering the issue.
+        is_caught: Whether the exception was caught by a handler (for exception issues).
     """
 
     kind: IssueKind
@@ -148,11 +129,15 @@ class Issue:
     class_name: str | None = None
     full_path: str | None = None
     counterexample: dict[str, object] | None = None
+    is_caught: bool = False
     confidence: float = 1.0
     likelihood: float = 1.0
 
     def get_counterexample(self) -> dict[str, object]:
         """Extract counterexample from model."""
+        # If counterexample is explicitly set, use it
+        if self.counterexample is not None:
+            return self.counterexample
         if self.model is None:
             return {}
         if isinstance(self.model, dict):
@@ -164,19 +149,30 @@ class Issue:
             value = self.model[decl]
             base_name = name
 
-            for suffix in ["_is_int", "_is_bool", "_is_none", "_is_str", "_int", "_bool", "_str"]:
+            # Strip type discriminator suffixes to get the base variable name
+            # Keep _z3_len as it's important for container sizes
+            for suffix in ("_is_int", "_is_bool", "_is_none", "_is_str", "_int", "_bool", "_str"):
                 if name.endswith(suffix):
                     base_name = name[: -len(suffix)]
                     break
 
             import re
 
+            # Strip numeric suffixes (e.g., var_1 -> var)
             match = re.search(r"^(.*)_\d+$", base_name)
             if match:
                 base_name = match.group(1)
 
-            if "_is_" in name or name.startswith("_") or base_name.startswith("_"):
+            # Skip internal Z3 variables but keep user-relevant ones
+            # Only skip if the base name starts with underscore (internal)
+            if base_name.startswith("_"):
                 continue
+
+            # For discriminator variables (_is_int, _is_none, etc.), skip them
+            # But keep the actual value variables
+            if "_is_" in name and not any(name.endswith(s) for s in ("_int", "_bool", "_str")):
+                continue
+
             try:
                 if isinstance(value, z3.IntNumRef):
                     counterexample[base_name] = value.as_long()
@@ -190,6 +186,75 @@ class Issue:
                     counterexample[base_name] = str(value)
             except (z3.Z3Exception, TypeError, ValueError):
                 counterexample[base_name] = str(value)
+
+        # Also try to evaluate any constraints to extract variable values
+        # This handles cases where Z3 doesn't include all variables in model.decls()
+        if self.constraints:
+            for constraint in self.constraints:
+                # Look for simple comparisons like x > 10, x == 0, etc.
+                if z3.is_app(constraint):
+                    decl = constraint.decl()
+                    if decl.kind() in (
+                        z3.Z3_OP_GT,
+                        z3.Z3_OP_LT,
+                        z3.Z3_OP_EQ,
+                        z3.Z3_OP_GE,
+                        z3.Z3_OP_LE,
+                    ):
+                        # Get the left and right sides
+                        if constraint.num_args() >= 2:
+                            left = constraint.arg(0)
+                            _ = constraint.arg(1)  # Right side not used
+                            # Try to extract variable name from left side
+                            if z3.is_const(left):
+                                var_name = left.decl().name()
+                                if var_name not in counterexample and not var_name.startswith("_"):
+                                    try:
+                                        # Evaluate the variable in the model
+                                        val = self.model.eval(left)
+                                        if isinstance(val, z3.IntNumRef):
+                                            counterexample[var_name] = val.as_long()
+                                        elif z3.is_true(val):
+                                            counterexample[var_name] = True
+                                        elif z3.is_false(val):
+                                            counterexample[var_name] = False
+                                        else:
+                                            counterexample[var_name] = str(val)
+                                    except (z3.Z3Exception, TypeError, ValueError):
+                                        pass
+
+        # Also try to evaluate expressions in constraints that might not be in model.decls()
+        # This handles cases like list_len = 0 + 1 + 1 + 1 where the expression itself isn't a decl
+        if self.constraints and self.model:
+            # Collect all expressions from constraints
+            exprs_to_eval: list[z3.ExprRef] = []
+            for constraint in self.constraints:
+                # Recursively collect all arithmetic expressions
+                def collect_exprs(expr: z3.ExprRef) -> None:
+                    if z3.is_app(expr):
+                        # If it's an arithmetic expression that could be a length
+                        if expr.decl().kind() in (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_MUL):
+                            exprs_to_eval.append(expr)
+                        for i in range(expr.num_args()):
+                            collect_exprs(expr.arg(i))
+
+                collect_exprs(constraint)
+
+            # Try to evaluate these expressions and pick the largest value (likely the final length)
+            max_len_val = 0
+            for expr in exprs_to_eval:
+                try:
+                    val = self.model.eval(expr)
+                    if isinstance(val, z3.IntNumRef):
+                        int_val = val.as_long()
+                        if int_val > max_len_val:
+                            max_len_val = int_val
+                except (z3.Z3Exception, TypeError, ValueError):
+                    pass
+
+            if max_len_val > 0:
+                counterexample["list_len"] = max_len_val
+
         return counterexample
 
     def format(self) -> str:
@@ -300,37 +365,6 @@ class Detector(ABC):
         return self.check
 
 
-class FormatStringDetector(Detector):
-    """Detects potential format string vulnerabilities."""
-
-    name = "format-string"
-    description = "Detects format string injection vulnerabilities"
-    issue_kind = IssueKind.FORMAT_STRING_INJECTION
-    relevant_opcodes = frozenset({"CALL", "CALL_FUNCTION", "FORMAT_VALUE"})
-    DANGEROUS_CALLS = {"eval", "exec", "compile", "getattr", "setattr"}
-
-    def check(
-        self,
-        state: VMState,
-        instruction: dis.Instruction,
-        _solver_check: IsSatFn,
-    ) -> Issue | None:
-        """Check."""
-        if instruction.opname in ("CALL", "CALL_FUNCTION"):
-            return self._check_dangerous_call(state, instruction)
-        if instruction.opname == "FORMAT_VALUE":
-            return self._check_format_value(state, instruction)
-        return None
-
-    def _check_dangerous_call(self, state: VMState, instruction: dis.Instruction) -> Issue | None:
-        """Check dangerous call."""
-        return None
-
-    def _check_format_value(self, state: VMState, _instruction: dis.Instruction) -> Issue | None:
-        """Check format value."""
-        return None
-
-
 class DetectorRegistry:
     """Registry mapping detector names to their classes and singleton instances.
 
@@ -346,7 +380,6 @@ class DetectorRegistry:
         self._detectors: dict[str, type[Detector]] = {}
         self._instances: dict[str, Detector] = {}
         self._fn_detectors: dict[str, tuple[DetectorFn, DetectorInfo]] = {}
-        self.register(FormatStringDetector)
 
     def register(self, detector_class: type[Detector]) -> None:
         """Register a detector class by its ``name`` attribute.

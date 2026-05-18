@@ -46,15 +46,4 @@ class ResourceStateContradictionRule(LogicRule):
             if values and len(values) > 1:
                 return True
 
-        lower_names = {n.lower() for n in names}
-        conflict_pairs = [
-            ("open", "closed"),
-            ("acquired", "released"),
-            ("locked", "unlocked"),
-            ("in_use", "closed"),
-        ]
-        for a, b in conflict_pairs:
-            if any(a in n for n in lower_names) and any(b in n for n in lower_names):
-                return True
-
         return False

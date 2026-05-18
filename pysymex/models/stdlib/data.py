@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pysymex.core.memory.addressing import next_address
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicDict,
     SymbolicList,
     SymbolicObject,

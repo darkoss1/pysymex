@@ -34,11 +34,9 @@ logger = logging.getLogger(__name__)
 
 from pysymex.analysis.concurrency import (
     ConcurrencyAnalyzer,
-    ConcurrencyIssue,
-    ConcurrencyIssueKind,
     MemoryOrder,
 )
-from pysymex.analysis.detectors import DetectorRegistry, Issue, IssueKind
+from pysymex.analysis.detectors import DetectorRegistry, Issue
 from pysymex.core.state import VMState
 from pysymex.execution.executors import (
     ExecutionConfig,
@@ -75,7 +73,7 @@ class SharedVariableTracker:
 
     def is_shared(self, variable_name: str) -> bool:
         """Check if a variable has been accessed by multiple threads."""
-        return len(self._accesses.get(variable_name, set())) >= 2
+        return len(self._accesses.get(variable_name, ())) >= 2
 
     def reset(self) -> None:
         """Clear all tracked accesses."""
@@ -93,7 +91,6 @@ _STORE_OPCODES = frozenset(
     }
 )
 
-
 _LOAD_OPCODES = frozenset(
     {
         "LOAD_FAST",
@@ -103,7 +100,6 @@ _LOAD_OPCODES = frozenset(
         "LOAD_ATTR",
     }
 )
-
 
 _CALL_OPCODES = frozenset(
     {
@@ -289,7 +285,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                         tid, self._current_thread_id, line_number=line
                     )
                     if issue:
-                        self._issues.append(self._convert_concurrency_issue(issue))
+                        logger.warning("[Concurrency] %s", issue.format())
                 except (RuntimeError, KeyError) as e:
                     if getattr(self, "config", None) and getattr(self.config, "verbose", False):
                         logger.warning("Concurrency thread tracking error (join): %s", e)
@@ -300,7 +296,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                 self._current_thread_id, lock_name, line_number=line
             )
             if issue:
-                self._issues.append(self._convert_concurrency_issue(issue))
+                logger.warning("[Concurrency] %s", issue.format())
 
         elif "release" in name:
             lock_name = str(arg_name)
@@ -308,19 +304,18 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                 self._current_thread_id, lock_name, line_number=line
             )
             if issue:
-                self._issues.append(self._convert_concurrency_issue(issue))
+                logger.warning("[Concurrency] %s", issue.format())
 
     def _finalize_concurrency_analysis(self) -> list[Issue]:
-        """Run final concurrency analysis and convert issues.
+        """Run final concurrency analysis without executor-level issue conversion.
 
         Includes DPOR interleaving exploration to find additional data
         races and atomicity violations beyond the single-execution analysis.
         """
-        issues: list[Issue] = []
         try:
             all_concurrency_issues = self._concurrency_analyzer.get_all_issues()
             for ci in all_concurrency_issues:
-                issues.append(self._convert_concurrency_issue(ci))
+                logger.warning("[Concurrency] %s", ci.format())
         except (RuntimeError, KeyError, AttributeError) as e:
             if getattr(self, "config", None) and getattr(self.config, "verbose", False):
                 logger.warning("Concurrency finalization error: %s", e)
@@ -338,19 +333,15 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
                     op1 = hb_graph.get_operation(op1_id)
                     op2 = hb_graph.get_operation(op2_id)
                     if op1 and op2:
-                        line = getattr(op1, "line_number", None) or getattr(
-                            op2, "line_number", None
-                        )
-                        issues.append(
-                            Issue(
-                                kind=IssueKind.TYPE_ERROR,
-                                message=(
-                                    f"[Concurrency] Data race: {op1.thread_id} and "
-                                    f"{op2.thread_id} access '{op1.address}' concurrently "
-                                    f"(DPOR found {len(schedules)} interleavings)"
-                                ),
-                                line_number=line,
-                            )
+                        logger.warning(
+                            (
+                                "[Concurrency] Data race: %s and %s access '%s' "
+                                "concurrently (DPOR found %d interleavings)"
+                            ),
+                            op1.thread_id,
+                            op2.thread_id,
+                            op1.address,
+                            len(schedules),
                         )
                 if self.config.verbose and schedules:
                     logger.debug(
@@ -362,25 +353,7 @@ class ConcurrentSymbolicExecutor(SymbolicExecutor):
             if getattr(self, "config", None) and getattr(self.config, "verbose", False):
                 logger.warning("DPOR exploration error: %s", e)
 
-        return issues
-
-    @staticmethod
-    def _convert_concurrency_issue(ci: ConcurrencyIssue) -> Issue:
-        """Convert a ConcurrencyIssue to an executor Issue."""
-        kind_map = {
-            ConcurrencyIssueKind.DATA_RACE: IssueKind.TYPE_ERROR,
-            ConcurrencyIssueKind.RACE_CONDITION: IssueKind.TYPE_ERROR,
-            ConcurrencyIssueKind.DEADLOCK: IssueKind.ASSERTION_ERROR,
-            ConcurrencyIssueKind.POTENTIAL_DEADLOCK: IssueKind.ASSERTION_ERROR,
-            ConcurrencyIssueKind.ATOMICITY_VIOLATION: IssueKind.TYPE_ERROR,
-            ConcurrencyIssueKind.LOCK_NOT_HELD: IssueKind.ASSERTION_ERROR,
-        }
-        issue_kind = kind_map.get(ci.kind, IssueKind.TYPE_ERROR)
-        return Issue(
-            kind=issue_kind,
-            message=f"[Concurrency] {ci.format()}",
-            line_number=ci.line_number,
-        )
+        return []
 
 
 def analyze_concurrent(

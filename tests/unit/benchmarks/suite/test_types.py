@@ -8,6 +8,7 @@ def test_benchmark_result_computed_metrics_and_dict() -> None:
         name="demo",
         category=BenchmarkCategory.ANALYSIS,
         elapsed_seconds=2.0,
+        mean_seconds=2.0,
         instructions_executed=200,
         paths_explored=10,
     )

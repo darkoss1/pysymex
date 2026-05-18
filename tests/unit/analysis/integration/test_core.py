@@ -1,9 +1,8 @@
-import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from pathlib import Path
 import tempfile
 from pysymex.analysis.integration.core import AnalysisPipeline, ReportGenerator
-from pysymex.analysis.integration.types import AnalysisConfig, ModuleContext
+from pysymex.analysis.integration.types import ModuleContext
 from pysymex.analysis.detectors.types import Issue, IssueKind, Severity
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+# pyright: reportPrivateUsage=false
 
 from pysymex.stats.collectors.perf import PerfCollector
 from pysymex.stats.types import Event, EventType
@@ -36,7 +36,7 @@ class TestPerfCollector:
         import time
 
         # Force a time delta for rate calculation
-        collector._last_time = time.perf_counter_ns() - int(1e9)
+        collector._last_rate_timestamp_ns = time.perf_counter_ns() - int(1e9)
 
         collector.process(events)
         metrics = collector.get_metrics()

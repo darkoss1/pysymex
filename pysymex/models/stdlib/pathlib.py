@@ -30,12 +30,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex.core.types.scalars import (
+from pysymex.core.types import (
     SymbolicNone,
     SymbolicString,
     SymbolicValue,
 )
 from pysymex.models.builtins import FunctionModel, ModelResult
+from pysymex.models.typed_results import model_bool_result, symbolic_int_result
 
 if TYPE_CHECKING:
     from pysymex._typing import StackValue
@@ -88,12 +89,7 @@ class PathExistsModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.exists()."""
-        result, constraint = SymbolicValue.symbolic(f"path_exists_{state.pc}")
-        return ModelResult(
-            value=result,
-            constraints=[constraint, result.is_bool],
-            side_effects={"io": True},
-        )
+        return model_bool_result(f"path_exists_{state.pc}", side_effects={"io": True})
 
 
 class PathIsFileModel(FunctionModel):
@@ -106,12 +102,7 @@ class PathIsFileModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_file()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_file_{state.pc}")
-        return ModelResult(
-            value=result,
-            constraints=[constraint, result.is_bool],
-            side_effects={"io": True},
-        )
+        return model_bool_result(f"path_is_file_{state.pc}", side_effects={"io": True})
 
 
 class PathIsDirModel(FunctionModel):
@@ -124,12 +115,7 @@ class PathIsDirModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_dir()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_dir_{state.pc}")
-        return ModelResult(
-            value=result,
-            constraints=[constraint, result.is_bool],
-            side_effects={"io": True},
-        )
+        return model_bool_result(f"path_is_dir_{state.pc}", side_effects={"io": True})
 
 
 class PathIsAbsoluteModel(FunctionModel):
@@ -142,8 +128,7 @@ class PathIsAbsoluteModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.is_absolute()."""
-        result, constraint = SymbolicValue.symbolic(f"path_is_absolute_{state.pc}")
-        return ModelResult(value=result, constraints=[constraint, result.is_bool])
+        return model_bool_result(f"path_is_absolute_{state.pc}")
 
 
 class PathNameModel(FunctionModel):
@@ -276,10 +261,11 @@ class PathWriteTextModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.write_text()."""
-        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state.pc}")
+        result, constraints = symbolic_int_result(f"bytes_written_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= 0],
+            constraints=constraints,
             side_effects={"io": True, "writes_file": True},
         )
 
@@ -294,10 +280,11 @@ class PathWriteBytesModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.write_bytes()."""
-        result, constraint = SymbolicValue.symbolic(f"bytes_written_{state.pc}")
+        result, constraints = symbolic_int_result(f"bytes_written_{state.pc}")
+        constraints.append(result.z3_int >= 0)
         return ModelResult(
             value=result,
-            constraints=[constraint, result.is_int, result.z3_int >= 0],
+            constraints=constraints,
             side_effects={"io": True, "writes_file": True},
         )
 
@@ -362,7 +349,7 @@ class PathGlobModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.glob()."""
-        from pysymex.core.types.scalars import SymbolicList
+        from pysymex.core.types import SymbolicList
 
         result, constraint = SymbolicList.symbolic(f"glob_results_{state.pc}")
         return ModelResult(
@@ -382,7 +369,7 @@ class PathRglobModel(FunctionModel):
         self, args: list[StackValue], kwargs: dict[str, StackValue], state: VMState
     ) -> ModelResult:
         """Apply the Path.rglob() (recursive glob)."""
-        from pysymex.core.types.scalars import SymbolicList
+        from pysymex.core.types import SymbolicList
 
         result, constraint = SymbolicList.symbolic(f"rglob_results_{state.pc}")
         return ModelResult(

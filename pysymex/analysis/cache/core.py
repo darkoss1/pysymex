@@ -22,6 +22,8 @@ persistent SQLite cache, and tiered (memory + persistent) cache.
 
 from __future__ import annotations
 
+from collections.abc import Mapping as _Mapping
+
 import hashlib
 import hmac
 import json
@@ -51,6 +53,12 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def cache_hit_rate(hits: int, misses: int) -> float:
+    """Return the cache hit ratio for completed lookup counters."""
+    total = hits + misses
+    return hits / total if total > 0 else 0.0
 
 
 class CacheKeyType(Enum):
@@ -110,6 +118,9 @@ class _CacheIntegrity:
                 return raw
             logger.warning("Corrupt HMAC key file — regenerating")
         self._key_path.parent.mkdir(parents=True, exist_ok=True)
+        from pysymex.pathing import ensure_pysymex_gitignore
+
+        ensure_pysymex_gitignore(self._key_path.parent)
         key = secrets.token_bytes(HMAC_KEY_SIZE)
         self._write_key_file(key)
         self._key = key
@@ -227,7 +238,7 @@ def hash_file(path: Path) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def hash_dict(d: dict[str, object]) -> str:
+def hash_dict(d: _Mapping[str, object]) -> str:
     """Hash a dictionary for caching."""
     content = json.dumps(d, sort_keys=True, default=str)
     return hashlib.sha256(content.encode()).hexdigest()
@@ -292,8 +303,7 @@ class LRUCache(Generic[K, V]):
     @property
     def hit_rate(self) -> float:
         """Get cache hit rate."""
-        total = self._hits + self._misses
-        return self._hits / total if total > 0 else 0.0
+        return cache_hit_rate(self._hits, self._misses)
 
     def __getstate__(self) -> dict[str, object]:
         state = self.__dict__.copy()
@@ -370,6 +380,9 @@ class PersistentCache:
         probe = path / ".pysymex_write_probe"
         try:
             path.mkdir(parents=True, exist_ok=True)
+            from pysymex.pathing import ensure_pysymex_gitignore
+
+            ensure_pysymex_gitignore(path)
             probe.write_bytes(b"ok")
             probe.unlink(missing_ok=True)
             return True
@@ -430,6 +443,9 @@ class PersistentCache:
     def _ensure_directory(self) -> None:
         """Ensure cache directory exists."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        from pysymex.pathing import ensure_pysymex_gitignore
+
+        ensure_pysymex_gitignore(self.db_path.parent)
 
     def _init_database(self) -> None:
         """Initialize database schema."""

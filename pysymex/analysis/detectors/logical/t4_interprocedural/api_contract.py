@@ -25,6 +25,13 @@ from pysymex.analysis.detectors.logical.utils import (
 )
 
 
+def _is_api_contract_name(name: str) -> bool:
+    lname = name.lower()
+    return any(
+        token in lname for token in ("api", "contract", "pre", "post", "arg", "ret", "result")
+    )
+
+
 class ApiContractViolationRule(LogicRule):
     name = "API Contract Violation"
     tier = 4
@@ -54,6 +61,8 @@ class ApiContractViolationRule(LogicRule):
         relations = extract_var_var_comparisons(ctx.core)
         relation_set = {(a, op, b) for a, op, b in relations}
         for a, op, b in relations:
+            if not (_is_api_contract_name(a) and _is_api_contract_name(b)):
+                continue
             if op == ">" and (b, ">=", a) in relation_set:
                 return True
             if op == ">=" and (b, ">", a) in relation_set:
