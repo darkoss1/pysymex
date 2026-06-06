@@ -29,6 +29,7 @@ from collections.abc import Sequence
 import shutil
 import subprocess
 import sys
+import sysconfig
 import time
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_ROOT_JAIL_READONLY_MOUNTS = ("/usr/local", "/usr/lib", "/lib", "/lib64")
+_ROOT_JAIL_READONLY_MOUNTS = ("/usr/local", "/usr/lib", "/lib", "/lib64", "/bin")
 _ROOT_JAIL_LIBRARY_PATHS = ("/usr/local/lib", "/usr/lib", "/lib", "/usr/lib64", "/lib64")
 _ROOT_JAIL_BOOTSTRAP_SCRIPT = """
 _jail=$1
@@ -73,10 +74,26 @@ if [ "$#" -eq 0 ]; then
     exit 127
 fi
 shift
-export LD_LIBRARY_PATH="$_ld_library_path"
 cd "$_jail"
-exec "$_chroot" "$_jail" "$@"
+unset LD_LIBRARY_PATH
+exec "$_chroot" "$_jail" /bin/sh -eu -c '
+_ld_library_path=$1
+shift
+export LD_LIBRARY_PATH="$_ld_library_path"
+exec "$@"
+' pysymex-linux-root-jail-inner "$_ld_library_path" "$@"
 """.strip()
+
+
+def _host_multiarch_library_paths() -> tuple[PurePosixPath, ...]:
+    """Return host multiarch library dirs that should precede generic lib dirs."""
+    multiarch = sysconfig.get_config_var("MULTIARCH")
+    if not isinstance(multiarch, str) or not multiarch:
+        return ()
+    return (
+        PurePosixPath(f"/usr/lib/{multiarch}"),
+        PurePosixPath(f"/lib/{multiarch}"),
+    )
 
 
 class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, IsolationBackend):
@@ -371,7 +388,11 @@ class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, Isolatio
 
     def _root_jail_library_path(self, readonly_mounts: tuple[str, ...]) -> str:
         """Build the loader search path for mounted Python runtime libraries."""
-        library_paths: list[str] = list(_ROOT_JAIL_LIBRARY_PATHS)
+        library_paths: list[str] = []
+        for candidate in _host_multiarch_library_paths():
+            self._append_unique_posix_path(library_paths, candidate)
+        for candidate in _ROOT_JAIL_LIBRARY_PATHS:
+            self._append_unique_posix_path(library_paths, PurePosixPath(candidate))
         python_exe = self._root_jail_python_path()
         runtime_root = self._root_jail_runtime_mount_root(python_exe)
         if runtime_root is not None:

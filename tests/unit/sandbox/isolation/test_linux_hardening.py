@@ -152,9 +152,32 @@ class TestLinuxNamespaceHardening:
                 assert python_exe in captured_cmd
                 assert runtime_root in captured_cmd
                 assert "/opt" not in captured_cmd
+                assert "/bin" in captured_cmd
                 assert any(f"{runtime_root}/lib" in part for part in captured_cmd)
+                script = captured_cmd[captured_cmd.index("-c") + 1]
+                assert "unset LD_LIBRARY_PATH" in script
+                assert "exec \"$_chroot\" \"$_jail\" /bin/sh" in script
             finally:
                 backend.cleanup()
+
+    def test_root_jail_library_path_prefers_multiarch_libs(self, tmp_path: Path) -> None:
+        config = SandboxConfig(working_directory=tmp_path, python_executable="/usr/local/bin/python")
+        backend = LinuxNamespaceBackend(config)
+        root_jail_library_path = cast(
+            "Callable[[tuple[str, ...]], str]",
+            getattr(backend, "_root_jail_library_path"),
+        )
+
+        with patch("pysymex.sandbox.isolation.linux.backend.sysconfig.get_config_var") as cfg:
+            cfg.return_value = "x86_64-linux-gnu"
+            library_path = root_jail_library_path(
+                ("/usr/local", "/usr/lib", "/lib", "/lib64", "/bin"),
+            )
+
+        paths = library_path.split(":")
+        assert paths[:2] == ["/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu"]
+        assert paths.index("/usr/lib/x86_64-linux-gnu") < paths.index("/usr/lib")
+        assert paths.index("/lib/x86_64-linux-gnu") < paths.index("/lib")
 
     def test_capabilities_include_root_jail_for_configured_python_runtime(self) -> None:
         config = SandboxConfig(
