@@ -159,13 +159,15 @@ class TestLinuxNamespaceHardening:
                 assert any(f"{runtime_root}/lib" in part for part in captured_cmd)
                 script = captured_cmd[captured_cmd.index("-c") + 1]
                 assert "unset LD_LIBRARY_PATH" in script
-                assert "exec \"$_chroot\" \"$_jail\" /bin/sh" in script
+                assert 'exec "$_chroot" "$_jail" /bin/sh' in script
                 assert '"$_ln" -sfn usr/bin "$_jail/bin"' in script
             finally:
                 backend.cleanup()
 
     def test_root_jail_library_path_prefers_multiarch_libs(self, tmp_path: Path) -> None:
-        config = SandboxConfig(working_directory=tmp_path, python_executable="/usr/local/bin/python")
+        config = SandboxConfig(
+            working_directory=tmp_path, python_executable="/usr/local/bin/python"
+        )
         backend = LinuxNamespaceBackend(config)
         root_jail_library_path = cast(
             "Callable[[tuple[str, ...]], str]",

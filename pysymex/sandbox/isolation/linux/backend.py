@@ -339,7 +339,9 @@ class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, Isolatio
         mkdir_cmd = self._find_trusted_tool("mkdir")
         ln_cmd = self._find_trusted_tool("ln")
         if chroot_cmd is None or mount_cmd is None or mkdir_cmd is None or ln_cmd is None:
-            raise SandboxSetupError("Linux namespace root jail requires chroot, mount, mkdir, and ln")
+            raise SandboxSetupError(
+                "Linux namespace root jail requires chroot, mount, mkdir, and ln"
+            )
         readonly_mounts = self._root_jail_readonly_mounts()
         return [
             unshare_cmd,
