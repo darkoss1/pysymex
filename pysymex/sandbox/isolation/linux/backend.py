@@ -51,15 +51,16 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_ROOT_JAIL_READONLY_MOUNTS = ("/usr/local", "/usr/lib", "/lib", "/lib64", "/bin")
+_ROOT_JAIL_READONLY_MOUNTS = ("/usr/bin", "/usr/lib64")
 _ROOT_JAIL_LIBRARY_PATHS = ("/usr/local/lib", "/usr/lib", "/lib", "/usr/lib64", "/lib64")
 _ROOT_JAIL_BOOTSTRAP_SCRIPT = """
 _jail=$1
 _chroot=$2
 _mount=$3
 _mkdir=$4
-_ld_library_path=$5
-shift 5
+_ln=$5
+_ld_library_path=$6
+shift 6
 "$_mkdir" -p "$_jail/tmp"
 while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
     _src=$1
@@ -69,6 +70,9 @@ while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
     "$_mount" --bind "$_src" "$_dst"
     "$_mount" -o remount,bind,ro "$_dst"
 done
+"$_ln" -sfn usr/bin "$_jail/bin"
+"$_ln" -sfn usr/lib "$_jail/lib"
+"$_ln" -sfn usr/lib64 "$_jail/lib64"
 if [ "$#" -eq 0 ]; then
     echo "linux-sandbox: missing chroot command delimiter" >&2
     exit 127
@@ -90,10 +94,18 @@ def _host_multiarch_library_paths() -> tuple[PurePosixPath, ...]:
     multiarch = sysconfig.get_config_var("MULTIARCH")
     if not isinstance(multiarch, str) or not multiarch:
         return ()
-    return (
-        PurePosixPath(f"/usr/lib/{multiarch}"),
-        PurePosixPath(f"/lib/{multiarch}"),
-    )
+    return (PurePosixPath(f"/usr/lib/{multiarch}"),)
+
+
+def _host_python_stdlib_paths() -> tuple[PurePosixPath, ...]:
+    """Return host Python stdlib directories needed by isolated interpreter startup."""
+    paths: list[PurePosixPath] = []
+    value = sysconfig.get_path("stdlib")
+    if value:
+        candidate = PurePosixPath(value)
+        if candidate.is_absolute():
+            paths.append(candidate)
+    return tuple(paths)
 
 
 class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, IsolationBackend):
@@ -325,8 +337,9 @@ class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, Isolatio
         chroot_cmd = self._find_trusted_tool("chroot")
         mount_cmd = self._find_trusted_tool("mount")
         mkdir_cmd = self._find_trusted_tool("mkdir")
-        if chroot_cmd is None or mount_cmd is None or mkdir_cmd is None:
-            raise SandboxSetupError("Linux namespace root jail requires chroot, mount, and mkdir")
+        ln_cmd = self._find_trusted_tool("ln")
+        if chroot_cmd is None or mount_cmd is None or mkdir_cmd is None or ln_cmd is None:
+            raise SandboxSetupError("Linux namespace root jail requires chroot, mount, mkdir, and ln")
         readonly_mounts = self._root_jail_readonly_mounts()
         return [
             unshare_cmd,
@@ -346,6 +359,7 @@ class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, Isolatio
             chroot_cmd,
             mount_cmd,
             mkdir_cmd,
+            ln_cmd,
             self._root_jail_library_path(readonly_mounts),
             *readonly_mounts,
             "--",
@@ -379,11 +393,17 @@ class LinuxNamespaceBackend(LinuxSeccompMixin, LinuxProcessLimitsMixin, Isolatio
 
     def _root_jail_readonly_mounts(self) -> tuple[str, ...]:
         """Return read-only host paths mounted into the Linux root jail."""
-        mounts: list[str] = list(_ROOT_JAIL_READONLY_MOUNTS)
+        mounts: list[str] = []
+        for candidate in _ROOT_JAIL_READONLY_MOUNTS:
+            self._append_unique_posix_path(mounts, PurePosixPath(candidate))
         python_exe = self._root_jail_python_path()
         runtime_root = self._root_jail_runtime_mount_root(python_exe)
         if runtime_root is not None and not self._is_under_any_posix_path(python_exe, mounts):
             self._append_unique_posix_path(mounts, runtime_root)
+        for candidate in _host_python_stdlib_paths():
+            self._append_unique_posix_path(mounts, candidate)
+        for candidate in _host_multiarch_library_paths():
+            self._append_unique_posix_path(mounts, candidate)
         return tuple(mounts)
 
     def _root_jail_library_path(self, readonly_mounts: tuple[str, ...]) -> str:

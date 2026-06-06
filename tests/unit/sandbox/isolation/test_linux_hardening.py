@@ -98,9 +98,12 @@ class TestLinuxNamespaceHardening:
                 assert HARNESS_FILENAME in captured_cmd
                 assert captured_cmd[-1] == "safe.py"
                 assert "/usr" not in captured_cmd
-                assert "/usr/local" in captured_cmd
-                assert "/usr/lib" in captured_cmd
+                assert "/usr/bin" in captured_cmd
+                assert "/usr/lib" not in captured_cmd
                 assert captured_cwd == str(backend.jail_path)
+                script = captured_cmd[captured_cmd.index("-c") + 1]
+                assert '"$_ln" -sfn usr/bin "$_jail/bin"' in script
+                assert '"$_ln" -sfn usr/lib "$_jail/lib"' in script
                 launcher_source = launcher.read_text(encoding="utf-8")
                 compile(launcher_source, launcher_name, "exec")
                 assert "prctl(PR_SET_SECCOMP) failed in launcher" in launcher_source
@@ -152,11 +155,12 @@ class TestLinuxNamespaceHardening:
                 assert python_exe in captured_cmd
                 assert runtime_root in captured_cmd
                 assert "/opt" not in captured_cmd
-                assert "/bin" in captured_cmd
+                assert "/usr/bin" in captured_cmd
                 assert any(f"{runtime_root}/lib" in part for part in captured_cmd)
                 script = captured_cmd[captured_cmd.index("-c") + 1]
                 assert "unset LD_LIBRARY_PATH" in script
                 assert "exec \"$_chroot\" \"$_jail\" /bin/sh" in script
+                assert '"$_ln" -sfn usr/bin "$_jail/bin"' in script
             finally:
                 backend.cleanup()
 
@@ -175,9 +179,8 @@ class TestLinuxNamespaceHardening:
             )
 
         paths = library_path.split(":")
-        assert paths[:2] == ["/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu"]
+        assert paths[0] == "/usr/lib/x86_64-linux-gnu"
         assert paths.index("/usr/lib/x86_64-linux-gnu") < paths.index("/usr/lib")
-        assert paths.index("/lib/x86_64-linux-gnu") < paths.index("/lib")
 
     def test_capabilities_include_root_jail_for_configured_python_runtime(self) -> None:
         config = SandboxConfig(
