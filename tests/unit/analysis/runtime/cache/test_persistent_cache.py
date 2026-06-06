@@ -63,25 +63,26 @@ class TestPersistentCache:
         signed_blob = CacheIntegrity(tmp_path / "cache.key").sign(key_str, raw_blob)
         now = time.time()
 
-        assert cache.conn is not None
-        cache.conn.execute(
-            """
-            INSERT INTO cache
-            (key, key_type, value_hash, value_blob, created_at,
-             accessed_at, access_count, dependencies)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-            """,
-            (
-                key_str,
-                key.key_type.name,
-                stable_digest_hex(raw_blob),
-                signed_blob,
-                now,
-                now,
-                "[]",
-            ),
-        )
-        cache.conn.commit()
+        with cache.lock:
+            assert cache.conn is not None
+            cache.conn.execute(
+                """
+                INSERT INTO cache
+                (key, key_type, value_hash, value_blob, created_at,
+                 accessed_at, access_count, dependencies)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    key_str,
+                    key.key_type.name,
+                    stable_digest_hex(raw_blob),
+                    signed_blob,
+                    now,
+                    now,
+                    "[]",
+                ),
+            )
+            cache.conn.commit()
 
         found, value = cache.lookup(key)
 
@@ -163,10 +164,15 @@ class TestPersistentCache:
         k2 = CacheKey(CacheKeyType.FUNCTION, "f2")
         cache.put(k1, 1)
         cache.put(k2, 2)
-        assert cache.conn is not None
-        cache.conn.execute("UPDATE cache SET accessed_at = ? WHERE key = ?", (1.0, k1.to_string()))
-        cache.conn.execute("UPDATE cache SET accessed_at = ? WHERE key = ?", (2.0, k2.to_string()))
-        cache.conn.commit()
+        with cache.lock:
+            assert cache.conn is not None
+            cache.conn.execute(
+                "UPDATE cache SET accessed_at = ? WHERE key = ?", (1.0, k1.to_string())
+            )
+            cache.conn.execute(
+                "UPDATE cache SET accessed_at = ? WHERE key = ?", (2.0, k2.to_string())
+            )
+            cache.conn.commit()
         assert cache.cleanup() == 1
         assert len(cache) == 1
         cache.close()
