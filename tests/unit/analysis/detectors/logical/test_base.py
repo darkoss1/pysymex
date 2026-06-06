@@ -12,8 +12,8 @@ from pysymex.analysis.detectors.logical.base import (
     LogicalContradictionDetector,
 )
 from pysymex.core.solver.unsat import UnsatCoreResult
-from pysymex.core.state import VMState
-from pysymex.core.types import SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 def MockInstr(
@@ -120,6 +120,30 @@ class TestLogicalContradictionDetector:
             return False
 
         issue = detector.check(state, instruction, _unknown_or_unsat)
+
+        assert issue is None
+
+    def test_audit_mode_treats_solver_callback_failure_as_inconclusive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A SAT callback failure must not become a logical-contradiction report."""
+
+        detector = LogicalContradictionDetector(report_infeasible_branches=True)
+        condition, condition_constraint = SymbolicValue.symbolic_bool("condition")
+        state = VMState(stack=[condition], path_constraints=[condition_constraint], pc=10)
+        instruction = MockInstr("POP_JUMP_IF_TRUE", argval=2, offset=10)
+
+        def _solver_failure(_constraints: list[z3.BoolRef]) -> bool:
+            raise z3.Z3Exception("solver unavailable")
+
+        def _extract_core(_constraints: list[z3.BoolRef]) -> UnsatCoreResult:
+            raise AssertionError("inconclusive callback failures must not extract cores")
+
+        monkeypatch.setattr(
+            "pysymex.analysis.detectors.logical.base.extract_unsat_core", _extract_core
+        )
+
+        issue = detector.check(state, instruction, _solver_failure)
 
         assert issue is None
 

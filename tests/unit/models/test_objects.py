@@ -65,6 +65,18 @@ class TestSymbolicClass:
         assert cls.get_method("missing") is None
         assert cls.get_attribute("missing") is None
 
+    def test_abstract_methods_are_resolved_by_concrete_override(self) -> None:
+        """Inherited abstract methods block only subclasses without an override."""
+        base = objects.SymbolicClass(name="Base")
+        base.add_method("run", method_type=objects.MethodType.ABSTRACT)
+        incomplete = objects.SymbolicClass(name="Incomplete", bases=[base])
+        concrete = objects.SymbolicClass(name="Concrete", bases=[base])
+        concrete.add_method("run")
+
+        assert base.is_abstract is True
+        assert incomplete.is_abstract is True
+        assert concrete.is_abstract is False
+
 
 class TestSymbolicInstance:
     """Test suite for pysymex.models.objects.SymbolicInstance."""

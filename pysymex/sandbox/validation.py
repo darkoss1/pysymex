@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -27,15 +27,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from pysymex._constants import (
-    FORBIDDEN_PATH_PATTERNS,
-    MAX_DEPTH,
-    MAX_FILE_SIZE,
-    MAX_ITERATIONS,
-    MAX_PATHS,
-    MAX_TIMEOUT,
+from typing import Final
+
+from pysymex.config.defaults import (
+    DEFAULT_LIMIT_MAX_DEPTH,
+    DEFAULT_LIMIT_MAX_ITERATIONS,
+    DEFAULT_LIMIT_MAX_PATHS,
+    DEFAULT_LIMIT_TIMEOUT_SECONDS,
 )
-from pysymex.sandbox.execution import ResourceLimitError, SecurityError
+from pysymex.sandbox.errors import ResourceLimitError, SecurityError
+
+MAX_PATHS: Final[int] = 100_000
+MAX_DEPTH: Final[int] = 1_000
+MAX_ITERATIONS: Final[int] = 1_000_000
+MAX_TIMEOUT: Final[float] = 3_600.0
+MAX_FILE_SIZE: Final[int] = 10 * 1024 * 1024
+
+FORBIDDEN_PATH_PATTERNS: Final[tuple[str, ...]] = (
+    "..",
+    "~",
+    "\\\\",
+)
 
 
 class PathTraversalError(SecurityError):
@@ -132,10 +144,10 @@ def validate_bounds(
 
 
 def validate_config(
-    max_paths: int = 1000,
-    max_depth: int = 100,
-    max_iterations: int = 10000,
-    timeout: float = 60.0,
+    max_paths: int = DEFAULT_LIMIT_MAX_PATHS,
+    max_depth: int = DEFAULT_LIMIT_MAX_DEPTH,
+    max_iterations: int = DEFAULT_LIMIT_MAX_ITERATIONS,
+    timeout: float = DEFAULT_LIMIT_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     """Validate execution configuration parameters."""
     return {

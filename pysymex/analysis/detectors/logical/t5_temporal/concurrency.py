@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Concurrency Contradiction logic rule.
+
+This module implements the concurrency contradiction logic rule (Tier 5), which detects
+contradictions in constraints involving lock acquisition, thread states, atomic execution,
+or race condition signals.
+
+Bug Class Detected:
+    Logical contradiction (concurrency contradiction).
+
+Required Evidence:
+    An unsatisfiable core containing contradictory boolean assignments or inconsistent comparisons
+    on lock- or thread-related variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     extract_bool_assignments,
@@ -25,10 +42,33 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class ConcurrencyContradictionRule(LogicRule):
+    """Logic rule for detecting concurrency contradictions.
+
+    This rule checks the unsatisfiable core for conflicting assignments or relational
+    inconsistencies on variables representing locks, mutexes, threads, or atomic regions.
+
+    Bug Class Detected:
+        Logical contradiction (concurrency contradiction).
+
+    Required Evidence:
+        ContradictionContext with contradictory constraints on lock/thread variables.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "Concurrency Contradiction"
     tier = 5
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains a concurrency contradiction.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if a concurrency contradiction is detected, False otherwise.
+        """
         names = get_variable_names_all(ctx.core)
         lower_names = {n.lower() for n in names}
         has_concurrency_signal = any(

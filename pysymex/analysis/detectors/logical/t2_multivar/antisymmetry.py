@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,15 +16,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Antisymmetry violation logical contradiction rule.
+
+Detects contradictions where relational comparisons between multiple variables violate
+antisymmetric properties (e.g. x > y and y > x, or x == y and x != y).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import count_variables, extract_var_var_comparisons
 
 
 class AntisymmetryRule(LogicRule):
+    """Rule that matches contradictions violating antisymmetric relational properties."""
+
     name = "Antisymmetry Violation"
     tier = 2
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents an antisymmetry violation.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains at least 2 variables and their comparative relations
+            are mutually exclusive, otherwise False.
+        """
         if count_variables(ctx.core) < 2:
             return False
 

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from pysymex._constants import MAX_FILE_SIZE
-from pysymex.sandbox.execution import ResourceLimitError, SecurityError
+from pysymex.sandbox.validation import MAX_FILE_SIZE
+from pysymex.sandbox.errors import ResourceLimitError, SecurityError
 from pysymex.sandbox.validation import (
     PathTraversalError,
     SecurityConfig,

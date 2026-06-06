@@ -5,7 +5,7 @@ from __future__ import annotations
 import dis
 import z3
 from pysymex.analysis.detectors.specialized.format_string import FormatStringDetector
-from pysymex.core.state import VMState
+from pysymex.core.state.record import VMState
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:

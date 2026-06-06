@@ -1,29 +1,23 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
+import pysymex.models.numeric as numeric
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue, SymbolicString
-from pysymex.core.types.scalars import SymbolicList
-
-
-def _load_numeric_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[3] / "pysymex" / "models" / "numeric.py"
-    spec = importlib.util.spec_from_file_location("pysymex_models_numeric", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load numeric models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-numeric = _load_numeric_models()
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.sequences import SymbolicTuple
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.base import is_raised_exception_effect
 
 
 def _state() -> VMState:
     return VMState(pc=0)
+
+
+def _assert_type_error(result: object) -> None:
+    effect = getattr(result, "side_effects", {}).get("raised_exception")
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
 
 
 class TestIntBitLengthModel:
@@ -31,7 +25,7 @@ class TestIntBitLengthModel:
 
     def test_faithfulness(self) -> None:
         result = numeric.IntBitLengthModel().apply([], {}, _state())
-        assert result.value == 0
+        _assert_type_error(result)
 
     def test_error_path(self) -> None:
         result = numeric.IntBitLengthModel().apply([1], {}, _state())
@@ -51,7 +45,7 @@ class TestIntBitCountModel:
 
     def test_faithfulness(self) -> None:
         result = numeric.IntBitCountModel().apply([], {}, _state())
-        assert result.value == 0
+        _assert_type_error(result)
 
     def test_error_path(self) -> None:
         result = numeric.IntBitCountModel().apply([1], {}, _state())
@@ -77,7 +71,7 @@ class TestIntToBytesModel:
 
     def test_error_path(self) -> None:
         result = numeric.IntToBytesModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicList)
+        _assert_type_error(result)
 
 
 class TestIntFromBytesModel:
@@ -89,7 +83,7 @@ class TestIntFromBytesModel:
 
     def test_error_path(self) -> None:
         result = numeric.IntFromBytesModel().apply([], {}, _state())
-        assert result.value == 0
+        _assert_type_error(result)
 
 
 class TestIntAsIntegerRatioModel:
@@ -97,11 +91,11 @@ class TestIntAsIntegerRatioModel:
 
     def test_faithfulness(self) -> None:
         result = numeric.IntAsIntegerRatioModel().apply([1], {}, _state())
-        assert isinstance(result.value, SymbolicList)
+        assert isinstance(result.value, SymbolicTuple)
 
     def test_error_path(self) -> None:
         result = numeric.IntAsIntegerRatioModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicList)
+        _assert_type_error(result)
 
 
 class TestIntConjugateModel:
@@ -113,7 +107,7 @@ class TestIntConjugateModel:
 
     def test_error_path(self) -> None:
         result = numeric.IntConjugateModel().apply([], {}, _state())
-        assert result.value == 0
+        _assert_type_error(result)
 
 
 class TestFloatIsIntegerModel:
@@ -121,7 +115,7 @@ class TestFloatIsIntegerModel:
 
     def test_faithfulness(self) -> None:
         result = numeric.FloatIsIntegerModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicValue)
+        _assert_type_error(result)
 
     def test_error_path(self) -> None:
         result = numeric.FloatIsIntegerModel().apply([1.0], {}, _state())
@@ -133,11 +127,11 @@ class TestFloatAsIntegerRatioModel:
 
     def test_faithfulness(self) -> None:
         result = numeric.FloatAsIntegerRatioModel().apply([1.0], {}, _state())
-        assert isinstance(result.value, SymbolicList)
+        assert isinstance(result.value, SymbolicTuple)
 
     def test_error_path(self) -> None:
         result = numeric.FloatAsIntegerRatioModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicList)
+        _assert_type_error(result)
 
 
 class TestFloatHexModel:
@@ -149,7 +143,7 @@ class TestFloatHexModel:
 
     def test_error_path(self) -> None:
         result = numeric.FloatHexModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicString)
+        _assert_type_error(result)
 
 
 class TestFloatFromhexModel:
@@ -161,7 +155,7 @@ class TestFloatFromhexModel:
 
     def test_error_path(self) -> None:
         result = numeric.FloatFromhexModel().apply([], {}, _state())
-        assert isinstance(result.value, SymbolicValue)
+        _assert_type_error(result)
 
 
 class TestFloatConjugateModel:
@@ -173,7 +167,7 @@ class TestFloatConjugateModel:
 
     def test_error_path(self) -> None:
         result = numeric.FloatConjugateModel().apply([], {}, _state())
-        assert result.value == 0.0
+        _assert_type_error(result)
 
 
 class TestIntNumeratorModel:

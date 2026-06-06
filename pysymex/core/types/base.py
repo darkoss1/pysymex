@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,11 +16,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Base types for the symbolic type system.
+"""Shared base protocol and ``None`` value for symbolic type representations.
 
-Provides the ``TypeTag`` enum, name-generation utilities, and the
-``SymbolicType`` abstract base class that every symbolic type inherits.
-Also defines ``SymbolicNoneType`` and the global ``SYMBOLIC_NONE`` singleton.
+This module owns common symbolic-value hooks and context-bound fresh-name
+allocation used by concrete and union-like symbolic implementations.
 """
 
 from __future__ import annotations
@@ -33,9 +32,10 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import z3
 
 from pysymex.core.constants import Z3_FALSE, Z3_TRUE
+from pysymex.core.z3_utils import safe_z3_eq as safe_z3_eq
 
 if TYPE_CHECKING:
-    from pysymex.core.types.scalars import AnySymbolic
+    from pysymex.core.types.scalars.values import AnySymbolic
 
 
 class TypeTag(Enum):
@@ -58,45 +58,42 @@ class TypeTag(Enum):
 
 @runtime_checkable
 class _SupportsIsNone(Protocol):
+    """Expose a symbolic predicate for membership in the ``None`` type."""
+
     @property
-    def is_none(self) -> z3.BoolRef: ...
+    def is_none(self) -> z3.BoolRef:
+        """Return the expression indicating whether this value is ``None``."""
+        ...
 
 
 def _next_address() -> int:
     """Resolve the shared address counter lazily to avoid import cycles."""
-    from pysymex.core.memory.addressing import next_address
+    from pysymex.core.identity.addressing import next_address
 
     return next_address()
 
 
 def fresh_name(prefix: str) -> str:
-    """Generate a unique name for a symbolic variable.
+    """Return the next context-bound generated name for ``prefix``.
 
-    Delegates to :func:`pysymex.core.memory.addressing.next_address` which
-    uses a ``contextvars.ContextVar`` counter, giving each async session its
-    own isolated namespace and eliminating cross-session Z3 variable collisions.
+    Notes:
+        The counter is stored through
+        :func:`pysymex.core.identity.addressing.next_address`. Distinct contexts
+        may use independent counters when established or reset separately;
+        this function alone does not guarantee cross-context uniqueness.
     """
     return f"{prefix}_{_next_address()}"
 
 
-def reset_counters() -> None:
-    """Reset name counters (for testing).
-
-    Delegates to :func:`pysymex.core.memory.addressing.reset` so the
-    counter restart is scoped to the current execution context.
-    """
-    from pysymex.core.memory.addressing import reset
-
-    reset()
-
-
 class SymbolicType(ABC):
-    """Abstract base class for all symbolic types.
-    Every symbolic type must:
-    1. Have a type tag for runtime dispatch
-    2. Convert to a Z3 expression
-    3. Define truthiness semantics
-    4. Support equality comparison
+    """Interface implemented by symbolic values used by execution.
+
+    Concrete subclasses provide a primary Z3 expression and truthiness
+    behavior; equality helpers build Z3 predicates over those representations.
+
+    Limitations:
+        A primary expression or structural hash does not represent every
+        semantic field carried by richer symbolic subclasses.
     """
 
     @property
@@ -130,11 +127,11 @@ class SymbolicType(ABC):
         return self.is_falsy()
 
     def hash_value(self) -> int:
-        """Stable content hash used by VM state deduplication."""
+        """Return the primary-expression structural hash used in state summaries."""
         return self.to_z3().hash()
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
-        """Z3 equality expression."""
+        """Return equality of primary Z3 expressions with mismatched sorts rejected."""
         self_expr = self.to_z3()
         other_expr = other.to_z3()
         if self_expr.sort() != other_expr.sort():
@@ -142,20 +139,24 @@ class SymbolicType(ABC):
         return self_expr == other_expr
 
     def __repr__(self) -> str:
+        """Return a diagnostic representation containing type and name."""
         return f"{self.__class__.__name__}({self.name})"
 
 
 @dataclass(slots=True)
 class SymbolicNoneType(SymbolicType):
-    """Symbolic representation of Python None.
-    None is a singleton - all None values are equal.
-    Always falsy.
+    """Symbolic representation of Python's singleton ``None`` value.
+
+    Every instance is falsy and compares symbolically equal to another
+    ``SymbolicNoneType``. Equality against union-like values delegates to
+    their ``is_none`` discriminator when exposed.
     """
 
     _name: str = "None"
     _h_active: bool = field(default=False)
 
     def __post_init__(self) -> None:
+        """Bound diagnostic names and retain self/cls affinity metadata."""
         if self._name:
             if len(self._name) > 256:
                 self._name = self._name[:128] + "..." + self._name[-125:]
@@ -170,18 +171,23 @@ class SymbolicNoneType(SymbolicType):
 
     @property
     def name(self) -> str:
+        """Return the diagnostic name for the modeled ``None`` value."""
         return self._name
 
     def to_z3(self) -> z3.ExprRef:
+        """Return the constant false primary expression for ``None``."""
         return Z3_FALSE
 
     def is_truthy(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is never truthy."""
         return Z3_FALSE
 
     def is_falsy(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is always falsy."""
         return Z3_TRUE
 
     def symbolic_eq(self, other: SymbolicType) -> z3.BoolRef:
+        """Return equality with ``None`` carriers or a provided ``is_none`` predicate."""
         if isinstance(other, SymbolicNoneType):
             return Z3_TRUE
         if isinstance(other, _SupportsIsNone):
@@ -189,68 +195,65 @@ class SymbolicNoneType(SymbolicType):
         return Z3_FALSE
 
     def hash_value(self) -> int:
+        """Return the stable structural hash for the modeled singleton value."""
         return hash("SymbolicNone")
 
     def conditional_merge(self, other: AnySymbolic, condition: z3.BoolRef) -> AnySymbolic:
-        """Merge with another value based on a condition."""
+        """Return ``None`` unchanged or delegate heterogeneous merging to ``SymbolicValue``."""
         if isinstance(other, SymbolicNoneType):
             return self
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types.scalars.values import SymbolicValue
 
         return SymbolicValue.from_specialized(self).conditional_merge(other, condition)
 
     @property
     def is_int(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not an integer."""
         return Z3_FALSE
 
     @property
     def is_bool(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a Boolean."""
         return Z3_FALSE
 
     @property
     def is_float(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a float."""
         return Z3_FALSE
 
     @property
     def is_str(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a string."""
         return Z3_FALSE
 
     @property
     def is_none(self) -> z3.BoolRef:
+        """Return the invariant that this carrier represents ``None``."""
         return Z3_TRUE
 
     @property
     def is_path(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a path value."""
         return Z3_FALSE
 
     @property
     def is_obj(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a modeled object."""
         return Z3_FALSE
 
     @property
     def is_list(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a list."""
         return Z3_FALSE
 
     @property
     def is_dict(self) -> z3.BoolRef:
+        """Return the invariant that ``None`` is not a dictionary."""
         return Z3_FALSE
 
     def __repr__(self) -> str:
+        """Return the stable diagnostic representation for ``None``."""
         return "SymbolicNone()"
 
 
 SYMBOLIC_NONE = SymbolicNoneType()
-
-
-def safe_z3_eq(a: object, b: object) -> bool:
-    """Return True if two Z3 expressions are structurally and contextually identical."""
-    if a is b:
-        return True
-    if not isinstance(a, z3.ExprRef) or not isinstance(b, z3.ExprRef):
-        return False
-    if a.ctx is not b.ctx:
-        return False
-    try:
-        return bool(z3.eq(a, b))
-    except z3.Z3Exception:
-        return False

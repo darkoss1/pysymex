@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pysymex"
-version = "0.1.0a5"
+version = "0.1.1a0"
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -35,10 +35,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "z3-solver==4.15.3.0",          # 4.15.4+ and 4.16 have documented perf regressions
+    "z3-solver==4.16.0.0",          # validated with solver tests and benchmarks
     "pydantic>=2.12.0,<3.0",        # tightened from 2.10.0 to match actual installed version
     "immutables==0.21",              # 0.21 adds Python 3.13 pre-built wheels
-    "rich>=13.0.0",                  # runtime dep — used in cli/scan.py and reporting/formatters.py
+    "rich>=13.0.0",                  # runtime dep - used in cli/scan.py and reporting/formatters.py
+    "psutil>=7.2.2",                 # runtime dep - used by stats collectors
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,8 @@ packages = ["pysymex"]
 include = ["/pysymex"]
 
 
+# `uv sync` creates `.venv` with activation prompt `[project].name` ("pysymex").
+# Prefer `uv sync` over bare `uv venv` for first-time environment setup.
 [tool.uv]
 default-groups = ["dev"]
 
@@ -93,7 +96,6 @@ dev = [
     "memray>=1.19.0; sys_platform != 'win32'",
     "scalene>=1.5; sys_platform != 'win32'",
     "py-spy>=0.4.2",
-    "psutil>=7.2.2",
     "viztracer>=1.1.0",
     "bytecode>=0.15",
     "xdis>=6.3.0",
@@ -106,12 +108,13 @@ dev = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+cache_dir = ".pytest_runtime/cache"
 norecursedirs = [
     ".hypothesis", ".pytest_runtime", "_tmp_rt_*", "__pycache__",
     ".git", ".venv", "tests_backup", "benchmarks", "docs",
     "docker", "examples", "scripts",
 ]
-addopts = "-v --tb=short -n auto --import-mode=importlib --durations=25 --durations-min=2.0"
+addopts = "-v --tb=short -n auto --import-mode=importlib --basetemp=.pytest_runtime/tmp --benchmark-disable --durations=25 --durations-min=2.0"
 asyncio_mode = "auto"
 timeout = 120
 timeout_method = "thread"
@@ -145,7 +148,93 @@ line-ending = "auto"
 include = ["pysymex", "tests"]
 stubPath = "typings"
 typeCheckingMode = "strict"
+reportMissingModuleSource = "none"
 exclude = ["scripts", "examples", "benchmarks", "docs", "docker"]
+
+
+[tool.importlinter]
+root_packages = ["pysymex"]
+exclude_type_checking_imports = true
+
+[tool.deptry]
+per_rule_ignores = { DEP002 = ["wasmtime"] }
+
+[[tool.importlinter.contracts]]
+id = "sandbox-isolation-private"
+name = "Sandbox isolation internals stay behind sandbox package"
+type = "forbidden"
+source_modules = [
+    "pysymex.analysis",
+    "pysymex.api",
+    "pysymex.cli",
+    "pysymex.core",
+    "pysymex.execution",
+    "pysymex.models",
+    "pysymex.reporting",
+    "pysymex.scanner",
+]
+forbidden_modules = ["pysymex.sandbox.isolation"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "core-foundation-no-upper-layers"
+name = "Core foundation does not depend on analysis, contracts, execution, models, sandbox, scanner, API, CLI, or reporting"
+type = "forbidden"
+source_modules = ["pysymex.core"]
+forbidden_modules = [
+    "pysymex.analysis",
+    "pysymex.api",
+    "pysymex.cli",
+    "pysymex.contracts",
+    "pysymex.execution",
+    "pysymex.models",
+    "pysymex.reporting",
+    "pysymex.sandbox",
+    "pysymex.scanner",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "runtime-layers-no-presentation-or-api"
+name = "Runtime layers do not depend on API, CLI, or reporting"
+type = "forbidden"
+source_modules = [
+    "pysymex.analysis",
+    "pysymex.execution",
+    "pysymex.models",
+    "pysymex.sandbox",
+]
+forbidden_modules = [
+    "pysymex.api",
+    "pysymex.cli",
+    "pysymex.reporting",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "analysis-does-not-import-execution"
+name = "Analysis produces detector and static facts without importing execution runtime"
+type = "forbidden"
+source_modules = ["pysymex.analysis"]
+forbidden_modules = ["pysymex.execution"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "scanner-core-no-cli"
+name = "Scanner core does not depend on CLI presentation"
+type = "forbidden"
+source_modules = [
+    "pysymex.scanner.async_scanner",
+    "pysymex.scanner.directory",
+    "pysymex.scanner.file",
+    "pysymex.scanner.session",
+    "pysymex.scanner.summary",
+    "pysymex.scanner.symbolic_vars",
+    "pysymex.scanner.types",
+    "pysymex.scanner.workers",
+]
+forbidden_modules = ["pysymex.cli"]
+allow_indirect_imports = true
 
 
 [tool.coverage.run]

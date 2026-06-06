@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Base interfaces for metrics collection.
+
+Defines the abstract base class for processing event batches and exporting
+the aggregated statistics to sinks.
+"""
+
 from __future__ import annotations
 
 import abc
@@ -25,6 +31,9 @@ from ..types import Event
 
 class MetricCollector(abc.ABC):
     """Base interface for all Metric Collectors."""
+
+    def reset(self) -> None:
+        """Reset per-run collector state before a new stats collection starts."""
 
     @abc.abstractmethod
     def process(self, events: list[Event]) -> None:

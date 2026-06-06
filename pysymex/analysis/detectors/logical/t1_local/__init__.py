@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,13 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tier 1 Local Logical Contradiction Rules.
+
+Contains logic rules checking for contradictions scoped to a single variable,
+such as range, parity, modular, self-contradiction, arithmetic, equality,
+and complement contradictions.
+"""
 
 from .range import RangeContradictionRule
 from .parity import ParityContradictionRule

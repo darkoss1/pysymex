@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,12 +16,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Stable re-exports for shared common opcode helpers.
+
+Surfaces builtin-type metadata and numeric opcode utilities consumed by
+version-specific opcode packages. Does not register handlers or own VM
+dispatch; see :mod:`pysymex.execution.opcodes` for opcode routing.
+"""
+
 from __future__ import annotations
 
 from .builtin_types import BUILTIN_TYPES
-from .numeric import (
+from .numeric.helpers import (
     check_division_by_zero,
     check_negative_shift,
+)
+from .numeric.ops import (
     handle_numeric_binary_op,
     handle_unary_invert,
 )

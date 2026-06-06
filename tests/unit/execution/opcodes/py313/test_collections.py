@@ -4,10 +4,13 @@ import dis
 
 import z3
 
-from pysymex.core.state import VMState
-from pysymex.core.types.containers import SymbolicDict, SymbolicList, SymbolicObject
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.dicts import SymbolicDict
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py313 import collections
 
 
@@ -172,7 +175,7 @@ def test_handle_binary_subscr() -> None:
 
 def test_handle_store_subscr() -> None:
     """Test handle_store_subscr behavior."""
-    state = VMState(stack=[1, None, 0], pc=0)
+    state = VMState(stack=[2, [1], 0], pc=0)
     result = collections.handle_store_subscr(_instr("STORE_SUBSCR"), state, OpcodeDispatcher())
     assert result.terminal is False
     assert len(result.issues) == 0
@@ -194,7 +197,7 @@ def test_handle_binary_slice() -> None:
 
 def test_handle_store_slice() -> None:
     """Test handle_store_slice behavior."""
-    state = VMState(stack=[[], 0, 1, [9]], pc=0)
+    state = VMState(stack=[[9], [], 0, 1], pc=0)
     result = collections.handle_store_slice(_instr("STORE_SLICE"), state, OpcodeDispatcher())
     assert result.new_states[0].pc == 1
 

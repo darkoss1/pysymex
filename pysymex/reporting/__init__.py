@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -24,30 +24,34 @@ Lazy-loaded: symbols are resolved on first access via ``__getattr__``.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
     from pysymex.reporting.formatters import (
-        Formatter as Formatter,
-        HTMLFormatter as HTMLFormatter,
-        JSONFormatter as JSONFormatter,
-        MarkdownFormatter as MarkdownFormatter,
-        TextFormatter as TextFormatter,
-        format_result as format_result,
+        Formatter,
+        HTMLFormatter,
+        JSONFormatter,
+        MarkdownFormatter,
+        TextFormatter,
+        format_result,
     )
-    from pysymex.reporting.html import (
-        AnalysisReport as AnalysisReport,
-        IssueReport as IssueReport,
-        create_report_from_result as create_report_from_result,
-        generate_html_report as generate_html_report,
-        save_html_report as save_html_report,
+    from pysymex.reporting.html.conversion import (
+        create_report_from_result,
+        save_html_report,
+    )
+    from pysymex.reporting.html.models import (
+        AnalysisReport,
+        IssueReport,
+    )
+    from pysymex.reporting.html.rendering import (
+        generate_html_report,
     )
     from pysymex.reporting.sarif import (
-        SECURITY_RULES as SECURITY_RULES,
-        SARIFGenerator as SARIFGenerator,
-        SARIFLog as SARIFLog,
-        SARIFResult as SARIFResult,
-        generate_sarif as generate_sarif,
+        SECURITY_RULES,
+        SARIFGenerator,
+        SARIFLog,
+        SARIFResult,
+        generate_sarif,
     )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
@@ -57,11 +61,14 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "MarkdownFormatter": ("pysymex.reporting.formatters", "MarkdownFormatter"),
     "TextFormatter": ("pysymex.reporting.formatters", "TextFormatter"),
     "format_result": ("pysymex.reporting.formatters", "format_result"),
-    "AnalysisReport": ("pysymex.reporting.html", "AnalysisReport"),
-    "IssueReport": ("pysymex.reporting.html", "IssueReport"),
-    "create_report_from_result": ("pysymex.reporting.html", "create_report_from_result"),
-    "generate_html_report": ("pysymex.reporting.html", "generate_html_report"),
-    "save_html_report": ("pysymex.reporting.html", "save_html_report"),
+    "AnalysisReport": ("pysymex.reporting.html.models", "AnalysisReport"),
+    "IssueReport": ("pysymex.reporting.html.models", "IssueReport"),
+    "create_report_from_result": (
+        "pysymex.reporting.html.conversion",
+        "create_report_from_result",
+    ),
+    "generate_html_report": ("pysymex.reporting.html.rendering", "generate_html_report"),
+    "save_html_report": ("pysymex.reporting.html.conversion", "save_html_report"),
     "SECURITY_RULES": ("pysymex.reporting.sarif", "SECURITY_RULES"),
     "SARIFGenerator": ("pysymex.reporting.sarif", "SARIFGenerator"),
     "SARIFLog": ("pysymex.reporting.sarif", "SARIFLog"),

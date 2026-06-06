@@ -35,14 +35,6 @@ def test_default_registry_excludes_runtime_unreachable_detector() -> None:
     assert "unreachable-code" not in available
 
 
-def test_default_registry_uses_canonical_detector_names() -> None:
-    """Default registry should avoid legacy enhanced detector names."""
-    available = default_registry.list_available()
-    assert "enhanced-index-error" not in available
-    assert "enhanced-type-error" not in available
-    assert "bounded-overflow" not in available
-
-
 def test_default_registry_excludes_logical_contradiction_detector() -> None:
     """Logical contradiction detector stays opt-in until precision is improved."""
     available = default_registry.list_available()

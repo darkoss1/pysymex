@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,9 +16,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Contract support for pysymex.
+"""Decorators, compilation, runtime checks, and offline verification for contracts.
 
-Provides the complete contract verification subsystem:
+User code attaches obligations with :mod:`pysymex.contracts.decorators`. The executor
+enforces them through :mod:`pysymex.contracts.runtime` (solver-backed path checks).
+:class:`~pysymex.contracts.verifier.ContractVerifier` provides the same encodings for
+standalone analysis. Does not own VM opcode dispatch (:mod:`pysymex.execution`).
+
+Public surface:
 
 **Decorators**::
 
@@ -34,7 +39,7 @@ Provides the complete contract verification subsystem:
 
     from pysymex.contracts import ContractCompiler, ContractVerifier
 
-**Quantifiers** (unchanged)::
+**Quantifiers**::
 
     from pysymex.contracts import forall, exists, exists_unique
 
@@ -45,7 +50,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex._lazy import lazy_getattr
+from pysymex.lazy import lazy_getattr
 
 from pysymex.contracts.compiler import And_, ContractCompiler, Implies_, Not_, Or_
 from pysymex.contracts.decorators import (
@@ -76,16 +81,22 @@ if TYPE_CHECKING:
     from pysymex.contracts.quantifiers import (
         BoundSpec,
         ConditionTranslator,
+        ConcreteRange,
         Quantifier,
         QuantifierInstantiator,
         QuantifierKind,
+        QuantifierLoweringError,
+        QuantifierLoweringPolicy,
         QuantifierParser,
         QuantifierVar,
         QuantifierVerifier,
         exists,
         exists_unique,
         extract_quantifiers,
+        find_quantifier_occurrences,
         forall,
+        lower_condition_quantifiers,
+        lower_quantifier,
         parse_condition_to_z3,
         replace_quantifiers_with_z3,
     )
@@ -94,16 +105,34 @@ if TYPE_CHECKING:
 _QUANTIFIER_EXPORTS: dict[str, tuple[str, str]] = {
     "BoundSpec": ("pysymex.contracts.quantifiers", "BoundSpec"),
     "ConditionTranslator": ("pysymex.contracts.quantifiers", "ConditionTranslator"),
+    "ConcreteRange": ("pysymex.contracts.quantifiers", "ConcreteRange"),
     "Quantifier": ("pysymex.contracts.quantifiers", "Quantifier"),
     "QuantifierInstantiator": ("pysymex.contracts.quantifiers", "QuantifierInstantiator"),
     "QuantifierKind": ("pysymex.contracts.quantifiers", "QuantifierKind"),
+    "QuantifierLoweringError": (
+        "pysymex.contracts.quantifiers",
+        "QuantifierLoweringError",
+    ),
+    "QuantifierLoweringPolicy": (
+        "pysymex.contracts.quantifiers",
+        "QuantifierLoweringPolicy",
+    ),
     "QuantifierParser": ("pysymex.contracts.quantifiers", "QuantifierParser"),
     "QuantifierVar": ("pysymex.contracts.quantifiers", "QuantifierVar"),
     "QuantifierVerifier": ("pysymex.contracts.quantifiers", "QuantifierVerifier"),
     "exists": ("pysymex.contracts.quantifiers", "exists"),
     "exists_unique": ("pysymex.contracts.quantifiers", "exists_unique"),
     "extract_quantifiers": ("pysymex.contracts.quantifiers", "extract_quantifiers"),
+    "find_quantifier_occurrences": (
+        "pysymex.contracts.quantifiers",
+        "find_quantifier_occurrences",
+    ),
     "forall": ("pysymex.contracts.quantifiers", "forall"),
+    "lower_condition_quantifiers": (
+        "pysymex.contracts.quantifiers",
+        "lower_condition_quantifiers",
+    ),
+    "lower_quantifier": ("pysymex.contracts.quantifiers", "lower_quantifier"),
     "parse_condition_to_z3": ("pysymex.contracts.quantifiers", "parse_condition_to_z3"),
     "replace_quantifiers_with_z3": (
         "pysymex.contracts.quantifiers",
@@ -128,6 +157,7 @@ __all__: list[str] = [
     "And_",
     "BoundSpec",
     "ConditionTranslator",
+    "ConcreteRange",
     "Contract",
     "ContractCompiler",
     "ContractKind",
@@ -143,6 +173,8 @@ __all__: list[str] = [
     "Quantifier",
     "QuantifierInstantiator",
     "QuantifierKind",
+    "QuantifierLoweringError",
+    "QuantifierLoweringPolicy",
     "QuantifierParser",
     "QuantifierVar",
     "QuantifierVerifier",
@@ -155,11 +187,14 @@ __all__: list[str] = [
     "exists",
     "exists_unique",
     "extract_quantifiers",
+    "find_quantifier_occurrences",
     "forall",
     "function_contracts",
     "get_function_contract",
     "invariant",
     "loop_invariant",
+    "lower_condition_quantifiers",
+    "lower_quantifier",
     "parse_condition_to_z3",
     "pure",
     "replace_quantifiers_with_z3",

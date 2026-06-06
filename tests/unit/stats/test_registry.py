@@ -10,6 +10,7 @@ from pysymex.stats.sinks.base import StatsSink
 from pysymex.stats.types import Event, EventType
 
 MetricValue = float | int | str
+pytestmark = pytest.mark.usefixtures("clean_registry")
 
 
 class MockCollector(MetricCollector):
@@ -40,44 +41,44 @@ def clean_registry() -> Generator[None]:
     """Reset the StatsRegistry singleton instance and stop any running thread before and after each test."""
 
     def cleanup() -> None:
-        with StatsRegistry._lock:  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-            if StatsRegistry._instance is not None:  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-                if StatsRegistry._instance._running:  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-                    StatsRegistry._instance.stop()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-                StatsRegistry._instance = None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        with StatsRegistry.lock:
+            if StatsRegistry.instance is not None:
+                if StatsRegistry.instance.running:
+                    StatsRegistry.instance.stop()
+                StatsRegistry.instance = None
 
     cleanup()
     yield
     cleanup()
 
 
-def test_singleton(clean_registry: None) -> None:
+def test_singleton() -> None:
     """Verify that multiple instantiations return the same object."""
     r1 = StatsRegistry()
     r2 = StatsRegistry()
     assert r1 is r2
 
 
-def test_register_collector_and_sink(clean_registry: None) -> None:
+def test_register_collector_and_sink() -> None:
     """Verify registration adds collectors and sinks and fetches initial metrics."""
     registry = StatsRegistry()
     collector = MockCollector()
     sink = MockSink()
 
     registry.register_collector(collector)
-    assert collector in registry._collectors  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-    assert registry._global_metrics["mock_metric"] == 42.0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert collector in registry.collectors
+    assert registry.global_metrics["mock_metric"] == 42.0
 
     registry.register_sink(sink)
-    assert sink in registry._sinks  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert sink in registry.sinks
 
 
-def test_emit(clean_registry: None) -> None:
+def test_emit() -> None:
     """Verify emit appends events to thread-local buffer."""
     registry = StatsRegistry()
     registry.emit(EventType.PATH_EXPLORED, 1.0, {"meta": "data"})
 
-    buffer = registry._get_buffer()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    buffer = registry.get_buffer()
     assert len(buffer) == 1
 
     event = buffer[0]
@@ -86,7 +87,33 @@ def test_emit(clean_registry: None) -> None:
     assert event.metadata == {"meta": "data"}
 
 
-def test_flush(clean_registry: None) -> None:
+def test_hot_solver_event_helper_noops_when_stats_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Solver hot-path telemetry should not allocate events unless stats is running."""
+    from pysymex.core.solver.engine import events as solver_events
+
+    registry = StatsRegistry()
+    monkeypatch.setattr(solver_events, "_stats_registry", registry)
+
+    solver_events.emit_event(EventType.SOLVER_QUERY, 1.0)
+
+    assert len(registry.get_buffer()) == 0
+
+
+def test_hot_executor_event_helper_noops_when_stats_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executor hot-path telemetry should not allocate path events unless stats is running."""
+    from pysymex.execution.executors.executor import events as executor_events
+
+    registry = StatsRegistry()
+    monkeypatch.setattr(executor_events, "_stats_registry", registry)
+
+    executor_events.emit_event(EventType.PATH_EXPLORED, 1.0)
+
+    assert len(registry.get_buffer()) == 0
+
+
+def test_flush() -> None:
     """Verify flush empties buffers and correctly delegates to collectors and sinks."""
     registry = StatsRegistry()
     collector = MockCollector()
@@ -102,7 +129,7 @@ def test_flush(clean_registry: None) -> None:
 
     registry.flush()
 
-    buffer = registry._get_buffer()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    buffer = registry.get_buffer()
     assert len(buffer) == 0
 
     assert len(collector.processed_events) == 2
@@ -112,7 +139,7 @@ def test_flush(clean_registry: None) -> None:
     assert sink_success.written_metrics["mock_metric"] == 42.0
 
 
-def test_start_stop(clean_registry: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify start initializes flusher thread and stop joins it and flushes one last time."""
     monkeypatch.setattr(os, "name", "posix")
     registry = StatsRegistry()
@@ -122,24 +149,22 @@ def test_start_stop(clean_registry: None, monkeypatch: pytest.MonkeyPatch) -> No
     registry.register_sink(sink)
 
     registry.start()
-    assert registry._running is True  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-    assert registry._flusher_thread is not None  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-    assert registry._flusher_thread.is_alive()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert registry.running is True
+    assert registry.flusher_thread is not None
+    assert registry.flusher_thread.is_alive()
 
     registry.emit(EventType.PATH_EXPLORED, 1.0)
 
-    flusher_thread = registry._flusher_thread  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    flusher_thread = registry.flusher_thread
     registry.stop()
-    assert registry._running is False  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-    assert not flusher_thread.is_alive()  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+    assert registry.running is False
+    assert not flusher_thread.is_alive()
 
     assert len(collector.processed_events) == 1
     assert sink.written_metrics["mock_metric"] == 42.0
 
 
-def test_windows_start_uses_inline_flush(
-    clean_registry: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_windows_start_uses_inline_flush(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify Windows stats stream without a parallel flusher thread."""
     monkeypatch.setattr(os, "name", "nt")
     registry = StatsRegistry()
@@ -149,8 +174,8 @@ def test_windows_start_uses_inline_flush(
     registry.register_sink(sink)
 
     registry.start()
-    assert registry._running is True  # type: ignore[reportPrivateUsage]  # white-box test validates Windows flusher policy
-    assert registry._flusher_thread is None  # type: ignore[reportPrivateUsage]  # white-box test validates Windows flusher policy
+    assert registry.running is True
+    assert registry.flusher_thread is None
 
     registry.emit(EventType.PATH_EXPLORED, 1.0)
 
@@ -159,7 +184,38 @@ def test_windows_start_uses_inline_flush(
     registry.stop()
 
 
-def test_multithreaded_emit(clean_registry: None) -> None:
+def test_start_clears_stale_buffers_and_resets_collectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify a stats run starts from a clean collection window."""
+    monkeypatch.setattr(os, "name", "nt")
+
+    class ResettableCollector(MockCollector):
+        def reset(self) -> None:
+            self.processed_events.clear()
+            self.metrics = {"mock_metric": 0.0}
+
+        def process(self, events: list[Event]) -> None:
+            super().process(events)
+            self.metrics = {"mock_metric": float(len(self.processed_events))}
+
+    registry = StatsRegistry()
+    collector = ResettableCollector()
+    registry.register_collector(collector)
+
+    registry.emit(EventType.PATH_EXPLORED, 99.0)
+    assert len(registry.get_buffer()) == 1
+
+    registry.start()
+    assert len(registry.get_buffer()) == 0
+    assert registry.global_metrics["mock_metric"] == 0.0
+
+    registry.emit(EventType.PATH_EXPLORED, 1.0)
+    registry.stop()
+
+    assert [event.value for event in collector.processed_events] == [1.0]
+    assert registry.global_metrics["mock_metric"] == 1.0
+
+
+def test_multithreaded_emit() -> None:
     """Verify thread-safety of emit across multiple threads without lock contention."""
     registry = StatsRegistry()
     collector = MockCollector()

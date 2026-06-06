@@ -3,7 +3,7 @@
 import dis
 import z3
 from pysymex.analysis.detectors.logical.base import ContradictionContext
-from pysymex.analysis.detectors.logical.t2_multivar.gcd_impossibility import GcdImpossibilityRule
+from pysymex.analysis.detectors.logical.t2_multivar.impossibility.gcd import GcdImpossibilityRule
 
 
 def MockInstr(

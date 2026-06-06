@@ -105,6 +105,13 @@ class TestFunctionContract:
         fc = FunctionContract(function_name="foo")
         fc.set_assigns(frozenset({"x"}))
         assert fc.assigns_set == frozenset({"x"})
+        assert fc.assigns_declared is True
+
+    def test_set_empty_assigns_remains_explicit(self) -> None:
+        fc = FunctionContract(function_name="foo")
+        fc.set_assigns(frozenset())
+
+        assert fc.assigns_declared is True
 
     def test_set_pure(self) -> None:
         """Verify setting pure effect type."""

@@ -1,0 +1,73 @@
+"""Shared argparse defaults for tracing analyzer pipeline tests."""
+
+from __future__ import annotations
+
+import argparse
+
+
+def make_pipeline_args(**overrides: object) -> argparse.Namespace:
+    """Build a CLI-args namespace with every pipeline option defaulted."""
+    values: dict[str, object] = {
+        "event_type": None,
+        "seq": None,
+        "seq_range": None,
+        "path_id": None,
+        "path_id_list": None,
+        "pc": None,
+        "pc_range": None,
+        "opcode": None,
+        "source_line": None,
+        "step_latency_min": None,
+        "step_latency_max": None,
+        "has_stack_push": False,
+        "has_stack_pop": False,
+        "has_var_modified": False,
+        "var_modified_name": None,
+        "has_var_added": False,
+        "var_added_name": None,
+        "has_var_removed": False,
+        "var_removed_name": None,
+        "has_mem_write": False,
+        "has_constraint_added": False,
+        "constraint_causality_contains": None,
+        "trigger": None,
+        "depth": None,
+        "depth_min": None,
+        "depth_max": None,
+        "parent_path_id": None,
+        "has_child_fork": False,
+        "prune_reason": None,
+        "stack_contains": None,
+        "local_var_name": None,
+        "global_var_name": None,
+        "constraint_smtlib_contains": None,
+        "num_path_constraints_min": None,
+        "num_path_constraints_max": None,
+        "solve_result": None,
+        "cache_hit": False,
+        "cache_miss": False,
+        "solver_latency_min": None,
+        "solver_latency_max": None,
+        "num_constraints_min": None,
+        "num_constraints_max": None,
+        "has_model_excerpt": False,
+        "model_var_name": None,
+        "severity": None,
+        "detector": None,
+        "issue_kind": None,
+        "message_contains": None,
+        "has_z3_model": False,
+        "z3_model_var": None,
+        "issue_source_line": None,
+        "confidence": None,
+        "constraint_at_issue_contains": None,
+        "function_name": None,
+        "source_file": None,
+        "pysymex_version": None,
+        "z3_version": None,
+        "touches_var": None,
+        "constraint_contains": None,
+        "any_field_contains": None,
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)

@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import dis
+import types
+from typing import cast
 
 import z3
 
-from pysymex._typing import StackValue
-from pysymex.analysis.detectors.base import IssueKind
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicString, SymbolicValue
-from pysymex.core.types.containers import SymbolicObject
-from pysymex.execution.dispatcher import OpcodeDispatcher, OpcodeResult
+from pysymex.typing import StackValue
+from pysymex.analysis.detectors.detector.types import IssueKind
+from pysymex.core.state.record import VMState
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from pysymex.execution.dispatch.result import OpcodeResult
+from pysymex.execution.calls.model_dispatch import apply_model
 from pysymex.execution.opcodes.py313 import functions
+from pysymex.execution.calls.payload import function_payload
 
 
 def _has_issue_kind(result: OpcodeResult | None, kind: IssueKind) -> bool:
@@ -25,7 +32,7 @@ def _apply_model_for_test(
     args: list[StackValue],
     kwargs: dict[str, StackValue],
 ) -> OpcodeResult | None:
-    raw: object = functions._apply_model(state, func_obj, args, kwargs)  # type: ignore[reportPrivateUsage]  # White-box opcode test validates private model-integration contract.
+    raw: object = apply_model(state, func_obj, args, kwargs)
     assert raw is None or isinstance(raw, OpcodeResult)
     return raw
 
@@ -39,16 +46,16 @@ def test_handle_call() -> None:
     """Test handle_call behavior."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = functions.handle_call(_instr("CALL", 0), state, OpcodeDispatcher())
-    assert result.terminal is False
-    assert len(result.issues) == 0
+    assert result.terminal is True
+    assert [issue.kind for issue in result.issues] == [IssueKind.TYPE_ERROR]
 
 
-def test_handle_load_method() -> None:
-    """Test handle_load_method behavior."""
+def test_handle_load_method_reports_none_receiver() -> None:
+    """LOAD_METHOD on None reports a feasible null dereference."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = functions.handle_load_method(_instr("LOAD_METHOD", "x"), state, OpcodeDispatcher())
-    assert result.terminal is False
-    assert len(result.issues) == 0
+    assert result.terminal is True
+    assert [issue.kind for issue in result.issues] == [IssueKind.NULL_DEREFERENCE]
 
 
 def test_handle_store_attr() -> None:
@@ -132,7 +139,78 @@ def test_handle_set_function_attribute() -> None:
     functions.handle_set_function_attribute(
         _instr("SET_FUNCTION_ATTRIBUTE"), state, OpcodeDispatcher()
     )
-    assert state.peek() == "attr"
+    assert state.peek() == "func"
+
+
+def test_handle_set_function_attribute_attaches_closure_to_symbolic_function() -> None:
+    """Python 3.13 closure attributes should stay attached to the function object."""
+
+    def outer() -> object:
+        value = 0
+
+        def inner() -> int:
+            return value
+
+        return inner
+
+    inner_func = outer()
+    assert isinstance(inner_func, types.FunctionType)
+    inner_code = inner_func.__code__
+    state = VMState(stack=[cast("StackValue", inner_code)], pc=0)
+    functions.handle_make_function(_instr("MAKE_FUNCTION", 0), state, OpcodeDispatcher())
+    func_obj = state.pop()
+    cell = SymbolicObject("cell_value", 101, z3.IntVal(101), {101})
+    state.stack.extend([(cell,), func_obj])
+
+    functions.handle_set_function_attribute(
+        _instr("SET_FUNCTION_ATTRIBUTE", 8), state, OpcodeDispatcher()
+    )
+
+    attached = state.peek()
+    assert isinstance(attached, SymbolicValue)
+    payload = function_payload(getattr(attached, "_modeled_object", None))
+    assert payload is not None
+    assert payload.closure == (cell,)
+
+
+def test_handle_set_function_attribute_attaches_defaults_to_symbolic_function() -> None:
+    def target(value: int = 1) -> int:
+        return value
+
+    state = VMState(stack=[cast("StackValue", target.__code__)], pc=0)
+    functions.handle_make_function(_instr("MAKE_FUNCTION", 0), state, OpcodeDispatcher())
+    func_obj = state.pop()
+    state.stack.extend([cast("StackValue", (1,)), func_obj])
+
+    functions.handle_set_function_attribute(
+        _instr("SET_FUNCTION_ATTRIBUTE", 1), state, OpcodeDispatcher()
+    )
+
+    attached = state.peek()
+    assert isinstance(attached, SymbolicValue)
+    payload = function_payload(getattr(attached, "_modeled_object", None))
+    assert payload is not None
+    assert payload.defaults == (1,)
+
+
+def test_handle_set_function_attribute_attaches_kwdefaults_to_symbolic_function() -> None:
+    def target(*, value: int = 1) -> int:
+        return value
+
+    state = VMState(stack=[cast("StackValue", target.__code__)], pc=0)
+    functions.handle_make_function(_instr("MAKE_FUNCTION", 0), state, OpcodeDispatcher())
+    func_obj = state.pop()
+    state.stack.extend([cast("StackValue", {"value": 1}), func_obj])
+
+    functions.handle_set_function_attribute(
+        _instr("SET_FUNCTION_ATTRIBUTE", 2), state, OpcodeDispatcher()
+    )
+
+    attached = state.peek()
+    assert isinstance(attached, SymbolicValue)
+    payload = function_payload(getattr(attached, "_modeled_object", None))
+    assert payload is not None
+    assert payload.kwdefaults == {"value": 1}
 
 
 def test_apply_model_converts_raised_exception_side_effect_to_attribute_error_issue() -> None:

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,42 +16,43 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Function call opcodes (Python 3.12)."""
+"""Call, import, and attribute opcode wrappers for Python 3.12.
+
+Registers ``CALL``, ``KW_NAMES``, ``LOAD_SUPER_*``, imports, and
+``MAKE_FUNCTION`` without the 3.11 ``PRECALL`` prefix, delegating to
+:mod:`pysymex.execution.opcodes.common.functions`. Does not own builtin/stdlib
+models, sandbox import policy, or inter-procedural summaries.
+.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
-from pysymex.execution.opcodes.common import functions as _common_functions
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 from pysymex.execution.opcodes.common.functions import (
     handle_common_call,
     handle_common_call_function_ex,
-    handle_common_call_intrinsic_2,
     handle_common_delete_attr,
     handle_common_import_from,
     handle_common_import_name,
+    handle_common_import_star,
+    handle_common_kw_names,
     handle_common_load_build_class,
     handle_common_load_method,
     handle_common_load_super_attr,
     handle_common_load_super_variants,
     handle_common_make_function,
     handle_common_store_attr,
-    handle_common_kw_names,
-    handle_common_import_star,
 )
 
 
-def __getattr__(name: str) -> object:
-    if name == "_apply_model":
-        return getattr(_common_functions, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("KW_NAMES")
@@ -152,11 +153,3 @@ def handle_call_function_ex(
 ) -> OpcodeResult:
     """Handle CALL_FUNCTION_EX (Python 3.11+)."""
     return handle_common_call_function_ex(instr, state, ctx)
-
-
-@opcode_handler("CALL_INTRINSIC_2")
-def handle_call_intrinsic_2(
-    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
-) -> OpcodeResult:
-    """Handle CALL_INTRINSIC_2 (Python 3.12+)."""
-    return handle_common_call_intrinsic_2(instr, state, ctx)

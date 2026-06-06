@@ -40,6 +40,7 @@ class _Result:
     paths_pruned: int = 1
     coverage: set[int] = field(default_factory=lambda: {1, 2, 3})
     total_time_seconds: float = 0.1
+    degraded_passes: list[str] = field(default_factory=list[str])
     issues: list[_Issue] = field(
         default_factory=lambda: [_Issue(_IssueKind("TYPE_ERROR"), "bad", 7)]
     )
@@ -67,3 +68,18 @@ def test_markdown_and_format_result_dispatch(tmp_path: Path) -> None:
     assert "# pysymex - symbolic execution report" in md
     assert "pysymex" in fallback
     assert out.exists()
+
+
+def test_direct_formatters_disclose_degraded_analysis() -> None:
+    result = _Result(issues=[], degraded_passes=["solver_unknown_detector_query"])
+    typed_result = cast("Any", result)
+
+    text = TextFormatter(color=False).format(typed_result)
+    md = MarkdownFormatter().format(typed_result)
+    payload = json.loads(JSONFormatter().format(typed_result))
+
+    assert "ANALYSIS DEGRADED" in text
+    assert "No issues found!" not in text
+    assert "Analysis Degraded" in md
+    assert "[OK] No Issues Found" not in md
+    assert payload["summary"]["analysis_degraded"] is True

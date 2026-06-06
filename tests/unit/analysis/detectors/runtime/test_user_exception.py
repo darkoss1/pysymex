@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
-from pysymex.core.state import VMState
+import z3
 
-from pysymex.analysis.detectors.base import IssueKind
+from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
+from pysymex.core.exceptions.objects import SymbolicException
+from pysymex.core.state.record import VMState
+
+from pysymex.analysis.detectors.detector.types import IssueKind
 
 
 def _make_instruction(
@@ -38,6 +41,12 @@ class _MockSymbolicException:
 class TestUserExceptionDetector:
     """Test suite for pysymex.analysis.detectors.runtime.user_exception.UserExceptionDetector."""
 
+    def test_relevant_opcodes_are_raise_only(self) -> None:
+        """Declare only opcodes that can represent explicit raises."""
+        detector = UserExceptionDetector()
+
+        assert detector.relevant_opcodes == frozenset({"RAISE_VARARGS", "RERAISE"})
+
     def test_check_ignores_non_raise_varargs(self) -> None:
         """Return None when the instruction is not RAISE_VARARGS."""
         detector = UserExceptionDetector()
@@ -52,7 +61,7 @@ class TestUserExceptionDetector:
         assert issue is None
 
     def test_check_ignores_zero_argc(self) -> None:
-        """Return None when argc is zero (re-raise)."""
+        """Return None when argc is zero and there is no active exception."""
         detector = UserExceptionDetector()
         instruction = _make_instruction("RAISE_VARARGS", arg=0, argval=0)
         state = VMState(
@@ -63,6 +72,60 @@ class TestUserExceptionDetector:
         )
         issue = detector.check(state, instruction, lambda _c: True)  # type: ignore[arg-type]  # test mock solver
         assert issue is None
+
+    def test_check_detects_zero_argc_with_active_exception(self) -> None:
+        """A bare raise reports the exception currently handled by the VM."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=0, argval=0)
+        state = VMState(
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+            active_exception=SymbolicException.concrete(ZeroDivisionError),
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
+        assert "ZeroDivisionError" in issue.message
+
+    def test_check_detects_cleanup_reraise_with_retained_exception(self) -> None:
+        """Final RERAISE reports the exception retained by CPython cleanup bytecode."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RERAISE", arg=1, argval=1)
+        state = VMState(
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+            pending_reraise_exception=SymbolicException.concrete(ZeroDivisionError),
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
+        assert "ZeroDivisionError" in issue.message
+
+    def test_check_preserves_modeled_value_error_kind(self) -> None:
+        """Internally modeled runtime ``ValueError`` keeps its specific issue kind."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RERAISE", arg=1, argval=1)
+        state = VMState(
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+            pending_reraise_exception=SymbolicException.concrete(
+                ValueError,
+                "__len__() should return >= 0",
+            ),
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.VALUE_ERROR
+        assert "__len__() should return >= 0" in issue.message
 
     def test_check_ignores_empty_stack(self) -> None:
         """Return None when the stack is smaller than argc."""
@@ -177,6 +240,24 @@ class TestUserExceptionDetector:
             current_instructions=[instruction],
         )
         issue = detector.check(state, instruction, lambda _c: False)  # type: ignore[arg-type]  # test mock solver
+        assert issue is None
+
+    def test_check_treats_solver_callback_failure_as_inconclusive(self) -> None:
+        """Return None when path feasibility cannot be established."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        state = VMState(
+            stack=[RuntimeError("boom")],  # type: ignore[arg-type,list-item] # test mock
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+        )
+
+        def _solver_failure(_constraints: list[z3.BoolRef]) -> bool:
+            raise z3.Z3Exception("solver unavailable")
+
+        issue = detector.check(state, instruction, _solver_failure)
+
         assert issue is None
 
     def test_check_detects_raise_from_cause(self) -> None:

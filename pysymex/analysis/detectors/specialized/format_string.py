@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,15 +16,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Format String vulnerability detector module.
+
+Detects format string injections by checking if unconstrained inputs (havoc values)
+are passed to string formatting operations.
+
+Bug Class Detected:
+    Format String Vulnerability.
+
+Required Evidence:
+    Havoc or unconstrained input passed into string formatting opcodes (FORMAT_VALUE, BUILD_STRING).
+
+Issue Kinds:
+    IssueKind.INVALID_ARGUMENT
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from pysymex.core.types.havoc import is_havoc
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.types import DisInstruction, IsSatFn, Issue, IssueKind
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
+    from pysymex.core.state.record import VMState
 
 
 class FormatStringDetector(Detector):

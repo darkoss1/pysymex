@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,113 +16,91 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Protocol checking for structural typing verification.
-
-Checks whether concrete types satisfy protocol requirements using
-the type constraint checker.
-"""
+"""Detector-facing protocols for execution and scanner boundary consumers."""
 
 from __future__ import annotations
 
+import dis
+from collections.abc import Callable
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol as TypingProtocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from pysymex.analysis.type_constraints.types import SymbolicType, TypeIssue
-    from pysymex.analysis.type_constraints import TypeConstraintChecker
+    from pysymex.typing import SolverProtocol
 
 
-def _new_symbolic_type_map() -> dict[str, SymbolicType]:
-    """Create an empty ``str -> SymbolicType`` mapping."""
-    return {}
-
-
-@dataclass
-class Protocol:
-    """Represents a structural protocol (like typing.Protocol)."""
-
-    name: str
-    required_methods: dict[str, SymbolicType] = field(default_factory=_new_symbolic_type_map)
-    required_attributes: dict[str, SymbolicType] = field(default_factory=_new_symbolic_type_map)
-
-
-class ProtocolChecker:
-    """Checks if types satisfy protocols."""
-
-    def __init__(self, type_checker: TypeConstraintChecker) -> None:
-        self.type_checker = type_checker
-
-    def check_protocol_satisfaction(
-        self,
-        concrete_type: SymbolicType,
-        protocol: Protocol,
-        available_methods: dict[str, SymbolicType],
-        available_attributes: dict[str, SymbolicType],
-    ) -> list[TypeIssue]:
-        """Check if concrete type satisfies protocol requirements."""
-        from pysymex.analysis.type_constraints.types import TypeIssue, TypeIssueKind
-
-        issues: list[TypeIssue] = []
-        for method_name, expected_type in protocol.required_methods.items():
-            if method_name not in available_methods:
-                issues.append(
-                    TypeIssue(
-                        kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
-                        message=f"Missing method '{method_name}' required by protocol '{protocol.name}'",
-                        expected_type=expected_type,
-                    )
-                )
-            else:
-                actual_type = available_methods[method_name]
-                is_sub, _reason = self.type_checker.is_subtype(actual_type, expected_type)
-                if not is_sub:
-                    issues.append(
-                        TypeIssue(
-                            kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
-                            message=f"Method '{method_name}' has incompatible type for protocol '{protocol.name}'",
-                            expected_type=expected_type,
-                            actual_type=actual_type,
-                        )
-                    )
-        for attr_name, expected_type in protocol.required_attributes.items():
-            if attr_name not in available_attributes:
-                issues.append(
-                    TypeIssue(
-                        kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
-                        message=f"Missing attribute '{attr_name}' required by protocol '{protocol.name}'",
-                        expected_type=expected_type,
-                    )
-                )
-            else:
-                actual_type = available_attributes[attr_name]
-                is_sub, _reason = self.type_checker.is_subtype(actual_type, expected_type)
-                if not is_sub:
-                    issues.append(
-                        TypeIssue(
-                            kind=TypeIssueKind.PROTOCOL_NOT_SATISFIED,
-                            message=f"Attribute '{attr_name}' has incompatible type for protocol '{protocol.name}'",
-                            expected_type=expected_type,
-                            actual_type=actual_type,
-                        )
-                    )
-        return issues
-
-
-class ScanReporter(TypingProtocol):
-    """Protocol for scanner reporting sinks used by scanner.core."""
-
-    def on_status(self, message: str) -> None: ...
-    def on_issue(self, issue: dict[str, object]) -> None: ...
-    def on_error(self, file_path: object, error: str) -> None: ...
-    def on_progress(
-        self, completed: int, total: int, file_path: object, result: object | None
-    ) -> None: ...
-    def on_summary(self, results: Sequence[object], total_files: int) -> None: ...
+__all__ = [
+    "ExecutionContextLike",
+    "ScanReporter",
+]
 
 
 @runtime_checkable
 class ExecutionContextLike(TypingProtocol):
-    """Minimal hook-registration protocol used by executor integration tests."""
+    """Read-side executor contract consumed by detector-facing helpers.
 
-    def register_hook(self, hook_name: str, callback: object) -> None: ...
+    Analysis owns this structural view so detector modules do not import the
+    execution runtime package. The concrete executor remains an execution
+    object that satisfies this protocol structurally.
+    """
+
+    instructions: Sequence[dis.Instruction]
+    solver: SolverProtocol
+    _paths_explored: int
+    _coverage: set[int]
+    issues: Sequence[object]
+
+    def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None:
+        """Register an execution lifecycle callback."""
+        ...
+
+
+class ScanReporter(TypingProtocol):
+    """Protocol for scanner reporting sinks used by scanner execution."""
+
+    def on_status(self, message: str) -> None:
+        """Handle a status message update from the scan.
+
+        Args:
+            message: The status description text.
+        """
+        ...
+
+    def on_issue(self, issue: dict[str, object]) -> None:
+        """Handle a detected issue from the scan.
+
+        Args:
+            issue: Dictionary representing the details of the detected issue.
+        """
+        ...
+
+    def on_error(self, file_path: object, error: str) -> None:
+        """Handle an error encountered during the scan of a file.
+
+        Args:
+            file_path: Path of the file that caused the error.
+            error: The error message details.
+        """
+        ...
+
+    def on_progress(
+        self, completed: int, total: int, file_path: object, result: object | None
+    ) -> None:
+        """Report scan progress.
+
+        Args:
+            completed: Number of files successfully processed.
+            total: Total number of files to process.
+            file_path: The file path currently being processed.
+            result: The result of processing the current file, if any.
+        """
+        ...
+
+    def on_summary(self, results: Sequence[object], total_files: int) -> None:
+        """Handle the final summary reporting at the completion of a scan.
+
+        Args:
+            results: A sequence of all results gathered during the scan.
+            total_files: The total number of files scanned.
+        """
+        ...

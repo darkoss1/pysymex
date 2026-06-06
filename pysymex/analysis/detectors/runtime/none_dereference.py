@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""None Dereference (Null Pointer) error detector module.
+
+This module provides runtime detection for attribute accesses, method calls, or subscript
+actions performed on potentially `None` objects during symbolic execution.
+
+Bug Class Detected:
+    Null Dereference / AttributeError / TypeError.
+
+Required Evidence:
+    Satisfiable path constraints extended with the constraint that the target object is None.
+
+Issue Kinds:
+    IssueKind.NULL_DEREFERENCE
+"""
+
 from __future__ import annotations
 
 import dis
@@ -23,15 +38,16 @@ import z3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
+    from pysymex.core.state.record import VMState
 
 from pysymex.core.types.havoc import is_havoc
-from pysymex.core.solver.engine import get_model, is_satisfiable
-from pysymex.core.types import (
-    SymbolicNone,
-    SymbolicValue,
-)
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, IsSatFn, GetModelFn
+from pysymex.core.solver.engine.policies import path_may_be_feasible
+from pysymex.core.solver.engine.queries import get_model
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.types import IsSatFn, Issue, IssueKind, GetModelFn
+from pysymex.analysis.detectors.feasibility import get_model_if_satisfiable
 
 
 def normalize_attr_name(attr_name: object) -> str:
@@ -41,9 +57,6 @@ def normalize_attr_name(attr_name: object) -> str:
     if attr_name is None:
         return ""
     return str(attr_name)
-
-
-_normalize_attr_name = normalize_attr_name
 
 
 def _none_has_attr(attr_name: str) -> bool:
@@ -60,12 +73,30 @@ def pure_check_none_deref(
     pc: int,
     skip_names: frozenset[str] | set[str] = frozenset(),
     skip_prefixes: tuple[str, ...] = (),
-    is_satisfiable_fn: IsSatFn = is_satisfiable,
+    is_satisfiable_fn: IsSatFn = path_may_be_feasible,
     get_model_fn: GetModelFn = get_model,
 ) -> Issue | None:
-    """Pure: check if *obj* could be None when attribute *attr_name* is accessed."""
+    """Determine whether *obj* can be ``None`` when *attr_name* is accessed.
 
-    normalized_attr_name = _normalize_attr_name(attr_name)
+    Pure function — all inputs are explicit.  Queries the solver to
+    check whether the ``is_none`` constraint is satisfiable under the
+    current path.
+
+    Args:
+        obj: The object being dereferenced (concrete, symbolic, or ``None``).
+        attr_name: Attribute being accessed.
+        path_constraints: Current path constraint list.
+        pc: Bytecode offset of the access.
+        skip_names: Variable names to ignore (e.g. ``self``).
+        skip_prefixes: Name prefixes to ignore.
+        is_satisfiable_fn: Solver satisfiability callback.
+        get_model_fn: Solver model-extraction callback.
+
+    Returns:
+        An :class:`Issue` if ``None``-dereference is feasible, else ``None``.
+    """
+
+    normalized_attr_name = normalize_attr_name(attr_name)
     if not normalized_attr_name:
         return None
 
@@ -75,13 +106,14 @@ def pure_check_none_deref(
     if obj is None or isinstance(obj, SymbolicNone):
         if _none_has_attr(normalized_attr_name):
             return None
-        if not is_satisfiable_fn(path_constraints):
+        model = get_model_if_satisfiable(path_constraints, is_satisfiable_fn, get_model_fn)
+        if model is None:
             return None
         return Issue(
             kind=IssueKind.NULL_DEREFERENCE,
             message=f"Attribute access '{normalized_attr_name}' on None",
             constraints=path_constraints,
-            model=get_model_fn(path_constraints),
+            model=model,
             pc=pc,
         )
 
@@ -95,7 +127,8 @@ def pure_check_none_deref(
         if _none_has_attr(normalized_attr_name):
             return None
         none_constraint = [*path_constraints, obj.is_none]
-        if not is_satisfiable_fn(none_constraint):
+        model = get_model_if_satisfiable(none_constraint, is_satisfiable_fn, get_model_fn)
+        if model is None:
             return None
 
         confidence = 1.0
@@ -106,7 +139,7 @@ def pure_check_none_deref(
             kind=IssueKind.NULL_DEREFERENCE,
             message=f"'{normalized_attr_name}' access on {obj.name} which could be None",
             constraints=none_constraint,
-            model=get_model_fn(none_constraint),
+            model=model,
             pc=pc,
             confidence=confidence,
         )
@@ -114,11 +147,24 @@ def pure_check_none_deref(
 
 
 class NoneDereferenceDetector(Detector):
-    """
-    Detects attribute access or method calls on potentially None values.
-    NOTE: This detector may produce false positives for class instance
-    attributes accessed via 'self', as symbolic execution doesn't fully
-    model Python's object initialization guarantees.
+    """Detect attribute access or method calls on potentially ``None`` values.
+
+    Bug class:
+        ``AttributeError`` / ``TypeError`` from attribute, method, or
+        subscript access on ``None``.
+
+    Evidence:
+        Object is concrete ``None``, or a satisfiable path constraint
+        extended with the ``is_none`` flag.
+
+    Issue kind:
+        ``IssueKind.NULL_DEREFERENCE``.
+
+    Known false-positive conditions:
+        May report false positives for instance attributes accessed via
+        ``self``, because symbolic execution does not fully model
+        ``__init__`` guarantees.  Mitigated by ``SKIP_NAMES`` and
+        ``INTERNAL_PREFIXES`` filters.
     """
 
     name = "none-dereference"
@@ -143,7 +189,11 @@ class NoneDereferenceDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: IsSatFn,
     ) -> Issue | None:
-        """Check."""
+        """Inspect *instruction* for an attribute/subscript access on a possibly-None object.
+
+        Reads the top-of-stack object, extracts the attribute name, and
+        delegates to :func:`pure_check_none_deref`.
+        """
         if instruction.opname not in self.relevant_opcodes:
             return None
         if instruction.opname == "BINARY_SUBSCR":
@@ -158,7 +208,7 @@ class NoneDereferenceDetector(Detector):
         attr_name: str = (
             "__getitem__"
             if instruction.opname == "BINARY_SUBSCR"
-            else _normalize_attr_name(instruction.argval)
+            else normalize_attr_name(instruction.argval)
         )
         return pure_check_none_deref(
             obj,

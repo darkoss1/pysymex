@@ -1,10 +1,35 @@
 from __future__ import annotations
 
-from pysymex._typing import StackValue
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone
-from pysymex.models.builtins.base import FunctionModel
-from pysymex.models.containers import lists
+from typing import cast
+
+import pytest
+import z3
+
+from pysymex.typing import StackValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
+from pysymex.models.containers.lists.items import ListCopyModel
+from pysymex.models.containers.lists.mutations.growth import (
+    ListAppendModel,
+    ListExtendModel,
+    ListInsertModel,
+)
+from pysymex.models.containers.lists.mutations.ordering import ListReverseModel, ListSortModel
+from pysymex.models.containers.lists.mutations.removal import (
+    ListClearModel,
+    ListPopModel,
+    ListRemoveModel,
+)
+from pysymex.models.containers.lists.operators import ListAddModel, ListMulModel
+from pysymex.models.containers.lists.queries import (
+    ListContainsModel,
+    ListCountModel,
+    ListIndexModel,
+)
+from pysymex.models.containers.sequence_precision import slice_concrete_backed_sequence
 
 
 def _state() -> VMState:
@@ -18,7 +43,7 @@ def test_append_model_faithfulness() -> None:
     real_values = list(values)
     real_result = real_values.append(item)
     args: list[StackValue] = [list(values), item]
-    model_result = lists.ListAppendModel().apply(args, {}, _state())
+    model_result = ListAppendModel().apply(args, {}, _state())
     assert real_result is None
     assert isinstance(model_result.value, SymbolicNone)
 
@@ -27,12 +52,12 @@ def test_mutating_models_concrete_none_result() -> None:
     """Concrete path: mutating list methods return None-like symbolic value."""
     seq: list[StackValue] = [1, 2]
     cases: list[tuple[FunctionModel, list[StackValue]]] = [
-        (lists.ListAppendModel(), [seq, 3]),
-        (lists.ListExtendModel(), [seq, [3, 4]]),
-        (lists.ListInsertModel(), [seq, 1, 99]),
-        (lists.ListClearModel(), [seq]),
-        (lists.ListSortModel(), [seq]),
-        (lists.ListReverseModel(), [seq]),
+        (ListAppendModel(), [seq, 3]),
+        (ListExtendModel(), [seq, [3, 4]]),
+        (ListInsertModel(), [seq, 1, 99]),
+        (ListClearModel(), [seq]),
+        (ListSortModel(), [seq]),
+        (ListReverseModel(), [seq]),
     ]
     for model, args in cases:
         result = model.apply(args, {}, _state())
@@ -41,11 +66,262 @@ def test_mutating_models_concrete_none_result() -> None:
 
 def test_symbolic_and_error_paths() -> None:
     """Symbolic and error path coverage for indexing/pop style methods."""
-    lists.ListPopModel().apply([], {}, _state())
-    lists.ListIndexModel().apply([], {}, _state())
+    ListPopModel().apply([], {}, _state())
+    ListIndexModel().apply([], {}, _state())
 
 
 def test_list_edge_case_empty_input() -> None:
     """Edge case: empty list input on contains model."""
     args: list[StackValue] = [[], 1]
-    lists.ListContainsModel().apply(args, {}, _state())
+    ListContainsModel().apply(args, {}, _state())
+
+
+def test_list_copy_preserves_symbolic_elements_without_aliasing() -> None:
+    """list.copy() returns a distinct container with the same retained items."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+
+    result = ListCopyModel().apply([source], {}, _state())
+
+    assert isinstance(result.value, SymbolicList)
+    assert result.value is not source
+    assert result.value.concrete_items == [value]
+    assert result.value.concrete_items is not source.concrete_items
+
+    solver = z3.Solver()
+    solver.add(value_constraint, result.value[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_slice_preserves_concrete_backed_symbolic_items() -> None:
+    """Exact concrete slices should retain item identity for list results."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value, 1])
+
+    result = slice_concrete_backed_sequence(source, slice(None, 1))
+
+    assert isinstance(result, SymbolicList)
+    assert getattr(result, "_type", None) == "list"
+    assert result.concrete_items == [value]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, result[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_pop_default_preserves_last_symbolic_item_and_updates_list() -> None:
+    """list.pop() should return the retained last item and remove it from metadata."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+
+    result = ListPopModel().apply([source], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    solver = z3.Solver()
+    solver.add(value_constraint, result.value.z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+    mutation = cast("dict[str, object] | None", result.side_effects.get("list_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_list"]
+    assert isinstance(updated, SymbolicList)
+    assert updated.concrete_items == []
+
+
+def test_list_insert_front_preserves_inserted_symbolic_item() -> None:
+    """list.insert(0, value) should retain the inserted item at index zero."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([1])
+
+    result = ListInsertModel().apply([source, 0, value], {}, _state())
+
+    mutation = cast("dict[str, object] | None", result.side_effects.get("list_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_list"]
+    assert isinstance(updated, SymbolicList)
+    assert updated.concrete_items == [value, 1]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, updated[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_extend_preserves_concrete_backed_suffix_items() -> None:
+    """list.extend should retain suffix item relations when the extension is exact."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([1])
+    extension = SymbolicList.from_const([value])
+
+    result = ListExtendModel().apply([source, extension], {}, _state())
+
+    mutation = cast("dict[str, object] | None", result.side_effects.get("list_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_list"]
+    assert isinstance(updated, SymbolicList)
+    assert updated.concrete_items == [1, value]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, updated[1].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_remove_concrete_prefix_shifts_symbolic_suffix() -> None:
+    """list.remove(concrete) should retain shifted symbolic suffix metadata."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([1, value])
+
+    result = ListRemoveModel().apply([source, 1], {}, _state())
+
+    mutation = cast("dict[str, object] | None", result.side_effects.get("list_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_list"]
+    assert isinstance(updated, SymbolicList)
+    assert updated.concrete_items == [value]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, updated[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_add_preserves_concrete_backed_symbolic_items() -> None:
+    """list.__add__ should retain exact items when both operands are concrete-backed."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+    empty = SymbolicList.from_const([])
+
+    result = ListAddModel().apply([source, empty], {}, _state())
+
+    assert isinstance(result.value, SymbolicList)
+    assert result.value.concrete_items == [value]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, result.value[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_add_preserves_concrete_backed_suffix_items() -> None:
+    """list.__add__ should retain symbolic and concrete suffix item relations."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+    suffix = SymbolicList.from_const([1])
+
+    result = ListAddModel().apply([source, suffix], {}, _state())
+
+    assert isinstance(result.value, SymbolicList)
+    assert result.value.concrete_items == [value, 1]
+
+    solver = z3.Solver()
+    solver.add(
+        value_constraint,
+        z3.Or(result.value[0].z3_int != value.z3_int, result.value[1].z3_int != 1),
+    )
+    assert solver.check() == z3.unsat
+
+
+def test_list_mul_one_preserves_concrete_backed_symbolic_items() -> None:
+    """list.__mul__(1) should retain exact shallow-copy element identity."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+
+    result = ListMulModel().apply([source, 1], {}, _state())
+
+    assert isinstance(result.value, SymbolicList)
+    assert result.value is not source
+    assert result.value.concrete_items == [value]
+
+    solver = z3.Solver()
+    solver.add(value_constraint, result.value[0].z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_list_mul_two_preserves_repeated_symbolic_item_relation() -> None:
+    """list.__mul__(2) should retain both repeated symbolic item relations."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+
+    result = ListMulModel().apply([source, 2], {}, _state())
+
+    assert isinstance(result.value, SymbolicList)
+    assert result.value.concrete_items == [value, value]
+
+    solver = z3.Solver()
+    solver.add(
+        value_constraint,
+        z3.Or(
+            result.value[0].z3_int != value.z3_int,
+            result.value[1].z3_int != value.z3_int,
+        ),
+    )
+    assert solver.check() == z3.unsat
+
+
+@pytest.mark.parametrize(
+    ("model", "method_args"),
+    [
+        (ListAppendModel(), []),
+        (ListAppendModel(), [1, 2]),
+        (ListExtendModel(), []),
+        (ListExtendModel(), [[1], [2]]),
+        (ListInsertModel(), [0]),
+        (ListInsertModel(), [0, 1, 2]),
+        (ListRemoveModel(), []),
+        (ListRemoveModel(), [1, 2]),
+        (ListPopModel(), [0, 1]),
+        (ListClearModel(), [1]),
+        (ListSortModel(), [1]),
+        (ListReverseModel(), [1]),
+        (ListCopyModel(), [1]),
+        (ListIndexModel(), []),
+        (ListIndexModel(), [1, 0, 2, 3]),
+        (ListCountModel(), []),
+        (ListCountModel(), [1, 2]),
+    ],
+)
+def test_list_public_methods_reject_invalid_positional_arity(
+    model: FunctionModel, method_args: list[StackValue]
+) -> None:
+    """Public list methods report TypeError for CPython-invalid positional forms."""
+    receiver = SymbolicList.empty("receiver")
+
+    result = model.apply([receiver, *method_args], {}, _state())
+    effect = result.side_effects.get("raised_exception")
+
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
+
+
+@pytest.mark.parametrize(
+    ("model", "method_args"),
+    [
+        (ListAppendModel(), [1]),
+        (ListExtendModel(), [[1]]),
+        (ListInsertModel(), [0, 1]),
+        (ListRemoveModel(), [1]),
+        (ListPopModel(), []),
+        (ListClearModel(), []),
+        (ListReverseModel(), []),
+        (ListCopyModel(), []),
+        (ListIndexModel(), [1]),
+        (ListCountModel(), [1]),
+    ],
+)
+def test_list_public_methods_reject_keywords(
+    model: FunctionModel, method_args: list[StackValue]
+) -> None:
+    """List methods other than sort reject keyword arguments in CPython."""
+    result = model.apply(
+        [SymbolicList.empty("receiver"), *method_args], {"unexpected": 1}, _state()
+    )
+    effect = result.side_effects.get("raised_exception")
+
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
+
+
+def test_list_sort_accepts_supported_keyword_only_parameters() -> None:
+    """list.sort accepts the key and reverse keyword-only parameters."""
+    result = ListSortModel().apply(
+        [SymbolicList.empty("receiver")], {"key": None, "reverse": True}, _state()
+    )
+
+    assert "raised_exception" not in result.side_effects

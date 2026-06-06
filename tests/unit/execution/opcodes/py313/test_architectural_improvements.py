@@ -4,11 +4,12 @@ import dis
 import z3
 
 from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state import VMState
+from pysymex.core.state.record import VMState
 from pysymex.core.constants import Z3_FALSE, Z3_TRUE
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
-from pysymex.core.types.containers import SymbolicObject
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py313 import functions, locals
 
 

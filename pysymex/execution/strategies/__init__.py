@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,21 +16,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Execution strategy components (path scheduling and state merging)."""
+"""Path-exploration scheduling and join-point state merging for symbolic execution.
 
-from pysymex.execution.strategies.manager import (
+- :mod:`pysymex.execution.strategies.manager` chooses the next ``VMState`` to explore
+  through the POLAR runtime queue.
+- :mod:`pysymex.execution.strategies.merger` optionally merges compatible states at
+  control-flow joins to reduce path explosion.
+
+The path-manager factory lives in :mod:`pysymex.execution.scheduling`. State-merger factory
+helpers remain here while merger ownership is still under ``strategies``.
+"""
+
+from pysymex.execution.strategies.manager.path import (
     AdaptivePathManager,
-    ExplorationStrategy,
-    PathManager,
-    TopologicalThompsonPathManager,
-    create_path_manager,
+    PolarCegisPathManager,
 )
-from pysymex.execution.strategies.merger import (
-    MergePolicy,
-    MergeStatistics,
-    StateMerger,
-    create_state_merger,
-)
+from pysymex.execution.strategies.manager.types import ExplorationStrategy, PathManager
+from pysymex.execution.strategies.merger.factory import create_state_merger
+from pysymex.execution.strategies.merger.state import StateMerger
+from pysymex.execution.strategies.merger.types import MergePolicy, MergeStatistics
 
 __all__ = [
     "AdaptivePathManager",
@@ -38,8 +42,7 @@ __all__ = [
     "MergePolicy",
     "MergeStatistics",
     "PathManager",
+    "PolarCegisPathManager",
     "StateMerger",
-    "TopologicalThompsonPathManager",
-    "create_path_manager",
     "create_state_merger",
 ]

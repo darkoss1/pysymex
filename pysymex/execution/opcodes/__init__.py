@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,20 +16,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Opcode handlers module.
-This module provides intelligent Python version detection and routing
-to the appropriate opcode directory for the running Python version.
+"""Opcode handler registration and Python-version routing for the VM.
+
+Selects the ``py311`` / ``py312`` / ``py313`` handler packages matching the host
+interpreter, imports them so
+:class:`~pysymex.execution.dispatch.dispatcher.OpcodeDispatcher` decorator
+registrations materialize, and clears stale global handlers on reload.
+Called from executor startup before bytecode stepping; does not implement per-opcode
+semantics (see :mod:`pysymex.execution.opcodes.common` and version subpackages).
 """
 
-import logging
+from pysymex.logger import get_logger
 import sys
 from importlib import import_module, reload
 from types import ModuleType
 from threading import Lock
 
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 SUPPORTED_VERSIONS = [(3, 11), (3, 12), (3, 13)]
 MIN_VERSION = (3, 11)
@@ -51,12 +56,14 @@ def _refresh_version_handlers(module: ModuleType) -> None:
     """Reload version submodules so decorator-based global handlers are current."""
     exported_names = getattr(module, "__all__", ())
     for export_name in exported_names:
+        if module.__name__ == "pysymex.execution.opcodes.py313" and export_name == "async_ops":
+            continue
         exported = getattr(module, export_name, None)
         if isinstance(exported, ModuleType):
             reload(exported)
 
 
-def _detect_python_version() -> tuple[int, int]:
+def detect_python_version() -> tuple[int, int]:
     """Detect the current Python version.
 
     Returns:
@@ -65,7 +72,7 @@ def _detect_python_version() -> tuple[int, int]:
     return (sys.version_info.major, sys.version_info.minor)
 
 
-def _validate_version(version: tuple[int, int]) -> bool:
+def validate_version(version: tuple[int, int]) -> bool:
     """Validate that the Python version is supported.
 
     Args:
@@ -80,14 +87,14 @@ def _validate_version(version: tuple[int, int]) -> bool:
         )
         return False
     if version > MAX_VERSION:
-        logger.warning(
-            f"Python {version[0]}.{version[1]} is newer than maximum supported version {MAX_VERSION[0]}.{MAX_VERSION[1]}. Using {MAX_VERSION[0]}.{MAX_VERSION[1]} opcodes."
+        logger.error(
+            f"Python {version[0]}.{version[1]} is not supported. Maximum version: {MAX_VERSION[0]}.{MAX_VERSION[1]}"
         )
         return False
     return True
 
 
-def _route_to_opcode_dir(version: tuple[int, int]) -> ModuleType:
+def route_to_opcode_dir(version: tuple[int, int]) -> ModuleType:
     """Route to the appropriate opcode directory based on Python version.
 
     Args:
@@ -99,13 +106,12 @@ def _route_to_opcode_dir(version: tuple[int, int]) -> ModuleType:
     Raises:
         ImportError: If the version is not supported or module cannot be imported.
     """
-    if not _validate_version(version):
-        if version < MIN_VERSION:
-            raise ImportError(
-                f"Python {version[0]}.{version[1]} is not supported by pysymex. "
-                f"Minimum required version: {MIN_VERSION[0]}.{MIN_VERSION[1]}"
-            )
-        version = MAX_VERSION
+    if not validate_version(version):
+        raise ImportError(
+            f"Python {version[0]}.{version[1]} is not supported by pysymex. "
+            f"Supported versions: {MIN_VERSION[0]}.{MIN_VERSION[1]} through "
+            f"{MAX_VERSION[0]}.{MAX_VERSION[1]}"
+        )
 
     if version[1] >= 13:
         logger.info(f"Detected Python {version[0]}.{version[1]}, routing to py313 opcodes")
@@ -125,10 +131,15 @@ def _normalize_supported_version(version: tuple[int, int]) -> tuple[int, int]:
     if version < MIN_VERSION:
         raise ImportError(
             f"Python {version[0]}.{version[1]} is not supported by pysymex. "
-            f"Minimum required version: {MIN_VERSION[0]}.{MIN_VERSION[1]}"
+            f"Supported versions: {MIN_VERSION[0]}.{MIN_VERSION[1]} through "
+            f"{MAX_VERSION[0]}.{MAX_VERSION[1]}"
         )
     if version > MAX_VERSION:
-        return MAX_VERSION
+        raise ImportError(
+            f"Python {version[0]}.{version[1]} is not supported by pysymex. "
+            f"Supported versions: {MIN_VERSION[0]}.{MIN_VERSION[1]} through "
+            f"{MAX_VERSION[0]}.{MAX_VERSION[1]}"
+        )
     return version
 
 
@@ -141,7 +152,7 @@ def load_opcode_handlers(version: tuple[int, int] | None = None) -> ModuleType:
     global _handlers_loaded
     global _loaded_module_name
 
-    requested_version = version if version is not None else _detect_python_version()
+    requested_version = version if version is not None else detect_python_version()
     target_version = _normalize_supported_version(requested_version)
     module_map = {
         11: "pysymex.execution.opcodes.py311",
@@ -158,9 +169,11 @@ def load_opcode_handlers(version: tuple[int, int] | None = None) -> ModuleType:
             and _registered_handlers_match(module_name)
         ):
             return module
+        OpcodeDispatcher.clear_global_handlers(("pysymex.execution.opcodes.",))
         _refresh_version_handlers(module)
         if target_version == (3, 12):
-            import_module("pysymex.execution.opcodes.py312.instrumentation")
+            instrumentation = import_module("pysymex.execution.opcodes.py312.instrumentation")
+            reload(instrumentation)
         _handlers_loaded = True
         _loaded_module_name = module_name
         return module
@@ -168,7 +181,7 @@ def load_opcode_handlers(version: tuple[int, int] | None = None) -> ModuleType:
 
 __all__ = [
     "load_opcode_handlers",
-    "_detect_python_version",
-    "_validate_version",
-    "_route_to_opcode_dir",
+    "detect_python_version",
+    "validate_version",
+    "route_to_opcode_dir",
 ]

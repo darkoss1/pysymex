@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -25,15 +25,141 @@ correctly without creating generic symbolic placeholders.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import z3
+from typing import TYPE_CHECKING, cast
 
-from pysymex.core.exceptions.analyzer import BUILTIN_EXCEPTIONS
-from pysymex.core.types import SymbolicValue
+from pysymex.core.constants import Z3_FALSE
+from pysymex.core.exceptions.objects import SymbolicException
+from pysymex.core.exceptions.builtins import BUILTIN_EXCEPTIONS
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
 from pysymex.models.builtins.types import TypeModel, TypeModelResult
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-    from pysymex.core.state import VMState
+    from pysymex.typing import StackValue
+    from pysymex.core.state.record import VMState
+
+
+_REQUIRED_POSITIONAL_COUNTS: dict[type[BaseException], int] = {
+    BaseExceptionGroup: 2,
+    ExceptionGroup: 2,
+    UnicodeDecodeError: 5,
+    UnicodeEncodeError: 5,
+    UnicodeTranslateError: 4,
+}
+
+_UNKNOWN_CONCRETE = object()
+
+
+def _type_error_side_effect(source: str, message: str) -> dict[str, object]:
+    return {
+        "raised_exception": {
+            "issue_kind": "TYPE_ERROR",
+            "exception_type": "TypeError",
+            "message": message,
+            "source": source,
+        }
+    }
+
+
+def _value_error_side_effect(source: str, message: str) -> dict[str, object]:
+    return {
+        "raised_exception": {
+            "issue_kind": "VALUE_ERROR",
+            "exception_type": "ValueError",
+            "message": message,
+            "source": source,
+        }
+    }
+
+
+def _resolve_heap_object(value: object, state: VMState) -> object:
+    """Return heap storage for a concrete object handle when available."""
+    if isinstance(value, SymbolicObject) and value.address != -1:
+        resolved = state.memory.get(value.address)
+        if resolved is not None:
+            return resolved
+    return value
+
+
+def _exact_concrete_value(value: object, state: VMState | None = None) -> object:
+    """Return retained literal payloads without solver-backed concretization."""
+    if state is not None:
+        value = _resolve_heap_object(value, state)
+    if value is None or isinstance(value, (int, float, bool, str, bytes, list, dict, tuple)):
+        return cast("object", value)
+    if isinstance(value, SymbolicString):
+        try:
+            if z3.is_string_value(value.z3_str):
+                return value.z3_str.as_string()
+        except (AttributeError, z3.Z3Exception):
+            return _UNKNOWN_CONCRETE
+        return _UNKNOWN_CONCRETE
+    if isinstance(value, SymbolicList):
+        if value.concrete_items is None:
+            return _UNKNOWN_CONCRETE
+        return list(value.concrete_items)
+    if isinstance(value, SymbolicValue):
+        payload = value.value
+        if payload is not None and isinstance(payload, (int, float, bool, str, bytes)):
+            return payload
+    return _UNKNOWN_CONCRETE
+
+
+def _validate_unicode_constructor_args(
+    exc_type: type[BaseException], args: list[StackValue], state: VMState
+) -> dict[str, object] | None:
+    requirements: tuple[type[object] | tuple[type[object], ...], ...]
+    if exc_type is UnicodeDecodeError:
+        requirements = (str, bytes, int, int, str)
+    elif exc_type is UnicodeEncodeError:
+        requirements = (str, str, int, int, str)
+    elif exc_type is UnicodeTranslateError:
+        requirements = (str, int, int, str)
+    else:
+        return None
+
+    for position, (value, expected) in enumerate(zip(args, requirements, strict=True), start=1):
+        concrete_value = _exact_concrete_value(value, state)
+        if concrete_value is not _UNKNOWN_CONCRETE and not isinstance(concrete_value, expected):
+            return _type_error_side_effect(
+                f"builtins.{exc_type.__name__}",
+                f"{exc_type.__name__}() argument {position} has an invalid concrete type",
+            )
+    return None
+
+
+def _validate_exception_group_args(
+    exc_type: type[BaseException], args: list[StackValue], state: VMState
+) -> dict[str, object] | None:
+    if exc_type not in {BaseExceptionGroup, ExceptionGroup}:
+        return None
+    message, members = args
+    concrete_message = _exact_concrete_value(message, state)
+    if concrete_message is not _UNKNOWN_CONCRETE and not isinstance(concrete_message, str):
+        return _type_error_side_effect(
+            f"builtins.{exc_type.__name__}",
+            f"{exc_type.__name__}() message must be a string",
+        )
+    concrete_members = _exact_concrete_value(members, state)
+    if isinstance(concrete_members, (list, tuple)):
+        if not concrete_members:
+            return _value_error_side_effect(
+                f"builtins.{exc_type.__name__}",
+                "second argument (exceptions) must be a non-empty sequence",
+            )
+        member_values = cast("list[object] | tuple[object, ...]", concrete_members)
+        if any(
+            _exact_concrete_value(member, state) is not _UNKNOWN_CONCRETE
+            for member in member_values
+        ):
+            return _value_error_side_effect(
+                f"builtins.{exc_type.__name__}",
+                "second argument contains a definite non-exception value",
+            )
+    return None
 
 
 class ExceptionTypeModel(TypeModel):
@@ -43,6 +169,7 @@ class ExceptionTypeModel(TypeModel):
         self.name = exc_type.__name__
         self.qualname = f"builtins.{exc_type.__name__}"
         self.python_type = exc_type
+        self._exception_type = exc_type
 
     def apply(
         self,
@@ -53,15 +180,36 @@ class ExceptionTypeModel(TypeModel):
         """
         Apply the exception type model.
 
-        When instantiated (e.g., ValueError("message")), returns a symbolic
-        value representing the exception. When used in isinstance(),
-        the type object itself is returned for type checking.
+        Constructor calls return a symbolic exception instance. Type objects
+        used as values (for example in isinstance()) are not invoked here.
         """
-        if args or kwargs:
+        required_count = _REQUIRED_POSITIONAL_COUNTS.get(self._exception_type)
+        if kwargs or (required_count is not None and len(args) != required_count):
             result, constraint = SymbolicValue.symbolic(f"{self.name}_instance_{state.pc}")
-            return TypeModelResult(value=result, constraints=[constraint])
-
-        return TypeModelResult(value=self.python_type)
+            return TypeModelResult(
+                value=result,
+                constraints=[constraint],
+                side_effects=_type_error_side_effect(
+                    f"builtins.{self.name}",
+                    f"{self.name}() received invalid constructor arguments",
+                ),
+            )
+        validation_effect = _validate_unicode_constructor_args(self._exception_type, args, state)
+        if validation_effect is None:
+            validation_effect = _validate_exception_group_args(self._exception_type, args, state)
+        if validation_effect is not None:
+            result, constraint = SymbolicValue.symbolic(f"{self.name}_instance_{state.pc}")
+            return TypeModelResult(
+                value=result,
+                constraints=[constraint],
+                side_effects=validation_effect,
+            )
+        result, constraint = SymbolicValue.symbolic(f"{self.name}_instance_{state.pc}")
+        result.is_none = Z3_FALSE
+        result.attach_modeled_object(
+            SymbolicException.concrete(self._exception_type, *args, raised_at=state.pc)
+        )
+        return TypeModelResult(value=result, constraints=[constraint])
 
 
 def create_exception_models() -> list[ExceptionTypeModel]:

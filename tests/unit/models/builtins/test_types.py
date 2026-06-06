@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex.core.state import create_initial_state
+from pysymex.core.state.factory import create_initial_state
 from pysymex.models.builtins.types import (
     BuiltinTypeModel,
     TypeModel,
     TypeModelResult,
-    _new_side_effects,  # type: ignore[reportPrivateUsage]
+    new_side_effects,
 )
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-    from pysymex.core.state import VMState
+    from pysymex.typing import StackValue
+    from pysymex.core.state.record import VMState
 
 
 class DummyTypeModel(TypeModel):
@@ -35,8 +35,8 @@ class TestTypesModel:
     """Test class for builtin types models."""
 
     def test_new_side_effects_returns_empty_dict(self) -> None:
-        """Verify that _new_side_effects produces a fresh, empty dictionary."""
-        res = _new_side_effects()  # type: ignore[reportPrivateUsage]  # Testing private utility
+        """Verify that new_side_effects produces a fresh, empty dictionary."""
+        res = new_side_effects()
         assert isinstance(res, dict)
         assert len(res) == 0
 

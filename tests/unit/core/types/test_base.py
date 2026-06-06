@@ -7,7 +7,6 @@ from pysymex.core.types.base import (
     SymbolicNoneType,
     TypeTag,
     fresh_name,
-    reset_counters,
 )
 
 _FRESH_NAME_RE = re.compile(r"^(.+)_(\d+)$")
@@ -23,7 +22,6 @@ class TestTypeTag:
 
 def test_fresh_name_prefix() -> None:
     """fresh_name returns 'prefix_<integer>' with the requested prefix."""
-    reset_counters()
     result = fresh_name("x")
     match = _FRESH_NAME_RE.match(result)
     assert match is not None, f"fresh_name did not match expected pattern: {result}"
@@ -33,21 +31,11 @@ def test_fresh_name_prefix() -> None:
 
 def test_fresh_name_monotonic() -> None:
     """Successive fresh_name calls produce strictly increasing counters."""
-    reset_counters()
     a = fresh_name("v")
     b = fresh_name("v")
     a_id = int(_FRESH_NAME_RE.match(a).group(2))  # type: ignore[union-attr]  # pattern guaranteed to match
     b_id = int(_FRESH_NAME_RE.match(b).group(2))  # type: ignore[union-attr]  # pattern guaranteed to match
     assert b_id > a_id, f"Counter did not increment: {a} -> {b}"
-
-
-def test_reset_counters_deterministic() -> None:
-    """reset_counters restarts the counter, producing repeatable sequences."""
-    reset_counters()
-    first = fresh_name("y")
-    reset_counters()
-    second = fresh_name("y")
-    assert first == second, f"reset_counters did not restore determinism: {first} != {second}"
 
 
 class TestSymbolicType:
@@ -74,11 +62,11 @@ class TestSymbolicType:
         assert z3.is_true(SYMBOLIC_NONE.is_falsy())
 
     def test_could_be_truthy(self) -> None:
-        """Canonical execution truthiness API delegates to legacy truthiness."""
+        """Execution truthiness query matches the concrete none truthiness."""
         assert z3.eq(SYMBOLIC_NONE.could_be_truthy(), SYMBOLIC_NONE.is_truthy())
 
     def test_could_be_falsy(self) -> None:
-        """Canonical execution falsiness API delegates to legacy falsiness."""
+        """Execution falsiness query matches the concrete none falsiness."""
         assert z3.eq(SYMBOLIC_NONE.could_be_falsy(), SYMBOLIC_NONE.is_falsy())
 
     def test_hash_value(self) -> None:

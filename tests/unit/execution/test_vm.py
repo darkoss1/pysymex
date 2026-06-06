@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from types import CodeType
 
-from pysymex.execution.types import ExecutionConfig, ExecutionResult
+from pysymex.execution.config.settings import ExecutionConfig
+from pysymex.execution.results.result import ExecutionResult
 from pysymex.execution import vm
 
 

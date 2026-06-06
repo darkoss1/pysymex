@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""API Contract Violation logic rule.
+
+This module implements the API contract violation logic rule (Tier 4), which detects
+contradictions arising from conflicting constraints on variables associated with API
+boundaries, parameters, return values, or explicitly named contracts.
+
+Bug Class Detected:
+    Logical contradiction (API contract violation).
+
+Required Evidence:
+    An unsatisfiable core containing contradicting constraints (e.g., conflicting equality,
+    boolean assignments, or comparison relationships) on API-related variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     extract_bool_assignments,
@@ -26,6 +43,14 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 def _is_api_contract_name(name: str) -> bool:
+    """Check if a variable name indicates it belongs to an API contract.
+
+    Args:
+        name (str): The name of the variable to check.
+
+    Returns:
+        bool: True if the name contains API contract tokens, False otherwise.
+    """
     lname = name.lower()
     return any(
         token in lname for token in ("api", "contract", "pre", "post", "arg", "ret", "result")
@@ -33,10 +58,34 @@ def _is_api_contract_name(name: str) -> bool:
 
 
 class ApiContractViolationRule(LogicRule):
+    """Logic rule for detecting API contract violations.
+
+    This rule checks the unsatisfiable core for contradictory constraints on variables
+    associated with API boundaries, arguments, or returns.
+
+    Bug Class Detected:
+        Logical contradiction (API contract violation).
+
+    Required Evidence:
+        ContradictionContext showing contradictory constraints (such as conflicting constants,
+        boolean values, or inconsistent comparison chains) on API-related variables.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "API Contract Violation"
     tier = 4
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains an API contract violation.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if an API contract contradiction is detected, False otherwise.
+        """
         names = get_variable_names_all(ctx.core)
         lower_names = {n.lower() for n in names}
 

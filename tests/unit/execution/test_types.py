@@ -3,24 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.execution.types import BRANCH_OPCODES, ExecutionConfig, ExecutionResult
+from pysymex.execution.constants import BRANCH_OPCODES
+from pysymex.execution.config.settings import ExecutionConfig
+from pysymex.execution.results.result import ExecutionResult
 
 
 class TestExecutionConfig:
-    """Test suite for pysymex.execution.types.ExecutionConfig."""
+    """Test suite for pysymex.execution.config.settings.ExecutionConfig."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        cfg = ExecutionConfig(max_paths=123, enable_chtd=False, deterministic_mode=True)
+        cfg = ExecutionConfig(max_paths=123, deterministic_mode=True)
 
         assert cfg.max_paths == 123
-        assert cfg.enable_chtd is False
         assert cfg.deterministic_mode is True
         assert "FOR_ITER" in BRANCH_OPCODES
 
 
 class TestExecutionResult:
-    """Test suite for pysymex.execution.types.ExecutionResult."""
+    """Test suite for pysymex.execution.results.result.ExecutionResult."""
 
     def test_has_issues(self) -> None:
         """Test has_issues behavior."""
@@ -57,6 +58,20 @@ class TestExecutionResult:
         assert "Paths explored: 2" in summary
         assert "No issues found!" in summary
 
+    def test_degraded_summary_and_sarif_do_not_claim_success(self) -> None:
+        result = ExecutionResult(degraded_passes=["solver_unknown_detector_query"])
+
+        summary = result.format_summary()
+        sarif = result.to_sarif()
+        invocation = sarif["runs"][0]["invocations"][0]  # type: ignore[index]
+
+        assert "Analysis degraded: solver_unknown_detector_query" in summary
+        assert "No issues found!" not in summary
+        assert invocation["executionSuccessful"] is False  # type: ignore[index]
+        assert invocation["properties"]["degradedPasses"] == [  # type: ignore[index]
+            "solver_unknown_detector_query"
+        ]
+
     def test_to_dict(self) -> None:
         """Test to_dict behavior."""
         issue = Issue(kind=IssueKind.VALUE_ERROR, message="bad", filename="m.py", line_number=7)
@@ -77,8 +92,9 @@ class TestExecutionResult:
         assert as_dict["source_file"] == "m.py"
         assert as_dict["coverage_size"] == 2
         assert isinstance(as_dict["issues"], list)
+        assert as_dict["degraded_passes"] == []
 
-    def test_to_sarif(self) -> None:
+    def test_to_sarif(self, tmp_path: Path) -> None:
         """Test to_sarif behavior."""
         issue = Issue(
             kind=IssueKind.DIVISION_BY_ZERO,
@@ -96,8 +112,7 @@ class TestExecutionResult:
             coverage={1, 2, 3},
             total_time_seconds=0.01,
         )
-        out = Path(".pytest_cache") / "execution-result.sarif"
-        out.parent.mkdir(parents=True, exist_ok=True)
+        out = tmp_path / "execution-result.sarif"
 
         sarif = result.to_sarif(str(out))
 

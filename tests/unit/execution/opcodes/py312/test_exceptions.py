@@ -3,9 +3,9 @@ from __future__ import annotations
 import dis
 
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py312 import exceptions
 
 
@@ -19,6 +19,18 @@ def test_handle_push_exc_info() -> None:
     state = VMState(stack=["exc"], pc=0)
     exceptions.handle_push_exc_info(_instr("PUSH_EXC_INFO"), state, OpcodeDispatcher())
     assert len(state.stack) == 2
+
+
+def test_handle_setup_with_has_cpython_stack_delta() -> None:
+    state = VMState(stack=["manager"], pc=0)
+
+    result = exceptions.handle_setup_with(_instr("SETUP_WITH", 10), state, OpcodeDispatcher())
+
+    assert result.new_states == [state]
+    assert result.terminal is False
+    assert state.pc == 1
+    assert len(state.stack) == 2
+    assert len(state.path_constraints) == 2
 
 
 def test_handle_pop_except() -> None:
@@ -154,4 +166,7 @@ def test_handle_raise_varargs() -> None:
 def test_handle_return_generator() -> None:
     """Test handle_return_generator behavior."""
     state = VMState(pc=0)
-    exceptions.handle_return_generator(_instr("RETURN_GENERATOR"), state, OpcodeDispatcher())
+    result = exceptions.handle_return_generator(
+        _instr("RETURN_GENERATOR"), state, OpcodeDispatcher()
+    )
+    assert result is not None

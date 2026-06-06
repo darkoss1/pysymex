@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,22 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tier 4 interprocedural logic rules.
+
+This package defines logic rules targeting Tier 4 interprocedural logical contradictions,
+including api contract violations, postcondition contradictions, precondition impossibility,
+and numeric range propagation contradictions.
+
+Bug Class Detected:
+    Logical contradiction (interprocedural contract violation).
+
+Required Evidence:
+    Unsatisfiable cores violating interprocedural/API constraints.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
 
 from .postcondition import PostconditionContradictionRule
 from .precondition import PreconditionImpossibilityRule

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -22,78 +22,47 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex._deps import ensure_z3_ready
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.deps import ensure_z3_ready
+from pysymex.lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
     from pysymex.api import (
-        analyze as analyze,
-        analyze_file as analyze_file,
-        analyze_code as analyze_code,
-        quick_check as quick_check,
-        check_division_by_zero as check_division_by_zero,
-        check_assertions as check_assertions,
-        check_index_errors as check_index_errors,
-        format_issues as format_issues,
-    )
-    from pysymex.execution.executors import (
-        SymbolicExecutor as SymbolicExecutor,
         ExecutionConfig as ExecutionConfig,
         ExecutionResult as ExecutionResult,
-    )
-    from pysymex.core.types import (
-        SymbolicValue as SymbolicValue,
-        SymbolicString as SymbolicString,
-        SymbolicList as SymbolicList,
-        SymbolicDict as SymbolicDict,
-        SymbolicObject as SymbolicObject,
-        SymbolicNone as SymbolicNone,
-    )
-    from pysymex.core.state import VMState as VMState
-    from pysymex.core.solver.engine import IncrementalSolver as IncrementalSolver
-    from pysymex.analysis.detectors import (
+        IncrementalSolver as IncrementalSolver,
         Issue as Issue,
         IssueKind as IssueKind,
-    )
-    from pysymex.config import PysymexConfig as PysymexConfig, load_config as load_config
-    from pysymex.logger import (
-        configure_logging as configure_logging,
-        get_logger as get_logger,
         LogLevel as LogLevel,
-    )
-    from pysymex.reporting.formatters import format_result as format_result
-    from pysymex.execution.executors.verified import (
-        VerifiedExecutor as VerifiedExecutor,
+        PysymexConfig as PysymexConfig,
+        SymbolicDict as SymbolicDict,
+        SymbolicExecutor as SymbolicExecutor,
+        SymbolicList as SymbolicList,
+        SymbolicNone as SymbolicNone,
+        SymbolicObject as SymbolicObject,
+        SymbolicString as SymbolicString,
+        SymbolicValue as SymbolicValue,
+        VMState as VMState,
         VerifiedExecutionConfig as VerifiedExecutionConfig,
         VerifiedExecutionResult as VerifiedExecutionResult,
-        verify as verify,
-        check_contracts as check_contracts,
+        VerifiedExecutor as VerifiedExecutor,
+        analyze as analyze,
+        analyze_code as analyze_code,
+        analyze_file as analyze_file,
         check_arithmetic as check_arithmetic,
+        check_assertions as check_assertions,
+        check_contracts as check_contracts,
+        check_division_by_zero as check_division_by_zero,
+        check_index_errors as check_index_errors,
+        configure_logging as configure_logging,
+        format_issues as format_issues,
+        format_result as format_result,
+        get_logger as get_logger,
+        load_config as load_config,
         prove_termination as prove_termination,
-    )
-    from pysymex.scanner import (
-        scan_file as scan_file,
+        quick_check as quick_check,
         scan_directory as scan_directory,
-        scan_directory_async as scan_directory_async,
-    )
-    from pysymex.async_api import (
-        analyze_async as analyze_async,
-        analyze_code_async as analyze_code_async,
-        analyze_file_async as analyze_file_async,
-    )
-    from pysymex.analysis.solver import (
-        Z3Engine as Z3Engine,
-        CallGraph as CallGraph,
-        FunctionSummary as FunctionSummary,
-        BugType as BugType,
-        Severity as Severity,
-        VerificationResult as VerificationResult,
-        CrashCondition as CrashCondition,
-        verify_function as verify_function,
-        verify_code as verify_code,
-        verify_file as verify_file,
-        verify_directory as verify_directory,
-        is_z3_available as is_z3_available,
+        scan_file as scan_file,
+        verify as verify,
     )
 
 from pysymex.config import VERSION as _VERSION
@@ -112,64 +81,42 @@ Z3_AVAILABLE: bool = avail
 _Z3_IMPORT_ERROR: RuntimeError | None = err
 
 _EXPORTS: dict[str, tuple[str, str]] = {
-    "analyze": ("pysymex.api", "analyze"),
-    "analyze_file": ("pysymex.api", "analyze_file"),
-    "analyze_code": ("pysymex.api", "analyze_code"),
-    "quick_check": ("pysymex.api", "quick_check"),
-    "check_division_by_zero": ("pysymex.api", "check_division_by_zero"),
-    "check_assertions": ("pysymex.api", "check_assertions"),
-    "check_index_errors": ("pysymex.api", "check_index_errors"),
-    "format_issues": ("pysymex.api", "format_issues"),
-    "SymbolicExecutor": ("pysymex.execution.executors", "SymbolicExecutor"),
-    "ExecutionConfig": ("pysymex.execution.executors", "ExecutionConfig"),
-    "ExecutionResult": ("pysymex.execution.executors", "ExecutionResult"),
-    "SymbolicValue": ("pysymex.core.types", "SymbolicValue"),
-    "SymbolicString": ("pysymex.core.types", "SymbolicString"),
-    "SymbolicList": ("pysymex.core.types", "SymbolicList"),
-    "SymbolicDict": ("pysymex.core.types", "SymbolicDict"),
-    "SymbolicObject": ("pysymex.core.types", "SymbolicObject"),
-    "SymbolicNone": ("pysymex.core.types", "SymbolicNone"),
-    "VMState": ("pysymex.core.state", "VMState"),
-    "IncrementalSolver": ("pysymex.core.solver.engine", "IncrementalSolver"),
-    "Issue": ("pysymex.analysis.detectors", "Issue"),
-    "IssueKind": ("pysymex.analysis.detectors", "IssueKind"),
+    "analyze": ("pysymex.api.runtime", "analyze"),
+    "analyze_file": ("pysymex.api.runtime", "analyze_file"),
+    "analyze_code": ("pysymex.api.runtime", "analyze_code"),
+    "quick_check": ("pysymex.api.runtime", "quick_check"),
+    "check_division_by_zero": ("pysymex.api.runtime", "check_division_by_zero"),
+    "check_assertions": ("pysymex.api.runtime", "check_assertions"),
+    "check_index_errors": ("pysymex.api.runtime", "check_index_errors"),
+    "format_issues": ("pysymex.api.runtime", "format_issues"),
+    "SymbolicExecutor": ("pysymex.api.symbolic", "SymbolicExecutor"),
+    "ExecutionConfig": ("pysymex.execution.config.settings", "ExecutionConfig"),
+    "ExecutionResult": ("pysymex.execution.results.result", "ExecutionResult"),
+    "SymbolicValue": ("pysymex.api.symbolic", "SymbolicValue"),
+    "SymbolicString": ("pysymex.api.symbolic", "SymbolicString"),
+    "SymbolicList": ("pysymex.api.symbolic", "SymbolicList"),
+    "SymbolicDict": ("pysymex.api.symbolic", "SymbolicDict"),
+    "SymbolicObject": ("pysymex.api.symbolic", "SymbolicObject"),
+    "SymbolicNone": ("pysymex.api.symbolic", "SymbolicNone"),
+    "VMState": ("pysymex.api.symbolic", "VMState"),
+    "IncrementalSolver": ("pysymex.api.symbolic", "IncrementalSolver"),
+    "Issue": ("pysymex.api.results", "Issue"),
+    "IssueKind": ("pysymex.api.results", "IssueKind"),
     "PysymexConfig": ("pysymex.config", "PysymexConfig"),
     "load_config": ("pysymex.config", "load_config"),
-    "configure_logging": ("pysymex.logger", "configure_logging"),
-    "get_logger": ("pysymex.logger", "get_logger"),
-    "LogLevel": ("pysymex.logger", "LogLevel"),
-    "format_result": ("pysymex.reporting.formatters", "format_result"),
-    "VerifiedExecutor": ("pysymex.execution.executors.verified", "VerifiedExecutor"),
-    "VerifiedExecutionConfig": (
-        "pysymex.execution.executors.verified",
-        "VerifiedExecutionConfig",
-    ),
-    "VerifiedExecutionResult": (
-        "pysymex.execution.executors.verified",
-        "VerifiedExecutionResult",
-    ),
-    "verify": ("pysymex.execution.executors.verified", "verify"),
-    "check_contracts": ("pysymex.execution.executors.verified", "check_contracts"),
-    "check_arithmetic": ("pysymex.execution.executors.verified", "check_arithmetic"),
-    "prove_termination": ("pysymex.execution.executors.verified", "prove_termination"),
-    "scan_file": ("pysymex.scanner", "scan_file"),
-    "scan_directory": ("pysymex.scanner", "scan_directory"),
-    "scan_directory_async": ("pysymex.scanner", "scan_directory_async"),
-    "analyze_async": ("pysymex.async_api", "analyze_async"),
-    "analyze_code_async": ("pysymex.async_api", "analyze_code_async"),
-    "analyze_file_async": ("pysymex.async_api", "analyze_file_async"),
-    "Z3Engine": ("pysymex.analysis.solver", "Z3Engine"),
-    "CallGraph": ("pysymex.analysis.solver", "CallGraph"),
-    "FunctionSummary": ("pysymex.analysis.solver", "FunctionSummary"),
-    "BugType": ("pysymex.analysis.solver", "BugType"),
-    "Severity": ("pysymex.analysis.solver", "Severity"),
-    "VerificationResult": ("pysymex.analysis.solver", "VerificationResult"),
-    "CrashCondition": ("pysymex.analysis.solver", "CrashCondition"),
-    "verify_function": ("pysymex.analysis.solver", "verify_function"),
-    "verify_code": ("pysymex.analysis.solver", "verify_code"),
-    "z3_verify_file": ("pysymex.analysis.solver", "verify_file"),
-    "z3_verify_directory": ("pysymex.analysis.solver", "verify_directory"),
-    "is_z3_available": ("pysymex.analysis.solver", "is_z3_available"),
+    "configure_logging": ("pysymex.api.logging", "configure_logging"),
+    "get_logger": ("pysymex.api.logging", "get_logger"),
+    "LogLevel": ("pysymex.api.logging", "LogLevel"),
+    "format_result": ("pysymex.api.formatting", "format_result"),
+    "VerifiedExecutor": ("pysymex.api.verification", "VerifiedExecutor"),
+    "VerifiedExecutionConfig": ("pysymex.api.verification", "VerifiedExecutionConfig"),
+    "VerifiedExecutionResult": ("pysymex.api.results", "VerifiedExecutionResult"),
+    "verify": ("pysymex.api.verification", "verify"),
+    "check_contracts": ("pysymex.api.verification", "check_contracts"),
+    "check_arithmetic": ("pysymex.api.verification", "check_arithmetic"),
+    "prove_termination": ("pysymex.api.verification", "prove_termination"),
+    "scan_file": ("pysymex.api.scanning", "scan_file"),
+    "scan_directory": ("pysymex.api.runtime", "scan_directory"),
 }
 
 _NON_Z3_EXPORTS = {

@@ -35,3 +35,8 @@ class TestMetricCollector:
             RuntimeError, match="MetricCollector.get_metrics must be implemented by subclasses"
         ):
             collector.get_metrics()
+
+    def test_reset_is_optional_noop(self) -> None:
+        """Verify collectors can opt out of per-run reset state."""
+        collector = MockCollector()
+        collector.reset()

@@ -4,9 +4,13 @@ import dis
 
 import z3
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.types import CallFrame
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py312 import control
 
 
@@ -40,6 +44,27 @@ def test_handle_return_const() -> None:
     state = VMState(pc=0)
     result = control.handle_return_const(_instr("RETURN_CONST", 5), state, OpcodeDispatcher())
     assert result.terminal is True
+
+
+def test_handle_return_const_truncates_callee_stack_before_pushing_result() -> None:
+    dispatcher = OpcodeDispatcher()
+    caller_instructions = [_instr("NOP", offset=0), _instr("NOP", offset=4)]
+    dispatcher.set_instructions(caller_instructions)
+    state = VMState(stack=[SymbolicValue.from_const(9), SymbolicValue.from_const(99)], pc=0)
+    state = state.push_call(
+        CallFrame(
+            function_name="callee",
+            return_pc=1,
+            local_vars=state.local_vars,
+            stack_depth=1,
+            caller_instructions=list(caller_instructions),
+        )
+    )
+
+    result = control.handle_return_const(_instr("RETURN_CONST", 5), state, dispatcher)
+
+    next_state = result.new_states[0]
+    assert [value.value for value in next_state.stack if isinstance(value, SymbolicValue)] == [9, 5]
 
 
 def test_handle_jump_backward() -> None:
@@ -160,6 +185,38 @@ def test_handle_call_intrinsic_1() -> None:
     state = VMState(stack=[1], pc=0)
     control.handle_call_intrinsic_1(_instr("CALL_INTRINSIC_1", 5), state, OpcodeDispatcher())
     assert state.peek() == 1
+
+
+def test_handle_call_intrinsic_1_list_to_tuple_concrete_list() -> None:
+    """LIST_TO_TUPLE consumes one list and pushes tuple-modeled items."""
+    state = VMState(stack=[[1, 2]], pc=7)
+    result = control.handle_call_intrinsic_1(
+        _instr("CALL_INTRINSIC_1", 6), state, OpcodeDispatcher()
+    )
+
+    next_state = result.new_states[0]
+    assert len(next_state.stack) == 1
+    tuple_value = next_state.peek()
+    assert isinstance(tuple_value, SymbolicList)
+    assert tuple_value.name == "tuple_7"
+    assert tuple_value.concrete_items == [1, 2]
+    assert z3.is_true(z3.simplify(tuple_value.z3_len == z3.IntVal(2)))
+
+
+def test_handle_call_intrinsic_1_list_to_tuple_resolves_heap_backed_list() -> None:
+    """LIST_TO_TUPLE must not lose concrete list payloads hidden behind handles."""
+    handle, _constraint = SymbolicObject.symbolic("list_obj", 41)
+    storage = SymbolicList.from_const([3, 4])
+    state = VMState(stack=[handle], memory={41: storage}, pc=8)
+    result = control.handle_call_intrinsic_1(
+        _instr("CALL_INTRINSIC_1", 6), state, OpcodeDispatcher()
+    )
+
+    tuple_value = result.new_states[0].peek()
+    assert isinstance(tuple_value, SymbolicList)
+    assert tuple_value.name == "tuple_8"
+    assert tuple_value.concrete_items == [3, 4]
+    assert z3.is_true(z3.simplify(tuple_value.z3_len == z3.IntVal(2)))
 
 
 def test_handle_call_intrinsic_2() -> None:

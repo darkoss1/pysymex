@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,14 +16,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Local and global variable opcodes (Python 3.12)."""
+"""Local and global variable opcodes (Python 3.12).
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 from pysymex.execution.opcodes.common.locals import (
     handle_common_cell_ops,
     handle_common_copy_free_vars,
@@ -50,8 +53,8 @@ from pysymex.execution.opcodes.common.locals import (
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("LOAD_CONST")

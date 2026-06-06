@@ -3,7 +3,7 @@
 import dis
 import z3
 from pysymex.analysis.detectors.logical.base import ContradictionContext
-from pysymex.analysis.detectors.logical.t2_multivar.sum_impossibility import SumImpossibilityRule
+from pysymex.analysis.detectors.logical.t2_multivar.impossibility.sum import SumImpossibilityRule
 
 
 def MockInstr(
@@ -38,6 +38,14 @@ class TestSumImpossibilityRule:
         x = z3.Int("x")
         y = z3.Int("y")
         core = [x >= 2, y >= 3, x + y < 5]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
+        assert SumImpossibilityRule().matches(ctx)
+
+    def test_matches_sum_at_strict_lower_bound(self) -> None:
+        """Classify sums equal to a strict lower bound as impossible."""
+        x = z3.Int("x")
+        y = z3.Int("y")
+        core = [x > 2, y >= 3, x + y <= 5]
         ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=core[:-1])
         assert SumImpossibilityRule().matches(ctx)
 

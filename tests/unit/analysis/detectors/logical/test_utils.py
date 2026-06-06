@@ -1,6 +1,12 @@
 """Tests for pysymex/analysis/detectors/logical/utils.py."""
 
 import dis
+import time
+
+import pytest
+import z3
+
+import pysymex.analysis.detectors.logical.utils.operators as operators_mod
 from pysymex.analysis.detectors.logical.utils import (
     get_variables,
     get_variables_for_core,
@@ -21,12 +27,15 @@ from pysymex.analysis.detectors.logical.utils import (
     count_operator,
     core_count_operator,
     relax_to_real,
+    check_sat_over_reals_result,
     is_sat_over_reals,
     get_variable_names,
     get_variable_names_all,
     expr_contains_variable,
     extract_constants,
 )
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
 
 
 def MockInstr(
@@ -154,6 +163,57 @@ def test_relax_to_real_exists() -> None:
 def test_is_sat_over_reals_exists() -> None:
     """Test is_sat_over_reals behavior."""
     assert callable(is_sat_over_reals)
+
+
+def test_check_sat_over_reals_result_preserves_structured_status() -> None:
+    x = z3.Int("real_relaxation_result_x")
+
+    sat_result = check_sat_over_reals_result([2 * x == 1])
+    unsat_result = check_sat_over_reals_result([x > 1, x < 0])
+
+    assert (sat_result.is_sat, sat_result.is_unsat, sat_result.is_unknown) == (
+        True,
+        False,
+        False,
+    )
+    assert (unsat_result.is_sat, unsat_result.is_unsat, unsat_result.is_unknown) == (
+        False,
+        True,
+        False,
+    )
+
+
+def test_is_sat_over_reals_does_not_treat_solver_unknown_as_sat() -> None:
+    solver = IncrementalSolver(timeout_ms=1000)
+    solver.set_deadline(time.perf_counter() - 1.0)
+    token = active_incremental_solver.set(solver)
+    try:
+        structured = check_sat_over_reals_result([z3.Int("unknown_real_relaxation_x") == 1])
+        result = is_sat_over_reals([z3.Int("unknown_real_relaxation_x") == 1])
+    finally:
+        active_incremental_solver.reset(token)
+
+    assert (structured.is_sat, structured.is_unsat, structured.is_unknown) == (
+        False,
+        False,
+        True,
+    )
+    assert result is False
+
+
+def test_check_sat_over_reals_result_reports_relaxation_failure_as_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_relaxation_failure(
+        _expr: z3.ExprRef, _var_map: dict[z3.ExprRef, z3.ExprRef]
+    ) -> z3.ExprRef:
+        raise z3.Z3Exception("relaxation failed")
+
+    monkeypatch.setattr(operators_mod, "relax_to_real", _raise_relaxation_failure)
+
+    result = check_sat_over_reals_result([z3.Int("failed_relaxation_x") == 1])
+
+    assert (result.is_sat, result.is_unsat, result.is_unknown) == (False, False, True)
 
 
 def test_get_variable_names_exists() -> None:

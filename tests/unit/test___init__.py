@@ -17,10 +17,9 @@ def test_getattr_missing() -> None:
 
 def test_getattr_z3_import_error() -> None:
     """Test __getattr__ raises RuntimeError when Z3 fails and target requires Z3."""
-    # We must patch _Z3_IMPORT_ERROR inside pysymex
     with patch("pysymex._Z3_IMPORT_ERROR", RuntimeError("mock err")):
         with pytest.raises(RuntimeError, match="mock err"):
-            getattr(pysymex, "Z3Engine")
+            getattr(pysymex, "SymbolicExecutor")
 
 
 def test_getattr_z3_import_error_bypass() -> None:

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,54 +16,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Exception modeling public exports."""
+"""Core symbolic exception package.
 
-from pysymex.core.exceptions.analyzer import (
-    BUILTIN_EXCEPTIONS,
-    ExceptionAnalyzer,
-    check_invariant_violation,
-    check_postcondition_violation,
-    check_precondition_violation,
-    create_exception_from_opcode,
-    get_exception_hierarchy,
-    is_builtin_exception,
-    merge_exception_states,
-    propagate_exception,
-)
-from pysymex.core.exceptions.types import (
-    EXCEPTION_CATEGORIES,
-    ExceptionCategory,
-    ExceptionHandler,
-    ExceptionPath,
-    ExceptionState,
-    FinallyHandler,
-    RaisesContract,
-    SymbolicException,
-    TryBlock,
-    get_exception_category,
-    raises,
-)
+Runtime ownership lives in direct modules:
 
-__all__ = [
-    "BUILTIN_EXCEPTIONS",
-    "EXCEPTION_CATEGORIES",
-    "ExceptionAnalyzer",
-    "ExceptionCategory",
-    "ExceptionHandler",
-    "ExceptionPath",
-    "ExceptionState",
-    "FinallyHandler",
-    "RaisesContract",
-    "SymbolicException",
-    "TryBlock",
-    "check_invariant_violation",
-    "check_postcondition_violation",
-    "check_precondition_violation",
-    "create_exception_from_opcode",
-    "get_exception_category",
-    "get_exception_hierarchy",
-    "is_builtin_exception",
-    "merge_exception_states",
-    "propagate_exception",
-    "raises",
-]
+- :mod:`pysymex.core.exceptions.objects` owns symbolic exception carriers and
+  handler records.
+- :mod:`pysymex.core.exceptions.state` owns path-local exception state.
+- :mod:`pysymex.core.exceptions.contracts` owns raises-contract metadata.
+- :mod:`pysymex.core.exceptions.categories` owns exception classification facts.
+- :mod:`pysymex.core.exceptions.builtins` owns built-in exception hierarchy
+  helpers.
+- :mod:`pysymex.core.exceptions.analyzer` owns occurrence and contract analysis.
+
+New internal code should import direct owners instead of routing through this
+package initializer.
+"""

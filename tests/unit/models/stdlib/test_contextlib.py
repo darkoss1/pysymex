@@ -1,26 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-from pathlib import Path
-from types import ModuleType
+import types
+from collections.abc import AsyncGenerator, Generator
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
+from typing import cast
 
 import pytest
 
-
-def _load_contextlib_models() -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "contextlib.py"
-    )
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_contextlib", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib contextlib models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-contextlib_models = _load_contextlib_models()
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.stdlib import get_stdlib_model
+from pysymex.models.stdlib import contextlib as contextlib_models
 
 
 class _CM:
@@ -63,22 +54,34 @@ class TestContextManagerModel:
     """Test suite for pysymex.models.stdlib.contextlib.ContextManagerModel."""
 
     def test_faithfulness(self) -> None:
-        def _gen() -> object:
+        def _gen() -> Generator[object, object, object]:
             yield 5
 
-        cm = contextlib_models.ContextManagerModel()(_gen)
+        factory = contextlib_models.ContextManagerModel()(_gen)
+        cm = cast(AbstractContextManager[object], factory())
         with cm as value:
             assert value == 5
 
     def test_error_path(self) -> None:
-        def _bad_gen() -> object:
-            if False:
-                yield None
+        def _bad_gen() -> Generator[object, object, object]:
+            yield from ()
 
-        cm = contextlib_models.ContextManagerModel()(_bad_gen)
+        factory = contextlib_models.ContextManagerModel()(_bad_gen)
+        cm = cast(AbstractContextManager[object], factory())
         with pytest.raises(RuntimeError, match="didn't yield"):
             with cm:
                 pass
+
+    def test_apply_returns_context_manager_factory(self) -> None:
+        def _gen() -> Generator[object, object, object]:
+            yield 9
+
+        result = contextlib_models.ContextManagerModel().apply([_gen], {}, VMState(pc=0))
+
+        assert isinstance(result.value, contextlib_models.ContextManagerFactory)
+        cm = cast(AbstractContextManager[object], result.value())
+        with cm as value:
+            assert value == 9
 
 
 class TestAsyncContextManagerModel:
@@ -86,22 +89,29 @@ class TestAsyncContextManagerModel:
 
     def test_faithfulness(self) -> None:
         async def _runner() -> int:
-            async def _agen() -> object:
+            async def _agen() -> AsyncGenerator[object, object]:
                 yield 7
 
-            cm = contextlib_models.AsyncContextManagerModel()(_agen)
+            cm = cast(
+                AbstractAsyncContextManager[object],
+                contextlib_models.AsyncContextManagerModel()(_agen),
+            )
             async with cm as value:
-                return int(value)
+                assert isinstance(value, int)
+                return value
 
         assert asyncio.run(_runner()) == 7
 
     def test_error_path(self) -> None:
         async def _runner() -> None:
-            async def _bad_agen() -> object:
-                if False:
-                    yield None
+            async def _bad_agen() -> AsyncGenerator[object, object]:
+                for item in ():
+                    yield item
 
-            cm = contextlib_models.AsyncContextManagerModel()(_bad_agen)
+            cm = cast(
+                AbstractAsyncContextManager[object],
+                contextlib_models.AsyncContextManagerModel()(_bad_agen),
+            )
             with pytest.raises(RuntimeError, match="didn't yield"):
                 async with cm:
                     pass
@@ -145,6 +155,39 @@ class TestExitStackModel:
         moved = stack.pop_all()
         assert isinstance(moved, contextlib_models.ExitStackModel)
 
+    def test_enter_context_returns_enter_value_and_registers_exit(self) -> None:
+        called: list[str] = []
+
+        class _TrackedCM:
+            def __enter__(self) -> object:
+                return 2
+
+            def __exit__(
+                self,
+                exc_type: type[BaseException] | None,
+                exc_val: BaseException | None,
+                exc_tb: types.TracebackType | None,
+            ) -> bool:
+                called.append("exit")
+                return False
+
+        stack = contextlib_models.ExitStackModel()
+
+        assert stack.enter_context(_TrackedCM()) == 2
+        assert stack.__exit__(None, None, None) is False
+        assert called == ["exit"]
+
+
+class TestExitStackConstructorModel:
+    """Test suite for pysymex.models.stdlib.contextlib.ExitStackConstructorModel."""
+
+    def test_constructor_returns_concrete_backed_stack_model(self) -> None:
+        result = contextlib_models.ExitStackConstructorModel().apply([], {}, VMState(pc=0))
+
+        assert isinstance(result.value, SymbolicValue)
+        assert isinstance(result.value.value, contextlib_models.ExitStackModel)
+        assert result.constraints == ()
+
 
 class TestAsyncExitStackModel:
     """Test suite for pysymex.models.stdlib.contextlib.AsyncExitStackModel."""
@@ -176,3 +219,29 @@ def test_get_contextlib_model() -> None:
     """Test get_contextlib_model behavior."""
     assert contextlib_models.get_contextlib_model("ExitStack") is contextlib_models.ExitStackModel
     assert contextlib_models.get_contextlib_model("missing") is None
+
+
+def test_exit_stack_constructor_registered_in_stdlib_registry() -> None:
+    """The executable ExitStack constructor model is available to call dispatch."""
+    assert isinstance(
+        get_stdlib_model("contextlib.ExitStack"),
+        contextlib_models.ExitStackConstructorModel,
+    )
+    assert isinstance(get_stdlib_model("ExitStack"), contextlib_models.ExitStackConstructorModel)
+
+
+def test_contextmanager_registered_in_stdlib_registry() -> None:
+    """The executable contextmanager decorator model is available to call dispatch."""
+    assert isinstance(
+        get_stdlib_model("contextlib.contextmanager"),
+        contextlib_models.ContextManagerModel,
+    )
+    assert isinstance(get_stdlib_model("contextmanager"), contextlib_models.ContextManagerModel)
+
+
+def test_suppress_model_matches_only_configured_exception_types() -> None:
+    """The bounded suppress stub preserves stdlib suppression type semantics."""
+    manager = contextlib_models.Suppress(ValueError)
+
+    assert manager.suppresses("ValueError") is True
+    assert manager.suppresses("ZeroDivisionError") is False

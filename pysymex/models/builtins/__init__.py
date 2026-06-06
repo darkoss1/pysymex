@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+# pyright: reportUnsupportedDunderAll=false
+
 """Symbolic models for Python builtin functions.
 
 This module provides symbolic handlers for core Python builtins like len,
@@ -30,324 +32,150 @@ Implementation spread across four sub-modules:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-    from pysymex.core.state import VMState
-
-
-from .base import FunctionModel, ModelResult
+from . import types as _builtin_types
+from .base import FunctionModel as FunctionModel, ModelResult as ModelResult
 from .exceptions import (
-    AssertionErrorModel,
-    AttributeErrorModel,
-    create_exception_models,
-    ExceptionTypeModel,
-    GeneratorExitModel,
-    IndexErrorModel,
-    KeyErrorModel,
-    NotImplementedErrorModel,
-    RuntimeErrorModel,
-    StopIterationModel,
-    TypeErrorModel,
-    ValueErrorModel,
-    ZeroDivisionErrorModel,
-)
-from .types import (
-    BuiltinTypeModel,
-    BoolModel as BuiltinBoolModel,
-    BytearrayModel as BuiltinBytearrayModel,
-    BytesModel as BuiltinBytesModel,
-    DictModel as BuiltinDictModel,
-    FloatModel as BuiltinFloatModel,
-    FrozensetModel as BuiltinFrozensetModel,
-    IntModel as BuiltinIntModel,
-    ListModel as BuiltinListModel,
-    NoneTypeModel,
-    ObjectModel as BuiltinObjectModel,
-    SetModel as BuiltinSetModel,
-    StrModel as BuiltinStrModel,
-    TupleModel as BuiltinTupleModel,
-    TypeModel as TypeModelBase,
-    TypeModelResult,
-    TypeTypeModel,
-)
-from .core import (
-    AbsModel,
-    BoolModel,
-    EnumerateModel,
-    FilterModel,
-    FloatModel,
-    IntModel,
-    IsinstanceModel,
-    LenModel,
-    ListModel,
-    MapModel,
-    MaxModel,
-    MinModel,
-    NoneModel,
-    PrintModel,
-    RangeModel,
-    SortedModel,
-    StrModel,
-    SumModel,
-    TupleModel,
-    TypeModel,
-    ZipModel,
-)
-from .extended import (
-    AllModel,
-    AnyModel,
-    AsciiModel,
-    BinModel,
-    BreakpointModel,
-    BytearrayModel,
-    BytesModel,
-    CallableModel,
-    ChrModel,
-    ClassmethodModel,
-    CompileModel,
-    DictModel,
-    DirModel,
-    DivmodModel,
-    EvalModel,
-    ExecModel,
-    FormatModel,
-    FrozensetModel,
-    GetattrModel,
-    GlobalsModel,
-    HasattrModel,
-    HashModel,
-    HexModel,
-    IdModel,
-    InputModel,
-    IssubclassModel,
-    IterModel,
-    LocalsModel,
-    MemoryviewModel,
-    NextModel,
-    ObjectModel,
-    OctModel,
-    OpenModel,
-    OrdModel,
-    PowModel,
-    PropertyModel,
-    ReprModel,
-    ReversedModel,
-    RoundModel,
-    SetattrModel,
-    SetModel,
-    StaticmethodModel,
-    SuperModel,
-    VarsModel,
+    AssertionErrorModel as AssertionErrorModel,
+    AttributeErrorModel as AttributeErrorModel,
+    create_exception_models as create_exception_models,
+    ExceptionTypeModel as ExceptionTypeModel,
+    GeneratorExitModel as GeneratorExitModel,
+    IndexErrorModel as IndexErrorModel,
+    KeyErrorModel as KeyErrorModel,
+    NotImplementedErrorModel as NotImplementedErrorModel,
+    RuntimeErrorModel as RuntimeErrorModel,
+    StopIterationModel as StopIterationModel,
+    TypeErrorModel as TypeErrorModel,
+    ValueErrorModel as ValueErrorModel,
+    ZeroDivisionErrorModel as ZeroDivisionErrorModel,
 )
 
-_TYPE_AND_EXCEPTION_EXPORTS: dict[str, object] = {
-    "AssertionErrorModel": AssertionErrorModel,
-    "AttributeErrorModel": AttributeErrorModel,
-    "create_exception_models": create_exception_models,
-    "ExceptionTypeModel": ExceptionTypeModel,
-    "GeneratorExitModel": GeneratorExitModel,
-    "IndexErrorModel": IndexErrorModel,
-    "KeyErrorModel": KeyErrorModel,
-    "NotImplementedErrorModel": NotImplementedErrorModel,
-    "RuntimeErrorModel": RuntimeErrorModel,
-    "StopIterationModel": StopIterationModel,
-    "TypeErrorModel": TypeErrorModel,
-    "ValueErrorModel": ValueErrorModel,
-    "ZeroDivisionErrorModel": ZeroDivisionErrorModel,
-    "BuiltinTypeModel": BuiltinTypeModel,
-    "BuiltinBoolModel": BuiltinBoolModel,
-    "BuiltinBytearrayModel": BuiltinBytearrayModel,
-    "BuiltinBytesModel": BuiltinBytesModel,
-    "BuiltinDictModel": BuiltinDictModel,
-    "BuiltinFloatModel": BuiltinFloatModel,
-    "BuiltinFrozensetModel": BuiltinFrozensetModel,
-    "BuiltinIntModel": BuiltinIntModel,
-    "BuiltinListModel": BuiltinListModel,
-    "NoneTypeModel": NoneTypeModel,
-    "BuiltinObjectModel": BuiltinObjectModel,
-    "BuiltinSetModel": BuiltinSetModel,
-    "BuiltinStrModel": BuiltinStrModel,
-    "BuiltinTupleModel": BuiltinTupleModel,
-    "TypeModelBase": TypeModelBase,
-    "TypeModelResult": TypeModelResult,
-    "TypeTypeModel": TypeTypeModel,
-}
-
-
-class ModelRegistry:
-    """Registry for function models."""
-
-    def __init__(self) -> None:
-        """Initialize a new ModelRegistry instance."""
-        self._models: dict[str, FunctionModel] = {}
-        self._register_defaults()
-
-    def _register_defaults(self) -> None:
-        """Register default builtin models and standard library models."""
-        from pysymex.models.builtins.core import ComplexModel, SliceModel
-        from pysymex.models.builtins.extended import EXTENDED_MODELS
-        from pysymex.models.containers.bytes import BYTES_MODELS
-        from pysymex.models.containers.dicts import DICT_MODELS
-        from pysymex.models.containers.frozensets import FROZENSET_MODELS
-        from pysymex.models.containers.lists import LIST_MODELS
-        from pysymex.models.numeric import INT_FLOAT_MODELS
-        from pysymex.models.containers.sets import SET_MODELS
-        from pysymex.models.containers.strings import STRING_MODELS
-        from pysymex.models.containers.tuples import TUPLE_MODELS
-
-        # Defer stdlib imports to avoid circular import
-        from pysymex.models.stdlib import (
-            collections_models,
-            datetime_models,
-            json_models,
-            math_models,
-            ospath_models,
-            random_models,
-            re_models,
-            types_models,
-        )
-
-        all_models = [
-            IntModel(),
-            FloatModel(),
-            BoolModel(),
-            StrModel(),
-            ListModel(),
-            DictModel(),
-            TupleModel(),
-            NoneModel(),
-            TypeModel(),
-            PrintModel(),
-            AbsModel(),
-            MinModel(),
-            MaxModel(),
-            SumModel(),
-            AnyModel(),
-            AllModel(),
-            ZipModel(),
-            RangeModel(),
-            EnumerateModel(),
-            FilterModel(),
-            MapModel(),
-            IterModel(),
-            NextModel(),
-            SuperModel(),
-            GetattrModel(),
-            SetattrModel(),
-            HasattrModel(),
-            IsinstanceModel(),
-            IssubclassModel(),
-            IdModel(),
-            HashModel(),
-            GlobalsModel(),
-            LocalsModel(),
-            LenModel(),
-            SetModel(),
-            SortedModel(),
-            ReversedModel(),
-            PowModel(),
-            RoundModel(),
-            DivmodModel(),
-            CallableModel(),
-            OrdModel(),
-            ChrModel(),
-            ReprModel(),
-            FormatModel(),
-            InputModel(),
-            OpenModel(),
-            ExecModel(),
-            EvalModel(),
-            CompileModel(),
-            BinModel(),
-            OctModel(),
-            HexModel(),
-            BytesModel(),
-            BytearrayModel(),
-            FrozensetModel(),
-            MemoryviewModel(),
-            ObjectModel(),
-            PropertyModel(),
-            ClassmethodModel(),
-            StaticmethodModel(),
-            VarsModel(),
-            DirModel(),
-            AsciiModel(),
-            BreakpointModel(),
-            *create_exception_models(),
-            ComplexModel(),
-            SliceModel(),
-            *math_models,
-            *collections_models,
-            *ospath_models,
-            *json_models,
-            *re_models,
-            *random_models,
-            *datetime_models,
-            *types_models,
-            *DICT_MODELS,
-            *LIST_MODELS,
-            *STRING_MODELS,
-            *EXTENDED_MODELS,
-            *SET_MODELS,
-            *TUPLE_MODELS,
-            *BYTES_MODELS,
-            *FROZENSET_MODELS,
-            *INT_FLOAT_MODELS,
-        ]
-        for model in all_models:
-            self.register(model)
-
-    def register(self, model: FunctionModel) -> None:
-        """Register a function model."""
-        self._models[model.name] = model
-        if model.qualname != model.name:
-            self._models[model.qualname] = model
-
-    def get(self, name: str) -> FunctionModel | None:
-        """Get a model by name."""
-        return self._models.get(name)
-
-    def apply(
-        self,
-        func: object,
-        args: list[StackValue],
-        kwargs: dict[str, StackValue],
-        state: VMState,
-    ) -> ModelResult | None:
-        """Try to apply a model for a function."""
-        func_name = getattr(func, "__name__", None)
-        if isinstance(func_name, str):
-            model = self.get(func_name)
-            if model:
-                return model.apply(args, kwargs, state)
-        model = self.get(str(func))
-        if model:
-            return model.apply(args, kwargs, state)
-        return None
-
-    def has_model(self, func: object) -> bool:
-        """Check if a model exists for a function."""
-        func_name = getattr(func, "__name__", None)
-        if isinstance(func_name, str):
-            return func_name in self._models
-        return str(func) in self._models
-
-    def list_models(self) -> list[str]:
-        """List all registered model names."""
-        return list({m.name for m in self._models.values()})
-
-
-_default_model_registry: ModelRegistry | None = None
-
-
-def get_default_model_registry() -> ModelRegistry:
-    """Return the lazily initialized builtin model registry."""
-    global _default_model_registry
-    if _default_model_registry is None:
-        _default_model_registry = ModelRegistry()
-    return _default_model_registry
+BuiltinTypeModel = _builtin_types.BuiltinTypeModel
+BuiltinBoolModel = _builtin_types.BoolModel
+BuiltinBytearrayModel = _builtin_types.BytearrayModel
+BuiltinBytesModel = _builtin_types.BytesModel
+BuiltinDictModel = _builtin_types.DictModel
+BuiltinFloatModel = _builtin_types.FloatModel
+BuiltinFrozensetModel = _builtin_types.FrozensetModel
+BuiltinIntModel = _builtin_types.IntModel
+BuiltinListModel = _builtin_types.ListModel
+NoneTypeModel = _builtin_types.NoneTypeModel
+BuiltinObjectModel = _builtin_types.ObjectModel
+BuiltinSetModel = _builtin_types.SetModel
+BuiltinStrModel = _builtin_types.StrModel
+BuiltinTupleModel = _builtin_types.TupleModel
+TypeModelBase = _builtin_types.TypeModel
+TypeModelResult = _builtin_types.TypeModelResult
+TypeTypeModel = _builtin_types.TypeTypeModel
+from .core.abs import AbsModel as AbsModel
+from .core.collections import (
+    ListModel as ListModel,
+    NoneModel as NoneModel,
+    TupleModel as TupleModel,
+)
+from .core.conversions.numeric import (
+    ComplexModel as ComplexModel,
+    FloatModel as FloatModel,
+    SliceModel as SliceModel,
+)
+from .core.conversions.scalar import (
+    BoolModel as BoolModel,
+    IntModel as IntModel,
+    StrModel as StrModel,
+)
+from .core.iterables import (
+    EnumerateModel as EnumerateModel,
+    FilterModel as FilterModel,
+    MapModel as MapModel,
+    SortedModel as SortedModel,
+    SumModel as SumModel,
+    ZipModel as ZipModel,
+)
+from .core.len import LenModel as LenModel
+from .core.max import MaxModel as MaxModel
+from .core.min import MinModel as MinModel
+from .core.range import RangeModel as RangeModel
+from .core.type_checks import (
+    IsinstanceModel as IsinstanceModel,
+    PrintModel as PrintModel,
+    TypeModel as TypeModel,
+)
+from .extended.attributes import (
+    DelattrModel as DelattrModel,
+    HasattrModel as HasattrModel,
+    SetattrModel as SetattrModel,
+)
+from .extended.binary_constructors import (
+    BytearrayModel as BytearrayModel,
+    BytesModel as BytesModel,
+    FrozensetModel as FrozensetModel,
+    MemoryviewModel as MemoryviewModel,
+    ObjectModel as ObjectModel,
+)
+from .extended.descriptors import (
+    AsciiModel as AsciiModel,
+    ClassmethodModel as ClassmethodModel,
+    DirModel as DirModel,
+    PropertyModel as PropertyModel,
+    StaticmethodModel as StaticmethodModel,
+    VarsModel as VarsModel,
+)
+from .extended.eval_io import (
+    BreakpointModel as BreakpointModel,
+    CompileModel as CompileModel,
+    EvalModel as EvalModel,
+    ExecModel as ExecModel,
+    ImportModel as ImportModel,
+    InputModel as InputModel,
+    OpenModel as OpenModel,
+)
+from .extended.getattr import GetattrModel as GetattrModel
+from .extended.identity import (
+    AiterModel as AiterModel,
+    AnextModel as AnextModel,
+    CallableModel as CallableModel,
+    FormatModel as FormatModel,
+    HashModel as HashModel,
+    IdModel as IdModel,
+    ReprModel as ReprModel,
+)
+from .extended.iterators import (
+    IterModel as IterModel,
+    NextModel as NextModel,
+    ReversedModel as ReversedModel,
+)
+from .extended.namespace import (
+    DictModel as DictModel,
+    GlobalsModel as GlobalsModel,
+    IssubclassModel as IssubclassModel,
+    LocalsModel as LocalsModel,
+    SetModel as SetModel,
+    SuperModel as SuperModel,
+)
+from .extended.numeric.format import (
+    BinModel as BinModel,
+    DivmodModel as DivmodModel,
+    HexModel as HexModel,
+    OctModel as OctModel,
+)
+from .extended.numeric.text import (
+    ChrModel as ChrModel,
+    OrdModel as OrdModel,
+    PowModel as PowModel,
+    RoundModel as RoundModel,
+)
+from .extended.truth import AllModel as AllModel, AnyModel as AnyModel
+from .extended.terminal import ExitModel as ExitModel, QuitModel as QuitModel
+from .extended.interactive_output import (
+    CopyrightModel as CopyrightModel,
+    CreditsModel as CreditsModel,
+    HelpModel as HelpModel,
+    LicenseModel as LicenseModel,
+)
+from .registry import (
+    ModelRegistry as ModelRegistry,
+    get_default_model_registry,
+)
 
 
 def __getattr__(name: str) -> object:
@@ -355,3 +183,8 @@ def __getattr__(name: str) -> object:
     if name == "default_model_registry":
         return get_default_model_registry()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+from .builtin.exports import BUILTIN_ALL
+
+__all__ = BUILTIN_ALL

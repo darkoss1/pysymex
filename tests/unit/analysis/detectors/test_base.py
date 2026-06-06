@@ -1,14 +1,10 @@
-from pysymex.analysis.detectors.base import IssueKind
+from pysymex.analysis.detectors.detector.types import IssueKind
 import dis
 from unittest.mock import Mock
-from pysymex.analysis.detectors.base import (
-    Issue,
-    DetectorInfo,
-    Detector,
-    DetectorRegistry,
-    IsSatFn,
-)
-from pysymex.core.state import VMState
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.registry import DetectorRegistry
+from pysymex.analysis.detectors.detector.types import DetectorInfo, IsSatFn, Issue
+from pysymex.core.state.record import VMState
 
 
 def MockInstr(
@@ -41,8 +37,12 @@ class DummyDetector(Detector):
         return None
 
 
+class ReplacementDummyDetector(DummyDetector):
+    description = "replacement dummy description"
+
+
 class TestIssueKind:
-    """Test suite for pysymex.analysis.detectors.base.IssueKind."""
+    """Test suite for detector type definitions."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -50,7 +50,7 @@ class TestIssueKind:
 
 
 class TestIssue:
-    """Test suite for pysymex.analysis.detectors.base.Issue."""
+    """Test suite for detector issue payloads."""
 
     def test_get_counterexample(self) -> None:
         """Test get_counterexample behavior."""
@@ -78,7 +78,7 @@ class TestIssue:
 
 
 class TestDetectorInfo:
-    """Test suite for pysymex.analysis.detectors.base.DetectorInfo."""
+    """Test suite for detector metadata."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -87,7 +87,7 @@ class TestDetectorInfo:
 
 
 class TestDetector:
-    """Test suite for pysymex.analysis.detectors.base.Detector."""
+    """Test suite for detector contracts."""
 
     def test_check(self) -> None:
         """Test check behavior."""
@@ -109,13 +109,26 @@ class TestDetector:
 
 
 class TestDetectorRegistry:
-    """Test suite for pysymex.analysis.detectors.base.DetectorRegistry."""
+    """Test suite for detector registries."""
 
     def test_register(self) -> None:
         """Test register behavior."""
         r = DetectorRegistry()
         r.register(DummyDetector)
-        assert "dummy" in r._detectors  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert "dummy" in r.detectors
+
+    def test_register_replaces_cached_detector_instance(self) -> None:
+        """Scenario: class re-registered by name; expected instance cache follows SSoT."""
+        r = DetectorRegistry()
+        r.register(DummyDetector)
+        first = r.get("dummy")
+
+        r.register(ReplacementDummyDetector)
+        second = r.get("dummy")
+
+        assert isinstance(first, DummyDetector)
+        assert isinstance(second, ReplacementDummyDetector)
+        assert second is not first
 
     def test_register_fn(self) -> None:
         """Test register_fn behavior."""
@@ -128,7 +141,27 @@ class TestDetectorRegistry:
 
         info = DetectorInfo("dfn", "desc", IssueKind.UNKNOWN)
         r.register_fn(dummy_fn, info)
-        assert "dfn" in r._fn_detectors  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert "dfn" in r.fn_detectors
+        adapter = r.get("dfn")
+        assert adapter is not None
+        assert adapter.name == "dfn"
+        assert adapter.check(Mock(), Mock(), Mock()) is None
+
+    def test_get_all_includes_function_detectors(self) -> None:
+        """Function detectors should not disappear from the instance API."""
+        r = DetectorRegistry()
+
+        def dummy_fn(
+            _state: VMState, _instruction: dis.Instruction, _is_satisfiable: IsSatFn
+        ) -> Issue | None:
+            return None
+
+        info = DetectorInfo("test_fn", "test description", IssueKind.UNKNOWN)
+        r.register(DummyDetector)
+        r.register_fn(dummy_fn, info)
+
+        detectors = r.get_all()
+        assert [detector.name for detector in detectors] == ["dummy", "test_fn"]
 
     def test_get_all_fns(self) -> None:
         """Test get_all_fns behavior."""

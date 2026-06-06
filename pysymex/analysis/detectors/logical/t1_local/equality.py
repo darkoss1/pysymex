@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Equality contradiction logical contradiction rule.
+
+Detects contradictions where a single variable is restricted to conflicting concrete value
+assignments (e.g. x == 1 and x == 2, or x == 1 and x != 1).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
 from pysymex.analysis.detectors.logical.utils import (
@@ -27,10 +33,21 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class EqualityContradictionRule(LogicRule):
+    """Rule that matches contradictions involving a single variable and conflicting equalities/disequalities."""
+
     name = "Equality Contradiction"
     tier = 1
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents an equality contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains only 1 variable, lacks arithmetic operators, and contains
+            conflicting equalities or equalities contradicting disequalities, otherwise False.
+        """
         if count_variables(ctx.core) != 1:
             return False
         if core_has_operator(

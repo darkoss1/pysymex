@@ -1,16 +1,14 @@
-from pysymex.analysis.detectors.filter import (
-    Confidence,
-    AssertionContext,
-    FilterResult,
-    is_typing_false_positive,
-    is_type_checking_block_issue,
+from pysymex.analysis.detectors.detector.types import Issue, IssueKind
+from pysymex.analysis.detectors.filter.confidence import calculate_confidence
+from pysymex.analysis.detectors.filter.core import (
     detect_assertion_context,
-    calculate_confidence,
     filter_issue,
     filter_issues,
-    deduplicate_issues,
+    is_type_checking_block_issue,
+    is_typing_false_positive,
 )
-from pysymex.analysis.detectors.base import IssueKind
+from pysymex.analysis.detectors.filter.dedup import deduplicate_issues
+from pysymex.analysis.detectors.filter.types import AssertionContext, Confidence, FilterResult
 
 
 class MockIssue:
@@ -53,6 +51,16 @@ class MockIssue:
     @property
     def pc(self) -> int:
         return self._pc
+
+
+class EmptyModel:
+    def decls(self) -> list[object]:
+        return []
+
+
+class BrokenModel:
+    def decls(self) -> list[object]:
+        raise RuntimeError("model declarations unavailable")
 
 
 class TestIssueLike:
@@ -147,17 +155,22 @@ def test_detect_assertion_context() -> None:
 
 def test_calculate_confidence() -> None:
     """Test calculate_confidence behavior."""
-    issue_high = MockIssue(IssueKind.DIVISION_BY_ZERO, "msg", model={})
+    issue_high = MockIssue(IssueKind.DIVISION_BY_ZERO, "msg", model=EmptyModel())
     assert calculate_confidence(issue_high) == Confidence.HIGH
-
-    issue_abstract = MockIssue(IssueKind.UNKNOWN, "[Abstract Interpreter] error")
-    assert calculate_confidence(issue_abstract) == Confidence.HIGH
 
     issue_assert = MockIssue(IssueKind.ASSERTION_ERROR, "fail")
     assert calculate_confidence(issue_assert) == Confidence.MEDIUM
 
     issue_type = MockIssue(IssueKind.TYPE_ERROR, "Attempting to subscript Callable")
     assert calculate_confidence(issue_type) == Confidence.LOW
+
+
+def test_calculate_confidence_treats_malformed_model_as_low_confidence() -> None:
+    issue_division = MockIssue(IssueKind.DIVISION_BY_ZERO, "msg", model=BrokenModel())
+    assert calculate_confidence(issue_division) == Confidence.MEDIUM
+
+    issue_key = MockIssue(IssueKind.KEY_ERROR, "msg", model=BrokenModel())
+    assert calculate_confidence(issue_key) == Confidence.LOW
 
 
 def test_filter_issue() -> None:
@@ -167,7 +180,7 @@ def test_filter_issue() -> None:
     assert res1.should_filter is True
     assert res1.reason == "Typing annotation false positive"
 
-    issue_valid = MockIssue(IssueKind.DIVISION_BY_ZERO, "msg", model={})
+    issue_valid = MockIssue(IssueKind.DIVISION_BY_ZERO, "msg", model=EmptyModel())
     res2 = filter_issue(issue_valid)
     assert res2.should_filter is False
     assert res2.confidence == Confidence.HIGH
@@ -184,6 +197,42 @@ def test_filter_issues() -> None:
     assert filtered[0].kind == IssueKind.DIVISION_BY_ZERO
 
 
+def test_filter_issues_lowers_default_numeric_confidence() -> None:
+    issue = Issue(
+        kind=IssueKind.DIVISION_BY_ZERO,
+        message="Possible division by zero through uninspectable model",
+        model={"havoc_call@2_int": 0},
+    )
+
+    filtered = filter_issues([issue])
+
+    assert filtered[0].confidence == 0.5
+
+
+def test_filter_issues_preserves_detector_specific_numeric_confidence() -> None:
+    issue = Issue(
+        kind=IssueKind.INDEX_ERROR,
+        message="Possible index out of bounds",
+        model={},
+        confidence=0.9,
+    )
+
+    filtered = filter_issues([issue])
+
+    assert filtered[0].confidence == 0.9
+
+
+def test_filter_issues_preserves_no_model_diagnostic_identity() -> None:
+    issue = Issue(
+        kind=IssueKind.UNKNOWN,
+        message="Precondition 'x > 0' could not be checked",
+    )
+
+    filtered = filter_issues([issue])
+
+    assert filtered[0] is issue
+
+
 def test_deduplicate_issues() -> None:
     """Test deduplicate_issues behavior."""
     issues = [
@@ -193,3 +242,65 @@ def test_deduplicate_issues() -> None:
     ]
     dedup = deduplicate_issues(issues)
     assert len(dedup) == 2
+
+
+def test_deduplicate_prefers_trigger_backed_variant() -> None:
+    """A shorter no-model variant must not erase concrete trigger evidence."""
+    issues = [
+        Issue(
+            IssueKind.INDEX_ERROR,
+            "Possible index out of bounds: items[long_symbolic_index]",
+            line_number=10,
+            pc=5,
+            counterexample={"idx": 5},
+            confidence=0.9,
+        ),
+        Issue(
+            IssueKind.INDEX_ERROR,
+            "Possible IndexError: list index out of range",
+            line_number=10,
+            pc=5,
+            confidence=1.0,
+        ),
+    ]
+
+    dedup = deduplicate_issues(issues)
+
+    assert len(dedup) == 1
+    assert dedup[0].get_counterexample() == {"idx": 5}
+
+
+def test_deduplicate_suppresses_type_error_after_same_line_unbound_variable() -> None:
+    """UnboundLocalError is the first CPython error for that expression line."""
+    issues = [
+        MockIssue(IssueKind.UNBOUND_VARIABLE, "Variable 'x' may be unbound", line_number=10, pc=4),
+        MockIssue(
+            IssueKind.TYPE_ERROR,
+            "Cannot concatenate 'str' with non-'str' operand",
+            line_number=10,
+            pc=5,
+        ),
+        MockIssue(IssueKind.TYPE_ERROR, "real type error", line_number=11, pc=9),
+    ]
+
+    dedup = deduplicate_issues(issues)
+
+    assert [issue.kind for issue in dedup] == [IssueKind.UNBOUND_VARIABLE, IssueKind.TYPE_ERROR]
+    assert dedup[1].line_number == 11
+
+
+def test_deduplicate_merges_unbound_variable_path_variants() -> None:
+    """Same unbound local and line should report once across branch histories."""
+    issues = [
+        MockIssue(IssueKind.UNBOUND_VARIABLE, "Variable 'x' may be unbound", line_number=10, pc=4),
+        MockIssue(IssueKind.UNBOUND_VARIABLE, "Variable 'x' may be unbound", line_number=10, pc=8),
+        MockIssue(IssueKind.UNBOUND_VARIABLE, "Variable 'y' may be unbound", line_number=10, pc=12),
+    ]
+
+    dedup = deduplicate_issues(issues)
+
+    assert len(dedup) == 2
+    assert {issue.message for issue in dedup} == {
+        "Variable 'x' may be unbound",
+        "Variable 'y' may be unbound",
+    }

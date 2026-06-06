@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -10,11 +10,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Formatting opcode handlers for Python 3.11.
 
@@ -27,7 +27,9 @@ FORMAT_VALUE flags:
 - 0x02: repr(value)
 - 0x03: ascii(value)
 - 0x04: format spec is present on the stack
-"""
+.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
@@ -35,17 +37,16 @@ import dis
 from typing import TYPE_CHECKING
 
 from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.types import (
-    AdvancedSymbolicFloat,
-    SymbolicFloat,
-    SymbolicString,
-    SymbolicValue,
-)
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.core.types.advanced_float import AdvancedSymbolicFloat
+from pysymex.core.types.numeric.float import SymbolicFloat
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 _SYMBOLIC_TYPES = (
@@ -63,6 +64,7 @@ def _make_issue(
     kind: IssueKind,
     message: str,
 ) -> Issue:
+    """Build an :class:`Issue` at the current PC with path constraints."""
     return Issue(
         kind=kind,
         message=message,
@@ -72,6 +74,7 @@ def _make_issue(
 
 
 def _runtime_error(state: VMState, message: str) -> OpcodeResult:
+    """Return a definite runtime-error opcode result for formatting failures."""
     return OpcodeResult.error(
         _make_issue(
             state=state,
@@ -82,6 +85,7 @@ def _runtime_error(state: VMState, message: str) -> OpcodeResult:
 
 
 def _type_error(state: VMState, message: str) -> OpcodeResult:
+    """Return a definite type-error opcode result for invalid format operands."""
     return OpcodeResult.error(
         _make_issue(
             state=state,
@@ -92,10 +96,12 @@ def _type_error(state: VMState, message: str) -> OpcodeResult:
 
 
 def _is_symbolic(value: object) -> bool:
+    """Return whether *value* requires symbolic f-string formatting."""
     return isinstance(value, _SYMBOLIC_TYPES)
 
 
 def _push_symbolic_string(state: VMState, name: str) -> OpcodeResult:
+    """Push a fresh symbolic string and advance past the formatting opcode."""
     result, constraint = SymbolicString.symbolic(name)
     state = state.add_constraint(constraint)
     state = state.push(result)

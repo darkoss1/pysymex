@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,13 +16,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Null Dereference specialized detector module.
+
+Exposes a specialized null dereference detector wrapping the core none dereference detector.
+
+Bug Class Detected:
+    Null Dereference.
+
+Required Evidence:
+    Satisfiable path constraints where the target of attribute access or indexing is None.
+
+Issue Kinds:
+    IssueKind.NULL_DEREFERENCE
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.analysis.detectors.base import DisInstruction, IsSatFn, Issue
+from pysymex.analysis.detectors.detector.types import DisInstruction, IsSatFn, Issue
 from pysymex.analysis.detectors.runtime.none_dereference import (
     NoneDereferenceDetector as RuntimeNoneDereferenceDetector,
     normalize_attr_name,
@@ -30,9 +44,7 @@ from pysymex.analysis.detectors.runtime.none_dereference import (
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-
-_normalize_attr_name = normalize_attr_name
+    from pysymex.core.state.record import VMState
 
 
 def pure_check_null_deref(
@@ -50,7 +62,7 @@ def pure_check_null_deref(
     if opname not in {"LOAD_ATTR", "LOAD_METHOD", "STORE_ATTR", "BINARY_SUBSCR"}:
         return None
     normalized_attr_name = (
-        "__getitem__" if opname == "BINARY_SUBSCR" else _normalize_attr_name(attr_name)
+        "__getitem__" if opname == "BINARY_SUBSCR" else normalize_attr_name(attr_name)
     )
     if not normalized_attr_name:
         return None

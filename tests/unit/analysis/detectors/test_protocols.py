@@ -1,94 +1,74 @@
-from pysymex.analysis.detectors.protocols import Protocol, ProtocolChecker
-from pysymex.analysis.type_constraints.checker import TypeConstraintChecker
-import z3
-from pysymex.analysis.type_constraints.types import SymbolicType, TypeKind
+from collections.abc import Sequence
 
-
-class MockTypeChecker(TypeConstraintChecker):
-    def __init__(self) -> None:
-        pass
-
-    def is_subtype(
-        self,
-        sub: SymbolicType,
-        sup: SymbolicType,
-        path_constraints: list[z3.BoolRef] | None = None,
-    ) -> tuple[bool, str | None]:
-        # For testing, consider them equal if they are the same object, else not subtype
-        _ = path_constraints
-        if sub is sup:
-            return True, ""
-        return False, "incompatible"
-
-
-class TestProtocol:
-    """Test suite for pysymex.analysis.detectors.protocols.Protocol."""
-
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        p = Protocol("MyProto")
-        assert p.name == "MyProto"
-        assert len(p.required_methods) == 0
-        assert len(p.required_attributes) == 0
-
-
-class TestProtocolChecker:
-    """Test suite for pysymex.analysis.detectors.protocols.ProtocolChecker."""
-
-    def test_check_protocol_satisfaction(self) -> None:
-        """Test check_protocol_satisfaction behavior."""
-        tc = MockTypeChecker()
-        checker = ProtocolChecker(tc)
-
-        t1 = SymbolicType(TypeKind.INT)
-        t2 = SymbolicType(TypeKind.STR)
-
-        p = Protocol("Proto", required_methods={"m1": t1}, required_attributes={"a1": t2})
-
-        issues = checker.check_protocol_satisfaction(
-            SymbolicType(TypeKind.OBJECT), p, {"m1": t1}, {"a1": t2}
-        )
-        assert len(issues) == 0
-
-        issues2 = checker.check_protocol_satisfaction(SymbolicType(TypeKind.OBJECT), p, {}, {})
-        assert len(issues2) == 2
-        assert any("Missing method" in i.message for i in issues2)
-        assert any("Missing attribute" in i.message for i in issues2)
-
-        issues3 = checker.check_protocol_satisfaction(
-            SymbolicType(TypeKind.OBJECT), p, {"m1": t2}, {"a1": t1}
-        )
-        assert len(issues3) == 2
-        assert any("incompatible type" in i.message for i in issues3)
+from pysymex.analysis.detectors.protocols import (
+    ExecutionContextLike,
+    ScanReporter,
+)
 
 
 class TestScanReporter:
     """Test suite for pysymex.analysis.detectors.protocols.ScanReporter."""
 
-    def test_on_status(self) -> None:
-        """Test on_status behavior."""
-        pass
+    def test_structural_reporter_methods(self) -> None:
+        """ScanReporter remains a structural protocol for scanner callbacks."""
 
-    def test_on_issue(self) -> None:
-        """Test on_issue behavior."""
-        pass
+        class Reporter:
+            def __init__(self) -> None:
+                self.events: list[str] = []
 
-    def test_on_error(self) -> None:
-        """Test on_error behavior."""
-        pass
+            def on_status(self, message: str) -> None:
+                self.events.append(f"status:{message}")
 
-    def test_on_progress(self) -> None:
-        """Test on_progress behavior."""
-        pass
+            def on_issue(self, issue: dict[str, object]) -> None:
+                self.events.append(f"issue:{issue['kind']}")
 
-    def test_on_summary(self) -> None:
-        """Test on_summary behavior."""
-        pass
+            def on_error(self, file_path: object, error: str) -> None:
+                self.events.append(f"error:{file_path}:{error}")
+
+            def on_progress(
+                self,
+                completed: int,
+                total: int,
+                file_path: object,
+                result: object | None,
+            ) -> None:
+                _ = result
+                self.events.append(f"progress:{completed}/{total}:{file_path}")
+
+            def on_summary(self, results: Sequence[object], total_files: int) -> None:
+                self.events.append(f"summary:{len(results)}/{total_files}")
+
+        reporter: ScanReporter = Reporter()
+        reporter.on_status("running")
+        reporter.on_issue({"kind": "DEAD_CODE"})
+        reporter.on_error("x.py", "failed")
+        reporter.on_progress(1, 2, "x.py", None)
+        reporter.on_summary([], 2)
+
+        assert isinstance(reporter, Reporter)
+        assert reporter.events == [
+            "status:running",
+            "issue:DEAD_CODE",
+            "error:x.py:failed",
+            "progress:1/2:x.py",
+            "summary:0/2",
+        ]
 
 
 class TestExecutionContextLike:
     """Test suite for pysymex.analysis.detectors.protocols.ExecutionContextLike."""
 
-    def test_register_hook(self) -> None:
-        """Test register_hook behavior."""
-        pass
+    def test_execution_context_like_is_detector_owned_structural_protocol(self) -> None:
+        """Analysis owns the structural view and does not import execution runtime."""
+
+        class ExecutorView:
+            instructions: Sequence[object] = ()
+            solver = object()
+            _paths_explored = 0
+            _coverage: set[int] = set()
+            issues: Sequence[object] = ()
+
+            def register_hook(self, hook_name: str, handler: object) -> None:
+                _ = hook_name, handler
+
+        assert isinstance(ExecutorView(), ExecutionContextLike)

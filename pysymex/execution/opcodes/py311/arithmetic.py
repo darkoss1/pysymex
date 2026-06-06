@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,50 +16,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Arithmetic opcode wrappers for Python 3.11."""
+"""Arithmetic opcode wrappers for Python 3.11.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
-from pysymex.execution.opcodes.common.numeric import (
-    check_division_by_zero as _check_division_by_zero,
-    check_negative_shift as _check_negative_shift,
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
+from pysymex.execution.opcodes.common.numeric.ops import (
     handle_numeric_binary_op,
     handle_unary_invert as handle_common_unary_invert,
+    handle_unary_negative as handle_common_unary_negative,
+    handle_unary_not as handle_common_unary_not,
+    handle_unary_positive as handle_common_unary_positive,
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
-
-
-def _is_concrete_numeric(value: object) -> TypeGuard[int | float | bool]:
-    """Return whether *value* supports Python unary numeric operators."""
-    return isinstance(value, (int, float, bool))
-
-
-def check_division_by_zero(
-    right: object,
-    state: VMState,
-    op: str,
-    left: object,
-) -> bool:
-    """Compatibility wrapper for the shared division-by-zero predicate."""
-    return _check_division_by_zero(right, state, op, left)
-
-
-def check_negative_shift(
-    right: object,
-    state: VMState,
-    op: str,
-    left: object,
-) -> bool:
-    """Compatibility wrapper for the shared negative-shift predicate."""
-    return _check_negative_shift(right, state, op, left)
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("BINARY_OP")
@@ -79,17 +57,7 @@ def handle_unary_positive(
     CPython raises ``TypeError`` for ``+`` on non-numeric types (e.g. ``str``).
     Symbolic strings therefore terminate this path rather than pass through silently.
     """
-    _ = (instr, ctx)
-    value = state.pop()
-    if _is_concrete_numeric(value):
-        state = state.push(+value)  # type: ignore[operator]  # TypeGuard narrows to int|float|bool
-        return OpcodeResult.continue_with(state.advance_pc())
-    if isinstance(value, SymbolicString):
-        # CPython: TypeError: bad operand type for unary +: 'str'
-        return OpcodeResult.terminate()
-    symbolic = SymbolicValue.from_const(value)
-    state = state.push(symbolic)
-    return OpcodeResult.continue_with(state.advance_pc())
+    return handle_common_unary_positive(instr, state, ctx)
 
 
 @opcode_handler("UNARY_NEGATIVE")
@@ -100,23 +68,14 @@ def handle_unary_negative(
 ) -> OpcodeResult:
     """Apply Python unary ``-`` semantics."""
     _ = (instr, ctx)
-    value = state.pop()
-    if _is_concrete_numeric(value):
-        state = state.push(-value)
-    else:
-        symbolic = SymbolicValue.from_const(value)
-        state = state.push(-symbolic)
-    return OpcodeResult.continue_with(state.advance_pc())
+    return handle_common_unary_negative(state)
 
 
 @opcode_handler("UNARY_NOT")
 def handle_unary_not(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
     """Apply Python unary ``not`` semantics."""
     _ = (instr, ctx)
-    value = state.pop()
-    symbolic = SymbolicValue.from_const(value)
-    state = state.push(symbolic.logical_not())
-    return OpcodeResult.continue_with(state.advance_pc())
+    return handle_common_unary_not(state)
 
 
 @opcode_handler("UNARY_INVERT")
@@ -132,7 +91,7 @@ def handle_unary_invert(
 
 @opcode_handler("LOAD_ATTR")
 def handle_load_attr(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher) -> OpcodeResult:
-    """Load an attribute, checking heap memory and enhanced object state."""
+    """Load an attribute, checking heap memory and modeled object state."""
     from pysymex.execution.opcodes.common.functions import handle_common_load_method
 
     return handle_common_load_method(instr, state, ctx)

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
-from pysymex._typing import StackValue
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, ModelResult
-from pysymex.models.builtins import core, extended
+from pysymex.typing import StackValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.base import ModelResult
+from pysymex.models.builtins.core.len import LenModel
+from pysymex.models.builtins.extended.registry import EXTENDED_MODELS
+from pysymex.models.builtins.extended.truth import AllModel, AnyModel
 
 
 def _state() -> VMState:
@@ -18,7 +18,7 @@ def _state() -> VMState:
 @pytest.mark.parametrize("values", [[], [1], [1, 2, 3], [0, 0, 0]])
 def test_len_model_parametrized_faithfulness(values: list[int]) -> None:
     args: list[StackValue] = [list(values)]
-    result = core.LenModel().apply(args, {}, _state())
+    result = LenModel().apply(args, {}, _state())
     assert result.value == len(values)
 
 
@@ -31,22 +31,13 @@ def test_all_any_parametrized_faithfulness(items: list[int | bool]) -> None:
 
     stack_items: list[StackValue] = [*items]
     args: list[StackValue] = [stack_items]
-    all_res = extended.AllModel().apply(args, {}, _state())
-    any_res = extended.AnyModel().apply(args, {}, _state())
+    all_res = AllModel().apply(args, {}, _state())
+    any_res = AnyModel().apply(args, {}, _state())
     assert _bool_value(all_res.value) == all(items)
     assert _bool_value(any_res.value) == any(items)
 
 
 def test_extended_auto_discovery_apply() -> None:
-    classes: list[type[FunctionModel]] = []
-    for _, obj in inspect.getmembers(extended, inspect.isclass):
-        if (
-            obj.__module__ == extended.__name__
-            and issubclass(obj, FunctionModel)
-            and obj is not FunctionModel
-        ):
-            classes.append(obj)
-    for cls in classes:
-        model = cls()
+    for model in EXTENDED_MODELS:
         result = model.apply([], {}, _state())
         assert isinstance(result, ModelResult)

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""``pysymex.tracing`` â€” LLM-optimised execution observability layer.
+"""``pysymex.tracing`` - LLM-optimised execution observability layer.
 
 This package provides a completely decoupled tracing system for
 :class:`~pysymex.execution.executors.core.SymbolicExecutor`.  It emits
@@ -61,11 +61,13 @@ Public API
 
 from __future__ import annotations
 
-from pysymex.tracing.hooks import TracingHookPlugin
 from pysymex.tracing.schemas import (
     ConstraintEntry,
+    DetectorQueryTraceEvent,
+    FallbackTraceEvent,
     IssueEvent,
     KeyframeEvent,
+    PathFeasibilityTraceEvent,
     SolveEvent,
     StackDiff,
     StepDeltaEvent,
@@ -76,20 +78,23 @@ from pysymex.tracing.schemas import (
     VerbosityLevel,
 )
 from pysymex.tracing.tracer import ExecutionTracer, TracingSolverProxy, attach_tracer
-from pysymex.tracing.z3_utils import Z3SemanticRegistry, Z3Serializer
+from pysymex.tracing.z3.registry import Z3SemanticRegistry
+from pysymex.tracing.z3.serializer import Z3Serializer
 
 __all__ = [
     "ConstraintEntry",
+    "DetectorQueryTraceEvent",
     "ExecutionTracer",
+    "FallbackTraceEvent",
     "IssueEvent",
     "KeyframeEvent",
+    "PathFeasibilityTraceEvent",
     "SolveEvent",
     "StackDiff",
     "StepDeltaEvent",
     "SystemContextEvent",
     "TraceEvent",
     "TracerConfig",
-    "TracingHookPlugin",
     "TracingSolverProxy",
     "VarDiff",
     "VerbosityLevel",

@@ -3,8 +3,9 @@ import logging
 from collections.abc import Callable
 from typing import Any, Dict, Optional, List, Tuple, cast
 from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.types import ExecutionConfig, ExecutionResult
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.execution.config.settings import ExecutionConfig
+from pysymex.execution.results.result import ExecutionResult
+from pysymex.core.types.scalars.values import SymbolicValue
 
 # Configure logging to be quiet during validation
 logging.getLogger("pysymex").setLevel(logging.ERROR)
@@ -31,9 +32,7 @@ def run_pysymex(
     """
     Uses SymbolicExecutor to get symbolic results.
     """
-    config = ExecutionConfig(
-        max_paths=1, max_depth=100, enable_chtd=False, enable_abstract_interpretation=False
-    )
+    config = ExecutionConfig(max_paths=1, max_depth=100)
     executor = SymbolicExecutor(config)
 
     arg_names = list(symbolic_vars.keys()) if symbolic_vars else []

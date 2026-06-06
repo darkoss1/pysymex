@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
-from typing import Generator
+from typing import Generator, cast
 
 import pytest
 
@@ -19,9 +19,9 @@ project_root_str = str(PROJECT_ROOT)
 if project_root_str not in sys.path:
     sys.path.insert(0, project_root_str)
 
-from pysymex.core.memory import MemoryState
-from pysymex.core.solver.engine import IncrementalSolver
-from pysymex.core.state import VMState
+from pysymex.core.memory.heap.state import MemoryState
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
 
 
 @pytest.fixture(scope="session")
@@ -60,26 +60,35 @@ def state() -> VMState:
 @pytest.fixture(autouse=True)
 def clean_global_caches() -> Generator[None, None, None]:
     """Clean all global caches before and after each test to ensure total isolation."""
-    from pysymex.core.types.scalars import FROM_CONST_CACHE, SYMBOLIC_CACHE, STRING_CONST_CACHE
-    from pysymex.core.types.containers import BYTES_CONST_CACHE
-    from pysymex.core.solver.engine import clear_solver_caches, _thread_local_solver  # pyright: ignore[reportPrivateUsage]
-    from pysymex.core.objects.oop import enhanced_class_registry
-    from pysymex.core.memory.addressing import reset as reset_addressing
+    from pysymex.core.types.scalars.values import FROM_CONST_CACHE
+    from pysymex.core.types.scalars.values import SYMBOLIC_CACHE
+    from pysymex.core.types.scalars.values import STRING_CONST_CACHE
+    from pysymex.core.types.containers.bytes import BYTES_CONST_CACHE
+    from pysymex.core.solver.constraints.literals import clear_exact_bool_literal_cache
+    from pysymex.core.solver.constraints.theory import clear_bitvector_theory_cache
+    from pysymex.core.solver.engine.context import thread_local_solver
+    from pysymex.core.solver.engine.queries import clear_solver_caches
+    from pysymex.models.objects import class_registry
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher, OpcodeHandler
 
-    SYMBOLIC_CACHE.clear()
-    FROM_CONST_CACHE.clear()
-    STRING_CONST_CACHE.clear()
-    BYTES_CONST_CACHE.clear()
-    clear_solver_caches()
-    _thread_local_solver.solver = None
-    enhanced_class_registry.clear()
-    reset_addressing()
+    global_handlers = cast(
+        "dict[str, OpcodeHandler]", getattr(OpcodeDispatcher, "_global_handlers")
+    )
+    opcode_handlers_snapshot = dict(global_handlers)
+
+    def reset() -> None:
+        SYMBOLIC_CACHE.clear()
+        FROM_CONST_CACHE.clear()
+        STRING_CONST_CACHE.clear()
+        BYTES_CONST_CACHE.clear()
+        clear_bitvector_theory_cache()
+        clear_exact_bool_literal_cache()
+        clear_solver_caches()
+        thread_local_solver.solver = None
+        class_registry.clear()
+        global_handlers.clear()
+        global_handlers.update(opcode_handlers_snapshot)
+
+    reset()
     yield
-    SYMBOLIC_CACHE.clear()
-    FROM_CONST_CACHE.clear()
-    STRING_CONST_CACHE.clear()
-    BYTES_CONST_CACHE.clear()
-    clear_solver_caches()
-    _thread_local_solver.solver = None
-    enhanced_class_registry.clear()
-    reset_addressing()
+    reset()

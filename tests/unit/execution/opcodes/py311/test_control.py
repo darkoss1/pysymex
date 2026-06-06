@@ -1,18 +1,36 @@
 from __future__ import annotations
 
 import dis
+from collections.abc import Callable
 
 import z3
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py311 import control
+from pysymex.models.objects import SymbolicClass, class_registry
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
     base = next(iter(dis.get_instructions(compile("x = 1", "<test>", "exec"))))
     return base._replace(opname=opname, argval=argval, offset=offset)
+
+
+def _false_bool(_self: object) -> bool:
+    return False
+
+
+def _true_bool(_self: object) -> bool:
+    return True
+
+
+def _modeled_bool_value(class_name: str, method: Callable[[object], bool]) -> SymbolicValue:
+    modeled_cls = class_registry.register_class(SymbolicClass(class_name))
+    modeled_cls.add_method("__bool__", method)
+    value = SymbolicValue.from_const(1)
+    value.attach_modeled_object(class_registry.instantiate(modeled_cls))
+    return value
 
 
 def test_handle_no_op() -> None:
@@ -155,6 +173,42 @@ def test_handle_jump_if_false_or_pop() -> None:
         _instr("JUMP_IF_FALSE_OR_POP", 8, offset=0), state, dispatcher
     )
     assert len(result.new_states) >= 1
+
+
+def test_handle_jump_if_false_or_pop_retains_modeled_operand_after_false_bool() -> None:
+    original = _modeled_bool_value("_FalseShortCircuit", _false_bool)
+    dispatcher = OpcodeDispatcher()
+    instr = _instr("JUMP_IF_FALSE_OR_POP", 8, offset=0)
+    dispatcher.set_instructions([instr, _instr("NOP", offset=4), _instr("NOP", offset=8)])
+
+    dispatched = control.handle_jump_or_pop(instr, VMState(stack=[original], pc=0), dispatcher)
+    returned = control.handle_return_value(
+        _instr("RETURN_VALUE"),
+        dispatched.new_states[0].push(SymbolicValue.from_const(False)),
+        dispatcher,
+    )
+
+    assert len(returned.new_states) == 1
+    assert returned.new_states[0].pc == 2
+    assert returned.new_states[0].peek() is original
+
+
+def test_handle_jump_if_false_or_pop_drops_modeled_operand_after_true_bool() -> None:
+    original = _modeled_bool_value("_TrueFallthrough", _true_bool)
+    dispatcher = OpcodeDispatcher()
+    instr = _instr("JUMP_IF_FALSE_OR_POP", 8, offset=0)
+    dispatcher.set_instructions([instr, _instr("NOP", offset=4), _instr("NOP", offset=8)])
+
+    dispatched = control.handle_jump_or_pop(instr, VMState(stack=[original], pc=0), dispatcher)
+    returned = control.handle_return_value(
+        _instr("RETURN_VALUE"),
+        dispatched.new_states[0].push(SymbolicValue.from_const(True)),
+        dispatcher,
+    )
+
+    assert len(returned.new_states) == 1
+    assert returned.new_states[0].pc == 1
+    assert returned.new_states[0].stack == []
 
 
 def test_handle_resume() -> None:

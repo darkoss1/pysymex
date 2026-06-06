@@ -3,14 +3,13 @@ from __future__ import annotations
 import dis
 from dataclasses import dataclass
 
+import pytest
+
 from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.state import VMState
-from pysymex.execution.dispatcher import (
-    OpcodeDispatcher,
-    OpcodeResult,
-    get_global_dispatcher,
-    opcode_handler,
-)
+from pysymex.core.state.record import VMState
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher, opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
+from pysymex.execution.fallback import FallbackEvent, FallbackKind
 
 
 def _make_instruction(opname: str, offset: int = 0, argval: int | None = None) -> dis.Instruction:
@@ -32,7 +31,7 @@ def _noop_handler(instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher)
 
 
 class TestOpcodeResult:
-    """Test suite for pysymex.execution.dispatcher.OpcodeResult."""
+    """Test suite for pysymex.execution.dispatch.result.OpcodeResult."""
 
     def test_continue_with(self) -> None:
         """Test continue_with behavior."""
@@ -40,6 +39,26 @@ class TestOpcodeResult:
         result = OpcodeResult.continue_with(state)
 
         assert result.new_states == [state]
+
+    def test_continue_with_preserves_fallback_events(self) -> None:
+        """Opcode results carry structured fallback events alongside legacy labels."""
+        state = VMState()
+        event = FallbackEvent(
+            kind=FallbackKind.PRECISION_LOSS,
+            label="unmodeled_call_abstraction",
+            owner="execution.calls",
+            reason="unit",
+        )
+
+        result = OpcodeResult.continue_with(
+            state,
+            degraded_passes=["unmodeled_call_abstraction"],
+            fallback_events=[event],
+        )
+
+        assert result.new_states == [state]
+        assert result.degraded_passes == ["unmodeled_call_abstraction"]
+        assert result.fallback_events == [event]
 
     def test_branch(self) -> None:
         """Test branch behavior."""
@@ -83,10 +102,9 @@ class TestOpcodeResult:
 
     def test_error(self) -> None:
         """Test error behavior."""
-        state = VMState()
         fatal = Issue(kind=IssueKind.TYPE_ERROR, message="fatal")
 
-        result = OpcodeResult.error(fatal, state)
+        result = OpcodeResult.error(fatal)
 
         assert result.terminal is True
         assert result.new_states == []
@@ -94,7 +112,7 @@ class TestOpcodeResult:
 
 
 class TestOpcodeDispatcher:
-    """Test suite for pysymex.execution.dispatcher.OpcodeDispatcher."""
+    """Test suite for pysymex.execution.dispatch.dispatcher.OpcodeDispatcher."""
 
     def test_register(self) -> None:
         """Test register behavior."""
@@ -127,13 +145,12 @@ class TestOpcodeDispatcher:
         dispatcher.set_instructions(instructions)
         assert dispatcher.instructions == instructions
 
-    def test_set_fallback(self) -> None:
-        """Test set_fallback behavior."""
+    def test_dispatch_rejects_unknown_opcode_without_recovery_handler(self) -> None:
+        """Unknown opcodes fail explicitly."""
         dispatcher = OpcodeDispatcher()
-        dispatcher.set_fallback(_noop_handler)
         state = VMState()
-        result = dispatcher.dispatch(_make_instruction("UNKNOWN"), state)
-        assert len(result.new_states) == 1
+        with pytest.raises(RuntimeError, match="Opcode not supported: UNKNOWN"):
+            dispatcher.dispatch(_make_instruction("UNKNOWN"), state)
 
     def test_set_instructions(self) -> None:
         """Test set_instructions behavior."""
@@ -168,6 +185,17 @@ class TestOpcodeDispatcher:
         dispatcher.set_exception_entries(entries)
         dispatcher.set_instructions([_make_instruction("NOP", 40), _make_instruction("NOP", 60)])
         assert dispatcher.find_exception_handler(4) == 1
+
+    def test_switching_to_unregistered_stream_clears_exception_entries(self) -> None:
+        """Exception metadata does not carry into an unrelated instruction stream."""
+        dispatcher = OpcodeDispatcher()
+        dispatcher.set_instructions([_make_instruction("NOP", 20)])
+        dispatcher.set_exception_entries([_ExcEntry(start=0, end=10, target=20)])
+        assert dispatcher.find_exception_handler(5) == 0
+
+        dispatcher.set_instructions([_make_instruction("NOP", 40)])
+
+        assert dispatcher.find_exception_handler(5) is None
 
     def test_get_instruction(self) -> None:
         """Test get_instruction behavior."""
@@ -217,13 +245,6 @@ class TestOpcodeDispatcher:
         dispatcher = OpcodeDispatcher()
         dispatcher.set_instructions([_make_instruction("NOP", 0), _make_instruction("NOP", 2)])
         assert dispatcher.instruction_count() == 2
-
-
-def test_get_global_dispatcher() -> None:
-    """Test get_global_dispatcher behavior."""
-    first = get_global_dispatcher()
-    second = get_global_dispatcher()
-    assert first is second
 
 
 def test_opcode_handler() -> None:

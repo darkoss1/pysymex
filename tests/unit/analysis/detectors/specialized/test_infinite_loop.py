@@ -6,8 +6,8 @@ import dis
 import z3
 
 from pysymex.analysis.detectors.specialized.infinite_loop import InfiniteLoopDetector
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:
@@ -42,7 +42,7 @@ class TestInfiniteLoopDetector:
     def test_check_reports_issue_when_backward_jump_exceeds_max_iterations(self) -> None:
         """Report INFINITE_LOOP when JUMP_BACKWARD counter strictly exceeds max allowed."""
         detector = InfiniteLoopDetector()
-        detector._max_iterations = 2  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        detector.max_iterations = 2
         instruction = _make_instruction("JUMP_BACKWARD")
         state = VMState(stack=[], path_constraints=[], pc=10)
         state.loop_counters[10] = 2  # next hit makes it 3 > 2
@@ -55,7 +55,7 @@ class TestInfiniteLoopDetector:
     def test_check_returns_none_when_backward_jump_under_max_iterations(self) -> None:
         """Return None when JUMP_BACKWARD counter is under or equal to max iterations."""
         detector = InfiniteLoopDetector()
-        detector._max_iterations = 2  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        detector.max_iterations = 2
         instruction = _make_instruction("JUMP_BACKWARD")
         state = VMState(stack=[], path_constraints=[], pc=10)
         state.loop_counters[10] = 1  # next hit makes it 2 <= 2
@@ -84,7 +84,7 @@ class TestInfiniteLoopDetector:
         cond, _ = SymbolicValue.symbolic_bool("cond")
         state = VMState(stack=[cond], path_constraints=[], pc=10)
 
-        # Simulate is_satisfiable: Always true (so it can be True and can be False)
+        # Simulate path_may_be_feasible: Always true (so it can be True and can be False)
         issue = detector.check(state, instruction, _always_sat)
 
         assert issue is None

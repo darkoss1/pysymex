@@ -1,27 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
 
 import z3
 
-from pysymex.core.types.containers import SymbolicList
+from pysymex.core.types.containers.lists import SymbolicList
 
-
-def _load_itertools_models() -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "itertools.py"
-    )
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_itertools", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib itertools models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-itertools_models = _load_itertools_models()
+from pysymex.models.stdlib import itertools as itertools_models
 
 
 def _sym_list(name: str, length: int) -> SymbolicList:
@@ -30,13 +14,30 @@ def _sym_list(name: str, length: int) -> SymbolicList:
     return sym
 
 
-def _predicate(_value: object) -> bool:
+def _predicate(value: object) -> bool:
     return True
 
 
 def test_model_chain() -> None:
     result = itertools_models.model_chain(_sym_list("a", 2), _sym_list("b", 3))
     assert isinstance(result, SymbolicList)
+
+
+def test_model_chain_preserves_concrete_items() -> None:
+    result = itertools_models.model_chain(
+        SymbolicList.from_const([1]),
+        SymbolicList.from_const([2, 3]),
+    )
+
+    assert result.concrete_items == [1, 2, 3]
+
+
+def test_chain_model_registered_for_call_dispatch() -> None:
+    from pysymex.models.stdlib import get_stdlib_model
+
+    model = get_stdlib_model("itertools.chain")
+
+    assert isinstance(model, itertools_models.ChainModel)
 
 
 def test_model_chain_from_iterable() -> None:

@@ -7,7 +7,8 @@ across multiple test subsystems.
 from __future__ import annotations
 
 import z3
-from pysymex.core.types import SymbolicBool, SymbolicInt
+from pysymex.core.types.numeric.bool import SymbolicBool
+from pysymex.core.types.numeric.int import SymbolicInt
 
 
 def create_symbolic_int(name: str | None = None) -> SymbolicInt:

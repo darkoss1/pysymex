@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.analysis.detectors.detector.types import IssueKind
+from pysymex.core.state.record import VMState
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from pysymex.execution.opcodes.common.numeric.helpers import (
+    check_division_by_zero,
+    check_negative_shift,
+)
 from pysymex.execution.opcodes.py311 import arithmetic
 
 
@@ -23,7 +29,7 @@ def test_check_division_by_zero() -> None:
     state = VMState(pc=7)
     left = SymbolicValue.from_const(10)
     right = SymbolicValue.from_const(0)
-    has_zero = arithmetic.check_division_by_zero(right, state, "/", left)
+    has_zero = check_division_by_zero(right, state, "/", left)
     assert has_zero is True
 
 
@@ -32,7 +38,7 @@ def test_check_negative_shift() -> None:
     state = VMState(pc=3)
     left = SymbolicValue.from_const(1)
     right = SymbolicValue.from_const(-1)
-    has_negative_shift = arithmetic.check_negative_shift(right, state, "<<", left)
+    has_negative_shift = check_negative_shift(right, state, "<<", left)
     assert has_negative_shift is True
 
 
@@ -44,6 +50,14 @@ def test_handle_unary_positive() -> None:
     assert result.new_states[0].peek() == 5
 
 
+def test_handle_unary_positive_reports_concrete_string_type_error() -> None:
+    """Unary plus on str follows CPython's definite TypeError path."""
+    state = VMState(stack=["text"], pc=0)
+    result = arithmetic.handle_unary_positive(_instr("UNARY_POSITIVE"), state, OpcodeDispatcher())
+    assert result.terminal is True
+    assert [issue.kind for issue in result.issues] == [IssueKind.TYPE_ERROR]
+
+
 def test_handle_unary_negative() -> None:
     """Test handle_unary_negative behavior."""
     state = VMState(stack=[5], pc=0)
@@ -52,12 +66,12 @@ def test_handle_unary_negative() -> None:
     assert result.new_states[0].peek() == -5
 
 
-def test_handle_load_attr() -> None:
-    """Test handle_load_attr behavior with None receiver."""
+def test_handle_load_attr_reports_none_receiver() -> None:
+    """LOAD_ATTR on None reports a feasible null dereference."""
     state = VMState(stack=[SymbolicNone()], pc=0)
     result = arithmetic.handle_load_attr(_instr("LOAD_ATTR", "x"), state, OpcodeDispatcher())
-    assert result.terminal is False
-    assert len(result.issues) == 0
+    assert result.terminal is True
+    assert [issue.kind for issue in result.issues] == [IssueKind.NULL_DEREFERENCE]
 
 
 def test_handle_unary_not() -> None:

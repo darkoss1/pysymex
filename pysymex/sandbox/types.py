@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -54,14 +54,24 @@ class SandboxBackend(Enum):
     LINUX_NAMESPACE = auto()
     """Linux seccomp-bpf + user namespaces. Most secure on Linux."""
 
-    WINDOWS_JOB = auto()
-    """Windows Job Objects + process mitigations."""
+    WINDOWS_APPCONTAINER = auto()
+    """Windows AppContainer process with deny-by-default capabilities."""
 
     WASM = auto()
     """WebAssembly runtime (wasmtime). Cross-platform fallback."""
 
-    SUBPROCESS = auto()
-    """Basic subprocess isolation. Minimum security, maximum compatibility."""
+
+class SandboxBackendStrength(Enum):
+    """Backend strength classification after availability or setup checks."""
+
+    STRONG = auto()
+    """Backend satisfies the strong sandbox capability contract."""
+
+    EXPERIMENTAL = auto()
+    """Backend has partial isolation but must not be treated as strong."""
+
+    UNAVAILABLE = auto()
+    """Backend is unavailable or has not been set up."""
 
 
 class ExecutionStatus(Enum):
@@ -151,6 +161,9 @@ class ResourceLimits:
     max_output_bytes: int = 1024 * 1024
     """Maximum stdout + stderr combined (1 MB default)."""
 
+    max_result_bytes: int = 10 * 1024 * 1024
+    """Maximum serialized sandbox result payload accepted by the host."""
+
 
 @dataclass(frozen=True, slots=True)
 class SandboxConfig:
@@ -168,12 +181,6 @@ class SandboxConfig:
         python_executable: Path to Python interpreter (uses sys.executable)
         capture_output: Whether to capture stdout/stderr
         allow_stdin: Whether to allow stdin input
-        harness_blocked_modules: Modules to block inside the harness.
-            ``None`` → use ``SANDBOX_BLOCKED_MODULES`` from ``_constants``.
-            An explicit ``frozenset`` overrides the default (pass an empty
-            set to disable module blocking while retaining OS-level isolation).
-        harness_restrict_builtins: Whether to restrict builtins (exec,
-            eval, compile, open, …) inside the harness namespace.
     """
 
     limits: ResourceLimits = field(default_factory=ResourceLimits)
@@ -184,13 +191,7 @@ class SandboxConfig:
     capture_output: bool = True
     allow_stdin: bool = False
 
-    harness_blocked_modules: frozenset[str] | None = None
-    harness_allowed_imports: frozenset[str] | None = None
-    harness_restrict_builtins: bool = True
-    harness_install_audit_hook: bool = True
-    harness_block_ast_imports: bool = True
-
-    allow_weak_backends: bool = False
+    wasm_python_module: Path | None = None
 
     required_capabilities: SecurityCapabilities | None = None
 

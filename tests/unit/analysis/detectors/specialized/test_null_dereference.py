@@ -9,7 +9,7 @@ from pysymex.analysis.detectors.specialized.null_dereference import (
     NullDereferenceDetector,
     pure_check_null_deref,
 )
-from pysymex.core.state import VMState
+from pysymex.core.state.record import VMState
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:

@@ -1,25 +1,9 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
+import pysymex.models as top_models
 
-
-def _load_dataclasses_models() -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "dataclasses.py"
-    )
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_dataclasses", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib dataclasses models module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-dc_models = _load_dataclasses_models()
+from pysymex.models.stdlib import dataclasses as dc_models
+from pysymex.models.stdlib import data as data_models
 
 
 class TestFieldInfo:
@@ -102,6 +86,21 @@ def test_dataclass_fields_model() -> None:
 def test_get_dataclasses_model() -> None:
     assert dc_models.get_dataclasses_model("dataclass") is not None
     assert dc_models.get_dataclasses_model("missing") is None
+
+
+def test_top_level_dataclass_exports_use_runtime_model_namespace() -> None:
+    """Top-level runtime dataclass exports resolve to the runtime-model owner."""
+    assert top_models.FieldInfo is dc_models.FieldInfo
+    assert top_models.dataclass_model is dc_models.dataclass_model
+    assert top_models.DATACLASSES_MODELS is dc_models.DATACLASSES_MODELS
+
+
+def test_symbolic_function_models_remain_in_data_namespace() -> None:
+    """Symbolic FunctionModel dataclass handlers stay separate from runtime helpers."""
+    assert data_models.DataclassModel.__module__ == "pysymex.models.stdlib.data.dataclasses"
+    assert all(
+        model.qualname.startswith("dataclasses.") for model in data_models.dataclasses_models
+    )
 
 
 class TestDataclassModelHash:

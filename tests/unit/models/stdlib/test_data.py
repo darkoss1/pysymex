@@ -1,24 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
 
-
-def _load_data_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "data.py"
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_data", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib data models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-data_models = _load_data_models()
+from pysymex.models.stdlib import data as data_models
 
 
 def _state() -> VMState:
@@ -79,7 +65,7 @@ class TestDataclassModel:
     """Test suite for pysymex.models.stdlib.data.DataclassModel."""
 
     def test_faithfulness(self) -> None:
-        marker = object()
+        marker = SymbolicValue.from_const("marker")
         result = data_models.DataclassModel().apply([marker], {}, _state())
         assert result.value is marker
 
@@ -138,7 +124,9 @@ class TestReplaceModel:
     """Test suite for pysymex.models.stdlib.data.ReplaceModel."""
 
     def test_faithfulness(self) -> None:
-        result = data_models.ReplaceModel().apply([object()], {"x": 1}, _state())
+        result = data_models.ReplaceModel().apply(
+            [SymbolicValue.from_const("instance")], {"x": 1}, _state()
+        )
         assert result.value is not None
 
     def test_error_path(self) -> None:

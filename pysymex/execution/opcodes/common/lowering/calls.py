@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -29,15 +29,15 @@ from typing import TYPE_CHECKING
 
 import z3
 
-from pysymex.core.types import (
-    SymbolicNone,
-    SymbolicObject,
-    SymbolicValue,
-)
+from pysymex.core.constants import Z3_FALSE
 from pysymex.core.constants import Z3_TRUE
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.calls.payload import function_payload
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
+    from pysymex.typing import StackValue
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,7 @@ class CallLowerer:
     """Resolve Python call targets and argument layout."""
 
     def __init__(self, pc: int):
+        """Record the bytecode offset used for call-layout lowering."""
         self.pc = pc
 
     def resolve_layout(
@@ -62,13 +63,17 @@ class CallLowerer:
         receiver_or_null: StackValue,
         args: list[StackValue],
         kwargs: dict[str, StackValue],
+        *,
+        receiver_is_argument: bool = False,
     ) -> CallLayout:
         """Resolve the (func, self, args) layout from the stack components."""
 
         func_obj = top_value
         final_args = list(args)
 
-        if not isinstance(receiver_or_null, SymbolicNone) and receiver_or_null is not None:
+        if receiver_is_argument or (
+            not isinstance(receiver_or_null, SymbolicNone) and receiver_or_null is not None
+        ):
             final_args.insert(0, receiver_or_null)
 
         is_heuristic = self.is_likely_callable(func_obj)
@@ -78,12 +83,21 @@ class CallLowerer:
         )
 
     def is_likely_callable(self, obj: object) -> bool:
+        """Return a conservative guess that *obj* is intended as a call target."""
+        if getattr(obj, "_pysymex_bound_type_call", False) is True:
+            return True
         if callable(obj):
             return True
         if isinstance(obj, (SymbolicObject, SymbolicValue)):
-            enhanced = getattr(obj, "_enhanced_object", None)
-            if getattr(obj, "affinity_type", None) == "type" or isinstance(
-                enhanced, types.CodeType
+            modeled_object = getattr(obj, "_modeled_object", None)
+            modeled_class = getattr(modeled_object, "cls", None)
+            get_method = getattr(modeled_class, "get_method", None)
+            if callable(get_method) and get_method("__call__") is not None:
+                return True
+            if function_payload(modeled_object) is not None:
+                return True
+            if getattr(obj, "affinity_type", None) in {"callable", "type"} or isinstance(
+                modeled_object, types.CodeType
             ):
                 return True
             name = getattr(obj, "_name", "") or getattr(obj, "name", "")
@@ -100,4 +114,4 @@ class CallLowerer:
         """Return condition for whether the callable is None/NULL."""
         if isinstance(func_obj, (SymbolicNone, SymbolicValue)):
             return Z3_TRUE if isinstance(func_obj, SymbolicNone) else func_obj.is_none
-        return z3.BoolVal(func_obj is None)
+        return Z3_TRUE if func_obj is None else Z3_FALSE

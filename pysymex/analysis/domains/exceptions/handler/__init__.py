@@ -1,0 +1,285 @@
+# pysymex: python symbolic execution & formal verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Exception handler awareness for reducing false positives.
+
+This module detects when code is inside exception handlers to avoid
+reporting unreachable code or expected error conditions.
+
+"""
+
+from __future__ import annotations
+
+from pysymex.logger import get_logger
+from types import CodeType
+
+logger = get_logger(__name__)
+
+import ast
+import dis
+from collections.abc import Sequence
+
+from pysymex.analysis.domains.exceptions.handler.context import (
+    ExceptionHandlerInfo,
+    ExceptionHandlerState,
+    ExceptionHandlerType,
+)
+from pysymex.analysis.domains.exceptions.handler.filters import (
+    should_skip_issue_in_handler as should_skip_issue_in_handler,
+)
+from pysymex.core.cache import get_instructions as cached_get_instructions
+
+
+class ExceptionHandlerAnalyzer:
+    """Analyzes code to detect exception handler blocks."""
+
+    def __init__(self) -> None:
+        """Initialize the analyzer."""
+        self._state = ExceptionHandlerState()
+
+    def analyze_bytecode(self, code: CodeType) -> list[ExceptionHandlerInfo]:
+        """Extract exception handlers from bytecode.
+
+        Args:
+            code: The code object to analyze
+
+        Returns:
+            List of detected exception handlers
+        """
+        handlers: list[ExceptionHandlerInfo] = []
+
+        if hasattr(code, "co_exceptiontable") and code.co_exceptiontable:
+            handlers.extend(self._parse_exception_table(code))
+
+        instructions = cached_get_instructions(code)
+        handlers.extend(self._detect_handler_patterns(instructions))
+
+        self._state.all_handlers = handlers
+        return handlers
+
+    def _parse_exception_table(self, code: CodeType) -> list[ExceptionHandlerInfo]:
+        """Parse the exception table from Python 3.11+ code objects."""
+        handlers: list[ExceptionHandlerInfo] = []
+
+        try:
+            table = code.co_exceptiontable
+            if not table:
+                return handlers
+
+            instructions = cached_get_instructions(code)
+
+            for i, instr in enumerate(instructions):
+                if instr.opname == "PUSH_EXC_INFO":
+                    start_pc = instr.offset
+                    end_pc = self._find_handler_end(instructions, i)
+                    handlers.append(
+                        ExceptionHandlerInfo(
+                            handler_type=ExceptionHandlerType.EXCEPT,
+                            start_pc=start_pc,
+                            end_pc=end_pc,
+                        )
+                    )
+
+        except (ValueError, IndexError):
+            logger.debug("Exception table parse failed; using pattern detection", exc_info=True)
+
+        return handlers
+
+    def _detect_handler_patterns(
+        self,
+        instructions: Sequence[dis.Instruction],
+    ) -> list[ExceptionHandlerInfo]:
+        """Detect exception handler patterns in bytecode."""
+        handlers: list[ExceptionHandlerInfo] = []
+
+        for i, instr in enumerate(instructions):
+            if instr.opname in ("SETUP_FINALLY", "SETUP_EXCEPT"):
+                target = instr.argval
+                handlers.append(
+                    ExceptionHandlerInfo(
+                        handler_type=(
+                            ExceptionHandlerType.FINALLY
+                            if "FINALLY" in instr.opname
+                            else ExceptionHandlerType.EXCEPT
+                        ),
+                        start_pc=instr.offset,
+                        end_pc=target,
+                    )
+                )
+
+            elif instr.opname == "PUSH_EXC_INFO":
+                start_pc = instr.offset
+                end_pc = self._find_handler_end(instructions, i)
+                handlers.append(
+                    ExceptionHandlerInfo(
+                        handler_type=ExceptionHandlerType.EXCEPT,
+                        start_pc=start_pc,
+                        end_pc=end_pc,
+                    )
+                )
+
+        return handlers
+
+    def _find_handler_end(
+        self,
+        instructions: Sequence[dis.Instruction],
+        start_idx: int,
+    ) -> int:
+        """Find the end of an exception handler block."""
+        for i in range(start_idx + 1, len(instructions)):
+            instr = instructions[i]
+            if instr.opname in ("POP_EXCEPT", "RERAISE", "END_FINALLY"):
+                return instr.offset
+            if instr.opname in ("RETURN_VALUE", "RETURN_CONST"):
+                return instr.offset
+
+        return instructions[-1].offset if instructions else 0
+
+    def analyze_source(self, source_code: str) -> list[ExceptionHandlerInfo]:
+        """Extract exception handlers from source code.
+
+        Args:
+            source_code: The source code to analyze
+
+        Returns:
+            List of detected exception handlers
+        """
+        try:
+            tree = ast.parse(source_code)
+            return self._visit_ast(tree)
+        except SyntaxError:
+            return []
+
+    def _visit_ast(self, node: ast.AST, depth: int = 0) -> list[ExceptionHandlerInfo]:
+        """Visit AST nodes to find exception handlers."""
+        handlers: list[ExceptionHandlerInfo] = []
+
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.Try):
+                for handler in child.handlers:
+                    exc_types = []
+                    exc_var = None
+
+                    if handler.type:
+                        if isinstance(handler.type, ast.Name):
+                            exc_types = [handler.type.id]
+                        elif isinstance(handler.type, ast.Tuple):
+                            exc_types = [
+                                elt.id for elt in handler.type.elts if isinstance(elt, ast.Name)
+                            ]
+
+                    if handler.name:
+                        exc_var = handler.name
+                        handler_type = ExceptionHandlerType.EXCEPT_AS
+                    elif exc_types:
+                        handler_type = ExceptionHandlerType.EXCEPT_TYPE
+                    else:
+                        handler_type = ExceptionHandlerType.EXCEPT
+
+                    handlers.append(
+                        ExceptionHandlerInfo(
+                            handler_type=handler_type,
+                            start_pc=getattr(handler, "lineno", 0),
+                            end_pc=getattr(handler, "end_lineno", 0),
+                            exception_types=exc_types,
+                            exception_var=exc_var,
+                            nesting_depth=depth,
+                        )
+                    )
+
+                if child.finalbody:
+                    handlers.append(
+                        ExceptionHandlerInfo(
+                            handler_type=ExceptionHandlerType.FINALLY,
+                            start_pc=child.finalbody[0].lineno if child.finalbody else child.lineno,
+                            end_pc=(
+                                child.finalbody[-1].end_lineno or 0
+                                if child.finalbody
+                                else child.lineno
+                            ),
+                            nesting_depth=depth,
+                        )
+                    )
+
+                if child.orelse:
+                    handlers.append(
+                        ExceptionHandlerInfo(
+                            handler_type=ExceptionHandlerType.ELSE,
+                            start_pc=child.orelse[0].lineno if child.orelse else child.lineno,
+                            end_pc=(
+                                (child.orelse[-1].end_lineno or 0) if child.orelse else child.lineno
+                            ),
+                            nesting_depth=depth,
+                        )
+                    )
+
+                handlers.extend(self._visit_ast(child, depth + 1))
+            else:
+                handlers.extend(self._visit_ast(child, depth))
+
+        return handlers
+
+    def is_pc_in_handler(self, pc: int) -> bool:
+        """Check if a program counter is inside an exception handler.
+
+        Args:
+            pc: The program counter to check
+
+        Returns:
+            True if inside an exception handler
+        """
+        for handler in self._state.all_handlers:
+            if handler.start_pc <= pc <= handler.end_pc:
+                return True
+        return False
+
+    def is_line_in_handler(self, line_number: int) -> bool:
+        """Check if a line number is inside an exception handler.
+
+        Args:
+            line_number: The line number to check
+
+        Returns:
+            True if inside an exception handler
+        """
+        for handler in self._state.all_handlers:
+            if handler.start_pc <= line_number <= handler.end_pc:
+                return True
+        return False
+
+    def get_handler_at(self, pc: int) -> ExceptionHandlerInfo | None:
+        """Get the exception handler at a given PC.
+
+        Args:
+            pc: The program counter
+
+        Returns:
+            The handler info or None
+        """
+        for handler in self._state.all_handlers:
+            if handler.start_pc <= pc <= handler.end_pc:
+                return handler
+        return None
+
+    def get_state(self) -> ExceptionHandlerState:
+        """Get the current state."""
+        return self._state
+
+    def set_state(self, state: ExceptionHandlerState) -> None:
+        """Set the current state."""
+        self._state = state

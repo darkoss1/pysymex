@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,21 +16,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-pysymex Memory Model - Type definitions
-Dataclasses, enums, and type-only classes for the memory model.
-"""
+"""Typed address, heap-object, and stack-frame values for the memory model."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+from pysymex.core.constants import Z3_TRUE
+from pysymex.core.solver.constraints.hashing import get_bitvec_val
 import z3
 
 
 class MemoryRegion(Enum):
-    """Different memory regions with isolation guarantees."""
+    """Coarse symbolic address spaces treated as distinct by alias queries."""
 
     STACK = auto()
     HEAP = auto()
@@ -40,18 +39,11 @@ class MemoryRegion(Enum):
 
 @dataclass(slots=True)
 class SymbolicAddress:
-    """
-    A symbolic memory address.
+    """Region-tagged bit-vector base and offset used by the heap model.
 
-    **Mathematical Representation:**
-    Modeled as an algebraic triple: `(Region, Base, Offset)`.
-    - `Base` and `Offset` are Z3 BitVectors (typically 64-bit).
-    - `Region` provides coarse-grained isolation (e.g., Stack vs Heap).
-
-    **Arithmetic Semantics:**
-    Supports precise address arithmetic (addition/subtraction) using bitvector
-    theory. This allows modeling pointer arithmetic, buffer overflows, and
-    struct/array indexing with high fidelity.
+    Address arithmetic constructs Z3 bit-vector expressions. The region tag
+    provides a model-level non-alias partition; it is not an operating-system
+    isolation or memory-safety guarantee.
     """
 
     region: MemoryRegion
@@ -67,69 +59,33 @@ class SymbolicAddress:
         offset: int | z3.BitVecRef = 0,
         type_tag: str = "unknown",
     ) -> None:
+        """Construct a region-tagged 64-bit symbolic address."""
         self.region = region
         self.type_tag = type_tag
         if isinstance(base, int):
-            self.base = z3.BitVecVal(base, self.ADDR_WIDTH)
+            self.base = get_bitvec_val(base, self.ADDR_WIDTH)
         else:
             self.base = base
         if isinstance(offset, int):
-            self.offset = z3.BitVecVal(offset, self.ADDR_WIDTH)
+            self.offset = get_bitvec_val(offset, self.ADDR_WIDTH)
         else:
             self.offset = offset
 
     @property
     def effective_address(self) -> z3.BitVecRef:
-        """Compute the effective address (base + offset)."""
+        """Return the 64-bit bit-vector expression ``base + offset``."""
         return self.base + self.offset
 
-    def add_offset(self, delta: int | z3.BitVecRef) -> SymbolicAddress:
-        """Create a new address with additional offset."""
-        if isinstance(delta, int):
-            delta = z3.BitVecVal(delta, self.ADDR_WIDTH)
-        return SymbolicAddress(
-            region=self.region, base=self.base, offset=self.offset + delta, type_tag=self.type_tag
-        )
-
     def same_region(self, other: SymbolicAddress) -> bool:
-        """Check if two addresses are in the same region."""
+        """Return whether model-level region tags are equal."""
         return self.region == other.region
 
-    def may_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
-        """
-        Check if two addresses may refer to the same location.
-
-        **Aliasing Constraint:**
-        Returns SAT if there exists a model where `addr1.effective == addr2.effective`
-        AND they reside in the same memory region.
-        Regions provide a sound optimization for non-aliasing; addresses in
-        different regions (e.g. Stack and Const) are assumed never to alias.
-        """
-        if not self.same_region(other):
-            return False
-        solver.push()
-        solver.add(self.effective_address == other.effective_address)
-        result = solver.check() == z3.sat
-        solver.pop()
-        return result
-
-    def must_alias(self, other: SymbolicAddress, solver: z3.Solver) -> bool:
-        """
-        Check if two addresses must refer to the same location.
-        Returns True only if addresses are provably equal.
-        """
-        if not self.same_region(other):
-            return False
-        solver.push()
-        solver.add(self.effective_address != other.effective_address)
-        result = solver.check() == z3.unsat
-        solver.pop()
-        return result
-
     def __repr__(self) -> str:
+        """Return the diagnostic representation for this address."""
         return f"SymbolicAddress({self.region.name}, base={self.base}, offset={self.offset})"
 
     def __eq__(self, other: object) -> bool:
+        """Return structural equality for region, base, and offset."""
         if not isinstance(other, SymbolicAddress):
             return False
         return (
@@ -139,7 +95,7 @@ class SymbolicAddress:
         )
 
     def __hash__(self) -> int:
-        """Return the hash value of the object."""
+        """Return a process hash over region and Z3 expression hashes."""
         base_h = self.base.hash() if hasattr(self.base, "hash") else hash(self.base)
         offset_h = self.offset.hash() if hasattr(self.offset, "hash") else hash(self.offset)
         return hash((self.region, base_h, offset_h))
@@ -147,39 +103,37 @@ class SymbolicAddress:
 
 @dataclass(slots=True)
 class HeapObject:
-    """
-    A symbolic object stored on the heap.
-    Represents Python objects with their fields/attributes stored symbolically.
-    """
+    """Mutable heap record containing fields and an optional liveness formula."""
 
     address: SymbolicAddress
     type_name: str
     fields: dict[str, object] = field(default_factory=lambda: dict[str, object]())
     is_mutable: bool = True
     size: int = 1
-    is_alive: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
+    is_alive: z3.BoolRef = field(default_factory=lambda: Z3_TRUE)
 
     def get_field(self, name: str) -> object:
-        """Get a field value, returning None if not present."""
+        """Return a field value, using ``None`` for an absent field."""
         return self.fields.get(name)
 
     def set_field(self, name: str, value: object) -> None:
-        """Set a field value."""
+        """Store a field value unless this heap object is marked immutable.
+
+        Raises:
+            ValueError: If ``is_mutable`` is ``False``.
+        """
         if not self.is_mutable:
             raise ValueError(f"Cannot modify immutable object of type {self.type_name}")
         self.fields[name] = value
 
     def has_field(self, name: str) -> bool:
-        """Check if the object has a field."""
+        """Return whether ``name`` is present in this object's field mapping."""
         return name in self.fields
 
 
 @dataclass(slots=True)
 class StackFrame:
-    """
-    A symbolic stack frame for function calls.
-    Tracks local variables and their values within a function scope.
-    """
+    """Mutable function-frame record containing local variables and its parent."""
 
     function_name: str
     locals: dict[str, object] = field(default_factory=lambda: dict[str, object]())
@@ -187,18 +141,9 @@ class StackFrame:
     parent_frame: StackFrame | None = None
 
     def get_local(self, name: str) -> object:
-        """Get a local variable value."""
+        """Return a local value, using ``None`` for an absent binding."""
         return self.locals.get(name)
 
     def set_local(self, name: str, value: object) -> None:
-        """Set a local variable value."""
+        """Store ``value`` under local-variable name ``name``."""
         self.locals[name] = value
-
-    def has_local(self, name: str) -> bool:
-        """Check if a local variable exists."""
-        return name in self.locals
-
-    def delete_local(self, name: str) -> None:
-        """Delete a local variable."""
-        if name in self.locals:
-            del self.locals[name]

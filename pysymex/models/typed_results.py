@@ -1,3 +1,21 @@
+# pysymex: python symbolic execution & formal verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Helpers for model results with CPython-fixed symbolic return types."""
 
 from __future__ import annotations
@@ -6,8 +24,8 @@ from collections.abc import Sequence
 
 import z3
 
-from pysymex.core.types import SymbolicValue
-from pysymex.models.builtins.base import ModelResult, SideEffectValue
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.results import ModelResult, SideEffectValue
 
 ModelConstraint = z3.ExprRef | z3.BoolRef
 

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import dis
+import time
 
-from pysymex.analysis.detectors.runtime.key_error import KeyErrorDetector
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
-from pysymex.core.types.containers import SymbolicDict
+import z3
+
+from pysymex.analysis.detectors.runtime.errors.key import KeyErrorDetector
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.containers.dicts import SymbolicDict
 
 
 def _make_instruction(
@@ -30,8 +36,18 @@ def _make_instruction(
     )
 
 
+def _is_sat(constraints: list[z3.BoolRef]) -> bool:
+    solver = z3.Solver()
+    solver.add(*constraints)
+    return solver.check() == z3.sat
+
+
 class TestKeyErrorDetector:
-    """Test suite for pysymex.analysis.detectors.base.KeyErrorDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.KeyErrorDetector."""
+
+    def test_relevant_opcodes_include_normal_subscript_reads(self) -> None:
+        """Runtime dispatch must invoke the detector for ordinary ``dict[key]`` reads."""
+        assert "BINARY_SUBSCR" in KeyErrorDetector.relevant_opcodes
 
     def test_check_reports_missing_key_for_concrete_dict(self) -> None:
         """Report KEY_ERROR for concrete dictionaries missing the requested key."""
@@ -72,6 +88,30 @@ class TestKeyErrorDetector:
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
 
+    def test_check_ignores_defaultdict_subscript_missing_key(self) -> None:
+        """A default-producing dictionary supplies missing values on subscription."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        symbolic_dict = SymbolicDict.empty("defaultdict")
+        setattr(symbolic_dict, "_has_default_factory", True)
+        state = VMState(stack=[symbolic_dict, "missing"], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
+    def test_check_reports_defaultdict_delete_missing_key(self) -> None:
+        """Default factories do not make deletion of missing keys safe."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("DELETE_SUBSCR")
+        symbolic_dict = SymbolicDict.empty("defaultdict")
+        setattr(symbolic_dict, "_has_default_factory", True)
+        state = VMState(stack=[symbolic_dict, "missing"], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is not None
+
     def test_check_ignores_non_dict_container(self) -> None:
         """Return None when container is not a dictionary."""
         detector = KeyErrorDetector()
@@ -96,6 +136,62 @@ class TestKeyErrorDetector:
         symbolic_dict = SymbolicDict.from_const({"present": 1})
         state = VMState(stack=[symbolic_dict, "missing"], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is not None
+
+    def test_check_symbolic_dict_symbolic_int_key_guard_suppresses_issue(self) -> None:
+        """Do not report KEY_ERROR when an int-key membership guard proves presence."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        symbolic_dict = SymbolicDict.from_const({1: "one", 2: "two"})
+        symbolic_key, type_constraint = SymbolicValue.symbolic_int("k")
+        presence = symbolic_dict.concrete_key_presence_condition(symbolic_key)
+        assert presence is not None
+        state = VMState(
+            stack=[symbolic_dict, symbolic_key],
+            path_constraints=[type_constraint, presence],
+            pc=1,
+        )
+
+        issue = detector.check(state, instruction, _is_sat)
+
+        assert issue is None
+
+    def test_check_symbolic_int_key_guard_suppresses_inconclusive_prefix_issue(self) -> None:
+        """An inconclusive prefix must not report a locally contradicted missing-key query."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        symbolic_dict = SymbolicDict.from_const({1: "one", 2: "two"})
+        symbolic_key, type_constraint = SymbolicValue.symbolic_int("guarded_present_key")
+        presence = symbolic_dict.concrete_key_presence_condition(symbolic_key)
+        assert presence is not None
+        path_constraints = [type_constraint, presence]
+        state = VMState(
+            stack=[symbolic_dict, symbolic_key],
+            path_constraints=path_constraints,
+            last_inconclusive_feasibility_len=len(path_constraints),
+            pc=1,
+        )
+
+        issue = detector.check(state, instruction, lambda _constraints: False)
+
+        assert issue is None
+
+    def test_check_symbolic_dict_symbolic_int_key_missing_path_reports(self) -> None:
+        """Report KEY_ERROR when an int-key membership guard proves absence."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        symbolic_dict = SymbolicDict.from_const({1: "one", 2: "two"})
+        symbolic_key, type_constraint = SymbolicValue.symbolic_int("k")
+        presence = symbolic_dict.concrete_key_presence_condition(symbolic_key)
+        assert presence is not None
+        state = VMState(
+            stack=[symbolic_dict, symbolic_key],
+            path_constraints=[type_constraint, z3.Not(presence)],
+            pc=1,
+        )
+
+        issue = detector.check(state, instruction, _is_sat)
+
         assert issue is not None
 
     def test_check_symbolic_dict_concrete_items_symbolic_key_reports(self) -> None:
@@ -132,3 +228,94 @@ class TestKeyErrorDetector:
         )
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
+
+    def test_check_ignores_concrete_dict_pop_call_with_default(self) -> None:
+        """Do not report KEY_ERROR for dict.pop(key, default)."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("CALL", arg=2, argval=2)
+
+        class _PopCallable:
+            __name__ = "mapping.pop"
+
+            def __call__(self) -> None:
+                return None
+
+        state = VMState(
+            stack=[_PopCallable(), {"present": 1}, "missing", None],
+            path_constraints=[],
+            pc=1,
+        )
+        issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_ignores_symbolic_dict_pop_call_with_default(self) -> None:
+        """Do not report KEY_ERROR for SymbolicDict.pop(key, default)."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("CALL", arg=2, argval=2)
+
+        class _PopCallable:
+            __name__ = "mapping.pop"
+
+            def __call__(self) -> None:
+                return None
+
+        state = VMState(
+            stack=[_PopCallable(), SymbolicDict.empty("pop_default_dict"), "missing", None],
+            path_constraints=[],
+            pc=1,
+        )
+        issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_reports_inconclusive_concrete_dict_key_error_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN may surface only as a model-less low-confidence KeyError."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        x = z3.Int("unknown_key_error_path")
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(
+                VMState(stack=[{"present": 1}, "missing"], path_constraints=[x > 0], pc=1),
+                instruction,
+                lambda _constraints: True,
+            )
+        finally:
+            active_incremental_solver.reset(token)
+
+        assert issue is not None
+        assert "Path feasibility inconclusive" in issue.message
+        assert issue.model is None
+        assert issue.get_counterexample() == {}
+        assert issue.confidence == 0.5
+        assert issue.likelihood == 0.5
+
+    def test_check_reports_inconclusive_symbolic_dict_key_error_on_solver_unknown(self) -> None:
+        """Symbolic missing-key reports keep solver uncertainty visible."""
+        detector = KeyErrorDetector()
+        instruction = _make_instruction("BINARY_SUBSCR")
+        symbolic_dict = SymbolicDict.empty("unknown_sym_dict")
+        key, key_constraint = SymbolicString.symbolic("unknown_key")
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(
+                VMState(
+                    stack=[symbolic_dict, key],
+                    path_constraints=[key_constraint],
+                    pc=1,
+                ),
+                instruction,
+                lambda _constraints: True,
+            )
+        finally:
+            active_incremental_solver.reset(token)
+
+        assert issue is not None
+        assert "Path feasibility inconclusive" in issue.message
+        assert issue.model is None
+        assert issue.get_counterexample() == {}
+        assert issue.confidence == 0.5
+        assert issue.likelihood == 0.5

@@ -1,31 +1,23 @@
 from __future__ import annotations
 
-import ast
-from pathlib import Path
+from collections.abc import Callable, MutableMapping
+from typing import cast
 
+import pytest
+
+from pysymex.contracts.decorator_registry import get_or_create_contract
 from pysymex.contracts.decorators import (
     assigns,
     assumes,
     ensures,
+    function_contracts,
     get_function_contract,
     invariant,
     loop_invariant,
     pure,
     requires,
 )
-from pysymex.contracts.types import ContractKind, EffectKind
-
-
-_CONTRACT_DECORATORS = {"requires", "ensures", "invariant", "pure", "assumes", "assigns"}
-
-
-def _decorator_name(node: ast.expr) -> str | None:
-    target = node.func if isinstance(node, ast.Call) else node
-    if isinstance(target, ast.Name):
-        return target.id
-    if isinstance(target, ast.Attribute):
-        return target.attr
-    return None
+from pysymex.contracts.types import ContractKind, EffectKind, FunctionContract
 
 
 class TestDecorators:
@@ -119,32 +111,53 @@ class TestDecorators:
         assert get_function_contract(undecorated) is None
         assert get_function_contract(decorated) is not None
 
+    def test_get_or_create_contract_preserves_registry_entry(self) -> None:
+        """Losing the function attribute must not drop the keyed registry contract."""
+
+        @requires("x > 0")
+        def decorated(x: int) -> int:
+            return x
+
+        original = get_function_contract(decorated)
+        assert original is not None
+        assert len(original.preconditions) == 1
+
+        delattr(decorated, "__contract__")
+        recovered = get_or_create_contract(decorated)
+
+        assert recovered is original
+        assert len(recovered.preconditions) == 1
+
+    def test_redefined_callable_does_not_inherit_stale_contracts(self) -> None:
+        """New functions at the same qualified name own distinct obligations."""
+
+        def make_function(predicate: str) -> object:
+            @requires(predicate)
+            def dynamic(x: int) -> int:
+                return x
+
+            return dynamic
+
+        first = make_function("x > 0")
+        second = make_function("x < 0")
+        first_contract = get_function_contract(cast(Callable[..., object], first))
+        second_contract = get_function_contract(cast(Callable[..., object], second))
+
+        assert first_contract is not None
+        assert second_contract is not None
+        assert first_contract is not second_contract
+        assert [item.condition for item in first_contract.preconditions] == ["x > 0"]
+        assert [item.condition for item in second_contract.preconditions] == ["x < 0"]
+
+    def test_function_contracts_public_view_is_read_only(self) -> None:
+        """The public registry view must not expose direct mutation of global state."""
+        with pytest.raises(TypeError):
+            cast(MutableMapping[str, FunctionContract], function_contracts)["tests.mutated"] = (
+                FunctionContract("mutated")
+            )
+
     def test_contract_verifier_package_export_is_lazy(self) -> None:
         """Verify the public package export works without eager solver import cycles."""
         from pysymex.contracts import ContractVerifier
 
         assert ContractVerifier.__name__ == "ContractVerifier"
-
-    def test_production_contract_coverage_has_required_sites(self) -> None:
-        """Verify production contract hardening keeps at least 50 meaningful sites."""
-        repo_root = Path(__file__).resolve().parents[3]
-        paths = [
-            repo_root / "pysymex" / "accel" / "core_index.py",
-            repo_root / "pysymex" / "accel" / "evaluator.py",
-            repo_root / "pysymex" / "accel" / "types.py",
-            repo_root / "pysymex" / "accel" / "worker.py",
-            repo_root / "pysymex" / "core" / "solver" / "constraints.py",
-            repo_root / "pysymex" / "core" / "solver" / "learner.py",
-            repo_root / "pysymex" / "core" / "solver" / "unsat.py",
-        ]
-
-        decorated_functions = 0
-        for path in paths:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    names = {_decorator_name(decorator) for decorator in node.decorator_list}
-                    if names & _CONTRACT_DECORATORS:
-                        decorated_functions += 1
-
-        assert decorated_functions >= 50

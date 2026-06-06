@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.core.state import VMState
-from pysymex.execution.executors.async_exec import (
+from pysymex.core.state.record import VMState
+from pysymex.execution.executors.async_support.runner import (
     AsyncSymbolicExecutor,
     CoroutineState,
     SymbolicCoroutine,
     SymbolicEventLoop,
-    analyze_async,
+    analyze,
 )
-from pysymex.execution.types import ExecutionConfig
+from pysymex.execution.config.settings import ExecutionConfig
 
 
 class TestCoroutineState:
-    """Test suite for pysymex.execution.executors.async_exec.CoroutineState."""
+    """Test suite for pysymex.execution.executors.async_support.runner.CoroutineState."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -22,7 +22,7 @@ class TestCoroutineState:
 
 
 class TestSymbolicCoroutine:
-    """Test suite for pysymex.execution.executors.async_exec.SymbolicCoroutine."""
+    """Test suite for pysymex.execution.executors.async_support.runner.SymbolicCoroutine."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -32,7 +32,7 @@ class TestSymbolicCoroutine:
 
 
 class TestSymbolicEventLoop:
-    """Test suite for pysymex.execution.executors.async_exec.SymbolicEventLoop."""
+    """Test suite for pysymex.execution.executors.async_support.runner.SymbolicEventLoop."""
 
     def test_create_coroutine(self) -> None:
         """Test create_coroutine behavior."""
@@ -40,18 +40,10 @@ class TestSymbolicEventLoop:
         coro = loop.create_coroutine("task", VMState())
         assert coro.name == "task"
 
-    def test_schedule(self) -> None:
-        """Test schedule behavior."""
-        loop = SymbolicEventLoop()
-        coro = loop.create_coroutine("t")
-        loop.schedule(coro)
-        assert loop.is_empty() is False
-
     def test_suspend_coroutine(self) -> None:
         """Test suspend_coroutine behavior."""
         loop = SymbolicEventLoop()
         coro = loop.create_coroutine("t")
-        loop.schedule(coro)
         loop.suspend_coroutine(coro.coro_id, VMState())
         assert coro.state is CoroutineState.SUSPENDED
 
@@ -68,33 +60,16 @@ class TestSymbolicEventLoop:
         """Test complete_coroutine behavior."""
         loop = SymbolicEventLoop()
         coro = loop.create_coroutine("t")
-        loop.schedule(coro)
         loop.complete_coroutine(coro.coro_id, 42)
         assert coro.state is CoroutineState.COMPLETED
         assert coro.result == 42
-
-    def test_cancel_coroutine(self) -> None:
-        """Test cancel_coroutine behavior."""
-        loop = SymbolicEventLoop()
-        coro = loop.create_coroutine("t")
-        ok = loop.cancel_coroutine(coro.coro_id)
-        assert ok is True
-
-    def test_get_possible_schedules(self) -> None:
-        """Test get_possible_schedules behavior."""
-        loop = SymbolicEventLoop()
-        c1 = loop.create_coroutine("a")
-        c2 = loop.create_coroutine("b")
-        loop.schedule(c1)
-        loop.schedule(c2)
-        schedules = loop.get_possible_schedules()
-        assert len(schedules) >= 1
 
     def test_step(self) -> None:
         """Test step behavior."""
         loop = SymbolicEventLoop()
         coro = loop.create_coroutine("a", VMState())
-        loop.schedule(coro)
+        loop.suspend_coroutine(coro.coro_id, VMState())
+        loop.resume_coroutine(coro.coro_id)
         steps = loop.step()
         assert len(steps) == 1
 
@@ -108,21 +83,9 @@ class TestSymbolicEventLoop:
         cycles = loop.detect_await_cycles()
         assert len(cycles) >= 1
 
-    def test_is_empty(self) -> None:
-        """Test is_empty behavior."""
-        loop = SymbolicEventLoop()
-        assert loop.is_empty() is True
-
-    def test_get_all_coroutines(self) -> None:
-        """Test get_all_coroutines behavior."""
-        loop = SymbolicEventLoop()
-        _ = loop.create_coroutine("a")
-        all_coros = loop.get_all_coroutines()
-        assert len(all_coros) == 1
-
 
 class TestAsyncSymbolicExecutor:
-    """Test suite for pysymex.execution.executors.async_exec.AsyncSymbolicExecutor."""
+    """Test suite for pysymex.execution.executors.async_support.runner.AsyncSymbolicExecutor."""
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
@@ -139,11 +102,11 @@ class TestAsyncSymbolicExecutor:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_analyze_async() -> None:
-    """Test analyze_async behavior."""
+async def test_analyze() -> None:
+    """Test analyze behavior."""
 
     async def sample(v: int) -> int:
         return v * 2
 
-    analyze_async(sample, {"v": "int"}, max_paths=3, max_iterations=30)
+    analyze(sample, {"v": "int"}, max_paths=3, max_iterations=30)
     await sample(2)

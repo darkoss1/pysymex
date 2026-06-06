@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Postcondition Contradiction logic rule.
+
+This module implements the postcondition contradiction logic rule (Tier 4), which detects
+contradictions in constraints placed on function return values or postconditions.
+
+Bug Class Detected:
+    Logical contradiction (postcondition contradiction).
+
+Required Evidence:
+    An unsatisfiable core containing contradictory bounds or conflicting value/boolean
+    assignments on return/postcondition variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
@@ -26,10 +42,33 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class PostconditionContradictionRule(LogicRule):
+    """Logic rule for detecting postcondition contradictions.
+
+    This rule checks the unsatisfiable core for inconsistent bounds or conflicting values
+    assigned to return variables or variables indicating postcondition states.
+
+    Bug Class Detected:
+        Logical contradiction (postcondition contradiction).
+
+    Required Evidence:
+        ContradictionContext with inconsistent bounds or conflicting assignments on return/postcondition variables.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "Postcondition Contradiction"
     tier = 4
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains a postcondition contradiction.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if a postcondition contradiction is detected, False otherwise.
+        """
         bounds = extract_bounds(ctx.core)
         equalities = extract_var_const_equalities(ctx.core)
         bool_values = extract_bool_assignments(ctx.core)

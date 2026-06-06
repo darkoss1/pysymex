@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.core.state import VMState
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py312 import instrumentation
 
 

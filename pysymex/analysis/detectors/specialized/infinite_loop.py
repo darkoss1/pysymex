@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,15 +16,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Infinite Loop detector module.
+
+Detects potential infinite loops by monitoring iteration counts of backward jumps
+and checking for trivial jump conditions.
+
+Bug Class Detected:
+    Infinite Loop.
+
+Required Evidence:
+    A loop counter exceeding the maximum iteration threshold or a constant true loop condition.
+
+Issue Kinds:
+    IssueKind.INFINITE_LOOP
+"""
+
 from __future__ import annotations
 
 import z3
 from typing import TYPE_CHECKING
 
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.types import DisInstruction, IsSatFn, Issue, IssueKind
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
+    from pysymex.core.state.record import VMState
 
 
 class InfiniteLoopDetector(Detector):
@@ -42,7 +58,8 @@ class InfiniteLoopDetector(Detector):
     )
 
     def __init__(self) -> None:
-        self._max_iterations = 128
+        """Initialize the InfiniteLoopDetector with a default maximum iteration limit."""
+        self.max_iterations = 128
 
     def check(
         self,
@@ -64,10 +81,10 @@ class InfiniteLoopDetector(Detector):
                     pc=state.pc,
                     confidence=0.8,
                 )
-            if state.loop_counters[pc] > self._max_iterations:
+            if state.loop_counters[pc] > self.max_iterations:
                 return Issue(
                     kind=IssueKind.INFINITE_LOOP,
-                    message=f"Potential infinite loop detected (>{self._max_iterations} iterations)",
+                    message=f"Potential infinite loop detected (>{self.max_iterations} iterations)",
                     pc=state.pc,
                 )
         if instruction.opname in ("POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"):
@@ -76,7 +93,7 @@ class InfiniteLoopDetector(Detector):
             if instruction.argval >= instruction.offset:
                 return None
             if state.stack:
-                from pysymex.core.types import SymbolicValue
+                from pysymex.core.types.scalars.values import SymbolicValue
 
                 cond = state.peek()
                 if isinstance(cond, bool):

@@ -1,56 +1,91 @@
-import pysymex.core.solver.independence
+import gc
+from typing import cast
+
+from pysymex.core.solver.independence.optimizer import ConstraintIndependenceOptimizer
+from pysymex.core.solver.independence.union_find import UnionFind
+import weakref
 import z3
-from unittest.mock import patch
+
+
+class _InspectableOptimizer(ConstraintIndependenceOptimizer):
+    def first_slice_cache_key(self) -> int:
+        return next(iter(self._slice_cache))
+
+    def first_slice_cache_entry(
+        self,
+    ) -> tuple[
+        tuple[weakref.ReferenceType[z3.BoolRef], ...],
+        weakref.ReferenceType[z3.BoolRef],
+        tuple[int, ...],
+    ]:
+        return self._slice_cache[self.first_slice_cache_key()][0]
+
+    def clear_expression_caches(self) -> None:
+        self._var_cache.clear()
+        self._theory_signature_cache.clear()
+        self._prefix_theory_signature_cache.clear()
+
+    def lookup_slice_cache(
+        self,
+        cache_key: int,
+        path_constraints: list[z3.BoolRef],
+        query: z3.BoolRef,
+    ) -> list[z3.BoolRef] | None:
+        return self._lookup_slice_cache(cache_key, path_constraints, query)
 
 
 class TestUnionFind:
-    """Test suite for pysymex.core.solver.independence.UnionFind."""
+    """Test suite for pysymex.core.solver.independence.union_find.UnionFind."""
 
     def test_find(self) -> None:
         """Scenario: first find on unseen element; expected element as its own root."""
-        uf = pysymex.core.solver.independence.UnionFind()
+        uf = UnionFind()
         assert uf.find("a") == "a"
 
     def test_union(self) -> None:
         """Scenario: union two singleton sets; expected shared connectivity."""
-        uf = pysymex.core.solver.independence.UnionFind()
-        _ = uf.union("a", "b")
+        uf = UnionFind()
+        root = uf.union("a", "b")
         assert uf.connected("a", "b") is True
+        assert root == uf.find("a")
 
     def test_connected(self) -> None:
         """Scenario: elements not unioned; expected not connected."""
-        uf = pysymex.core.solver.independence.UnionFind()
+        uf = UnionFind()
         assert uf.connected("x", "y") is False
 
     def test_groups(self) -> None:
         """Scenario: one merged pair and one singleton; expected two groups."""
-        uf = pysymex.core.solver.independence.UnionFind()
+        uf = UnionFind()
         _ = uf.union("a", "b")
         _ = uf.find("c")
-        assert len(uf.groups()) == 2
+        assert {frozenset(group) for group in uf.groups().values()} == {
+            frozenset({"a", "b"}),
+            frozenset({"c"}),
+        }
 
 
 class TestConstraintIndependenceOptimizer:
-    """Test suite for pysymex.core.solver.independence.ConstraintIndependenceOptimizer."""
+    """Test suite for pysymex.core.solver.independence.optimizer.ConstraintIndependenceOptimizer."""
 
     def test_reset(self) -> None:
         """Scenario: reset after registration; expected stats counters cleared."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         _ = opt.register_constraint(z3.Int("x") > 0)
         opt.reset()
         assert opt.get_stats()["total_queries"] == 0
-        assert opt._constraint_index == 0  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-        assert opt._var_to_constraint_indices == {}  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert opt.constraint_index == 0
+        assert opt.var_to_constraint_indices == {}
 
     def test_register_constraint(self) -> None:
         """Scenario: register x>0 constraint; expected variable set contains x."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         vars_set = opt.register_constraint(z3.Int("x") > 0)
         assert "x" in vars_set
 
     def test_get_variables(self) -> None:
         """Scenario: get variables on x+y expression; expected both names present."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         vars_set = opt.get_variables(x + y > 0)
@@ -58,7 +93,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query(self) -> None:
         """Scenario: query depends on one cluster; expected unrelated constraint sliced out."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         c1 = x > 0
@@ -70,7 +105,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_is_transitively_dependency_closed(self) -> None:
         """Scenario: x-y-z chain; expected query on z keeps all transitive constraints."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("slice_tc_x")
         y = z3.Int("slice_tc_y")
         z = z3.Int("slice_tc_z")
@@ -87,7 +122,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_keeps_uninterpreted_function_dependencies(self) -> None:
         """Scenario: zero-variable UF application; expected UF token keeps constraint."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         f = z3.Function("slice_uf_f", z3.IntSort(), z3.IntSort())
         c1 = f(0) == 1
         c2 = z3.Int("slice_uf_unrelated") > 0
@@ -101,7 +136,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_get_variables_handles_quantifiers_without_application_decl_crash(self) -> None:
         """Scenario: quantified formula; expected dependency extraction does not crash."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("slice_quantifier_x")
         y = z3.Int("slice_quantifier_y")
         quantified = z3.ForAll([x], x == x)
@@ -114,7 +149,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_tracks_array_ssa_heap_and_memory_epoch_tokens(self) -> None:
         """Scenario: array, SSA, heap, and memory-epoch symbols; expected closed slice."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         arr = z3.Array("slice_arr", z3.IntSort(), z3.IntSort())
         ssa_index = z3.Int("slice_idx_ssa_3")
         heap_obj = z3.Int("slice_heap_obj_9")
@@ -132,7 +167,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_reuses_cached_dependency_closure(self) -> None:
         """Scenario: repeated exact prefix/query; expected slice closure cache hit."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("slice_cache_x")
         y = z3.Int("slice_cache_y")
         c1 = x > 0
@@ -143,21 +178,44 @@ class TestConstraintIndependenceOptimizer:
         first = opt.slice_for_query([c1, c2], x < 10)
         second = opt.slice_for_query([c1, c2], x < 10)
         stats = opt.get_stats()
-        theory_full = stats["theory_signature_full"]
-        theory_cached = stats["theory_signature_cached"]
 
         assert first == [c1]
         assert second == [c1]
         assert stats["slice_cache_hits"] == 1
         assert stats["slice_cache_misses"] == 1
-        assert isinstance(theory_full, int)
-        assert isinstance(theory_cached, int)
-        assert theory_full >= 3
-        assert theory_cached >= 1
+        assert stats["theory_signature_full"] == 0
+        assert stats["theory_signature_cached"] == 0
 
-    def test_slice_cache_distinguishes_ssa_memory_and_theory_signatures(self) -> None:
-        """Scenario: similar array queries with different epochs; expected distinct cache keys."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+    def test_slice_cache_weakly_references_z3_expressions(self) -> None:
+        """Scenario: cached slice expressions die; expected stale cache entry is pruned."""
+        opt = _InspectableOptimizer()
+        x = z3.Int("slice_weak_x")
+        y = z3.Int("slice_weak_y")
+        c1 = x > 0
+        c2 = y > 0
+        query = x < 10
+        for constraint in (c1, c2):
+            _ = opt.register_constraint(constraint)
+
+        slice_result = opt.slice_for_query([c1, c2], query)
+        cache_key = opt.first_slice_cache_key()
+        entry = opt.first_slice_cache_entry()
+        c1_ref = weakref.ref(c1)
+
+        assert isinstance(entry[0][0], weakref.ReferenceType)
+        assert isinstance(entry[1], weakref.ReferenceType)
+
+        opt.clear_expression_caches()
+        del c1, c2, query, constraint, slice_result
+        gc.collect()
+
+        assert c1_ref() is None
+        assert opt.lookup_slice_cache(cache_key, [], z3.BoolVal(True)) is None
+        assert opt.get_stats()["slice_cache_size"] == 0
+
+    def test_slice_cache_validates_similar_ssa_memory_queries(self) -> None:
+        """Scenario: similar array queries with different epochs; expected validated reuse."""
+        opt = ConstraintIndependenceOptimizer()
         arr_epoch_1 = z3.Array("cache_arr_epoch_1", z3.IntSort(), z3.IntSort())
         arr_epoch_2 = z3.Array("cache_arr_epoch_2", z3.IntSort(), z3.IntSort())
         idx_ssa_1 = z3.Int("cache_idx_ssa_1")
@@ -182,7 +240,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_adaptive_slicing_disablement_falls_back_to_full_prefix(self) -> None:
         """Scenario: dense unhelpful slices; expected safe full-prefix fallback."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer(
+        opt = ConstraintIndependenceOptimizer(
             adaptive_disable_min_queries=2,
             adaptive_disable_min_reduction=0.5,
         )
@@ -203,9 +261,32 @@ class TestConstraintIndependenceOptimizer:
         assert stats["slicing_disabled"] is True
         assert stats["slicing_disabled_count"] == 1
 
+    def test_adaptive_slice_cache_disable_keeps_slicing_enabled(self) -> None:
+        """Scenario: no slice-cache reuse; expected cache disabled but slicing retained."""
+        opt = ConstraintIndependenceOptimizer(
+            slice_cache_disable_min_attempts=2,
+            slice_cache_disable_max_hit_rate=0.0,
+        )
+        x = z3.Int("slice_cache_disable_x")
+        y = z3.Int("slice_cache_disable_y")
+        c1 = x > 0
+        c2 = y > 0
+        for constraint in (c1, c2):
+            _ = opt.register_constraint(constraint)
+
+        assert opt.slice_for_query([c1, c2], x < 10) == [c1]
+        assert opt.slice_for_query([c1, c2], y < 10) == [c2]
+        assert opt.slice_for_query([c1, c2], x < 11) == [c1]
+        stats = opt.get_stats()
+
+        assert stats["slice_cache_enabled"] is False
+        assert stats["slice_cache_disabled_count"] == 1
+        assert stats["slice_cache_size"] == 0
+        assert stats["slicing_disabled"] is False
+
     def test_get_stats(self) -> None:
         """Scenario: stats after one slice query; expected total_queries increments to one."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("x")
         c = x > 0
         _ = opt.register_constraint(c)
@@ -214,23 +295,53 @@ class TestConstraintIndependenceOptimizer:
 
     def test_register_constraint_tracks_temporal_indices(self) -> None:
         """Scenario: registration should advance the temporal index and record variable history."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer(temporal_window=2)
+        opt = ConstraintIndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         _ = opt.register_constraint(x + y > 0)
-        assert opt._constraint_index == 1  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-        assert opt._var_to_constraint_indices["x"] == [0]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
-        assert opt._var_to_constraint_indices["y"] == [0]  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+        assert opt.constraint_index == 1
+        assert opt.var_to_constraint_indices["x"] == [0]
+        assert opt.var_to_constraint_indices["y"] == [0]
 
-    def test_extract_variables_handles_hash_collisions_safely(self) -> None:
-        """Scenario: colliding cache keys should still keep distinct variable sets."""
-        opt = pysymex.core.solver.independence.ConstraintIndependenceOptimizer()
-        x = z3.Int("x")
-        y = z3.Int("y")
-        with patch.object(
-            pysymex.core.solver.independence.ConstraintIndependenceOptimizer,
-            "_cache_key",
-            return_value=1,
-        ):
-            assert opt.get_variables(x > 0) == frozenset({"x"})
-            assert opt.get_variables(y > 0) == frozenset({"y"})
+    def test_sync_registered_path_reuses_prefix_and_resets_on_branch_switch(self) -> None:
+        """Scenario: registered prefix sync; expected exact path dependency ownership."""
+        opt = ConstraintIndependenceOptimizer()
+        x = z3.Int("sync_path_x")
+        y = z3.Int("sync_path_y")
+        c1 = x > 0
+        c2 = y > 0
+
+        opt.sync_registered_path([c1])
+        first_full = opt.get_stats()["full_extractions"]
+        opt.sync_registered_path([c1])
+        same_full = opt.get_stats()["full_extractions"]
+        opt.sync_registered_path([c1, c2])
+        extended_full = opt.get_stats()["full_extractions"]
+        opt.sync_registered_path([c2])
+
+        assert same_full == first_full
+        assert cast(int, extended_full) == cast(int, first_full) + 1
+        assert opt.constraint_index == 1
+        assert opt.var_to_constraint_indices == {"sync_path_y": [0]}
+
+    def test_extract_variables_reuses_ast_id_cache(self) -> None:
+        """Scenario: repeated extraction on the same AST should hit the variable cache."""
+        opt = ConstraintIndependenceOptimizer()
+        x = z3.Int("cache_reuse_x")
+        expr = x > 0
+        first = opt.get_variables(expr)
+        cached_before = opt.get_stats()["cached_extractions"]
+        second = opt.get_variables(expr)
+        cached_after = opt.get_stats()["cached_extractions"]
+
+        assert first == frozenset({"cache_reuse_x"})
+        assert second == first
+        assert cast(int, cached_after) == cast(int, cached_before) + 1
+
+    def test_extract_variables_keeps_distinct_asts_separate(self) -> None:
+        """Scenario: different AST nodes must not share variable-extraction cache entries."""
+        opt = ConstraintIndependenceOptimizer()
+        x = z3.Int("cache_distinct_x")
+        y = z3.Int("cache_distinct_y")
+        assert opt.get_variables(x > 0) == frozenset({"cache_distinct_x"})
+        assert opt.get_variables(y > 0) == frozenset({"cache_distinct_y"})

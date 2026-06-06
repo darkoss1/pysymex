@@ -33,6 +33,7 @@ def unsafe_none_dereference(is_authenticated: bool) -> str:
     None dereference error. If is_authenticated is False,
     the user object is None, and accessing its attribute crashes.
     """
+
     class User:
         name = "Alice"
 
@@ -44,6 +45,7 @@ def safe_none_dereference(is_authenticated: bool) -> str:
     """
     Safely guarded None check.
     """
+
     class User:
         name = "Alice"
 

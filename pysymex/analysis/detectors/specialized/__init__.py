@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,20 +16,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Specialized detectors package.
+
+Aggregates specialized/security detectors such as null dereference, infinite loop,
+use-after-free, integer overflow, format string, and unreachable code.
+
+Bug Class Detected:
+    Runtime and logical anomalies.
+
+Required Evidence:
+    Satisfiable execution states violating specialized safety properties.
+
+Issue Kinds:
+    IssueKind.NULL_DEREFERENCE, IssueKind.INFINITE_LOOP, IssueKind.ATTRIBUTE_ERROR,
+    IssueKind.OVERFLOW, IssueKind.INVALID_ARGUMENT, IssueKind.UNREACHABLE_CODE
+"""
+
 from .null_dereference import NullDereferenceDetector
 from .infinite_loop import InfiniteLoopDetector
-from .resource_leak import ResourceLeakDetector
 from .use_after_free import UseAfterFreeDetector
-from .integer_overflow import IntegerOverflowDetector
 from .format_string import FormatStringDetector
 from .unreachable_code import UnreachableCodeDetector
 
 __all__ = [
     "NullDereferenceDetector",
     "InfiniteLoopDetector",
-    "ResourceLeakDetector",
     "UseAfterFreeDetector",
-    "IntegerOverflowDetector",
     "FormatStringDetector",
     "UnreachableCodeDetector",
 ]

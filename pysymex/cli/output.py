@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -25,6 +25,10 @@ import threading
 from pathlib import Path
 from typing import TextIO
 
+from pysymex.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def format_cli_error(message: str) -> str:
     """Return a standardized CLI error line."""
@@ -38,12 +42,14 @@ def format_cli_warning(message: str) -> str:
 
 def print_cli_error(message: str, *, stream: TextIO | None = None) -> None:
     """Print a standardized CLI error line to stderr by default."""
+    logger.error("%s", message)
     target_stream = stream if stream is not None else sys.stderr
     print(format_cli_error(message), file=target_stream)
 
 
 def print_cli_warning(message: str, *, stream: TextIO | None = None) -> None:
     """Print a standardized CLI warning line to stderr by default."""
+    logger.warning("%s", message)
     target_stream = stream if stream is not None else sys.stderr
     print(format_cli_warning(message), file=target_stream)
 
@@ -69,6 +75,7 @@ def emit_cli_output(
     """Write CLI output to file or print to stdout with consistent save messages."""
     if output_path:
         Path(output_path).write_text(content, encoding="utf-8")
+        logger.verbose("Wrote CLI report: %s", output_path)
         if verbose:
             _safe_print(f"[REPORT] Report saved to: {output_path}")
         return
@@ -99,10 +106,10 @@ def _safe_print(message: str = "") -> None:
                     sys.stdout.write(ascii_fallback + "\n")
                     sys.stdout.flush()
                 except Exception:
-                    pass
+                    logger.trace("CLI ascii stdout fallback failed", exc_info=True)
         except Exception:
             # If even writing fails (e.g. broken pipe), don't crash the whole engine
-            pass
+            logger.trace("CLI stdout write failed", exc_info=True)
 
 
 def safe_print(message: str = "") -> None:

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,29 +16,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Memory model public exports."""
+"""Core memory package.
 
-from pysymex.core.memory.heap import (
-    AliasingAnalyzer,
-    HeapSnapshot,
-    MemorySnapshot,
-    MemoryState,
-    SymbolicArray,
-    SymbolicHeap,
-    SymbolicMap,
-)
-from pysymex.core.memory.types import HeapObject, MemoryRegion, StackFrame, SymbolicAddress
+Runtime ownership lives in direct modules:
 
-__all__ = [
-    "AliasingAnalyzer",
-    "HeapObject",
-    "HeapSnapshot",
-    "MemoryRegion",
-    "MemorySnapshot",
-    "MemoryState",
-    "StackFrame",
-    "SymbolicAddress",
-    "SymbolicArray",
-    "SymbolicHeap",
-    "SymbolicMap",
-]
+- :mod:`pysymex.core.memory.types` owns memory records and symbolic addresses.
+- :mod:`pysymex.core.memory.alias_queries` owns alias-query evidence.
+- :mod:`pysymex.core.memory.heap.store` owns the symbolic heap store.
+- :mod:`pysymex.core.memory.heap.state` owns composite memory state.
+- :mod:`pysymex.core.memory.heap.snapshots` owns snapshot records.
+
+New internal code should import direct owners instead of routing through this
+package initializer.
+"""

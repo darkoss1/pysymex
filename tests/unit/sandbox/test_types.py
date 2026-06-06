@@ -19,9 +19,8 @@ class TestSandboxBackend:
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert SandboxBackend.LINUX_NAMESPACE.name == "LINUX_NAMESPACE"
-        assert SandboxBackend.WINDOWS_JOB.name == "WINDOWS_JOB"
+        assert SandboxBackend.WINDOWS_APPCONTAINER.name == "WINDOWS_APPCONTAINER"
         assert SandboxBackend.WASM.name == "WASM"
-        assert SandboxBackend.SUBPROCESS.name == "SUBPROCESS"
 
 
 class TestExecutionStatus:
@@ -90,6 +89,7 @@ class TestResourceLimits:
         assert limits.max_file_descriptors == 32
         assert limits.max_file_size_mb == 16
         assert limits.max_output_bytes == 1024 * 1024
+        assert limits.max_result_bytes == 10 * 1024 * 1024
 
     @pytest.mark.timeout(30)
     def test_initialization_with_custom_values(self) -> None:
@@ -102,6 +102,7 @@ class TestResourceLimits:
             max_file_descriptors=8,
             max_file_size_mb=4,
             max_output_bytes=2048,
+            max_result_bytes=4096,
         )
         assert limits.timeout_seconds == 2.0
         assert limits.cpu_seconds == 3
@@ -110,6 +111,7 @@ class TestResourceLimits:
         assert limits.max_file_descriptors == 8
         assert limits.max_file_size_mb == 4
         assert limits.max_output_bytes == 2048
+        assert limits.max_result_bytes == 4096
 
 
 class TestSandboxConfig:
@@ -123,7 +125,7 @@ class TestSandboxConfig:
         assert config.backend is None
         assert config.capture_output is True
         assert config.allow_stdin is False
-        assert config.allow_weak_backends is False
+        assert config.wasm_python_module is None
 
     @pytest.mark.timeout(30)
     def test_initialization_with_security_requirements(self) -> None:

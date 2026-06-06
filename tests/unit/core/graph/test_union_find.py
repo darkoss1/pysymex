@@ -41,6 +41,23 @@ class TestUnionFind:
         uf.union(1, 3)
         assert uf.find(1) == uf.find(4)
 
+    def test_connected_reports_existing_component_membership(self) -> None:
+        uf: UnionFind[str] = UnionFind()
+        uf.union("a", "b")
+        uf.make_set("c")
+        assert uf.connected("a", "b") is True
+        assert uf.connected("a", "c") is False
+
+    def test_groups_returns_sets_by_representative(self) -> None:
+        uf: UnionFind[str] = UnionFind()
+        uf.union("a", "b")
+        uf.make_set("c")
+        groups = list(uf.groups().values())
+        assert {frozenset(group) for group in groups} == {
+            frozenset({"a", "b"}),
+            frozenset({"c"}),
+        }
+
     def test_get_components_returns_disjoint_sets(self) -> None:
         uf: UnionFind[int] = UnionFind()
         uf.union(1, 2)

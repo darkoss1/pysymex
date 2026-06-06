@@ -1,20 +1,20 @@
-"""Tests for pysymex.stats.collectors.perf — _compile_ewma fallback."""
+"""Tests for pysymex.stats.collectors.perf — compile_ewma fallback."""
 
 from __future__ import annotations
 
-from pysymex.stats.collectors.perf import _compile_ewma  # type: ignore[reportPrivateUsage]  # White-box test validates the optional compilation fallback.
+from pysymex.stats.collectors.perf import compile_ewma
 
 
 class TestCompileEwmaFallback:
-    """Test that _compile_ewma returns a usable function."""
+    """Test that compile_ewma returns a usable function."""
 
     def test_compile_ewma_returns_callable(self) -> None:
-        """_compile_ewma must return a callable regardless of numba."""
+        """compile_ewma must return a callable regardless of numba."""
 
         def dummy(a: float, b: float, c: float) -> float:
             return a * c + b * (1.0 - c)
 
-        compiled = _compile_ewma(dummy)
+        compiled = compile_ewma(dummy)
         assert callable(compiled)
 
     def test_compiled_function_produces_correct_result(self) -> None:
@@ -23,7 +23,7 @@ class TestCompileEwmaFallback:
         def ewma(current: float, new_val: float, alpha: float) -> float:
             return alpha * new_val + (1.0 - alpha) * current
 
-        compiled = _compile_ewma(ewma)
+        compiled = compile_ewma(ewma)
         result = compiled(10.0, 20.0, 0.5)
         expected = 0.5 * 20.0 + 0.5 * 10.0
         assert abs(result - expected) < 1e-9
@@ -34,7 +34,7 @@ class TestCompileEwmaFallback:
         def ewma(current: float, new_val: float, alpha: float) -> float:
             return alpha * new_val + (1.0 - alpha) * current
 
-        compiled = _compile_ewma(ewma)
+        compiled = compile_ewma(ewma)
         result = compiled(42.0, 999.0, 0.0)
         assert abs(result - 42.0) < 1e-9
 
@@ -44,6 +44,6 @@ class TestCompileEwmaFallback:
         def ewma(current: float, new_val: float, alpha: float) -> float:
             return alpha * new_val + (1.0 - alpha) * current
 
-        compiled = _compile_ewma(ewma)
+        compiled = compile_ewma(ewma)
         result = compiled(42.0, 999.0, 1.0)
         assert abs(result - 999.0) < 1e-9

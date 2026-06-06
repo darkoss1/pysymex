@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,45 +16,38 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Triangle impossibility logical contradiction rule.
+
+Detects contradictions where assertions on the sum of multiple variables (e.g. x + y + z < 5)
+contradict the individual variable bounds (e.g., x > 2, y > 2, z > 2).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     count_variables,
     extract_bounds,
     extract_sum_const_comparisons,
+    select_lower_bound,
+    select_upper_bound,
 )
 
 
-def _lower_bound(bounds: dict[str, int | None]) -> tuple[int, bool] | None:
-    min_val = bounds.get("min")
-    min_strict = bounds.get("min_strict")
-    candidates: list[tuple[int, bool]] = []
-    if min_val is not None:
-        candidates.append((int(min_val), False))
-    if min_strict is not None:
-        candidates.append((int(min_strict), True))
-    if not candidates:
-        return None
-    return max(candidates, key=lambda item: (item[0], item[1]))
-
-
-def _upper_bound(bounds: dict[str, int | None]) -> tuple[int, bool] | None:
-    max_val = bounds.get("max")
-    max_strict = bounds.get("max_strict")
-    candidates: list[tuple[int, bool]] = []
-    if max_val is not None:
-        candidates.append((int(max_val), False))
-    if max_strict is not None:
-        candidates.append((int(max_strict), True))
-    if not candidates:
-        return None
-    return min(candidates, key=lambda item: (item[0], not item[1]))
-
-
 class TriangleImpossibilityRule(LogicRule):
+    """Rule that matches contradictions violating multi-variable bounding sum relationships."""
+
     name = "Triangle Impossibility"
     tier = 2
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a triangle impossibility.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains at least 3 variables and the sum of lower/upper bounds
+            of variables violates the asserted sum comparison, otherwise False.
+        """
         if count_variables(ctx.core) < 3 or len(ctx.core) < 3:
             return False
         bounds = extract_bounds(ctx.core)
@@ -62,7 +55,7 @@ class TriangleImpossibilityRule(LogicRule):
             if len(set(names)) < 3:
                 continue
             if op in ("<", "<="):
-                lower_parts = [_lower_bound(bounds[name]) for name in names if name in bounds]
+                lower_parts = [select_lower_bound(bounds[name]) for name in names if name in bounds]
                 if len(lower_parts) != len(names) or any(part is None for part in lower_parts):
                     continue
                 lower_sum = sum(part[0] for part in lower_parts if part is not None)
@@ -72,7 +65,7 @@ class TriangleImpossibilityRule(LogicRule):
                 if strict and lower_sum == value:
                     return True
             elif op in (">", ">="):
-                upper_parts = [_upper_bound(bounds[name]) for name in names if name in bounds]
+                upper_parts = [select_upper_bound(bounds[name]) for name in names if name in bounds]
                 if len(upper_parts) != len(names) or any(part is None for part in upper_parts):
                     continue
                 upper_sum = sum(part[0] for part in upper_parts if part is not None)

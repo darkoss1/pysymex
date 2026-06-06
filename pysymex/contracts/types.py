@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,27 +16,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Contract type definitions for pysymex.
+"""Shared contract records and predicate types.
 
-This module defines the complete type system for the contract verification
-subsystem.  Every type is frozen and slotted for immutability, cache
-friendliness, and thread safety.
-
-Design principles:
-  - Contracts accept ``Callable[..., z3.BoolRef | bool] | str`` predicates
-  - Callable predicates are compiled via **symbolic tracing** (zero AST)
-  - String predicates are compiled via ``ConditionTranslator`` (backward compat)
-  - All value types are ``frozen=True, slots=True``
+Defines :class:`~pysymex.contracts.types.Contract`,
+:class:`~pysymex.contracts.types.FunctionContract`, and related structures consumed by
+decorators, the compiler, injector, and verifier. Compilation and solver queries are
+implemented in :mod:`pysymex.contracts.compiler` and
+:mod:`pysymex.contracts.verifier` respectively.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Union
-
+import inspect
 import z3
+
+from pysymex.contracts.contract_enums import ContractKind
+from pysymex.contracts.contract_enums import EffectKind
+from pysymex.contracts.contract_enums import InjectionPoint as InjectionPoint
+from pysymex.contracts.contract_enums import Severity
+from pysymex.contracts.contract_enums import VerificationResult as VerificationResult
 
 
 def _default_counterexample() -> dict[str, object]:
@@ -59,124 +59,13 @@ def _default_old_values() -> dict[str, str]:
     return {}
 
 
-class ContractKind(Enum):
-    """Classification of contract clauses.
-
-    Each kind maps to a specific set of bytecode injection points where the
-    contract constraint is evaluated during symbolic execution.
-    """
-
-    REQUIRES = auto()
-    """Precondition — evaluated at ``FRAME_ENTRY``."""
-
-    ENSURES = auto()
-    """Postcondition — evaluated at every ``FRAME_EXIT``."""
-
-    INVARIANT = auto()
-    """Class invariant — evaluated at mutation points (``STORE_ATTR``, etc.)."""
-
-    LOOP_INVARIANT = auto()
-    """Loop invariant — evaluated at loop back-edges."""
-
-    ASSUMES = auto()
-    """Assumption — asserted without proof (narrows input space)."""
-
-    ASSIGNS = auto()
-    """Frame condition — declares which locations a function may modify."""
-
-    PURE = auto()
-    """Pure marker — function has no side effects, enables memoisation."""
-
-    ASSERT = auto()
-    """Inline assertion — checked at the specific program point."""
-
-
-class VerificationResult(Enum):
-    """Outcome of a single contract verification query."""
-
-    VERIFIED = auto()
-    """The contract holds for all reachable paths."""
-
-    VIOLATED = auto()
-    """A concrete counterexample was found."""
-
-    UNKNOWN = auto()
-    """Solver returned ``unknown`` (timeout or undecidable)."""
-
-    UNREACHABLE = auto()
-    """The contract's precondition is unsatisfiable on this path."""
-
-
-class Severity(Enum):
-    """How critical a contract violation is."""
-
-    ERROR = auto()
-    """Hard failure — the analysis should flag this prominently."""
-
-    WARNING = auto()
-    """Soft failure — the user should review but may be intentional."""
-
-
-class InjectionPoint(Enum):
-    """Bytecode instruction categories for contract injection.
-
-    Each contract kind attaches to a subset of these injection points.
-    Injection occurs inside the dispatcher's instruction loop — not via
-    bytecode rewriting or monkey-patching.
-    """
-
-    FRAME_ENTRY = "RESUME"
-    """Function entry (``RESUME`` on 3.11+, first ``LOAD_FAST`` otherwise)."""
-
-    FRAME_EXIT = "RETURN_VALUE"
-    """Function exit (``RETURN_VALUE``, ``RETURN_CONST``)."""
-
-    STORE_LOCAL = "STORE_FAST"
-    """Local variable mutation (``STORE_FAST``, ``STORE_DEREF``)."""
-
-    STORE_ATTR = "STORE_ATTR"
-    """Object mutation (``STORE_ATTR``, ``STORE_SUBSCR``)."""
-
-    CALL_SITE = "CALL"
-    """Function call (``CALL``, ``CALL_FUNCTION_EX``)."""
-
-
-class EffectKind(Enum):
-    """Side-effect classification for a function's contract annotation."""
-
-    PURE = auto()
-    """No side effects — same inputs always produce same outputs."""
-
-    READS = auto()
-    """Reads specific locations but does not write."""
-
-    WRITES = auto()
-    """Writes to specific locations."""
-
-
-ContractPredicate = Union[Callable[..., "z3.BoolRef | bool"], str]
-"""A contract predicate is either:
-
-- A **callable** that, when invoked with Z3 symbolic variables, returns a
-  ``z3.BoolRef`` via Python operator overloading (zero-AST symbolic tracing).
-- A **string** expression that is parsed via ``ConditionTranslator`` into Z3
-  (backward-compatible AST path).
-"""
+# Callable traced with Z3 overloads, or a string parsed by ConditionTranslator.
+ContractPredicate = Callable[..., z3.BoolRef | bool] | str
 
 
 @dataclass(frozen=True, slots=True)
 class Contract:
-    """A single contract clause attached to a function or class.
-
-    Attributes:
-        kind: Classification of this contract (REQUIRES, ENSURES, etc.).
-        predicate: The constraint source — callable or string.
-        message: Human-readable description shown in violation reports.
-        severity: ERROR or WARNING.
-        line_number: Source line where the contract was declared (if known).
-        _condition_repr: Cached string representation of the predicate for
-            display purposes.
-    """
+    """One compileable contract clause (precondition, postcondition, etc.)."""
 
     kind: ContractKind
     predicate: ContractPredicate
@@ -200,37 +89,46 @@ class Contract:
 
     @property
     def condition(self) -> str:
-        """Backward-compatible condition string.
+        """Backward-compatible condition display string.
 
-        For string predicates this is the predicate itself.
-        For callable predicates this is the qualname/repr.
+        Returns:
+            For string predicates, returns the predicate itself. For callable
+            predicates, returns the function qualname/representation.
         """
         return self._condition_repr
 
     def compile(self, symbols: Mapping[str, z3.ExprRef]) -> z3.BoolRef:
         """Compile this contract's predicate to a Z3 boolean expression.
 
-        Delegates to :class:`ContractCompiler` which selects the symbolic
-        tracing path (callable) or AST path (string) automatically.
+        Delegates to :class:`ContractCompiler` which automatically selects either the
+        symbolic tracing path (callable) or AST path (string).
+
+        Args:
+            symbols: Mapping of variable names to active Z3 variable terms.
+
+        Returns:
+            A ``z3.BoolRef`` representing the compiled constraint.
         """
         from pysymex.contracts.compiler import ContractCompiler
 
-        return ContractCompiler.compile_predicate(self.predicate, symbols)
+        compile_symbols = dict(symbols)
+        if (
+            self.kind is ContractKind.ENSURES
+            and callable(self.predicate)
+            and "__result__" in symbols
+        ):
+            try:
+                first_parameter = next(iter(inspect.signature(self.predicate).parameters))
+            except (StopIteration, TypeError, ValueError):
+                first_parameter = None
+            if first_parameter is not None:
+                compile_symbols.setdefault(first_parameter, symbols["__result__"])
+        return ContractCompiler.compile_predicate(self.predicate, compile_symbols)
 
 
 @dataclass(frozen=True, slots=True)
 class ContractViolation:
-    """Immutable record of a contract violation.
-
-    Attributes:
-        kind: Which contract kind was violated.
-        condition: Display string for the violated condition.
-        message: Human-readable description.
-        line_number: Source line of the contract declaration.
-        function_name: Qualified name of the function under analysis.
-        counterexample: Concrete variable assignments demonstrating violation.
-        bytecode_offset: Offset of the bytecode instruction at violation point.
-    """
+    """Immutable violation report with optional solver counterexample."""
 
     kind: ContractKind
     condition: str
@@ -239,13 +137,20 @@ class ContractViolation:
     function_name: str | None = None
     counterexample: dict[str, object] = field(default_factory=_default_counterexample)
     bytecode_offset: int | None = None
+    severity: Severity = Severity.ERROR
 
     def format(self) -> str:
-        """Format this violation for human-readable display."""
+        """Format this violation for human-readable display.
+
+        Returns:
+            A formatted multi-line string containing the violation classification,
+            location, message, and counterexample assignment.
+        """
         location = f" at line {self.line_number}" if self.line_number else ""
         func = f" in {self.function_name}" if self.function_name else ""
         offset = f" (offset 0x{self.bytecode_offset:02X})" if self.bytecode_offset else ""
-        result = f"[{self.kind.name}]{func}{location}{offset}: {self.message}\n"
+        warning = "[WARNING] " if self.severity is Severity.WARNING else ""
+        result = f"{warning}[{self.kind.name}]{func}{location}{offset}: {self.message}\n"
         result += f"  Condition: {self.condition}\n"
         if self.counterexample:
             result += "  Counterexample:\n"
@@ -254,25 +159,9 @@ class ContractViolation:
         return result
 
 
-@dataclass
+@dataclass(slots=True)
 class FunctionContract:
-    """Complete contract specification for a single function.
-
-    Aggregates all contract clauses — preconditions, postconditions,
-    invariants, assumptions, frame conditions, and effect annotations —
-    into a single lookup structure keyed by the function's qualified name.
-
-    Attributes:
-        function_name: Simple name of the function.
-        preconditions: ``@requires`` contracts.
-        postconditions: ``@ensures`` contracts.
-        loop_invariants: ``@loop_invariant`` contracts keyed by PC offset.
-        assumptions: ``@assumes`` contracts.
-        assigns_set: Frozenset of location strings from ``@assigns``.
-        effect_type: ``EffectKind.PURE`` if ``@pure`` was applied.
-        old_values: Mapping of variable names for ``old(x)`` references.
-        result_var: Symbolic name bound to the return value (``__result__``).
-    """
+    """Mutable aggregate of all clauses registered for one function."""
 
     function_name: str
     preconditions: list[Contract] = field(default_factory=_default_contract_list)
@@ -280,6 +169,7 @@ class FunctionContract:
     loop_invariants: dict[int, list[Contract]] = field(default_factory=_default_loop_invariants)
     assumptions: list[Contract] = field(default_factory=_default_contract_list)
     assigns_set: frozenset[str] = frozenset()
+    assigns_declared: bool = False
     effect_type: EffectKind = EffectKind.WRITES
     old_values: dict[str, str] = field(default_factory=_default_old_values)
     result_var: str = "__result__"
@@ -291,7 +181,17 @@ class FunctionContract:
         line: int | None = None,
         severity: Severity = Severity.ERROR,
     ) -> None:
-        """Append a precondition contract."""
+        """Append a precondition contract clause.
+
+        Args:
+            predicate: Precondition predicate (callable or string).
+            message: Optional narrative message.
+            line: Optional line number.
+            severity: Violation severity level.
+
+        Side Effects:
+            Appends a new ``Contract`` to the ``preconditions`` list.
+        """
         condition_str = predicate if isinstance(predicate, str) else ""
         self.preconditions.append(
             Contract(
@@ -310,7 +210,17 @@ class FunctionContract:
         line: int | None = None,
         severity: Severity = Severity.ERROR,
     ) -> None:
-        """Append a postcondition contract."""
+        """Append a postcondition contract clause.
+
+        Args:
+            predicate: Postcondition predicate (callable or string).
+            message: Optional narrative message.
+            line: Optional line number.
+            severity: Violation severity level.
+
+        Side Effects:
+            Appends a new ``Contract`` to the ``postconditions`` list.
+        """
         condition_str = predicate if isinstance(predicate, str) else ""
         self.postconditions.append(
             Contract(
@@ -328,7 +238,16 @@ class FunctionContract:
         message: str | None = None,
         line: int | None = None,
     ) -> None:
-        """Append an assumption contract."""
+        """Append an assumption contract clause.
+
+        Args:
+            predicate: Assumption predicate (callable or string).
+            message: Optional narrative message.
+            line: Optional line number.
+
+        Side Effects:
+            Appends a new ``Contract`` to the ``assumptions`` list.
+        """
         condition_str = predicate if isinstance(predicate, str) else ""
         self.assumptions.append(
             Contract(
@@ -346,7 +265,17 @@ class FunctionContract:
         message: str | None = None,
         line: int | None = None,
     ) -> None:
-        """Append a loop invariant at a specific program counter."""
+        """Append a loop invariant clause at a specific program counter offset.
+
+        Args:
+            pc: The program counter offset where the loop invariant is checked.
+            predicate: Loop invariant predicate (callable or string).
+            message: Optional narrative message.
+            line: Optional line number.
+
+        Side Effects:
+            Adds a new ``Contract`` to the ``loop_invariants`` mapping for the key ``pc``.
+        """
         condition_str = predicate if isinstance(predicate, str) else ""
         if pc not in self.loop_invariants:
             self.loop_invariants[pc] = []
@@ -360,9 +289,21 @@ class FunctionContract:
         )
 
     def set_assigns(self, locations: frozenset[str]) -> None:
-        """Set the assigns frame condition."""
+        """Set the assigns frame condition.
+
+        Args:
+            locations: Frozenset of locations declared as modifiable.
+
+        Side Effects:
+            Sets ``assigns_set`` and sets ``assigns_declared`` to ``True``.
+        """
         self.assigns_set = locations
+        self.assigns_declared = True
 
     def set_pure(self) -> None:
-        """Mark this function as pure (no side effects)."""
+        """Mark this function as pure (having no side effects).
+
+        Side Effects:
+            Sets ``effect_type`` to ``EffectKind.PURE``.
+        """
         self.effect_type = EffectKind.PURE

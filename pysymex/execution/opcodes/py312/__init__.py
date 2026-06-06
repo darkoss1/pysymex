@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,11 +16,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Python 3.12 opcode handlers."""
+"""Python 3.12 opcode handler package root.
+
+Re-exports version-specific handler modules registered with
+:mod:`pysymex.execution.dispatch.dispatcher` for CPython 3.12 bytecode (shorter jump
+names, ``RETURN_CONST``, ``LOAD_SUPER_*``, and PEP 669 instrumented opcodes).
+Shared semantics live under :mod:`pysymex.execution.opcodes.common`; async
+generator opcodes reuse :mod:`pysymex.execution.opcodes.py311.async_generators`.
+"""
 
 from __future__ import annotations
 
-from pysymex.execution.opcodes.py311 import async_ops
+from pysymex.execution.opcodes.py311 import async_generators as async_ops
 from pysymex.execution.opcodes.py312 import (
     arithmetic,
     collections,

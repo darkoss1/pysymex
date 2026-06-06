@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,84 +16,73 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Lowering for collection opcodes.
+"""Lower ``BUILD_*`` and container literals to symbolic heap objects and constraints.
 
-This module keeps opcode handlers small while preserving concrete CPython
-cases before falling back to symbolic formulas.
+:class:`CollectionLowerer` builds lists, tuples, dicts, and strings from stack segments,
+preferring concrete CPython sequences when available and attaching Z3 length/cardinality
+facts otherwise. Opcode handlers in :mod:`pysymex.execution.opcodes.common.collections`
+call into this module before pushing results.
+
+Limitations:
+    Heterogeneous or deeply symbolic element types may use fresh symbols per element
+    rather than precise element-wise semantics.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 import z3
 
-from pysymex.core.memory.addressing import next_address
-from pysymex.core.types import (
-    SymbolicDict,
-    SymbolicList,
-    SymbolicObject,
+from pysymex.core.identity.addressing import next_address
+from pysymex.core.types.containers.dicts import SymbolicDict
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.containers.helpers import storage_int_expr
+from pysymex.core.constants import Z3_FALSE
+from pysymex.core.constants import Z3_INT_SORT
+from pysymex.core.constants import Z3_ONE
+from pysymex.core.constants import Z3_TRUE
+from pysymex.core.constants import Z3_ZERO
+from pysymex.core.solver.constraints.hashing import get_int_val
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.opcodes.common.lowering.concrete_subscript import (
+    concrete_int_index,
+    lower_concrete_subscript,
+    to_stack_value,
 )
-from pysymex.core.types.containers import storage_int_expr
-from pysymex.core.types.scalars import (
-    Z3_FALSE,
-    Z3_TRUE,
-    SymbolicString,
-    SymbolicValue,
+from pysymex.execution.opcodes.common.lowering.types import (
+    UNSUPPORTED_SUBSCRIPT_ABSTRACTION,
+    LoweredListBuild,
+    LoweredValue,
 )
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-
-
-def _empty_constraints() -> list[z3.BoolRef]:
-    return []
-
-
-def _empty_heap_updates() -> list[tuple[int, StackValue]]:
-    return []
-
-
-@dataclass(frozen=True, slots=True)
-class LoweredValue:
-    """Value plus constraints emitted while lowering an opcode."""
-
-    value: StackValue
-    constraints: list[z3.BoolRef] = field(default_factory=_empty_constraints)
-    exception_condition: z3.BoolRef = Z3_FALSE
-    heap_updates: list[tuple[int, StackValue]] = field(default_factory=_empty_heap_updates)
-
-
-@dataclass(frozen=True, slots=True)
-class LoweredListBuild:
-    """Heap handle and storage emitted by BUILD_LIST."""
-
-    handle: SymbolicObject
-    storage: SymbolicList
-    heap_updates: list[tuple[int, StackValue]] = field(default_factory=_empty_heap_updates)
+    from pysymex.typing import StackValue
 
 
 class CollectionLowerer:
     """Translate Python collection operations to VM values and SMT formulas."""
 
     def __init__(self, pc: int):
+        """Record the bytecode offset used for collection lowering."""
         self.pc = pc
 
     def lower_subscript(self, container: object, index: StackValue) -> LoweredValue:
         """Lower a subscript operation while preserving concrete CPython cases."""
 
-        concrete = self._lower_concrete_subscript(container, index)
+        concrete = lower_concrete_subscript(self.pc, container, index)
         if concrete is not None:
             return concrete
 
         if isinstance(container, SymbolicList):
             concrete_items = container.concrete_items
-            concrete_index = self._concrete_int_index(index)
+            concrete_index = concrete_int_index(index)
             if concrete_items is not None and concrete_index is not None:
                 try:
-                    return LoweredValue(self._to_stack_value(concrete_items[concrete_index]))
+                    return LoweredValue(to_stack_value(concrete_items[concrete_index]))
                 except IndexError:
                     result, constraint = SymbolicValue.symbolic(f"subscr_error_{self.pc}")
                     return LoweredValue(
@@ -111,9 +100,37 @@ class CollectionLowerer:
                 return LoweredValue(container[s_idx], exception_condition=z3.Not(bounds_check))
 
         if isinstance(container, SymbolicDict):
+            concrete_presence = container.concrete_key_presence_condition(index)
+            if concrete_presence is not None:
+                has_value, concrete_value = container.concrete_value_for_key(index)
+                if has_value:
+                    return LoweredValue(to_stack_value(concrete_value))
+                concrete_items_obj = getattr(container, "_concrete_items", None)
+                if isinstance(concrete_items_obj, dict):
+                    concrete_items = cast("dict[object, object]", concrete_items_obj)
+                    if len(concrete_items) == 1:
+                        concrete_value = next(iter(concrete_items.values()))
+                        return LoweredValue(
+                            to_stack_value(concrete_value),
+                            exception_condition=z3.Not(concrete_presence),
+                        )
+                result, constraint = SymbolicValue.symbolic(f"{container.name}[{self.pc}]")
+                return LoweredValue(
+                    result,
+                    constraints=[constraint],
+                    exception_condition=z3.Not(concrete_presence),
+                )
+
             s_key = self._coerce_key(index)
             if s_key is not None:
                 result, presence_check = container[s_key]
+                if getattr(container, "_value_type", None) == "dict":
+                    result, constraint = self._nested_symbolic_dict(container, s_key)
+                    return LoweredValue(
+                        result,
+                        constraints=[constraint],
+                        exception_condition=z3.Not(presence_check),
+                    )
                 return LoweredValue(result, exception_condition=z3.Not(presence_check))
 
         if isinstance(container, SymbolicString):
@@ -131,13 +148,17 @@ class CollectionLowerer:
                 return LoweredValue(char_str, exception_condition=z3.Not(bounds_check))
 
         result, constraint = SymbolicValue.symbolic(f"subscr_havoc_{self.pc}")
-        return LoweredValue(result, constraints=[constraint])
+        return LoweredValue(
+            result,
+            constraints=[constraint],
+            degraded_passes=[UNSUPPORTED_SUBSCRIPT_ABSTRACTION],
+        )
 
     def build_list(self, items: list[StackValue]) -> LoweredListBuild:
         """Build a SymbolicList and return its handle and storage."""
         count = len(items)
-        z3_len = z3.IntVal(count)
-        z3_array = z3.Array(f"list_{self.pc}_arr", z3.IntSort(), z3.IntSort())
+        z3_len = get_int_val(count)
+        z3_array = z3.Array(f"list_{self.pc}_arr", Z3_INT_SORT, Z3_INT_SORT)
         heap_updates: list[tuple[int, StackValue]] = []
         address_by_identity: dict[int, int] = {}
 
@@ -157,7 +178,7 @@ class CollectionLowerer:
         )
 
         addr = next_address()
-        obj_handle = SymbolicObject(f"list_{addr}", addr, z3.IntVal(addr), {addr})
+        obj_handle = SymbolicObject(f"list_{addr}", addr, get_int_val(addr), {addr})
         return LoweredListBuild(obj_handle, sym_list, heap_updates)
 
     def build_tuple(self, items: list[StackValue]) -> LoweredValue:
@@ -178,8 +199,9 @@ class CollectionLowerer:
             value=dataclasses.replace(
                 sym_list,
                 z3_array=z3_array,
-                z3_len=z3.IntVal(count),
+                z3_len=get_int_val(count),
                 _concrete_items=list(items),
+                _type="tuple",
             ),
             heap_updates=heap_updates,
         )
@@ -195,12 +217,11 @@ class CollectionLowerer:
         for key, val in items:
             s_key = self._coerce_key(key)
             if s_key is not None:
-                s_val = self._coerce_value(val)
-                sym_dict = sym_dict.__setitem__(s_key, s_val)
+                sym_dict = sym_dict.__setitem__(key, val)
 
         if items or expected_count is None:
             return LoweredValue(sym_dict)
-        return LoweredValue(dataclasses.replace(sym_dict, z3_len=z3.IntVal(expected_count)))
+        return LoweredValue(dataclasses.replace(sym_dict, z3_len=get_int_val(expected_count)))
 
     def build_set(self, items: list[StackValue]) -> LoweredValue:
         """Build a symbolic set (represented as SymbolicValue for now)."""
@@ -226,12 +247,23 @@ class CollectionLowerer:
             set_value = SymbolicValue.from_const(materialized)
             set_value.set_runtime_type("set")
             set_value.is_none = Z3_FALSE
+            set_value.z3_int = get_int_val(len(materialized))
+            setattr(set_value, "_hash_cache", None)
             return LoweredValue(set_value)
 
         sym_val, constraint = SymbolicValue.symbolic(f"set_{self.pc}")
         sym_val.set_runtime_type("set")
         sym_val.is_none = Z3_FALSE
         return LoweredValue(sym_val, constraints=[constraint])
+
+    def _nested_symbolic_dict(
+        self,
+        container: SymbolicDict,
+        key: SymbolicString,
+    ) -> tuple[SymbolicDict, z3.BoolRef]:
+        """Allocate a fresh symbolic nested dict for a missing key lookup."""
+        nested, constraint = SymbolicDict.symbolic(f"{container.name}[{key.name}]")
+        return nested, constraint
 
     def build_string(self, items: list[StackValue]) -> SymbolicString:
         """Concatenate symbolic strings and stringified symbolic values."""
@@ -248,6 +280,7 @@ class CollectionLowerer:
         return cast("SymbolicString", result)
 
     def _stringify(self, val: StackValue) -> SymbolicString:
+        """Coerce a stack value to :class:`SymbolicString` for literal building."""
         if isinstance(val, SymbolicString):
             return val
         if isinstance(val, str):
@@ -262,13 +295,15 @@ class CollectionLowerer:
         if affinity == "int":
             expr = s_val.z3_int
         elif affinity == "bool":
-            expr = z3.If(s_val.z3_bool, z3.IntVal(1), z3.IntVal(0))
+            expr = z3.If(s_val.z3_bool, Z3_ONE, Z3_ZERO)
         else:
             expr = z3.If(
                 s_val.is_int,
                 s_val.z3_int,
                 z3.If(
-                    s_val.is_bool, z3.If(s_val.z3_bool, z3.IntVal(1), z3.IntVal(0)), z3.IntVal(0)
+                    s_val.is_bool,
+                    z3.If(s_val.z3_bool, Z3_ONE, Z3_ZERO),
+                    Z3_ZERO,
                 ),
             )
 
@@ -280,6 +315,7 @@ class CollectionLowerer:
         )
 
     def _coerce_index(self, val: StackValue) -> SymbolicValue | None:
+        """Return a symbolic integer index when *val* is indexable."""
         if isinstance(val, SymbolicValue):
             return val
         if isinstance(val, (int, bool)):
@@ -287,15 +323,17 @@ class CollectionLowerer:
         return None
 
     def _coerce_key(self, val: StackValue) -> SymbolicString | None:
+        """Return a symbolic string key when *val* can name a mapping entry."""
         if isinstance(val, SymbolicString):
             return val
-        if isinstance(val, str):
-            return SymbolicString.from_const(val)
+        if isinstance(val, (str, int, bool, float)):
+            return SymbolicString.from_const(str(val))
         if isinstance(val, SymbolicValue):
             return SymbolicString(_name=val.name, _unified=val)
         return None
 
     def _coerce_value(self, val: StackValue) -> SymbolicValue:
+        """Wrap *val* as a :class:`SymbolicValue`."""
         if isinstance(val, SymbolicValue):
             return val
         return SymbolicValue.from_const(val)
@@ -305,20 +343,22 @@ class CollectionLowerer:
         item: StackValue,
         address_by_identity: dict[int, int],
     ) -> tuple[z3.ArithRef, list[tuple[int, StackValue]]]:
+        """Return heap address or Z3 int storage for a collection element."""
         if isinstance(item, SymbolicObject):
             return item.z3_addr, []
         if isinstance(item, (SymbolicList, SymbolicDict)):
             identity = id(item)
             existing_address = address_by_identity.get(identity)
             if existing_address is not None:
-                return z3.IntVal(existing_address), []
+                return get_int_val(existing_address), []
             addr = next_address()
             address_by_identity[identity] = addr
-            return z3.IntVal(addr), [(addr, item)]
+            return get_int_val(addr), [(addr, item)]
         s_val = self._coerce_value(item)
         return storage_int_expr(s_val.z3_int, f"collection_{self.pc}_elem"), []
 
     def _to_int_val(self, name: str, expr: z3.ArithRef) -> SymbolicValue:
+        """Build a :class:`SymbolicValue` wrapper around an arbitrary Z3 integer."""
         return SymbolicValue(
             _name=name,
             z3_int=expr,
@@ -326,88 +366,3 @@ class CollectionLowerer:
             is_bool=Z3_FALSE,
             z3_bool=Z3_FALSE,
         )
-
-    def _lower_concrete_subscript(
-        self,
-        container: object,
-        index: StackValue,
-    ) -> LoweredValue | None:
-        if isinstance(container, (list, tuple, str, bytes)):
-            concrete_container = cast("list[object] | tuple[object, ...] | str | bytes", container)
-            concrete_index = self._concrete_int_index(index)
-            if concrete_index is None:
-                return None
-            try:
-                return LoweredValue(self._to_stack_value(concrete_container[concrete_index]))
-            except IndexError:
-                result, constraint = SymbolicValue.symbolic(f"subscr_error_{self.pc}")
-                return LoweredValue(result, constraints=[constraint], exception_condition=Z3_TRUE)
-            except TypeError:
-                return None
-
-        if isinstance(container, dict):
-            concrete_mapping = cast("dict[object, object]", container)
-            concrete_key = self._concrete_key(index)
-            if concrete_key is None:
-                return None
-            try:
-                return LoweredValue(self._to_stack_value(concrete_mapping[concrete_key]))
-            except KeyError:
-                result, constraint = SymbolicValue.symbolic(f"subscr_error_{self.pc}")
-                return LoweredValue(result, constraints=[constraint], exception_condition=Z3_TRUE)
-            except TypeError:
-                return None
-
-        return None
-
-    def _concrete_int_index(self, index: StackValue) -> int | None:
-        if isinstance(index, bool):
-            return int(index)
-        if isinstance(index, int):
-            return index
-        if isinstance(index, SymbolicValue) and z3.is_int_value(index.z3_int):
-            return index.z3_int.as_long()
-        return None
-
-    def _concrete_key(self, key: StackValue) -> object | None:
-        if isinstance(key, SymbolicString) and z3.is_string_value(key.z3_str):
-            return key.z3_str.as_string()
-        if isinstance(key, SymbolicValue):
-            value = key.value
-            if value is not None:
-                return value
-            if z3.is_string_value(key.z3_str):
-                return key.z3_str.as_string()
-            if z3.is_int_value(key.z3_int):
-                return key.z3_int.as_long()
-            return None
-        if isinstance(key, (str, int, bool, bytes, float, type(None))):
-            return key
-        return None
-
-    def _to_stack_value(self, value: object) -> StackValue:
-        if value is None:
-            return None
-        if isinstance(
-            value,
-            (
-                SymbolicValue,
-                SymbolicString,
-                SymbolicList,
-                SymbolicDict,
-                SymbolicObject,
-                int,
-                bool,
-                str,
-                float,
-                bytes,
-                type,
-                list,
-                dict,
-                tuple,
-            ),
-        ):
-            return cast("StackValue", value)
-        if callable(value):
-            return cast("StackValue", value)
-        return SymbolicValue.from_const(value)

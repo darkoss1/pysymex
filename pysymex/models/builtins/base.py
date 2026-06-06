@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -25,102 +25,23 @@ that all builtin / stdlib model classes inherit from.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict, TypeGuard
-
-import z3
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-    from pysymex.core.state import VMState
+    from pysymex.typing import StackValue
+    from pysymex.core.state.record import VMState
 
-
-class RaisedExceptionEffect(TypedDict):
-    """Structured metadata for modeled exceptions raised by builtins."""
-
-    issue_kind: str
-    exception_type: str
-    message: str
-    source: str
-
-
-class SinkEventEffect(TypedDict):
-    """Structured metadata for dynamic-code sink usage."""
-
-    sink_type: Literal["eval", "exec", "compile"]
-    severity: Literal["info", "critical"]
-    source: str
-
-
-class AttributeMutationEffect(TypedDict):
-    """Structured metadata for attribute mutation side effects."""
-
-    target_index: int
-    attr_name: str
-    status: Literal["applied", "unknown"]
-    source: str
-
-
-SideEffectValue: TypeAlias = (
-    object | RaisedExceptionEffect | SinkEventEffect | AttributeMutationEffect
+from pysymex.models.builtins.results import (
+    AttributeMutationEffect,
+    ModelResult,
+    RaisedExceptionEffect,
+    SideEffectValue,
+    SinkEventEffect,
+    is_raised_exception_effect,
+    is_sink_event_effect,
+    new_side_effects,
+    none_model_result,
 )
-
-
-def _new_side_effects() -> dict[str, SideEffectValue]:
-    """Create an empty side-effects map."""
-    return {}
-
-
-def _is_str_object_dict(value: object) -> TypeGuard[dict[str, object]]:
-    """Return whether *value* is a dict used for model side-effect payloads."""
-    return isinstance(value, dict)
-
-
-@dataclass(frozen=True, slots=True)
-class ModelResult:
-    """Result of a model application."""
-
-    value: StackValue
-    constraints: Sequence[z3.ExprRef | z3.BoolRef] = field(default_factory=tuple)
-    side_effects: dict[str, SideEffectValue] = field(default_factory=_new_side_effects)
-
-
-def none_model_result(side_effects: dict[str, SideEffectValue] | None = None) -> ModelResult:
-    """Return a model result for functions whose concrete return value is None."""
-    from pysymex.core.types import SymbolicNone
-
-    return ModelResult(value=SymbolicNone("none"), side_effects=side_effects or {})
-
-
-def is_raised_exception_effect(value: object) -> TypeGuard[RaisedExceptionEffect]:
-    """Return whether *value* has the raised-exception side-effect shape."""
-    if not _is_str_object_dict(value):
-        return False
-    issue_kind = value.get("issue_kind")
-    exception_type = value.get("exception_type")
-    message = value.get("message")
-    source = value.get("source")
-    return (
-        isinstance(issue_kind, str)
-        and isinstance(exception_type, str)
-        and isinstance(message, str)
-        and isinstance(source, str)
-    )
-
-
-def is_sink_event_effect(value: object) -> TypeGuard[SinkEventEffect]:
-    """Return whether *value* has the dynamic sink-event side-effect shape."""
-    if not _is_str_object_dict(value):
-        return False
-    sink_type = value.get("sink_type")
-    severity = value.get("severity")
-    source = value.get("source")
-    return (
-        sink_type in {"eval", "exec", "compile"}
-        and severity in {"info", "critical"}
-        and isinstance(source, str)
-    )
 
 
 class FunctionModel(ABC):
@@ -165,3 +86,18 @@ class NoneResultFunctionModel(FunctionModel):
     ) -> ModelResult:
         """Return symbolic None without adding constraints or side effects."""
         return none_model_result()
+
+
+__all__ = [
+    "AttributeMutationEffect",
+    "FunctionModel",
+    "ModelResult",
+    "NoneResultFunctionModel",
+    "RaisedExceptionEffect",
+    "SideEffectValue",
+    "SinkEventEffect",
+    "is_raised_exception_effect",
+    "is_sink_event_effect",
+    "new_side_effects",
+    "none_model_result",
+]

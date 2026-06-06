@@ -1,4 +1,5 @@
 import z3
+from pysymex.contracts.quantifiers.factories import exists_unique
 from pysymex.contracts.quantifiers.types import QuantifierKind, QuantifierVar, BoundSpec, Quantifier
 
 
@@ -72,3 +73,19 @@ class TestQuantifier:
         q_unique = Quantifier(QuantifierKind.UNIQUE, [var], [spec], body, "test")
         z3_unique = q_unique.to_z3()
         assert z3.is_bool(z3_unique)
+
+    def test_unique_existence_binds_the_witness_used_by_uniqueness(self) -> None:
+        """Exactly one valid witness must satisfy the generated formula."""
+        formula = exists_unique("i", (0, 10), "i == 5").to_z3()
+        solver = z3.Solver()
+        solver.add(z3.Not(formula))
+
+        assert solver.check() == z3.unsat
+
+    def test_unique_existence_rejects_multiple_witnesses(self) -> None:
+        """Two satisfying values must refute an exactly-one claim."""
+        formula = exists_unique("i", (0, 10), "i == 5 or i == 6").to_z3()
+        solver = z3.Solver()
+        solver.add(formula)
+
+        assert solver.check() == z3.unsat

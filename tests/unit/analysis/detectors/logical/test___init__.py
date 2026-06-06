@@ -7,10 +7,10 @@ import z3
 from pysymex.analysis.detectors import DetectorRegistry, IssueKind
 from pysymex.analysis.detectors.logical import create_logic_detector
 from pysymex.analysis.detectors.logical.base import LogicalContradictionDetector
-from pysymex.core.state import VMState
-from pysymex.core.types import SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
 from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.types import ExecutionConfig
+from pysymex.execution.config.settings import ExecutionConfig
 
 
 def MockInstr(
@@ -102,14 +102,13 @@ def test_registered_default_logical_detector_does_not_report_normal_branch_pruni
             return x + 1
         return x - 1
 
+    detector = LogicalContradictionDetector()
     registry = DetectorRegistry()
-    registry.register(LogicalContradictionDetector)
+    registry.register_fn(detector.as_fn(), detector.to_info())
     executor = SymbolicExecutor(
         config=ExecutionConfig(
             max_paths=4,
             max_iterations=40,
-            enable_chtd=False,
-            enable_h_acceleration=False,
         ),
         detector_registry=registry,
     )

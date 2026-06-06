@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import dis
+import time
 
-from pysymex.analysis.detectors.runtime.assertion_error import AssertionErrorDetector
-from pysymex.core.state import VMState
+import z3
+
+from pysymex.analysis.detectors.runtime.errors.assertion import AssertionErrorDetector
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
 
 
 def _make_instruction(
@@ -29,7 +34,7 @@ def _make_instruction(
 
 
 class TestAssertionErrorDetector:
-    """Test suite for pysymex.analysis.detectors.base.AssertionErrorDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.AssertionErrorDetector."""
 
     def test_check_reports_assertion_by_stack_marker(self) -> None:
         """Report ASSERTION_ERROR when stack top clearly contains AssertionError."""
@@ -102,3 +107,32 @@ class TestAssertionErrorDetector:
         )
         issue = detector.check(state, instruction, lambda _constraints: False)
         assert issue is None
+
+    def test_check_reports_inconclusive_assertion_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN may surface only as a model-less low-confidence issue."""
+        detector = AssertionErrorDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        x = z3.Int("unknown_assertion_path")
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(
+                VMState(
+                    stack=[AssertionError],
+                    path_constraints=[x > 0],
+                    pc=1,
+                    current_instructions=[instruction],
+                ),
+                instruction,
+                lambda _constraints: True,
+            )
+        finally:
+            active_incremental_solver.reset(token)
+
+        assert issue is not None
+        assert "Path feasibility inconclusive" in issue.message
+        assert issue.model is None
+        assert issue.get_counterexample() == {}
+        assert issue.confidence == 0.5
+        assert issue.likelihood == 0.5

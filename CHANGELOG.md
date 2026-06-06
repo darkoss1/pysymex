@@ -1,221 +1,153 @@
 # Changelog
 
-All notable changes to pysymex will be documented in this file.
+All notable public changes to pysymex are documented here.
 
+## Unreleased
 
-## [0.1.0-alpha.5] - 2026-05-18
+## v0.1.0a5 > v0.1.1a0 - 2026-06-03
 
-### Added ✨
-- **Proof-Carrying CHTD-TS v3**: Introduced mathematically certified Compressed Hierarchical Task Decomposition to guarantee path feasibility.
-- **PipelinedEvaluator & Core Index**: Added a pipelined CPU dispatcher and verified core index to bypass solver dispatch latencies.
-- **Lazy Constraint Scopes**: Added pending constraint tracking inside `IncrementalSolver` to avoid redundant Z3 assertions.
-- **Dynamic Class Registry Fallback**: Added fallback pathways for the class registry to support runtime class overrides and dynamic mock types.
-- **ValueErrorDetector & UserExceptionDetector**: Added new specialized analysis detectors to capture parsing failures and user-defined exception bounds.
-- **Z3-Backed Type Inference Engine**: Added a dynamic type inference solver that reconstructs object properties from Z3 path constraints.
-- **High-Fidelity stdlib Models**: Added extended models for sets (`sets.py`), extended builtins, and file systems (`io.py`, `pathlib.py`).
-- **Regression Experiment Corpus**: Added a standardized regression suite and manifest framework to execute multi-theory concolic testing.
-- **Breakaway Job Control**: Added safer child process management in the Windows `JobObject` backend to prevent stray processes.
+This release advances PySyMex across engine architecture, CPython-compatible
+execution semantics, explicit solver uncertainty, native isolation, reporting,
+contracts, and benchmark coverage.
 
-### Changed 🔄
-- **SMT Slicing v3**: Upgraded the constraint slicing engine to a dependency-closed incremental model, reducing solver queries by 60-90%.
-- **Topological Thompson Sampling**: Integrated Beta-Bernoulli multi-armed bandits to govern exploration weights using graph-theoretic yield metrics.
-- **CPython 3.11-3.13 Opcode Parity**: Enhanced bytecode execution for modern opcodes, including CPython 3.13 formatting and method loading.
-- **Async Coroutine Execution**: Aligned `SEND` and `END_SEND` stack structures with Python 3.11+ coroutines to resolve concolic deadlock states.
-- **Opcode Architecture Consolidation**: Split the massive `common.py` opcode file into modular single-responsibility files and introduced structured bytecode lowering engines.
-- **Full Pyright Compliance**: Cleaned up internal type annotations to achieve 100% strict-mode type-checking across all core components.
-- **Unified CLI and Rich Interface**: Unified diagnostic utilities under the core CLI with interactive console dashboards and live multi-format (SARIF, HTML, Markdown) exports.
+### Release Focus
 
-### Removed / Deprecated 🗑️
-- **Removed Numba and NumPy Dependencies**: Completely purged Numba and NumPy from the core package dependencies to establish a pure Python/Z3 footprint.
-- **Build Backend Migration**: Migrated packaging and build pipelines from legacy `setuptools` to a modern, PEP 517-compliant `hatchling` backend.
-- **Legacy Aliases Cleanup**: Deprecated old solver factories, `feedback_mus` scheduling pathways, and `SymbolicNoneType` definitions in favor of unified interfaces.
+`0.1.1a0` is still an alpha release, but it is a large step toward a more
+trustworthy symbolic-execution engine. The main direction was to make PySyMex
+more explicit about what it can prove, what it cannot model, and when solver or
+sandbox uncertainty prevents a definitive result.
 
+The release does not claim complete formal soundness for Python. It improves the
+soundness envelope by preserving unsupported, inconclusive, degraded, timeout,
+solver-unknown, and missing-model states instead of treating them as verified
+safety or confirmed bugs.
 
-## [0.1.0-alpha.4] - 2026-04-26
+### Architecture and Ownership
 
-### v2 Core Graduation & Experimental Contracts: Architectural Maturity & Formal Verification
+- Split large execution, core, scanner, detector, sandbox, contract, and report
+  responsibilities into clearer owners with stricter import boundaries.
+- Reworked executor startup, request/session handling, result construction,
+  detector publication, opcode routing, branch handling, lifecycle reset, and
+  fallback-event ownership.
+- Reorganized core state, heap/identity ownership, solver engine components,
+  constraint initialization, type factories, scalar/container ownership, and
+  graph initialization.
+- Removed obsolete analysis modes and legacy scheduler surfaces that no longer
+  matched the current engine architecture.
+- Updated architecture documentation around scanning, sandboxing, models,
+  solver behavior, SMT slicing, POLAR/CEGIS, contracts, reports, and limits.
 
-- **v2 Architecture Graduation**: Finalized the transition to the **Constraint Interaction Graph (CIG)** foundation. This release replaces the legacy message-passing logic from `a1` with precise **Activation-Literal MUS Extraction**, enabling the engine to operate as a true "structural hunter" that targets localized constraint bags with mathematical exactness.
-- **Tiered CPU Solver Dispatcher**: Introduced an intelligent routing layer that automatically selects the optimal solver backend (Thread-Local SAT for pure boolean logic, Z3 CDCL for mixed arithmetic, or Reference for ground-truth validation).
-- **Activation-Literal MUS Extraction**: Replaced legacy message-passing with precise structural contradiction detection using Z3's activation literals. This extracts the exact Minimal Unsatisfiable Subset (MUS) in a single query, significantly improving pruning precision.
-- **Asynchronous Core Learning**: Introduced background MUS extraction to prevent "solver stall." The engine now continues optimistic execution on likely feasible paths while a background worker proves structural UNSAT, pruning the search tree asynchronously upon discovery.
-- **Topological Thompson Sampling**: Integrated the Topological Information Yield ($\mathcal{Y}_{\text{topo}}$) equation into the Adaptive Path Manager, allowing the engine to actively hunt for structural bottlenecks and prune redundant paths based on graph-theoretic yield.
-- **Sparse Bitset State Optimization**: Implemented memory-safe structural pruning using Run-Length Encoded (RLE) sparse bitsets (Roaring Bitmaps), allowing sub-millisecond containment checks even for massive program branch counts.
-- **Incremental SMT Slicing**: Introduced true incremental prefix synchronization and chronological Copy-on-Write (COW) chains to minimize Python-to-Z3 FFI overhead.
+### Soundness and Solver Behavior
 
-### Breaking Changes ⚠️
-- **Massive Architectural Refactor**: Reorganized the entire `pysymex` package into a modular sub-package structure. Core modules in `analysis`, `core`, `execution`, `models`, `reporting`, and `sandbox` have been moved into granular sub-directories to improve maintainability.
-- **Removal of GPU Acceleration**: The `h_acceleration` module and CuPy/GPU offloading have been removed due to PCIe latency limitations and state fragmentation. Replaced entirely by the thread-local CPU SAT approach in the `accel` module.
-- **Taint Tracking Removal**: The explicit taint tracking system and related detectors have been removed. Flow-based taint analysis will be handled by abstract interpretation in future versions.
-- **Contract System Overhaul**: Removed the legacy `ContractAnalyzer` and `ContractVerificationExecutor`. Functional verification is now handled through a modernized modular contract system (`compiler`, `decorators`, `injector`, `verifier`) integrated into the `VerifiedExecutor`.
-- **CLI Consolidation**: Removed `pysymex-verify` and `pysymex-trace-analyze` entry points. All functionality is now unified under the main `pysymex` CLI.
-- **Dependency Pinning**: Transitioned to strict pinning for core dependencies (`z3-solver==4.15.3.0`, `pydantic==2.12.5`, `immutables==0.20`, `numba==0.64.0`) to ensure deterministic and stable execution environments.
-- **Optional Dependencies Cleanup**: Removed several legacy optional dependency groups including `accel-cpu`, `accel-gpu`, `accelerate`, `gpu`, and `gpu-cuda`.
+- Made solver outcomes more structured across satisfiability checks, model
+  extraction, implication checks, property validation, detector feasibility,
+  resource checks, type constraints, and schedule searches.
+- Kept solver `unknown`, timeout, scoped solver failure, missing model data, and
+  optional unsat-core failure from becoming reusable infeasibility evidence.
+- Added explicit inconclusive/degraded accounting in proof reports, mutation
+  validation, randomized property checks, oracle differential validation,
+  resource analysis, concurrency checks, and detector feasibility.
+- Improved solver cache behavior for exact literals, interval comparisons,
+  unsat-subset reuse, query normalization, branch witnesses, exception metadata,
+  runtime detector evidence, and cache pressure compaction.
 
-### Added ✨
-- **Experimental: Full Formal Verification Lifecycle**: Version `a4` graduates the contract system from basic quantifiers to a complete formal verification engine in `pysymex.contracts`.
-    - **Hoare-Logic-Based Verifier**: Uses Z3 to prove validity of postconditions and satisfiability of preconditions against path constraints.
-    - **Inductive Loop Invariants**: Supports formal verification of loop properties via base-case and inductive-step checks.
-    - **Symbolic Contract Compiler**: A thread-safe, caching compiler that translates Python lambdas into Z3 formulas using specialized combinators (`And_`, `Or_`, `Not_`, `Implies_`) to bypass Python's short-circuiting keywords.
-    - **Decorator-Driven API**: High-level `@requires`, `@ensures`, and `@invariant` decorators for seamless specification of function and loop properties.
-- **Docker Multi-Version Testing Infrastructure**: Introduced a complete Docker-based testing suite in the `docker/` directory.
-    - **Dedicated Environments**: Includes pre-configured `Dockerfile`s for Python 3.11, 3.12, and 3.13.
-    - **Automated Validation**: Integrated a new `tests/docker.py` orchestration script to run the full test suite in parallel across all supported Python versions in isolated containers, ensuring clean-state validation before pushing changes.
-    - **Persistent Development**: Containers are optimized for persistent use with volume mounts for live code editing.
-- **New Mirrored Test Architecture**: Overhauled the `tests/` directory to mirror the `pysymex/` package structure exactly. This provides 1:1 parity between source modules and their corresponding test suites, significantly improving discoverability and maintaining 100% code coverage.
+### Execution Semantics and Models
 
-- **New Acceleration Module (`accel`)**: Introduced a high-performance, thread-local CPU-based SAT solver backend (using CaDiCaL fast-path) to replace GPU offloading, providing lower latency and better state management.
-- **Version-Specific Opcode Handlers**: Added dedicated handlers for Python 3.11, 3.12, and 3.13 in `pysymex.execution.opcodes`, ensuring precise symbolic execution across different Python versions.
-- **Metrics Subsystem (`stats`)**: Added a comprehensive statistics collection and reporting module for tracking performance and execution metrics.
-- **Shared Utilities (`utils`)**: Introduced a `pysymex.utils` package for common helper functions and mathematical primitives.
-- **Immutables Integration**: Integrated the `immutables` library for persistent VM state management, significantly reducing memory pressure during path forking.
-- **New Bug Detectors**:
-    - Added `enhanced_index_error` and `enhanced_type_error` detectors with improved diagnostic context.
-    - Added `resource_leak` and `unbound_variable` detectors.
-    - Added `assertion_error` detector to both runtime and static analysis phases.
-- **Fix Suggestions**: `Issue` objects now include a `fix_suggestion` field, providing actionable advice for identified bugs.
-- **Rich Console Support**: Integrated `rich` for improved CLI formatting and diagnostic reporting.
+- Expanded Python 3.11, 3.12, and 3.13 bytecode handling with common opcode
+  logic and version-specific handlers.
+- Improved call and binding semantics for `NoneType` calls, maybe-None call
+  policy, interprocedural argument binding, `CALL_FUNCTION_EX`, positional-only
+  parameters, keyword calls, varargs, kwargs, and function summaries.
+- Corrected exception matching, invalid exception handler behavior, caught and
+  uncaught routing, exception payload preservation, context manager behavior,
+  descriptor binding, attribute mutation/deletion, and `super()` handling.
+- Expanded builtin, container, and stdlib precision for dictionaries, sets,
+  tuples, lists, ranges, iterators, `all()`/`any()`, `sum()`, `min()`/`max()`,
+  `sorted()`, `reversed()`, `enumerate()`, `zip()`, `filter()`, strings, bytes,
+  bytearray, math, pathlib/os/sys, functools, dataclasses, contextlib, and
+  regex-like operations.
+- Improved exact string/bytes/bytearray behavior for search, split, trim,
+  affix, classification, joins, codecs, translation, construction, mutation,
+  copying, reversing, and membership.
 
-### Changed 🔄
-- **VM State Optimization**: Refactored `State` and `VM` logic to leverage persistent data structures and efficient copy-on-write patterns.
-- **Detector Modularization**: Reorganized all detectors into `logical`, `runtime`, `specialized`, and `static` sub-packages.
-- **Sandbox Modernization**: Refactored sandbox isolation backends into a robust unified harness system.
-- **License Header Standardization**: Standardized all source file headers to use the exact GPL license header format across the entire codebase.
-- **Dev Dependencies**: Updated development tools, adding `psutil` and `rich` while removing `black` and `mypy` from the core dev list.
+### Detectors, Reports, and Reproduction
 
-### Fixed 🐛
-- Fixed a race condition in global opcode handler registration by adding `clear_global_handlers` to `OpcodeDispatcher`.
-- Improved precision of `None` dereference and division-by-zero detection by categorizing them into runtime and static analysis phases.
-- Standardized path sanitization logic across all sandbox backends to prevent edge-case host escapes.
-- **And 100+ other minor improvements, internal refactorings, and stability fixes** to ensure the most robust alpha release to date.
+- Hardened runtime and logical detectors so unsupported witnesses, callback
+  failures, missing model evidence, and solver uncertainty do not become
+  confirmed issues.
+- Improved issue confidence and severity handling for type constraints,
+  resource lifecycle findings, concurrency findings, formal validation,
+  user exceptions, value errors, index errors, assertion errors, and property
+  proofs.
+- Preserved scanner issue metadata, trigger text, degraded-pass state,
+  value-range filtering, and detector feasibility context across reports.
+- Expanded reproduction generation for package imports, absolute target paths,
+  default expressions, async functions, constructors, class methods, decorators,
+  callable objects, bytes literals, `*args`, `**kwargs`, and positional-only
+  parameters.
 
-## [0.1.0-alpha.3] - 2026-04-02
+### Contracts and Formal Verification
 
-### Sandbox Hardening & Isolation
+- Reworked contract evidence, runtime ownership, offline verifier routing,
+  report adapters, `old()` snapshots, effect tracking, class invariants,
+  quantifier lowering, and native contract frontends.
+- Expanded contract coverage for methods, classmethods, staticmethods,
+  constructors, `__new__`, subclass initialization, property setters, custom
+  `__setattr__`, global instance methods, and nested methods.
+- Kept insufficient contract evidence explicit as inconclusive instead of
+  implying a proof.
 
-- **Core Sandbox Integration**: Promoted sandbox hardening as a core release feature across the isolation stack.
-- **Strict Path Validation**: Added strict `extra_files` path sanitization for absolute paths, drive-prefixed paths, traversal segments, and dangerous leading dash segments.
-- **Resolved-path Containment**: Enforced resolved-path checks before writes in sandbox isolation backends to prevent host escapes.
-- **Windows Job Object limits**: Hardened Windows startup and Job handling with safer fallback behavior and memory-limit enforcement.
+### POLAR, CEGIS, Scheduling, and Spill
 
-### Security and Verification
+- Replaced stale CHTD/scheduler assumptions with the current POLAR/CEGIS
+  frontier model.
+- Added shadow/runtime rollout modes, native worklist diagnostics, owner
+  certificate gates, no-false-prune coverage, evidence preview gates, and
+  opt-in runtime exact pruning.
+- Added spill support for identity-preserving primitive values, SMT2
+  constraints, detector sidecars, exception roots, runtime metadata, loop
+  counters, value tables, havoc telemetry, payload integrity digests, and
+  malformed payload handling.
+- Added benchmark and telemetry coverage for frontier admission, spill behavior,
+  CEGIS decisions, proof certificates, and pressure compaction.
 
-- **Adversarial Resiliency**: Expanded adversarial sandbox escape regression tests.
-- **Formal Strictness Gates**: Added strictness-gate coverage and formal checks across solver, resources, integration, patterns, and loops.
+### Native Isolation and Source Loading
 
-### Release Hygiene
+- Reworked sandboxed source loading so module and bytecode extraction cross the
+  sandbox boundary as serialized data rather than live target objects.
+- Added and hardened native isolation paths for Windows AppContainer, Linux
+  namespaces/seccomp, and WASM fallback selection.
+- Removed the weak subprocess backend and kept OS-native isolation as the
+  security boundary.
+- Hardened Windows AppContainer runtime staging, immutable runtime cache
+  validation, manifest caching, process CWD selection, LPAC/token checks, pipe
+  handling, and typed Win32 last-error access.
+- Hardened Linux namespace root-jail setup, trusted `unshare` lookup, filename
+  validation, runtime mounting, seccomp launcher behavior, and CI resource-denial
+  handling.
+- Improved Docker-based multi-version test execution, Compose project scoping,
+  WSL update prompting, and container cleanup behavior.
 
-- **Documentation Updates**: Updated documentation, architecture pages, and roadmap for the 0.1.0-alpha.3 release.
+### CLI, Tracing, Stats, and Benchmarks
 
-### Bug Fixes
+- Removed the legacy `concolic` command and kept `pysymex scan`,
+  `pysymex analyze`, and `pysymex scan --reproduce` as the current primary CLI
+  surfaces.
+- Added multi-format CLI reporting, SARIF/HTML/text improvements, report
+  severity mapping, and better structured output routing.
+- Fixed scan statistics ownership around path-rate averaging, scan-window
+  reset, solver counters, clause metrics, final average memory, and peak memory.
+- Added tracing latency telemetry, analyzer filters, solver and step summaries,
+  slowest path/opcode reporting, and realtime visualization hooks.
+- Added benchmark suites and result documentation for scanner/runtime behavior,
+  sandbox loading, POLAR/CEGIS, spill paths, cache policies, and regression
+  workloads.
 
-- 12 bug fixes implemented across core soundness and adversarial edge cases.
+### Known Limits
 
-
-## [0.1.0-alpha.2] - 2026-03-20
-
-### Hardware Acceleration (h_acceleration)
-
-- **New Hardware Acceleration Pipeline**: Introduced the `h_acceleration` module to evaluate Boolean constraints near theoretical hardware limits, drastically accelerating CHTD bag solving.
-- **CuPy / NVRTC GPU Backend (`gpu.py`)**: Added a high-performance GPU backend using CuPy and NVRTC. It generates and compiles pure CUDA C++ dynamically on the fly, eliminating Python overhead.
-- **Numba CPU Backend (`cpu.py`)**: Added a highly optimized, multi-threaded CPU fallback using Numba's JIT compilation for environments without NVIDIA GPUs.
-- **Architectural Separation of Concerns**: Cleanly separated backends so users without NVIDIA GPUs do not need to install the heavy CUDA toolkit.
-- **16-byte Instruction Alignment**: Designed the internal ISA (`INSTRUCTION_DTYPE`) to use `uint16` structures padded to exactly 16 bytes. This prevents register overflow on complex expressions (supporting up to 8,192 variables) and perfectly aligns cache fetches for both modern CPUs (128-bit SSE/AVX vectors) and NVIDIA SMs (coalesced 128-bit loads).
-- **Advanced JIT Optimizations**: 
-    - *Thread Coarsening / ILP*: Manually unrolls evaluation loops inside the CuPy kernel to expose massive instruction-level parallelism, hiding register latency.
-    - *Hardware Popcount & Warp Reduction*: Leverages `__popcll` and `__shfl_down_sync` to perform cross-warp summation in single clock cycles.
-    - *Direct GPU Projection*: `evaluate_bag_projected` executes CHTD variable projection purely in GPU registers, emitting only the minimal output array to avoid PCIe transfer bottlenecks.
-- **Advanced Bytecode Compiler (`bytecode_optimizer.py`)**: 
-    - *Register Compaction & Renaming*: Recalculates variables backward to squeeze memory requirements into as few active registers as possible.
-    - *Structural CSE & Memoization*: Common Subexpression Elimination uses AST hashing to prevent duplicate logic. DAG traversals are fully memoized to prevent exponential compile-time hangs.
-    - *Aggressive Copy Prop / DCE*: Prunes unused operations strictly before JIT generation.
-
-### Bug Fixes & Stability Improvements
-
-Multiple correctness and stability fixes across the core engine, including:
-
-- Fixed `core/types.py` floor division and modulo to match Python semantics exactly (previously used C-style rounding)
-- Fixed `core/floats.py` missing `__floordiv__` on `SymbolicFloat` and incomplete IEEE-754 rounding mode support
-- Fixed `execution/executor_core.py` `register_hook` silently dropping plugin handlers for execution hooks (`pre_step`, `post_step`, `on_fork`, `on_prune`, `on_issue`)
-- Fixed `execution/executor_core.py` taint tracker not wired into initial execution state — taint tracking was initialized but never attached to the first path
-- Fixed `core/solver.py` LRU cache using O(N) string conversion for keys — now uses structural hash O(1)
-- Fixed `core/types_containers.py` `SymbolicList` allowing negative length and missing negative index resolution
-- Fixed `execution/executor_core.py` `deduplicate_issues` and `filter_issues` called but not imported — caused `NameError` on any execution that found issues
-- Fixed `analysis/cross_function/core.py` summary cache using unhashable types as dict keys in edge cases
-- Fixed `core/types.py` `_merge_taint` crashing on `None` inputs from untainted operands
-- Fixed `plugins/base.py` `register_hook` silently ignoring registrations for undeclared hook names
-
-### Test Suite
-- **5,702 tests passing** (up from 2,723), 0 failures
--
-
-## [0.1.0-alpha.1] - 2026-03-15
-
-### Path Explosion Mitigation (CHTD)
-
-- **Constraint Interaction Graph & Treewidth Decomposition**: New `core/treewidth.py` module implements CHTD (Constraint Hypergraph Treewidth Decomposition) — builds a primal graph of variable-sharing between branches, computes tree decompositions via min-degree elimination, and extracts skeleton branch sets. Reduces path exploration from O(2^B) to O(N*2^w) for bounded-treewidth programs.
-- **Constraint Independence Optimization**: KLEE-style constraint slicing in `core/constraint_independence.py` partitions path constraints into independent clusters via Union-Find, enabling per-cluster caching and 60-90% solver query reduction.
-- **Adaptive Path Manager (Thompson Sampling)**: New `AdaptivePathManager` in `analysis/path_manager.py` uses a Beta-Bernoulli multi-armed bandit to dynamically balance DFS, coverage-guided, and random exploration strategies based on reward feedback. Removed legacy `HybridPathManager`.
-- **Theory-Aware Solver Dispatch**: `IncrementalSolver` in `core/solver.py` now auto-detects dominant constraint theories (QF_LIA, QF_S, QF_BV, nonlinear) and tunes Z3 solver parameters per query for optimal performance. Auto-escalates to portfolio solver on mixed-theory queries.
-- **Exception Forking**: Arithmetic operations inside try/except blocks now fork into dual paths (normal + exception) using Python 3.12+ exception table entries via `dis.Bytecode(func).exception_entries`. Implemented in `execution/opcodes/arithmetic.py` and `execution/dispatcher.py`.
-- **Branch Affinity Fast Path**: `get_truthy_expr()` in `execution/opcodes/control.py` bypasses full disjunctive encoding when `affinity_type` is known, emitting single-sort Z3 expressions that reduce treewidth in the constraint interaction graph.
-- **Interaction Graph Wired in Executor**: `execution/executor_core.py` feeds branch conditions into the constraint interaction graph and pipes treewidth/solver stats into `ExecutionResult`.
-
-### Bug Fixes (13 pre-existing)
-
-- Fixed infinite recursion in `plugins/base.py` `enabled` property (missing `_enabled` backing field)
-- Fixed `plugins/base.py` `initialize()` requiring positional `api` argument (now optional)
-- Fixed missing `constraint_discriminator` default in `core/parallel_types.py` `StateSignature`
-- Fixed missing `max_queue_size` field in `core/parallel_types.py` `ExplorationConfig`
-- Fixed `execution/opcodes/functions.py` `_dispatch_call` passing string to `_apply_model` instead of `func_obj` (root cause of SimpleNamespace test failures)
-- Fixed `execution/opcodes/functions.py` `LOAD_ATTR` missing `CowDict` in isinstance check
-- Fixed taint label propagation in `core/types.py` comparison operators (`__lt__`, `__le__`, `__gt__`, `__ge__`)
-- Added missing `with_taint()`, `length()`, `substring()` methods to `core/types.py` `SymbolicString`
-- Fixed `SymbolicString.__add__` using wrong field names (`z3_str` -> `_z3_str`, `z3_len` -> `_z3_len`)
-- Fixed `SymbolicString.conditional_merge` returning wrong type (now returns `SymbolicValue`)
-- Fixed positional argument order in `execution/opcodes/collections.py` `_format_value_symbolic`
-- Fixed off-by-one in `resources.py` `check_all_limits` (`>` -> `>=`)
-- Added `SymbolicFloat` handling to `tests/test_function_models.py` `get_concrete()` helper
-
-### Test Suite
-
-- **2,723 tests passing** (up from 2,583), 0 failures
-- Added standalone integration tests (`verify_features.py`) covering treewidth, adaptive path manager, theory-aware solver, taint propagation, and full pipeline
-- Added extreme stress tests (`stress_test.py`) with 12 path-explosion scenarios up to 2^13 theoretical paths
-
-## [0.1.0-alpha] - 2026-03-01
-
-### Initial Release
-
-First public alpha release of pysymex (Python Symbolic Execution Engine).
-
-#### Core Engine
-- **Symbolic Execution Engine**: Full CPython 3.11–3.13 bytecode-level analysis
-  - 100+ opcode handlers including Python 3.13 paired instructions (`STORE_FAST_STORE_FAST`, `LOAD_FAST_LOAD_FAST`, etc.)
-  - Precision-guided exception handling with `SETUP_FINALLY` block tracking
-  - Path exploration strategies: DFS, BFS, coverage-guided
-- **Z3 SMT Solver Integration**: Incremental solver with push/pop scope management, caching, and portfolio solving
-- **Symbolic Types**: `SymbolicValue`, `SymbolicString`, `SymbolicList`, `SymbolicDict`, `SymbolicNone` with full Z3 constraint modeling
-- **VM State Management**: Copy-on-write state forking, structural constraint hashing, atomic path IDs
-
-#### Analysis
-- **12+ Bug Detectors**: Division by zero, modulo by zero, negative shift, index errors, key errors, None dereference, type errors, attribute errors, assertion failures, unreachable code, taint violations, integer overflow
-- **Interprocedural Analysis**: Call graph construction, function summaries, cross-function return type inference
-- **Taint Tracking**: Source-to-sink taint propagation with implicit flow tracking
-- **Abstract Interpretation**: Interval, Sign, Parity, and Null lattice domains with product domain, widening, narrowing, and loop fixpoint computation
-- **False Positive Reduction**: Dataclass awareness, context-sensitive exception analysis, known-crashy API allowlists, finding deduplication, and confidence scoring
-
-#### Infrastructure
-- **CLI**: `pysymex scan`, `pysymex analyze`, `pysymex verify`, `pysymex concolic`, `pysymex benchmark`
-- **Output Formats**: Text, JSON, HTML, SARIF 2.1.0
-- **Watch Mode**: Incremental re-analysis on file changes
-- **Parallel Scanning**: Multi-process file verification
-- **100+ stdlib models**: `pathlib`, `operator`, `copy`, `io`, `heapq`, `bisect`, `enum`, `dataclasses`, `collections`, `itertools`, `functools`, and more
-- **Plugin System**: Custom detector registration
-- **2583 tests**: Comprehensive test suite with stress tests for core components
-
-#### Known Limitations
-- State deduplication uses constraint count heuristic (can merge states with different constraints but same count)
-- `lru_cache` with Z3 expressions as keys (theoretical hash collision risk, extremely unlikely in practice)
-- Heap modeling is approximate — complex object attribute tracking may produce false positives
-- UNKNOWN solver results treated as UNSAT (conservative, may miss some bugs)
+- `0.1.1a0` remains alpha software.
+- Unsupported Python semantics, solver unknowns, solver timeouts, degraded
+  precision, incomplete models, path limits, and native-isolation denial remain
+  explicit limitations.
+- These changes improve correctness and maintainability, but they do not make
+  all Python programs formally verified.

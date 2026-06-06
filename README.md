@@ -1,284 +1,263 @@
 # pysymex
 
-> **Python Symbolic Execution Engine powered by Z3 Theorem Prover**
-> Mathematically prove your Python code won't crash.
+<div align="center">
 
-```python
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   p y s y m e x                                                              ║
-║   ─────────────────────────────────────────────────────────────────────────  ║
-║   Symbolic Execution · Formal Verification · Z3-Powered                      ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
+**python symbolic execution and formal verification research engine**
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-yellow.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Status: Alpha-5.0](https://img.shields.io/badge/Status-Alpha-orange.svg)]()
-[![Z3 Solver](https://img.shields.io/badge/Solver-Z3-blueviolet.svg)](https://github.com/Z3Prover/z3)
+Bytecode-level path exploration for supported Python programs, backed by Z3 and explicit
+unknown, unsupported, inconclusive, and blocked states when a definite answer is not justified.
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-2563eb.svg)](https://www.python.org/downloads/)
+[![Status](https://img.shields.io/badge/status-alpha_0.1.1a0-f59e0b.svg)](https://github.com/darkoss1/pysymex)
+[![Solver](https://img.shields.io/badge/solver-Z3-7c3aed.svg)](https://github.com/Z3Prover/z3)
+[![License](https://img.shields.io/badge/license-AGPL--3.0--only-111827.svg)](LICENSE)
+
+</div>
 
 ---
 
-> **EDUCATIONAL PURPOSES ONLY**
->
-> This project is a research prototype designed for studying symbolic execution and formal verification concepts.
-> It is **NOT** intended for production use, security auditing, or critical systems verification. Use at your own risk.
+> [!WARNING]
+> pysymex is an alpha research prototype for studying symbolic execution and formal
+> verification concepts. It is not production verification software, a security audit
+> substitute, or a guarantee that a target program is safe.
 
----
+## At a Glance
 
-## Table of Contents
+| Area | Current focus |
+| --- | --- |
+| Execution model | CPython bytecode execution for Python 3.11 through 3.13 |
+| Reasoning engine | Z3-backed path constraints and feasibility checks |
+| Result model | Definite issues only when the path is feasible; uncertainty remains explicit |
+| Output formats | Text, JSON, Markdown, HTML, and SARIF |
+| Primary interfaces | `pysymex scan`, `pysymex analyze`, `pysymex verify`, and Python APIs |
+| Project phase | Alpha, research-oriented, closed to external pull requests |
 
-1. [Overview](#1-overview)
-2. [Installation](#2-installation)
-3. [Quick Start](#3-quick-start)
-4. [Bug Types Detected](#4-bug-types-detected)
-5. [Architecture](#5-architecture)
-6. [Development](#6-development)
-7. [Requirements](#7-requirements)
-8. [Contributing](#8-contributing)
-9. [License](#9-license)
-10. [Documentation](#10-documentation)
+## Install
 
----
-
-## 1. Overview
-
-**pysymex** (Python Symbolic Execution) is a bytecode-level symbolic execution engine that uses the Z3 SMT solver to formally verify Python programs. It explores all possible execution paths through your code, building mathematical constraints at each decision point, then uses Z3 to find concrete inputs that trigger bugs — or prove no such inputs exist.
-
-### What It Does
-
-- **Disassembles Python bytecode** (CPython 3.11–3.13)
-- **Symbolically executes** every reachable path
-- **Reports bugs** with counterexamples (concrete crashing inputs)
-- **Interprocedural Analysis** — crosses function boundaries via call graphs and summaries
-- **Asynchronous Execution** — high-throughput scanning with asyncio and process pools
-
-### Features
-
-| Category | Features |
-|----------|----------|
-| **Engine** | Bytecode-level symbolic execution, CPython 3.13 opcode support, Z3 SMT integration |
-| **Optimization** | CHTD path explosion mitigation, constraint independence (KLEE-style), adaptive path selection |
-| **Analysis** | Interprocedural analysis, abstract interpretation, loop handling |
-| **Output** | Text, JSON, HTML, SARIF 2.1.0 (GitHub Security tab compatible), Rich (colored panels) |
-| **Safety** | 20+ bug types, 40+ detectors, sandbox isolation |
-
----
-
-## 2. Installation
-
-### From PyPI
+Use Python 3.11 or newer.
 
 ```bash
 pip install pysymex
 ```
 
-### From Source (Development)
+For local development from this repository:
 
 ```bash
 git clone https://github.com/darkoss1/pysymex.git
 cd pysymex
-pip install -e ".[dev]"
+uv sync
 ```
 
----
+`uv sync` creates `.venv` and sets the shell activation prompt to the project
+name (`pysymex`). Prefer `uv sync` over bare `uv venv` for first-time setup.
 
-## 3. Quick Start
+Core runtime dependencies are pinned or constrained in [pyproject.toml](pyproject.toml),
+including `z3-solver`, `pydantic`, `immutables`, `rich`, and `psutil`.
 
-### Command Line
+## Quick Start
+
+Scan a file:
 
 ```bash
-# Scan a file
 pysymex scan mycode.py
+```
 
-# Scan a directory recursively
+Scan a directory recursively:
+
+```bash
 pysymex scan src/ -r
+```
 
-# Generate SARIF report for CI/CD
-pysymex scan src/ --format sarif -o report.sarif
+Generate SARIF for CI systems:
 
-# Analyze a specific function
-pysymex analyze mycode.py -f risky_func --args x:int y:str
+```bash
+pysymex scan src/ -r --format sarif -o report.sarif
+```
 
-# Run built-in benchmarks
+Analyze a specific function:
+
+```bash
+pysymex analyze mycode.py -f risky_divide --args x:int y:int
+```
+
+Run the benchmark command:
+
+```bash
 pysymex benchmark --format markdown
 ```
 
-### Examples
+## Command Map
 
-The `examples/` directory contains numbered scenarios for the current tree:
+| Need | Interface |
+| --- | --- |
+| Scan a file or tree for supported issue patterns | `pysymex scan PATH [-r]` |
+| Inspect one function with typed symbolic inputs | `pysymex analyze FILE -f NAME --args x:int` |
+| Verify contract-decorated code | `pysymex verify FILE -f NAME` |
+| Fail a CI job by severity and optionally write SARIF | `pysymex check PATH --fail-on high --sarif report.sarif` |
+| Measure benchmark cases or compare baselines | `pysymex benchmark [--case NAME]` |
 
-- `01_basic_safety_guards.py`
-- `02_common_runtime_bugs.py`
-- `03_concolic_exploration.py`
-- `04_contract_verification.py`
-- `05_deep_path_loops.py`
-- `06_sandbox_security.py`
-- `07_symbolic_containers.py`
-- `08_exception_handling.py`
-
-### Python API
+## Python API
 
 ```python
+import asyncio
+
 from pysymex import analyze
+
 
 def risky_divide(x: int, y: int) -> int:
     return x // y
 
-# Analyze for potential crashes
-result = analyze(risky_divide, {"x": "int", "y": "int"})
+
+result = asyncio.run(analyze(risky_divide, {"x": "int", "y": "int"}))
 
 for issue in result.issues:
-    print(f"Bug: {issue.message}")
-    print(f"Counterexample: {issue.counterexample}")
+    print(issue.kind)
+    print(issue.message)
+    print(issue.get_counterexample())
 ```
 
-### Example Output
+Use the Python API when you want direct access to symbolic execution results. Use the CLI when
+you want scanner workflows, report files, or CI-friendly output.
+
+## Supported Inputs and Reports
+
+| Surface | Current support |
+| --- | --- |
+| Python versions | CPython 3.11, 3.12, and 3.13 bytecode families |
+| CLI symbolic argument types | `int`, `str`, `list`, `bool`, and `dict` |
+| Scan | Symbolic execution only (`pysymex scan`; static/pipeline modes removed) |
+| Report formats | `text`, `json`, `sarif`, `rich`, `html`, and `markdown` |
+| CI workflow | `pysymex check` for severity-gated exits; SARIF for external viewers |
+| Sandbox boundary | Target loading can go through the sandbox bridge; denials remain visible |
+
+## Result Semantics
+
+pysymex should not turn uncertainty into success. A result can include definite issues,
+unsupported behavior, blocked execution, or inconclusive paths depending on what the engine can
+justify.
+
+| State | Meaning |
+| --- | --- |
+| Definite issue | A feasible path reaches a detector condition or runtime failure |
+| No issue reported | No definite issue was found within the explored supported paths |
+| Unsupported | The target used behavior outside the implemented semantic model |
+| Unknown or inconclusive | Solver uncertainty, path limits, incomplete modeling, or other limits prevented a definite answer |
+| Blocked | Isolation, import, sandbox, or environment policy prevented execution |
+
+## Practical Boundaries
+
+| Boundary | What it means for users |
+| --- | --- |
+| Feasibility first | A definite bug report should correspond to a feasible path, not just a syntactic pattern |
+| Bounded exploration | Timeouts, path limits, and iteration limits can leave reachable behavior unexplored |
+| Model coverage | Builtins, stdlib calls, imports, and dynamic Python features are only as precise as their models |
+| Solver uncertainty | Z3 `unknown`, timeouts, or encoding gaps must remain inconclusive instead of becoming success |
+| Sandbox policy | Native isolation and sandbox bridge failures are blocked states, not proof that code is safe |
+| Report confidence | JSON, SARIF, HTML, and Markdown change presentation, not the underlying certainty level |
+
+## Detection Surface
+
+The detector surface includes runtime failures and static or logical signals. Coverage depends on
+supported syntax, bytecode, models, path limits, and solver outcomes.
+
+| Family | Examples |
+| --- | --- |
+| Arithmetic | division by zero, modulo by zero, overflow |
+| Containers | index error, key error, missing attributes, symbolic container access |
+| Runtime state | unbound local, name error, type error, value error, none dereference |
+| Control flow | assertion failure, unreachable code, infinite loop signals |
+| Resources | resource leak patterns |
+| Contracts | precondition, postcondition, and contract validation failures |
+| Logical checks | contradictions, impossible branches, path-level inconsistencies |
+
+## Architecture
 
 ```text
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ pysymex - formal verification report                                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-ISSUES FOUND (1)
-────────────────────────────────────────────────────────────
-╭─ [ DIVISION_BY_ZERO ] ───────────────────────────────────────────────────────╮
-│  Location: mycode.py:12 in unsafe_divide()                                   │
-│  Type:    DIVISION_BY_ZERO                                                   │
-│  Error:    Division by zero: y can be 0                                      │
-│  Trigger:  y = 0                                                             │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-SUMMARY
-────────────────────────────────────────────────────────────
-Paths explored:         1
-Paths completed:        1
-Instructions:           4
-Execution time:     0.018s
-
-Proven safe:            0
-Issues found:           1
-```
-
----
-
-## 4. Bug Types Detected
-
-| Bug Type | Description | Example |
-|----------|-------------|---------|
-| Division by Zero | Division where denominator can be 0 | `x / y` where `y=0` |
-| Modulo by Zero | Modulo where divisor can be 0 | `x % y` where `y=0` |
-| Index Error | Array access beyond bounds | `arr[i]` where `i >= len(arr)` |
-| Key Error | Dictionary key not found | `d[key]` where key missing |
-| Attribute Error | Missing attribute access | `obj.missing_attr` |
-| None Dereference | Accessing attributes on None | `obj.method()` where `obj=None` |
-| Type Error | Type mismatch in operations | `str + int` |
-| Value Error | Invalid value for operation | `int("abc")` |
-| Assertion Error | Assertions that can fail | `assert x > 0` |
-| Overflow Error | Arithmetic overflow | `x + 1` where `x = MAX_INT` |
-| Unbound Local | Using unbound local variable | `print(x)` before assignment |
-| Name Error | Using undefined name | `print(undefined_var)` |
-| Resource Leak | Unclosed files or connections | `f = open(p); return` |
-| Dead Code | Code that never executes | Code after absolute `return` |
-| Unreachable Code | Code that cannot be reached | Code after `raise Exception` |
-| Infinite Loop | Loop that never terminates | `while True: pass` |
-| Injection | Code injection vulnerabilities | SQL injection, command injection |
-| Syntax Error | Invalid syntax patterns | Malformed code constructs |
-| Logical Contradiction | Impossible logical conditions | `if x > 10 and x < 5` |
-| Contract Violation | Violated function contracts | Pre/post condition failures |
-
----
-
-## 5. Architecture
-
-```python
 pysymex/
-├── analysis/              # Analysis engines
-│   ├── solver/            # Z3 verification core
-│   ├── abstract/          # Abstract interpretation
-│   ├── detectors/         # Bug detectors (40+)
-│   └── path_manager.py    # Path selection
-├── core/                  # Engine foundation
-│   ├── types/             # Symbolic primitives
-│   ├── state.py           # VM state management
-│   └── solver.py          # Z3 wrapper
-├── execution/             # Bytecode VM
-│   ├── dispatcher.py      # Opcode dispatch
-│   └── opcodes/           # Handlers (3.11-3.13)
-├── accel/                 # Hardware acceleration
-│   └── backends/          # CPU backends
-├── models/                # Stdlib models
-├── reporting/             # Output formatters
-└── scanner/               # Static scanner
+  api/                  public Python API facade
+  cli/                  command-line interface and formatters
+  scanner/              file and directory scanning workflows
+  execution/            symbolic VM, opcode dispatch, and execution strategies
+  core/                 symbolic state, memory, solver, and shared types
+  models/               builtin, stdlib, and runtime behavior models
+  analysis/             detectors, scanner range checks, and higher-level analyses
+  sandbox/              isolation-facing execution boundaries
+  reporting/            text, JSON, Markdown, HTML, and SARIF report generation
+  tracing/              Z3 and execution trace support
 ```
 
----
+The important boundary is trust: execution, solver, scanner, model, sandbox, and reporting layers
+should keep unsupported or inconclusive behavior visible instead of silently treating it as a
+successful verification result.
 
-## 6. Development
+## Examples
 
-### Setup
+The [examples](examples) directory contains small, numbered scenarios:
+
+| File | Focus |
+| --- | --- |
+| `01_basic_safety_guards.py` | Basic guard patterns |
+| `02_common_runtime_bugs.py` | Common runtime failures |
+| `03_hidden_branch_constraints.py` | Nested branches found via symbolic scan |
+| `04_contract_verification.py` | Contract checking |
+| `05_deep_path_loops.py` | Loop and path-depth behavior |
+| `06_sandbox_security.py` | Sandbox-oriented examples |
+| `07_symbolic_containers.py` | Symbolic container behavior |
+| `08_exception_handling.py` | Exception paths |
+
+## Development
+
+Use the locked `uv` workflow when possible:
 
 ```bash
-# Format code
-ruff format pysymex tests
-
-# Type checking
-pyright pysymex
-
-# Run tests
-pytest tests/ -v
-
-# Run with coverage
-pytest --cov=pysymex tests/ -v
+uv sync
+uv run ruff check pysymex tests
+uv run pyright pysymex tests
+uv run pytest
 ```
 
----
+Run a focused test while iterating:
 
-## 7. Requirements
+```bash
+uv run pytest tests/unit/path/to/test_file.py -q
+```
 
-- **Python 3.11+** (tested on 3.11, 3.12, 3.13)
-- `z3-solver` == 4.15.3.0
-- `pydantic` >= 2.12.0
-- `immutables` == 0.21
-- `rich` >= 13.0.0
+Run multi-version Docker validation through the one-click script:
 
+```bash
+python tests/docker.py -- -q
+```
 
-**Note**: Dependency versions are carefully constrained to verified compatible versions.
+## Documentation
 
----
+| Document | Purpose |
+| --- | --- |
+| [docs/README.md](docs/README.md) | Documentation index and recommended read order |
+| [docs/API.md](docs/API.md) | Public Python API reference |
+| [docs/CLI.md](docs/CLI.md) | Command-line usage and examples |
+| [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | Supported scope, uncertainty states, and safety boundaries |
+| [docs/arch/README.md](docs/arch/README.md) | Source-grounded architecture reference |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terms used across the project |
 
-## 8. Contributing
+An automatically generated Code Wiki is also available for exploratory architecture browsing:
+[deepwiki.com/darkoss1/pysymex/](https://deepwiki.com/darkoss1/pysymex/).
+Treat it as secondary material that may lag behind this repository.
 
-**pysymex is currently an "Open Source, but Closed Contribution" project.**
+## Contribution Policy
 
-While the source code is available under the AGPLv3 license, we are not currently accepting external Pull Requests. This ensures the engine's architectural and mathematical integrity during its initial alpha phase.
+pysymex is currently open source but closed to external pull requests during its alpha phase.
+Issues and bug reports are welcome through the repository issue tracker.
 
-If you find a bug or have a feature request, please [open an issue](https://github.com/darkoss1/pysymex/issues).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the current policy.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+## License
 
----
-
-## 9. License
-
-**AGPL-3.0 License** — see [LICENSE](LICENSE).
-
----
-
-## 10. Documentation
-
-> [!NOTE]
-> **Temporary Automated Documentation**
-> An automatically generated Code Wiki providing an architectural deep-dive and component reference is available at: [https://codewiki.google/github.com/darkoss1/pysymex](https://codewiki.google/github.com/darkoss1/pysymex)
->
-> **Important Notices:**
-> - The Wiki is generated automatically but may take time to refresh; please verify the generation and commit dates on the page.
-> - It may be **slightly outdated** compared to the latest `main` branch.
-> - This is **NOT** official documentation and is provided for research and architectural exploration purposes only. Do not fully rely on it for production implementation details.
+pysymex is licensed under the [AGPL-3.0-only](LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Built for Formal Verification</sub>
+
+Research engine. Explicit uncertainty. Feasible bugs over optimistic claims.
+
 </div>

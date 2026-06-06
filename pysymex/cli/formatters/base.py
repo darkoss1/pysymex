@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -20,7 +20,26 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, Sequence
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Any, Protocol, Sequence
+
+from pysymex.contracts.reports.evidence import (
+    contract_evidence_for_result,
+    not_verified_reasons_for_result,
+)
+
+
+@dataclass(frozen=True)
+class VerifyIssueRecord:
+    """Normalized verification issue metadata for CLI formatter adapters."""
+
+    issue: object
+    issue_type: str
+    message: str
+    source_file: str
+    function_name: str
+    line_number: int | None
 
 
 def format_verify_issue(issue: object) -> str:
@@ -39,6 +58,39 @@ def verify_issue_count(result: object) -> int:
     )
 
 
+def _issue_line_number(issue: object) -> int | None:
+    """Retrieve the line number attribute from an issue object if available.
+
+    Args:
+        issue (object): The issue object to inspect.
+
+    Returns:
+        int | None: The line number as an integer if found, otherwise None.
+    """
+    line_number = getattr(issue, "line_number", None)
+    return line_number if isinstance(line_number, int) else None
+
+
+def iter_verify_issue_records(result: object) -> Iterator[VerifyIssueRecord]:
+    """Yield normalized verification issue records without choosing an output format."""
+    source_file = str(getattr(result, "source_file", ""))
+    function_name = str(getattr(result, "function_name", ""))
+    for attr, default_type in (
+        ("issues", "RUNTIME"),
+        ("contract_issues", "CONTRACT"),
+        ("arithmetic_issues", "ARITHMETIC"),
+    ):
+        for issue in getattr(result, attr, []):
+            yield VerifyIssueRecord(
+                issue=issue,
+                issue_type=str(getattr(issue, "kind", default_type)),
+                message=format_verify_issue(issue),
+                source_file=source_file,
+                function_name=function_name,
+                line_number=_issue_line_number(issue),
+            )
+
+
 def verify_result_to_dict(result: object) -> dict[str, object]:
     """Serialize a verification result-like object for CLI formatters."""
     termination = None
@@ -54,6 +106,8 @@ def verify_result_to_dict(result: object) -> dict[str, object]:
     contract_issues = list(getattr(result, "contract_issues", []))
     arithmetic_issues = list(getattr(result, "arithmetic_issues", []))
     runtime_issues = list(getattr(result, "issues", []))
+    degraded_passes = list(getattr(result, "degraded_passes", []))
+    contract_evidence = contract_evidence_for_result(result)
 
     return {
         "function_name": str(getattr(result, "function_name", "")),
@@ -69,31 +123,15 @@ def verify_result_to_dict(result: object) -> dict[str, object]:
         "contract_issues": [format_verify_issue(issue) for issue in contract_issues],
         "arithmetic_issues": [format_verify_issue(issue) for issue in arithmetic_issues],
         "total_issues": verify_issue_count(result),
+        "degraded_passes": degraded_passes,
+        "analysis_degraded": bool(degraded_passes),
+        "contract_evidence": contract_evidence,
+        "not_verified_reasons": not_verified_reasons_for_result(result),
     }
 
 
 class Formatter(Protocol):
     """Protocol that all CLI formatters must implement."""
-
-    def format_static(
-        self,
-        issues: Sequence[Any],
-        total: int,
-        suppressed: int,
-        duration: float,
-    ) -> str:
-        """Format static analysis results."""
-        ...
-
-    def format_pipeline(
-        self,
-        results: Mapping[str, Any],
-        all_issues: list[tuple[str, Any]],
-        total: int,
-        duration: float,
-    ) -> str:
-        """Format pipeline analysis results."""
-        ...
 
     def format_symbolic(
         self,

@@ -42,3 +42,16 @@ def test_sarif_generator_and_generate_sarif_save(tmp_path: Path) -> None:
     generated = generate_sarif(issues=[{"kind": "X", "line": 1}], output_path=out)
     assert generated.runs
     assert out.exists()
+
+
+def test_sarif_generator_records_analysis_failure_evidence() -> None:
+    log = SARIFGenerator().generate(
+        issues=[],
+        analyzed_files=["broken.py"],
+        execution_successful=False,
+        analysis_errors=["Syntax Error: invalid syntax"],
+    )
+    invocation = log.runs[0].invocations[0]
+
+    assert invocation["executionSuccessful"] is False
+    assert invocation["properties"] == {"analysisErrors": ["Syntax Error: invalid syntax"]}

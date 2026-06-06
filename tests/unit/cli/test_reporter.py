@@ -1,4 +1,8 @@
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
 import pysymex.cli.reporter
 from pysymex.scanner.types import ScanResult, ScanSession
 
@@ -58,8 +62,23 @@ class TestConsoleScanReporter:
             "files_with_issues": 0,
             "files_clean": 1,
             "files_error": 0,
+            "files_degraded": 0,
             "total_issues": 0,
             "issue_breakdown": {},
         }
         mock_session.log_file = "log.txt"
+        mock_session.log_write_error = None
         reporter.on_session_summary(mock_session)
+
+    def test_on_session_summary_reports_log_write_failure(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        reporter = pysymex.cli.reporter.ConsoleScanReporter()
+        session = ScanSession(log_file=tmp_path / "scan.json")
+        session.log_write_error = "PermissionError(denied)"
+
+        reporter.on_session_summary(session)
+
+        output = capsys.readouterr().out
+        assert "Log not saved to" in output
+        assert "Log saved to" not in output

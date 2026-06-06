@@ -3,17 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-import pytest
 import z3
 
-from pysymex.core.graph.treewidth import ConstraintInteractionGraph
-from pysymex.core.state import VMState
-from pysymex.execution.strategies.manager import (
-    AdaptivePathManager,
+from pysymex.core.graph.cig import ConstraintInteractionGraph
+from pysymex.core.state.record import VMState
+from pysymex.core.types.havoc import HavocValue
+from pysymex.execution.frontier import FrontierRuntimeMode, state_shadow_digest
+from pysymex.execution.frontier.store import FrontierRuntimeFeatures
+from pysymex.execution.scheduling import create_path_manager
+from pysymex.execution.scheduling.telemetry import SchedulerEvent
+from pysymex.execution.strategies.manager.pressure import (
+    PressureCompactionPolicy,
+    runtime_native_priority,
+)
+from pysymex.execution.strategies.manager.path import AdaptivePathManager
+from pysymex.execution.strategies.manager.types import (
     ExplorationStrategy,
     PathManager,
     PrioritizedState,
-    create_path_manager,
 )
 
 
@@ -40,6 +47,18 @@ class _DummyManager(PathManager[_DummyState]):
 
     def size(self) -> int:
         return len(self.items)
+
+
+class _CountingGraph(ConstraintInteractionGraph):
+    """Constraint graph that records degree lookups for scheduler overhead tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.degree_calls = 0
+
+    def get_degree(self, pc: int) -> int:
+        self.degree_calls += 1
+        return super().get_degree(pc)
 
 
 class TestExplorationStrategy:
@@ -110,6 +129,7 @@ class TestAdaptivePathManager:
         assert isinstance(before, float)
         assert isinstance(after, float)
         assert after >= before
+        assert manager.get_stats()["path_policy"] == AdaptivePathManager.ARM_POLAR_NATIVE
 
     def test_get_next_state(self) -> None:
         """Test get_next_state behavior."""
@@ -117,6 +137,197 @@ class TestAdaptivePathManager:
         manager.add_state(VMState(pc=3))
         nxt = manager.get_next_state()
         assert nxt is not None and nxt.pc == 3
+
+    def test_scheduler_events_describe_enqueue_and_selection(self) -> None:
+        """POLAR scheduling telemetry records frontier decisions without changing order."""
+        events: list[SchedulerEvent] = []
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+        manager.add_scheduler_event_observer(events.append)
+
+        manager.add_state(
+            VMState(
+                pc=3,
+                path_id=7,
+                depth=2,
+                pending_constraint_count=1,
+            )
+        )
+        selected = manager.get_next_state()
+
+        assert selected is not None and selected.path_id == 7
+        assert len(events) == 2
+        enqueue = events[0]
+        select = events[1]
+        assert enqueue.action == "enqueue"
+        assert enqueue.decision_source == "polar_native"
+        assert enqueue.path_id == 7
+        assert enqueue.frontier_size_before == 0
+        assert enqueue.frontier_size_after == 1
+        assert enqueue.priority is not None
+        assert select.action == "select"
+        assert select.decision_source == "polar_native"
+        assert select.path_id == 7
+        assert select.frontier_size_before == 1
+        assert select.frontier_size_after == 0
+
+    def test_native_policy_prefers_high_degree_branch(self) -> None:
+        """POLAR-native scheduling targets graph bottlenecks before isolated branches."""
+        cig = ConstraintInteractionGraph()
+        cig.add_branch(1, {"x"})
+        cig.add_branch(2, {"x"})
+        cig.add_branch(3, {"y"})
+        manager = AdaptivePathManager(cig)
+
+        manager.add_state(VMState(pc=3, depth=0))
+        manager.add_state(VMState(pc=1, depth=0))
+
+        nxt = manager.get_next_state()
+
+        assert nxt is not None and nxt.pc == 1
+
+    def test_native_policy_prefers_fewer_pending_constraints_on_ties(self) -> None:
+        """POLAR-native scheduling orders tied states by queued constraint burden."""
+        manager = AdaptivePathManager(ConstraintInteractionGraph())
+
+        manager.add_state(VMState(pc=1, pending_constraint_count=5))
+        manager.add_state(VMState(pc=2, pending_constraint_count=1))
+
+        nxt = manager.get_next_state()
+
+        assert nxt is not None and nxt.pc == 2
+
+    def test_runtime_native_policy_prefers_lower_constraint_cost_on_ties(self) -> None:
+        """Default POLAR runtime ordering uses capsule cost without bandit sampling."""
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=False)
+
+        manager.add_state(VMState(pc=1, pending_constraint_count=5))
+        manager.add_state(VMState(pc=1, pending_constraint_count=1))
+
+        admission_stats = manager.get_stats()
+        shadow_frontier = cast("dict[str, object]", admission_stats["shadow_frontier"])
+        assert shadow_frontier["capsule_count"] == 0
+        assert shadow_frontier["checkpoint_count"] == 0
+
+        nxt = manager.get_next_state()
+
+        assert nxt is not None and nxt.pending_constraint_count == 1
+        stats = manager.get_stats()
+        assert stats["path_policy"] == AdaptivePathManager.ARM_POLAR_NATIVE
+        path_arms = cast("dict[str, dict[str, float]]", stats["path_arms"])
+        assert path_arms == {}
+
+    def test_runtime_frontier_can_be_compacted_explicitly(self) -> None:
+        """Runtime compaction drops resident entries only behind exact checkpoints."""
+        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=False)
+        state = VMState(pc=4, local_vars={"x": 1}, path_id=3, depth=2)
+        manager.add_state(state)
+
+        assert manager.compact_runtime_frontier() == 1
+
+        stats = manager.get_stats()
+        shadow_frontier = cast("dict[str, object]", stats["shadow_frontier"])
+        assert shadow_frontier["checkpoint_count"] == 1
+        assert shadow_frontier["compacted_entry_count"] == 1
+
+        selected = manager.get_next_state()
+
+        assert selected is not None
+        assert selected is not state
+        assert state_shadow_digest(selected) == state_shadow_digest(state)
+
+    def test_runtime_pressure_compaction_stays_disabled_below_threshold(self) -> None:
+        """Small resident frontiers should not pay checkpoint compaction cost."""
+        policy = PressureCompactionPolicy(
+            entry_threshold=3,
+            resident_unit_threshold=1000,
+            check_interval=1,
+            batch_size=1,
+        )
+        manager = AdaptivePathManager(
+            ConstraintInteractionGraph(),
+            deterministic=False,
+            pressure_policy=policy,
+        )
+
+        manager.add_state(VMState(pc=1))
+        manager.add_state(VMState(pc=2))
+
+        stats = manager.get_stats()
+        shadow_frontier = cast("dict[str, object]", stats["shadow_frontier"])
+        assert shadow_frontier["compacted_entry_count"] == 0
+        assert shadow_frontier["pressure_compaction_count"] == 0
+        assert shadow_frontier["pressure_compaction_trigger_count"] == 0
+
+    def test_runtime_pressure_compaction_compacts_bounded_cold_batch(self) -> None:
+        """High-pressure resident frontiers compact only the configured cold batch."""
+        policy = PressureCompactionPolicy(
+            entry_threshold=3,
+            resident_unit_threshold=1000,
+            check_interval=1,
+            batch_size=1,
+        )
+        manager = AdaptivePathManager(
+            ConstraintInteractionGraph(),
+            deterministic=False,
+            pressure_policy=policy,
+        )
+
+        manager.add_state(VMState(pc=1, local_vars={"x": 1}))
+        manager.add_state(VMState(pc=2, local_vars={"y": 2}))
+        manager.add_state(VMState(pc=3, local_vars={"z": 3}))
+
+        stats = manager.get_stats()
+        shadow_frontier = cast("dict[str, object]", stats["shadow_frontier"])
+        assert shadow_frontier["compacted_entry_count"] == 1
+        assert shadow_frontier["pressure_compaction_count"] == 1
+        assert shadow_frontier["pressure_compaction_trigger_count"] == 1
+        assert manager.size() == 3
+
+    def test_runtime_pressure_policy_can_disable_compaction_with_zero_batch(self) -> None:
+        """A zero-size pressure batch is an explicit no-op policy."""
+        policy = PressureCompactionPolicy(
+            entry_threshold=1,
+            resident_unit_threshold=1,
+            check_interval=1,
+            batch_size=0,
+        )
+
+        assert policy.should_check(live_entry_count=10, resident_units=10) is False
+
+    def test_runtime_native_priority_uses_runtime_features_when_available(self) -> None:
+        """Runtime features can lower cold, unsupported-heavy states without capsules."""
+        state = VMState(pc=1, pending_constraint_count=1, depth=2)
+        resident_priority = runtime_native_priority(
+            state=state,
+            branch_degree=1,
+            features=None,
+            estimated_resident_units=1,
+        )
+        featured_priority = runtime_native_priority(
+            state=state,
+            branch_degree=1,
+            features=FrontierRuntimeFeatures(
+                capsule_id="path:unit",
+                detector_obligation_count=0,
+                pending_constraint_count=1,
+                estimated_resident_units=20,
+                unsupported_live_count=1,
+                havoc_live_count=1,
+            ),
+            estimated_resident_units=1,
+        )
+
+        assert featured_priority < resident_priority
+
+    def test_adaptive_add_state_looks_up_branch_degree_once_per_state(self) -> None:
+        """Adaptive enqueue reuses graph-degree scoring across heap priorities."""
+        cig = _CountingGraph()
+        manager = AdaptivePathManager(cig, deterministic=False)
+
+        manager.add_state(VMState(pc=1))
+        manager.add_state(VMState(pc=2))
+
+        assert cig.degree_calls == 2
 
     def test_is_empty(self) -> None:
         """Test is_empty behavior."""
@@ -136,75 +347,56 @@ class TestAdaptivePathManager:
         assert "arms" in stats
         assert "covered_pcs" in stats
 
-    def test_reheat_arm_recovers_structural_prior_mass(self) -> None:
-        """Test reheating pulls a poisoned arm back toward its prior."""
-        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=False)
-        manager.add_state(VMState(pc=1))
-        assert manager.get_next_state() is not None
-        for _ in range(25):
-            manager.record_reward(-5.0)
-        arms_before = cast("dict[str, dict[str, float]]", manager.get_stats()["arms"])
-        before = arms_before[manager.ARM_STRUCTURAL]
-        manager.reheat_arm(manager.ARM_STRUCTURAL, strength=0.5)
-        arms_after = cast("dict[str, dict[str, float]]", manager.get_stats()["arms"])
-        after = arms_after[manager.ARM_STRUCTURAL]
-        assert after["alpha"] < before["alpha"]
-        assert after["beta"] < before["beta"]
-
-    def test_feedback_unsat_core_uses_real_pruning_runtime_telemetry(self) -> None:
-        """Thompson reward should reflect actual certified frontier pruning yield."""
-        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
-        manager.add_state(VMState(pc=1))
-        assert manager.get_next_state() is not None
-        before = cast("float", manager.get_stats()["total_rewards"])
-
-        manager.feedback_unsat_core([], paths_pruned=3, elapsed_ms=2.0)
-
-        after = cast("float", manager.get_stats()["total_rewards"])
-        assert isinstance(before, float)
-        assert isinstance(after, float)
-        assert after > before
-
-    def test_feedback_mus_alias_is_deprecated(self) -> None:
-        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
-        manager.add_state(VMState(pc=1))
-        assert manager.get_next_state() is not None
-
-        with pytest.warns(DeprecationWarning, match="feedback_mus"):
-            manager.feedback_mus([1, 2])
-
-        assert cast("float", manager.get_stats()["total_rewards"]) > 0.0
-
-    def test_prune_states_containing_core_removes_only_certified_core_supersets(self) -> None:
-        """Frontier pruning removes queued states only when they contain the certified core."""
-        manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
-        x = z3.Int("frontier_core_x")
-        y = z3.Int("frontier_core_y")
-        core_left = x > 0
-        core_right = x < 0
-        unrelated = y > 0
-
-        killed_state = VMState(pc=1)
-        killed_state.add_constraint(core_left)
-        killed_state.add_constraint(core_right)
-        kept_state = VMState(pc=2)
-        kept_state.add_constraint(core_left)
-        kept_state.add_constraint(unrelated)
-
-        manager.add_state(killed_state)
-        manager.add_state(kept_state)
-
-        killed = manager.prune_states_containing_core(
-            frozenset({core_left.hash(), core_right.hash()})
+    def test_shadow_frontier_stats_track_live_queued_states(self) -> None:
+        """POLAR/CEGIS shadow telemetry follows the live frontier without selecting work."""
+        manager = AdaptivePathManager(
+            ConstraintInteractionGraph(),
+            deterministic=True,
+            frontier_runtime_mode=FrontierRuntimeMode.POLAR_CEGIS_SHADOW,
         )
+        x = z3.Int("shadow_frontier_x")
+        havoc_value, _ = HavocValue.havoc("shadow_frontier_havoc")
 
-        assert killed == 1
-        assert manager.size() == 1
-        remaining = manager.get_next_state()
-        assert remaining is kept_state
+        manager.add_state(VMState(pc=1, path_constraints=[x > 0], pending_constraint_count=1))
+        manager.add_state(VMState(pc=2, stack=[havoc_value]))
+
+        stats = manager.get_stats()
+        shadow_frontier = cast("dict[str, object]", stats["shadow_frontier"])
+        shadow_cegis = cast("dict[str, object]", stats["shadow_cegis"])
+        assert stats["frontier_mode"] == FrontierRuntimeMode.POLAR_CEGIS_SHADOW.value
+        assert shadow_frontier["enabled"] is True
+        assert shadow_cegis["enabled"] is True
+        assert shadow_frontier["capsule_count"] == 2
+        assert shadow_frontier["checkpoint_count"] == 0
+        assert shadow_frontier["capsule_digest_mismatch_count"] == 0
+        assert shadow_frontier["reconstruction_mismatch_count"] == 0
+        assert shadow_frontier["spill_denied_count"] == 0
+        assert shadow_frontier["constraint_atom_count"] == 1
+        assert shadow_frontier["pending_constraint_count"] == 1
+        assert shadow_frontier["unsupported_live_count"] == 0
+        assert shadow_frontier["havoc_live_count"] == 1
+        assert shadow_cegis["bid_count"] == 3
+
+        selected = manager.get_next_state()
+        stats_after_pop = manager.get_stats()
+        shadow_after_pop = cast("dict[str, object]", stats_after_pop["shadow_frontier"])
+        cegis_after_pop = cast("dict[str, object]", stats_after_pop["shadow_cegis"])
+
+        assert selected is not None and selected.pc == 2
+        assert shadow_after_pop["capsule_count"] == 1
+        assert shadow_after_pop["checkpoint_count"] == 0
+        assert shadow_after_pop["capsule_digest_mismatch_count"] == 0
+        assert shadow_after_pop["reconstruction_mismatch_count"] == 0
+        assert shadow_after_pop["spill_denied_count"] == 0
+        assert shadow_after_pop["constraint_atom_count"] == 1
+        assert shadow_after_pop["pending_constraint_count"] == 1
+        assert shadow_after_pop["havoc_live_count"] == 0
+        assert cegis_after_pop["bid_count"] == 2
 
 
 def test_create_path_manager() -> None:
     """Test create_path_manager behavior."""
     manager = create_path_manager(ExplorationStrategy.ADAPTIVE, deterministic=True)
     assert isinstance(manager, AdaptivePathManager)
+    assert manager.get_stats()["frontier_mode"] == FrontierRuntimeMode.POLAR_CEGIS_RUNTIME.value
+    assert manager.get_stats()["path_policy"] == AdaptivePathManager.ARM_POLAR_NATIVE

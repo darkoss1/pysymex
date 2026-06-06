@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,13 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Protocol interfaces for the execution subsystem.
-
-Defines structural interfaces that decouple the executor from concrete
-analysis and core types.  Analysis code, detector plugins, and
-visualisation hooks should depend on these protocols â€” never on the
-:class:`SymbolicExecutor` class directly.
-"""
+"""Structural read-side contracts exposed by execution components."""
 
 from __future__ import annotations
 
@@ -31,22 +25,26 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from pysymex._typing import SolverProtocol
+    from pysymex.typing import SolverProtocol
 
 
 @runtime_checkable
 class ExecutionContext(Protocol):
-    """Read-side structural interface of the symbolic executor.
+    """Required executor attributes and hook-registration surface for consumers.
 
-    Any concrete ``SymbolicExecutor`` satisfies this protocol through
-    structural subtyping â€” no inheritance or registration required.
+    Defines the structural read-side contract and interface exposed by the symbolic
+    executor to other execution and analysis components, including path managers,
+    detectors, and runtime models.
 
-    Consumers (detectors, visualisation plugins, analysis passes) should
-    import this protocol instead of depending on
-    ``pysymex.execution.executors.core.SymbolicExecutor``.
+    Attributes:
+        instructions: Active sequence of compiled CPython instructions.
+        solver: The solver instance used to track path constraints.
+        _paths_explored: Count of execution paths fully explored.
+        _coverage: Set of bytecode instruction offsets covered by execution.
+        issues: Captured issues/errors detected during analysis.
     """
 
-    _instructions: Sequence[dis.Instruction]
+    instructions: Sequence[dis.Instruction]
 
     solver: SolverProtocol
 
@@ -54,6 +52,13 @@ class ExecutionContext(Protocol):
 
     _coverage: set[int]
 
-    _issues: Sequence[object]
+    issues: Sequence[object]
 
-    def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None: ...
+    def register_hook(self, hook_name: str, handler: Callable[..., object]) -> None:
+        """Register a callback handler for an executor lifecycle hook.
+
+        Args:
+            hook_name: The name of the lifecycle hook (e.g., "before_dispatch", "after_dispatch").
+            handler: The callback callable to trigger when the hook event occurs.
+        """
+        ...

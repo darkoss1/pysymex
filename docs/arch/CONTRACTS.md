@@ -1,213 +1,53 @@
-# pysymex contract architecture
+# Contracts
 
-**Author:** Yassine Lahyani
-**Scope:** symbolic contracts, bytecode-level injection, Z3 verification, and contract-aware
-diagnostics
+Contracts describe expected behavior as preconditions, postconditions, assumptions, frame
+conditions, purity checks, assertions, and class invariants. Contract verification is bounded by
+the same symbolic execution and solver limits as the rest of the engine.
 
----
+## Method
 
-## Purpose
+1. Decorators register contract clauses on functions.
+2. Contract records compile callable or string predicates into Z3 expressions.
+3. Offline verifier methods check preconditions, postconditions, loop invariants, and assertions
+   against supplied path constraints.
+4. Verified execution wraps the symbolic executor and aggregates runtime contract outcomes,
+   arithmetic checks, invariant checks, and degraded-pass evidence.
+5. Reports distinguish verified, violated, unknown, unsupported, and unreachable obligations.
 
-A pysymex contract is a symbolic constraint, not only a documentation annotation. Contract clauses
-are compiled into Z3 formulas and participate in path feasibility, postcondition checking, logical
-audit classification, and contract verification reports.
+## Solver Meaning
 
-Within configured exploration and solver budgets, the contract system targets:
+Postconditions and assertions are verified by checking whether the negated obligation is UNSAT.
+SAT gives a counterexample when a model is available. UNKNOWN and solver failures map to UNKNOWN.
+Predicate compilation failures map to UNSUPPORTED.
 
-- definite violations only when a feasible counterexample exists;
-- definite verification only when the negated obligation is UNSAT;
-- explicit `UNKNOWN` when solver or modeling limits prevent a definite answer;
-- bytecode-level integration so contracts and executed paths share one symbolic state.
+Precondition checks are different: the verifier checks whether the precondition can be satisfied
+under the path constraints. UNSAT means the entry condition is unreachable for that path.
 
-## Contract Taxonomy
+## Current Coverage
 
-| Contract kind | Meaning in pysymex |
-|---|---|
-| `requires` | Preconditions that constrain valid function entry states. |
-| `ensures` | Postconditions checked against each return path. |
-| `invariant` | State facts that must remain true across configured program points. |
-| `loop_invariant` | Loop facts checked for initialization and preservation. |
-| `assumes` | External facts accepted as path constraints without creating a proof obligation. |
-| `assigns` | Frame conditions describing the memory locations a function may modify. |
-| `pure` | Effect contract marking a function as deterministic and side-effect free for symbolic reuse. |
+Supported in verified execution:
 
-The exported contract API lives under `pysymex/contracts`.
+- requires and ensures checks captured through runtime contract hooks;
+- class invariant obligations when receiver state can be modeled;
+- frame-condition and pure-effect checks over modeled VM write events;
+- arithmetic issues projected from symbolic execution results.
 
-## Symbolic Meaning
+Explicitly limited:
 
-Contracts enter the same constraint universe as branch predicates. A precondition \(P\), path
-constraint set \(\Phi\), and postcondition \(Q\) are interpreted through satisfiability:
+- loop invariant enforcement is reported as unsupported in verified execution;
+- deep heap equality and external/native side effects are outside the current effect-ledger slice;
+- termination proof output is not a general proof object.
 
-- \(\Phi \land P\) UNSAT means the call is impossible under the current path.
-- \(\Phi \land P \land \lnot Q\) SAT means a postcondition counterexample exists.
-- \(\Phi \land P \land \lnot Q\) UNSAT means the postcondition holds for the explored symbolic
-  state.
-- `unknown`, timeout, unsupported expressions, or compiler failure produce inconclusive contract
-  results rather than definite success.
+## Evidence In Source
 
-## Hoare-Logic Interpretation
+- Contract records: `pysymex/contracts/types.py`
+- Compiler and solver query layer: `pysymex/contracts/compiler.py`, `pysymex/contracts/solver`
+- Offline verifier: `pysymex/contracts/verifier.py`
+- Verified executor: `pysymex/execution/executors/verified`
+- Tests: `tests/unit/contracts`, `tests/unit/execution/executors/test_verified*.py`
 
-pysymex contract verification follows the standard Hoare-triple shape:
+## Limits
 
-\[
-\{P\}\ f\ \{Q\}
-\]
-
-For a symbolic execution path \(\pi\), let \(WP_\pi(Q)\) be the weakest precondition of that path
-with respect to postcondition \(Q\). A path satisfies the contract when:
-
-\[
-P \land Path_\pi \Rightarrow Q
-\]
-
-Equivalently, pysymex asks Z3 for a counterexample:
-
-\[
-P \land Path_\pi \land \lnot Q
-\]
-
-If this formula is SAT, the model is a concrete witness for violation. If it is UNSAT, no
-counterexample exists for that explored path under the supported model. If Z3 returns unknown, the
-truth of the triple is not established.
-
-## Proof Sketch: Postcondition Verification
-
-For a return path with constraints \(\Phi_\pi\) and return expression \(r\), a postcondition
-predicate \(Q(result,\vec{x})\) is verified by proving:
-
-\[
-\Phi_\pi \Rightarrow Q(r,\vec{x})
-\]
-
-By classical refutation:
-
-\[
-\Phi_\pi \Rightarrow Q
-\quad\text{iff}\quad
-\Phi_\pi \land \lnot Q \models \bot
-\]
-
-This is why pysymex checks the negated postcondition. A SAT model is not merely a failed proof; it
-is an executable witness under the symbolic encoding. An UNKNOWN solver result is neither a proof
-nor a witness.
-
-## Injection Model
-
-pysymex ties contract checks to CPython bytecode execution points:
-
-| Execution point | Contract role |
-|---|---|
-| Function entry | Initial preconditions and refined input constraints. |
-| Calls | Callee preconditions and summarized cross-function obligations. |
-| Returns | Postconditions over the returned symbolic value. |
-| Mutations | Assignment and invariant checks. |
-| Loop boundaries | Loop invariant initialization and preservation checks. |
-
-This design avoids a separate source-level interpreter for contracts. The executor observes the
-same bytecode state, stack state, locals, and path constraints that drive ordinary symbolic
-execution.
-
-## Compiler And Verifier
-
-The contract subsystem separates responsibilities:
-
-| Component | Role |
-|---|---|
-| `decorators.py` | Attaches contract metadata to Python callables. |
-| `types.py` | Owns structured contract, violation, severity, and verification result types. |
-| `compiler.py` | Translates supported predicates into Z3 formulas. |
-| `injector.py` | Adds preconditions and postconditions to symbolic execution paths. |
-| `verifier.py` | Performs direct contract verification and report construction. |
-| `quantifiers/` | Handles supported quantified contract forms. |
-
-Compiler failures and unsupported predicates are correctness-significant. They must surface as
-unknown or failed verification states, not silent success.
-
-## Assumptions And Soundness
-
-`assumes` clauses are trusted axioms. If \(A\) is an assumption, pysymex reasons over:
-
-\[
-\Phi' = \Phi \land A
-\]
-
-This is sound relative to the environment model only when the external world actually satisfies
-\(A\). The engine can prove properties inside \(\Phi'\), but it cannot prove \(A\) itself unless the
-assumption is separately justified by a model or contract.
-
-This creates a conditional guarantee:
-
-\[
-Env \models A \land \Phi' \models Q \Rightarrow \Phi_{real} \models Q
-\]
-
-If the environment does not satisfy \(A\), conclusions derived from the assumed path space are not
-globally valid.
-
-## Cross-Function Semantics
-
-Function summaries let pysymex reason across calls. A caller path can be combined with a callee's
-preconditions, postconditions, assumptions, and frame effects. This supports interprocedural
-contradiction detection when a produced value and a later required value cannot both hold.
-
-The soundness boundary is the summary's proof status. A summary can narrow future paths only when
-its underlying obligations were established under compatible symbolic assumptions.
-
-## Logical Audit Integration
-
-Contract constraints can participate in logical contradiction detection. In default execution,
-ordinary UNSAT branch alternatives are path-pruning facts. In explicit logical audit mode, pysymex
-reports a contradiction only when the UNSAT core matches a registered rule shape.
-
-This prevents false positives from treating every infeasible branch alternative as a user-facing
-bug.
-
-## Effect And Frame Semantics
-
-`assigns` and `pure` contracts describe memory and effect boundaries:
-
-- `assigns` narrows the set of locations a function may mutate and supports alias analysis.
-- `pure` permits deterministic symbolic reuse because equivalent symbolic inputs imply equivalent
-  symbolic outputs.
-
-These contracts reduce solver and memory-model ambiguity, but they are also trust boundaries. An
-incorrect effect contract can hide behavior, so pysymex treats unsupported or contradictory effect
-facts explicitly.
-
-## Frame-Condition Proof Obligation
-
-For an `assigns` set \(W\), the frame condition states that every memory location outside \(W\)
-keeps its pre-state value:
-
-\[
-\forall \ell \notin W,\ Mem_{post}(\ell)=Mem_{pre}(\ell)
-\]
-
-This lets alias analysis avoid considering writes outside the declared frame. The obligation is
-sound only if the executor can track writes precisely enough to detect violations. Unknown aliasing
-or unsupported mutation must therefore remain visible instead of being treated as frame compliance.
-
-## Result Semantics
-
-Contract verification results use typed states:
-
-| State | Meaning |
-|---|---|
-| `VERIFIED` | No counterexample exists under the supported symbolic model and solver result is definite. |
-| `VIOLATED` | A feasible counterexample exists. |
-| `UNKNOWN` | The engine could not establish either verification or violation. |
-| `UNSUPPORTED` | The contract or path used behavior outside the supported model. |
-
-The architecture rejects ambiguous `None` or boolean-only outcomes for contract trust decisions.
-
-## Related Components
-
-- `pysymex/contracts/decorators.py`
-- `pysymex/contracts/compiler.py`
-- `pysymex/contracts/injector.py`
-- `pysymex/contracts/types.py`
-- `pysymex/contracts/verifier.py`
-- `pysymex/contracts/quantifiers/`
-- `pysymex/execution/executors/verified.py`
-- `pysymex/execution/opcodes/common/functions.py`
-- `pysymex/execution/opcodes/common/control.py`
+Contract results are only as strong as the encoded predicates, explored paths, runtime models, and
+solver outcomes. UNKNOWN, timeout, unsupported predicates, unsupported loop invariants, and degraded
+execution are not proof of correctness.

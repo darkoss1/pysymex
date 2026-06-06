@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,169 +16,56 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Contract compiler — dual-mode Z3 formula synthesis.
+"""Compile contract predicates to Z3 boolean formulas.
 
-This module provides :class:`ContractCompiler`, the central compilation
-engine that converts contract predicates into Z3 boolean expressions.
-
-Two compilation paths:
-
-1. **Symbolic tracing** (zero-AST, new default):
-   A callable predicate is invoked with Z3 symbolic variables.  Python
-   operator overloading on ``z3.ArithRef`` / ``z3.BoolRef`` produces the
-   Z3 formula directly — no ``ast.parse``, no ``inspect.getsource``.
-
-2. **AST translation** (backward-compatible fallback):
-   A string predicate is parsed through the existing
-   :class:`ConditionTranslator` (from ``pysymex.contracts.quantifiers.core``)
-   which walks the Python AST and emits Z3 nodes.
-
-Combinators:
-   ``And_``, ``Or_``, ``Not_`` wrap ``z3.And`` / ``z3.Or`` / ``z3.Not``
-   for use inside lambda predicates where Python's ``and`` / ``or`` / ``not``
-   keywords cannot be overloaded.
+:class:`~pysymex.contracts.compiler.ContractCompiler` traces callable predicates with Z3
+operator overloading or parses string predicates via
+:class:`~pysymex.contracts.quantifiers.translator.ConditionTranslator`, using
+:mod:`pysymex.contracts.formula_cache` for string reuse. Does not run solver checks or
+register decorators.
 """
 
 from __future__ import annotations
 
 import inspect
-import logging
-import threading
 from collections.abc import Callable, Mapping
 
 import z3
 
+from pysymex.contracts.combinators import And_, Implies_, Not_, Or_
+from pysymex.contracts.formula_cache import CompileCacheKey, FormulaCache, formula_cache
 from pysymex.contracts.types import ContractPredicate
+from pysymex.core.constants import Z3_ZERO
+from pysymex.core.solver.constraints.hashing import get_bool_val
+from pysymex.logger import get_logger
 
-logger = logging.getLogger(__name__)
-
-
-def And_(*args: z3.BoolRef | bool) -> z3.BoolRef:
-    """Logical AND combinator for use inside contract lambdas.
-
-    Python's ``and`` keyword short-circuits and cannot be overloaded for
-    Z3 expressions.  Use ``And_`` instead::
-
-        @requires(lambda x, y: And_(x > 0, y != 0))
-        def divide(x: int, y: int) -> float: ...
-    """
-    z3_args: list[z3.BoolRef] = []
-    for a in args:
-        if isinstance(a, bool):
-            z3_args.append(z3.BoolVal(a))
-        else:
-            z3_args.append(a)
-    if len(z3_args) == 0:
-        return z3.BoolVal(True)
-    if len(z3_args) == 1:
-        return z3_args[0]
-    return z3.And(*z3_args)
+logger = get_logger(__name__)
 
 
-def Or_(*args: z3.BoolRef | bool) -> z3.BoolRef:
-    """Logical OR combinator for use inside contract lambdas.
-
-    Python's ``or`` keyword short-circuits and cannot be overloaded for
-    Z3 expressions.  Use ``Or_`` instead::
-
-        @requires(lambda x: Or_(x == 0, x == 1))
-        def binary(x: int) -> int: ...
-    """
-    z3_args: list[z3.BoolRef] = []
-    for a in args:
-        if isinstance(a, bool):
-            z3_args.append(z3.BoolVal(a))
-        else:
-            z3_args.append(a)
-    if len(z3_args) == 0:
-        return z3.BoolVal(False)
-    if len(z3_args) == 1:
-        return z3_args[0]
-    return z3.Or(*z3_args)
-
-
-def Not_(arg: z3.BoolRef | bool) -> z3.BoolRef:
-    """Logical NOT combinator for use inside contract lambdas.
-
-    Python's ``not`` keyword cannot be overloaded for Z3 expressions.
-    Use ``Not_`` instead::
-
-        @requires(lambda x: Not_(x == 0))
-        def reciprocal(x: int) -> float: ...
-    """
-    if isinstance(arg, bool):
-        return z3.BoolVal(not arg)
-    return z3.Not(arg)
-
-
-def Implies_(antecedent: z3.BoolRef | bool, consequent: z3.BoolRef | bool) -> z3.BoolRef:
-    """Logical implication combinator for use inside contract lambdas.
-
-    ::
-
-        @ensures(lambda result, x: Implies_(x > 0, result > 0))
-        def abs_val(x: int) -> int: ...
-    """
-    a = z3.BoolVal(antecedent) if isinstance(antecedent, bool) else antecedent
-    c = z3.BoolVal(consequent) if isinstance(consequent, bool) else consequent
-    return z3.Implies(a, c)
-
-
-_CompileCacheKey = tuple[int, tuple[int, ...]]
-
-
-class _FormulaCache:
-    """Thread-safe LRU cache for compiled Z3 formulas.
-
-    Keyed by ``(id(predicate), frozenset(symbols.keys()))``.
-    """
-
-    __slots__ = ("_cache", "_lock", "_max_size")
-
-    def __init__(self, max_size: int = 4096) -> None:
-        self._cache: dict[_CompileCacheKey, z3.BoolRef] = {}
-        self._lock = threading.Lock()
-        self._max_size = max_size
-
-    def get(self, key: _CompileCacheKey) -> z3.BoolRef | None:
-        """Retrieve a cached formula, or ``None`` on miss."""
-        with self._lock:
-            return self._cache.get(key)
-
-    def put(self, key: _CompileCacheKey, formula: z3.BoolRef) -> None:
-        """Store a compiled formula.  Evicts oldest entries on overflow."""
-        with self._lock:
-            if len(self._cache) >= self._max_size:
-                keys = list(self._cache.keys())
-                for k in keys[: len(keys) // 2]:
-                    del self._cache[k]
-            self._cache[key] = formula
-
-    def clear(self) -> None:
-        """Clear the entire cache."""
-        with self._lock:
-            self._cache.clear()
-
-
-_formula_cache = _FormulaCache()
+__all__ = [
+    "And_",
+    "Or_",
+    "Not_",
+    "Implies_",
+    "ContractCompiler",
+    "CompileCacheKey",
+    "FormulaCache",
+    "formula_cache",
+]
 
 
 class ContractCompiler:
     """Dual-mode contract compilation engine.
 
-    Provides two compilation paths unified behind a single API:
+    Unifies the AST-based translation of string predicates and the symbolic
+    tracing of callable predicates behind a single interface.
 
-    - :meth:`compile_predicate` — accepts ``Callable | str``, auto-selects.
-    - :meth:`compile_expression` — backward-compatible static method for
-      string-only compilation (used by ``termination.py``, ``invariants.py``,
-      and other existing call sites).
+    Callable predicates are compiled via **symbolic tracing**: the predicate is
+    invoked with Z3 symbolic variables, and Python operator overloading on Z3 AST
+    objects directly constructs the Z3 boolean formula.
 
-    The callable path uses **symbolic tracing**:  the predicate is invoked
-    with Z3 symbolic variables, and Python operator overloading on
-    ``z3.ArithRef`` / ``z3.BoolRef`` produces the Z3 formula directly.
-
-    The string path delegates to :class:`ConditionTranslator` from
-    ``pysymex.contracts.quantifiers.core``.
+    String predicates are parsed into AST and translated to Z3 via
+    :class:`~pysymex.contracts.quantifiers.translator.ConditionTranslator`.
     """
 
     @staticmethod
@@ -193,16 +80,16 @@ class ContractCompiler:
             symbols: Mapping of parameter names to Z3 symbolic variables.
 
         Returns:
-            A ``z3.BoolRef`` encoding the contract constraint.
+            A ``z3.BoolRef`` representing the compiled constraint.
 
         Raises:
-            ValueError: If the predicate produces a non-boolean Z3 expression.
-            TypeError: If the predicate type is unsupported.
+            TypeError: If the predicate is of an unsupported type.
+            ValueError: If compilation produces a malformed or unsupported formula.
         """
         if isinstance(predicate, str):
             return ContractCompiler._compile_string(predicate, symbols)
         if callable(predicate):
-            return ContractCompiler._trace_callable(predicate, symbols)
+            return ContractCompiler.trace_callable(predicate, symbols)
         raise TypeError(
             f"Contract predicate must be a callable or string, got {type(predicate).__name__}"
         )
@@ -214,44 +101,47 @@ class ContractCompiler:
     ) -> z3.BoolRef:
         """Compile a string condition to a Z3 expression.
 
-        This is the **backward-compatible** entry point used by:
-          - ``pysymex.execution.termination.RankingFunction.compile``
-          - ``pysymex.analysis.specialized.invariants.parse_invariant_condition``
-          - ``pysymex.analysis.contracts.types.Contract.compile``
+        Provides an entry point for string-based formulas queried outside the
+        standard decorator cycle (e.g. ranking functions).
 
         Args:
-            condition: A Python-like boolean expression string.
+            condition: A Python-style boolean expression string.
             symbols: Mapping of variable names to Z3 symbolic variables.
 
         Returns:
-            A ``z3.BoolRef`` (or ``z3.ExprRef`` for arithmetic expressions).
+            A ``z3.BoolRef`` representing the compiled condition constraint.
         """
         return ContractCompiler._compile_string(condition, symbols)
 
     @staticmethod
-    def _trace_callable(
+    def trace_callable(
         predicate: Callable[..., z3.BoolRef | bool],
         symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
         """Compile a callable predicate via symbolic tracing.
 
-        The callable is invoked with Z3 variables as positional arguments.
-        Python operator overloading on ``z3.ArithRef`` / ``z3.BoolRef``
-        produces the Z3 formula directly.
-        """
-        code_obj = getattr(predicate, "__code__", None)
-        if code_obj is not None:
-            code_hash = hash(
-                (code_obj.co_code, code_obj.co_consts, code_obj.co_names, code_obj.co_varnames)
-            )
-        else:
-            code_hash = id(predicate)
-        symbol_hashes = tuple(hash(symbols[k]) for k in sorted(symbols.keys()))
-        cache_key: _CompileCacheKey = (code_hash, symbol_hashes)
-        cached = _formula_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        Invokes the callable using active Z3 variables as positional arguments,
+        utilizing Z3 operator overloading to build the symbolic AST directly.
 
+        Args:
+            predicate: A callable that returns a boolean or Z3 expression.
+            symbols: Mapping of parameter names to active Z3 variable objects.
+
+        Returns:
+            A ``z3.BoolRef`` representing the traced predicate.
+
+        Raises:
+            ValueError: If the predicate parameters are unbound, if tracing
+                raises an exception, or if the returned expression is invalid.
+
+        Limitations:
+            - Callable predicates are intentionally **not cached** to prevent
+              unsoundness if the callable reads dynamic closure or module state.
+            - Parametric predicates returning Python `bool` (instead of Z3
+              symbolic boolean expressions) are unsupported.
+              Return a symbolic Z3 predicate instead.
+            - Real or floating-point arithmetic is unsupported.
+        """
         try:
             sig = inspect.signature(predicate)
             param_names = list(sig.parameters.keys())
@@ -260,10 +150,9 @@ class ContractCompiler:
 
         args: list[z3.ExprRef] = []
         for name in param_names:
-            if name in symbols:
-                args.append(symbols[name])
-            else:
-                args.append(z3.Int(name))
+            if name not in symbols:
+                raise ValueError(f"Unbound contract parameter: {name}")
+            args.append(symbols[name])
 
         try:
             result = predicate(*args)
@@ -272,40 +161,100 @@ class ContractCompiler:
                 f"Contract predicate {predicate!r} could not be symbolically traced: {exc}"
             ) from exc
 
-        formula = ContractCompiler._coerce_to_bool_ref(result, predicate)
-
-        _formula_cache.put(cache_key, formula)
+        if isinstance(result, bool) and param_names:
+            raise ValueError(
+                "Parameterized callable contracts returning Python bool are unsupported; "
+                "return a symbolic Z3 predicate instead"
+            )
+        formula = ContractCompiler.coerce_to_bool_ref(result, predicate)
+        ContractCompiler._validate_supported_formula(formula)
         return formula
+
+    @staticmethod
+    def _validate_supported_formula(
+        formula: z3.BoolRef,
+        *,
+        allow_runtime_integer_terms: bool = False,
+    ) -> None:
+        """Assert that all operations in the formula are supported.
+
+        Recursively traverses the Z3 AST to detect unsupported theories or
+        division operations. String predicates pass through the AST translator
+        first, so integer arithmetic terms that come only from runtime return
+        expressions can be allowed without accepting unsupported source-level
+        contract syntax.
+
+        Args:
+            formula: The Z3 formula to validate.
+            allow_runtime_integer_terms: Whether integer division, modulo,
+                remainder, and exponentiation terms already present in runtime
+                expressions may be queried.
+
+        Raises:
+            ValueError: If the formula contains real/float sorts or division,
+                modulo, remainder, or exponentiation operations.
+        """
+        unsupported_operations = {
+            z3.Z3_OP_DIV: "division",
+            z3.Z3_OP_IDIV: "integer division",
+            z3.Z3_OP_REM: "remainder",
+            z3.Z3_OP_MOD: "modulo",
+            z3.Z3_OP_POWER: "exponentiation",
+        }
+        pending: list[z3.ExprRef] = [formula]
+        while pending:
+            expression = pending.pop()
+            if expression.sort() == z3.RealSort() or isinstance(expression, z3.FPRef):
+                raise ValueError("Callable contract real or floating-point terms are unsupported")
+            if not allow_runtime_integer_terms and z3.is_app(expression):
+                operation = unsupported_operations.get(expression.decl().kind())
+                if operation is not None:
+                    raise ValueError(f"Callable contract {operation} terms are unsupported")
+            pending.extend(expression.children())
 
     @staticmethod
     def _compile_string(
         condition: str,
         symbols: Mapping[str, z3.ExprRef],
     ) -> z3.BoolRef:
-        """Compile a string condition via ConditionTranslator."""
-        from pysymex.contracts.quantifiers.core import parse_condition_to_z3
+        """Lower quantifiers and translate a string condition.
 
-        return parse_condition_to_z3(condition, symbols)
+        Args:
+            condition: The condition string.
+            symbols: Mapping of variable names to Z3 variables.
+
+        Returns:
+            A compiled Z3 boolean expression.
+        """
+        from pysymex.contracts.quantifiers.lowering import lower_condition_quantifiers
+
+        formula = lower_condition_quantifiers(condition, dict(symbols))
+        ContractCompiler._validate_supported_formula(formula, allow_runtime_integer_terms=True)
+        return formula
 
     @staticmethod
-    def _coerce_to_bool_ref(
+    def coerce_to_bool_ref(
         result: z3.BoolRef | z3.ExprRef | bool | object,
         source: object,
     ) -> z3.BoolRef:
-        """Coerce a tracing result to ``z3.BoolRef``.
+        """Coerce a tracing return value to a proper Z3 BoolRef.
 
-        Handles:
-          - ``z3.BoolRef`` → pass through
-          - ``bool`` → ``z3.BoolVal``
-          - ``z3.ArithRef`` → ``expr != 0`` (truthy semantics)
-          - unsupported result types raise ``ValueError``
+        Args:
+            result: The raw value returned by the traced callable.
+            source: The callable source object, for error diagnostics.
+
+        Returns:
+            A ``z3.BoolRef`` representing the truth value.
+
+        Raises:
+            ValueError: If the type cannot be coerced.
         """
         if isinstance(result, z3.BoolRef):
             return result
         if isinstance(result, bool):
-            return z3.BoolVal(result)
+            return get_bool_val(result)
         if isinstance(result, z3.ArithRef):
-            return result != z3.IntVal(0)
+            return result != Z3_ZERO
         raise ValueError(
             f"Contract predicate {source!r} returned unsupported result type "
             f"{type(result).__name__}; expected z3.BoolRef, z3.ExprRef, or bool"

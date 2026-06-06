@@ -28,17 +28,6 @@ class TestSymbolicAddress:
         )
         assert z3.simplify(addr.effective_address).as_long() == 13
 
-    def test_add_offset(self) -> None:
-        """Scenario: add offset creates a new address; expected updated effective value."""
-        base_addr = pysymex.core.memory.types.SymbolicAddress(
-            region=pysymex.core.memory.types.MemoryRegion.HEAP,
-            base=100,
-            offset=5,
-            type_tag="obj",
-        )
-        moved = base_addr.add_offset(7)
-        assert z3.simplify(moved.effective_address).as_long() == 112
-
     def test_same_region(self) -> None:
         """Scenario: compare regions; expected true only for identical regions."""
         left = pysymex.core.memory.types.SymbolicAddress(
@@ -48,28 +37,6 @@ class TestSymbolicAddress:
             pysymex.core.memory.types.MemoryRegion.STACK, 2
         )
         assert left.same_region(right) is True
-
-    def test_may_alias(self) -> None:
-        """Scenario: equal concrete addresses in same region; expected potential aliasing."""
-        solver = z3.Solver()
-        a = pysymex.core.memory.types.SymbolicAddress(
-            pysymex.core.memory.types.MemoryRegion.HEAP, 42
-        )
-        b = pysymex.core.memory.types.SymbolicAddress(
-            pysymex.core.memory.types.MemoryRegion.HEAP, 42
-        )
-        assert a.may_alias(b, solver) is True
-
-    def test_must_alias(self) -> None:
-        """Scenario: same concrete address and region; expected proven aliasing."""
-        solver = z3.Solver()
-        a = pysymex.core.memory.types.SymbolicAddress(
-            pysymex.core.memory.types.MemoryRegion.GLOBAL, 5
-        )
-        b = pysymex.core.memory.types.SymbolicAddress(
-            pysymex.core.memory.types.MemoryRegion.GLOBAL, 5
-        )
-        assert a.must_alias(b, solver) is True
 
 
 class TestHeapObject:
@@ -114,14 +81,3 @@ class TestStackFrame:
         frame = pysymex.core.memory.types.StackFrame("f")
         frame.set_local("y", 4)
         assert frame.locals["y"] == 4
-
-    def test_has_local(self) -> None:
-        """Scenario: check local existence; expected true for inserted name."""
-        frame = pysymex.core.memory.types.StackFrame("f", locals={"z": 8})
-        assert frame.has_local("z") is True
-
-    def test_delete_local(self) -> None:
-        """Scenario: delete existing local; expected key removal from frame."""
-        frame = pysymex.core.memory.types.StackFrame("f", locals={"tmp": 1})
-        frame.delete_local("tmp")
-        assert "tmp" not in frame.locals

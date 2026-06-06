@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""State Impossibility logic rule.
+
+This module implements the state impossibility logic rule (Tier 5), which detects
+contradictions in variables representing state machines, mode, status, or phase attributes.
+
+Bug Class Detected:
+    Logical contradiction (state impossibility).
+
+Required Evidence:
+    An unsatisfiable core containing conflicting constant or boolean assignments on state-related variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     extract_bool_assignments,
@@ -25,10 +40,33 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class StateImpossibilityRule(LogicRule):
+    """Logic rule for detecting state impossibility contradictions.
+
+    This rule checks the unsatisfiable core for conflicting constant or boolean assignments on variables
+    representing states, status values, modes, or phases.
+
+    Bug Class Detected:
+        Logical contradiction (state impossibility).
+
+    Required Evidence:
+        ContradictionContext with multiple conflicting values assigned to the same state variable.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "State Impossibility"
     tier = 5
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains a state impossibility contradiction.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if a state contradiction is detected, False otherwise.
+        """
         names = get_variable_names_all(ctx.core)
         state_names = [
             n

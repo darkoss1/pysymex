@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Numeric Range Propagation Contradiction logic rule.
+
+This module implements the numeric range propagation rule (Tier 4), which detects
+contradictions when propagating ranges across interprocedural boundary variables (arguments,
+returns, etc.) leads to inconsistent bounds or contradictory comparisons.
+
+Bug Class Detected:
+    Logical contradiction (numeric range propagation contradiction).
+
+Required Evidence:
+    An unsatisfiable core containing inconsistent bounds or contradictory comparison relationships
+    between interprocedural variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
@@ -28,6 +45,14 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 def _is_interprocedural_name(name: str) -> bool:
+    """Check if a variable name indicates it participates in interprocedural interfaces.
+
+    Args:
+        name (str): The name of the variable to check.
+
+    Returns:
+        bool: True if the name contains interprocedural tokens, False otherwise.
+    """
     lname = name.lower()
     return any(
         token in lname
@@ -46,10 +71,33 @@ def _is_interprocedural_name(name: str) -> bool:
 
 
 class NumericRangePropagationRule(LogicRule):
+    """Logic rule for detecting numeric range propagation contradictions.
+
+    This rule checks the unsatisfiable core for inconsistent bounds or conflicting comparisons
+    between interprocedural variables (e.g., `arg1 < arg2` and `arg2 < arg1`).
+
+    Bug Class Detected:
+        Logical contradiction (numeric range propagation contradiction).
+
+    Required Evidence:
+        ContradictionContext showing inconsistent bounds or conflicting relation sets on interprocedural variables.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "Numeric Range Propagation Contradiction"
     tier = 4
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains a range propagation contradiction.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if a range propagation contradiction is detected, False otherwise.
+        """
         if len(ctx.core) < 2 or count_variables(ctx.core) < 2:
             return False
 

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,25 +16,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Use-After-Free specialized detector module.
+
+Detects use of resources (like file handles or sockets) after they have been closed/freed.
+
+Bug Class Detected:
+    Use-After-Free / Closed Resource Usage.
+
+Required Evidence:
+    An attribute access or method call on a variable previously registered in the VMState.freed_vars set.
+
+Issue Kinds:
+    IssueKind.ATTRIBUTE_ERROR
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, DisInstruction, IsSatFn
+from pysymex.analysis.detectors.calls import extract_argc, get_call_target_name
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.types import DisInstruction, IsSatFn, Issue, IssueKind
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
+    from pysymex.core.state.record import VMState
 
 from .helpers import resolve_target_name, get_named_value_name
-
-
-def _extract_argc(instruction: DisInstruction) -> int:
-    """Extract argument count from a call-like instruction."""
-    if isinstance(instruction.argval, int):
-        return instruction.argval
-    if isinstance(instruction.arg, int):
-        return instruction.arg
-    return 0
 
 
 def _extract_candidate_name(value: object) -> str | None:
@@ -42,17 +49,21 @@ def _extract_candidate_name(value: object) -> str | None:
     named = get_named_value_name(value)
     if named is not None and named:
         return named
-    for attr in ("__name__", "__qualname__", "qualname", "name", "origin"):
-        attr_value = getattr(value, attr, None)
-        if isinstance(attr_value, str) and attr_value:
-            return attr_value
-    return None
+    return get_call_target_name(value)
 
 
 def _is_close_target_name(target_name: str) -> bool:
     """Return True when a call target looks like a close/release call."""
     lowered = target_name.lower()
     return lowered == "close" or lowered.endswith(".close")
+
+
+def _is_valid_close_call_shape(target_name: str, argc: int) -> bool:
+    """Return True when the call shape can represent a successful close call."""
+    lowered = target_name.lower()
+    if lowered.endswith(".close"):
+        return argc == 0
+    return True
 
 
 def _resolve_receiver_name(state: VMState, argc: int, target_name: str) -> str | None:
@@ -97,7 +108,7 @@ class UseAfterFreeDetector(Detector):
         """Check for use of freed/closed resources."""
         _ = is_satisfiable_fn
         if instruction.opname in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW"):
-            argc = _extract_argc(instruction)
+            argc = extract_argc(instruction)
             call_candidates = (
                 len(state.stack) - argc - 1,
                 len(state.stack) - argc - 2,
@@ -114,7 +125,11 @@ class UseAfterFreeDetector(Detector):
             if resolved_target is not None:
                 candidate_names.append(resolved_target)
 
-            close_targets = tuple(name for name in candidate_names if _is_close_target_name(name))
+            close_targets = tuple(
+                name
+                for name in candidate_names
+                if _is_close_target_name(name) and _is_valid_close_call_shape(name, argc)
+            )
             if close_targets:
                 receiver_name: str | None = None
                 for close_target in close_targets:

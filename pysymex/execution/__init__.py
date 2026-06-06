@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,45 +16,47 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Execution module for pysymex.
-
-Lazy-loaded: symbols are resolved on first access via ``__getattr__``.
-"""
+"""Lazy public namespace for VM execution, dispatch, results, and analyzers."""
 
 from __future__ import annotations
 
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.lazy import lazy_dir, lazy_getattr
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "ExecutionContext": ("pysymex.execution.protocols", "ExecutionContext"),
     "execute_function": ("pysymex.execution.vm", "execute_function"),
     "execute_code": ("pysymex.execution.vm", "execute_code"),
-    "OpcodeDispatcher": ("pysymex.execution.dispatcher", "OpcodeDispatcher"),
-    "OpcodeResult": ("pysymex.execution.dispatcher", "OpcodeResult"),
-    "opcode_handler": ("pysymex.execution.dispatcher", "opcode_handler"),
+    "OpcodeDispatcher": ("pysymex.execution.dispatch.dispatcher", "OpcodeDispatcher"),
+    "OpcodeResult": ("pysymex.execution.dispatch.result", "OpcodeResult"),
+    "opcode_handler": ("pysymex.execution.dispatch.dispatcher", "opcode_handler"),
     "SymbolicExecutor": ("pysymex.execution.executors", "SymbolicExecutor"),
-    "ExecutionConfig": ("pysymex.execution.executors", "ExecutionConfig"),
-    "ExecutionResult": ("pysymex.execution.executors", "ExecutionResult"),
-    "analyze": ("pysymex.api", "analyze"),
-    "analyze_code": ("pysymex.api", "analyze_code"),
-    "quick_check": ("pysymex.api", "quick_check"),
-    "VerifiedExecutor": ("pysymex.execution.executors.verified", "VerifiedExecutor"),
-    "VerifiedExecutionConfig": ("pysymex.execution.executors.verified", "VerifiedExecutionConfig"),
-    "VerifiedExecutionResult": ("pysymex.execution.executors.verified", "VerifiedExecutionResult"),
-    "TerminationStatus": ("pysymex.execution.executors.verified", "TerminationStatus"),
-    "TerminationProof": ("pysymex.execution.executors.verified", "TerminationProof"),
-    "RankingFunction": ("pysymex.execution.executors.verified", "RankingFunction"),
-    "TerminationAnalyzer": ("pysymex.execution.executors.verified", "TerminationAnalyzer"),
-    "ContractIssue": ("pysymex.execution.executors.verified", "ContractIssue"),
-    "ArithmeticIssue": ("pysymex.execution.executors.verified", "ArithmeticIssue"),
-    "InferredProperty": ("pysymex.execution.executors.verified", "InferredProperty"),
-    "verify": ("pysymex.execution.executors.verified", "verify"),
-    "check_contracts": ("pysymex.execution.executors.verified", "check_contracts"),
-    "check_arithmetic": ("pysymex.execution.executors.verified", "check_arithmetic"),
-    "prove_termination": ("pysymex.execution.executors.verified", "prove_termination"),
-    "AsyncSymbolicExecutor": ("pysymex.execution.executors.async_exec", "AsyncSymbolicExecutor"),
-    "SymbolicEventLoop": ("pysymex.execution.executors.async_exec", "SymbolicEventLoop"),
-    "analyze_async": ("pysymex.execution.executors.async_exec", "analyze_async"),
+    "ExecutionConfig": ("pysymex.execution.config.settings", "ExecutionConfig"),
+    "ExecutionResult": ("pysymex.execution.results.result", "ExecutionResult"),
+    "VerifiedExecutor": ("pysymex.execution.executors.verified.executor", "VerifiedExecutor"),
+    "VerifiedExecutionConfig": (
+        "pysymex.execution.executors.verified.types",
+        "VerifiedExecutionConfig",
+    ),
+    "VerifiedExecutionResult": (
+        "pysymex.execution.executors.verified.types",
+        "VerifiedExecutionResult",
+    ),
+    "TerminationStatus": ("pysymex.execution.termination", "TerminationStatus"),
+    "TerminationProof": ("pysymex.execution.termination", "TerminationProof"),
+    "RankingFunction": ("pysymex.execution.termination", "RankingFunction"),
+    "TerminationAnalyzer": ("pysymex.execution.termination", "TerminationAnalyzer"),
+    "ContractIssue": ("pysymex.execution.executors.verified.types", "ContractIssue"),
+    "ArithmeticIssue": ("pysymex.execution.executors.verified.types", "ArithmeticIssue"),
+    "InferredProperty": ("pysymex.execution.executors.verified.types", "InferredProperty"),
+    "verify": ("pysymex.execution.executors.verified.api", "verify"),
+    "check_contracts": ("pysymex.execution.executors.verified.api", "check_contracts"),
+    "check_arithmetic": ("pysymex.execution.executors.verified.api", "check_arithmetic"),
+    "prove_termination": ("pysymex.execution.executors.verified.api", "prove_termination"),
+    "AsyncSymbolicExecutor": (
+        "pysymex.execution.executors.async_support.runner",
+        "AsyncSymbolicExecutor",
+    ),
+    "SymbolicEventLoop": ("pysymex.execution.executors.async_support.runner", "SymbolicEventLoop"),
     "ConcurrentSymbolicExecutor": (
         "pysymex.execution.executors.concurrent",
         "ConcurrentSymbolicExecutor",
@@ -64,10 +66,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> object:
-    """Getattr."""
+    """Resolve a registered execution export on first attribute access."""
     return lazy_getattr(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
-    """Dir."""
+    """Return lazily exported execution names for introspection."""
     return lazy_dir(_EXPORTS, globals(), include_namespace=False)

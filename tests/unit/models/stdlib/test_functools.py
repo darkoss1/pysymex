@@ -1,25 +1,9 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
 
-from pysymex.core.types.containers import SymbolicList
+from pysymex.core.types.containers.lists import SymbolicList
 
-
-def _load_functools_models() -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "functools.py"
-    )
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_functools", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib functools models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-functools_models = _load_functools_models()
+from pysymex.models.stdlib import functools as functools_models
 
 
 def _identity(value: object) -> object:
@@ -43,7 +27,9 @@ def _prop_none(_self: object) -> None:
     return None
 
 
-def _cmp(a: int, b: int) -> int:
+def _cmp(a: object, b: object) -> int:
+    if not isinstance(a, int) or not isinstance(b, int):
+        return 0
     return a - b
 
 
@@ -58,7 +44,7 @@ class TestWrappedWrapper:
             return 2
 
         decorated = functools_models.model_wraps(wrapped)(wrapper)
-        assert decorated.__name__ == wrapped.__name__
+        assert getattr(decorated, "__name__") == wrapped.__name__
 
     def test_error_path(self) -> None:
         assert callable(functools_models.model_wraps(_none_fn))
@@ -127,7 +113,7 @@ def test_model_wraps() -> None:
         return 2
 
     decorated = functools_models.model_wraps(wrapped)(wrapper)
-    assert decorated.__wrapped__ is wrapped
+    assert getattr(decorated, "__wrapped__") is wrapped
 
 
 def test_model_total_ordering() -> None:

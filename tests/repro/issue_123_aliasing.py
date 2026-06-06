@@ -6,7 +6,7 @@ when modifying symbolic collections.
 
 from __future__ import annotations
 
-from pysymex.core.state import VMState
+from pysymex.core.state.record import VMState
 
 
 def test_issue_123_aliasing_on_fork() -> None:

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,9 +16,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Loop invariant violation logical contradiction rule.
+
+Detects contradictions arising from broken loop invariants, such as impossible self-referential
+equalities (e.g. x == x + 1) or inconsistent bounds on loop induction variables.
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
-from pysymex.core.solver.engine import is_satisfiable
+from pysymex.core.solver.engine.queries import check_sat_result
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
     expr_contains_variable,
@@ -28,11 +34,22 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class LoopInvariantViolationRule(LogicRule):
+    """Rule that matches contradictions associated with loop invariants or induction variables."""
+
     name = "Loop Invariant Violation"
     tier = 3
 
     def matches(self, ctx: ContradictionContext) -> bool:
         # Impossible self-referential equalities often arise from broken loop invariants.
+        """Check if the contradiction context represents a loop invariant violation.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains self-referential impossible equalities or inconsistent
+            bounds/equalities on variables identified as loop/induction variables, otherwise False.
+        """
         for expr in ctx.core:
             if not z3.is_app(expr) or expr.decl().kind() != z3.Z3_OP_EQ or expr.num_args() != 2:
                 continue
@@ -43,7 +60,7 @@ class LoopInvariantViolationRule(LogicRule):
             if (
                 expr_contains_variable(rhs, name)
                 and str(rhs) != str(lhs)
-                and not is_satisfiable([expr])
+                and check_sat_result([expr]).is_unsat
             ):
                 return True
 

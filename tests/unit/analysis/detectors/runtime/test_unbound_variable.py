@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import dis
+import time
+
+import z3
 
 from pysymex.analysis.detectors.runtime.unbound_variable import UnboundVariableDetector
-from pysymex.core.state import VMState, UNBOUND
+from pysymex.analysis.detectors.detector.types import IssueKind
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.state.types import UNBOUND
 
 
 def _make_instruction(
@@ -29,7 +36,7 @@ def _make_instruction(
 
 
 class TestUnboundVariableDetector:
-    """Test suite for pysymex.analysis.detectors.base.UnboundVariableDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.UnboundVariableDetector."""
 
     def test_check_reports_unbound_load_fast(self) -> None:
         """Report UNBOUND_VARIABLE for LOAD_FAST when local is UNBOUND."""
@@ -48,6 +55,39 @@ class TestUnboundVariableDetector:
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
 
+    def test_check_reports_missing_load_global_as_name_error(self) -> None:
+        """Report NAME_ERROR for a missing global before LOAD_GLOBAL fallback modeling."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_GLOBAL", "missing_global")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is not None
+        assert issue.kind is IssueKind.NAME_ERROR
+
+    def test_check_reports_unbound_builtin_shadow_load_fast(self) -> None:
+        """Builtin-looking local names still raise UnboundLocalError when local-bound."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_FAST_CHECK", "len")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+        state.set_local("len", UNBOUND)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is not None
+        assert issue.kind is IssueKind.UNBOUND_VARIABLE
+
+    def test_check_ignores_builtin_load_global(self) -> None:
+        """Builtins resolved after global lookup should not be reported as missing globals."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_GLOBAL", "any")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
     def test_check_ignores_bound_load_name_in_globals(self) -> None:
         """Return None for LOAD_NAME when symbol exists in globals."""
         detector = UnboundVariableDetector()
@@ -63,4 +103,30 @@ class TestUnboundVariableDetector:
         instruction = _make_instruction("LOAD_NAME", "len")
         state = VMState(stack=[], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_ignores_builtin_exception_name(self) -> None:
+        """Return None for builtin exception classes resolved by LOAD_NAME."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_NAME", "ZeroDivisionError")
+        state = VMState(stack=[], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
+    def test_check_does_not_report_definite_issue_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN must not become a definite unbound-variable issue."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_FAST", "x")
+        state = VMState(stack=[], path_constraints=[z3.Bool("unbound_path")], pc=2)
+        state.set_local("x", UNBOUND)
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(state, instruction, lambda _constraints: True)
+        finally:
+            active_incremental_solver.reset(token)
+
         assert issue is None

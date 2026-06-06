@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,16 +16,33 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Self-contradiction logical contradiction rule.
+
+Detects contradictions where a single assertion is inherently self-contradictory
+independent of other path conditions (e.g. x != x).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import count_variables
 import z3
 
 
 class SelfContradictionRule(LogicRule):
+    """Rule that matches self-contradictions such as a variable not equaling itself."""
+
     name = "Self-Contradiction"
     tier = 1
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a self-contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains exactly one variable and one constraint, which is
+            of the form Not(x == x), otherwise False.
+        """
         if count_variables(ctx.core) != 1 or len(ctx.core) != 1:
             return False
         expr = ctx.core[0]

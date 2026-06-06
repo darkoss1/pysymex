@@ -1,82 +1,88 @@
 """Tests for pysymex.core.graph.cig."""
 
-from typing import FrozenSet, Hashable
+import importlib
+from collections.abc import Hashable
 
-from pysymex.core.graph.treewidth import ConstraintInteractionGraph
+from pysymex.core.graph.cig import ConstraintInteractionGraph
 
 
 class TestConstraintInteractionGraph:
+    def test_graph_package_is_documentation_only(self) -> None:
+        graph_package = importlib.import_module("pysymex.core.graph")
+
+        assert "ConstraintInteractionGraph" not in vars(graph_package)
+
     def test_add_branch_creates_vertex(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         cig.add_branch(10, vars_set)
-        assert cig.num_vertices == 1
+        assert cig.num_branches == 1
         assert cig.get_degree(10) == 0
 
     def test_add_branch_ignores_duplicate_pc(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         cig.add_branch(10, vars_set)
         cig.add_branch(10, vars_set)
-        assert cig.num_vertices == 1
+        assert cig.num_branches == 1
 
     def test_add_branch_creates_edges_on_shared_vars(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars1: FrozenSet[Hashable] = frozenset(["x", "y"])
-        vars2: FrozenSet[Hashable] = frozenset(["y", "z"])
+        vars1: frozenset[Hashable] = frozenset(["x", "y"])
+        vars2: frozenset[Hashable] = frozenset(["y", "z"])
         cig.add_branch(10, vars1)
         cig.add_branch(20, vars2)
         assert cig.num_edges == 1
         assert cig.get_degree(10) == 1
-        assert 20 in cig.get_neighbors(10)
+        assert 20 in cig.adjacency[10]
 
     def test_add_branch_no_edges_on_disjoint_vars(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars1: FrozenSet[Hashable] = frozenset(["x"])
-        vars2: FrozenSet[Hashable] = frozenset(["y"])
+        vars1: frozenset[Hashable] = frozenset(["x"])
+        vars2: frozenset[Hashable] = frozenset(["y"])
         cig.add_branch(10, vars1)
         cig.add_branch(20, vars2)
         assert cig.num_edges == 0
         assert cig.get_degree(10) == 0
-        assert 20 not in cig.get_neighbors(10)
+        assert 20 not in cig.adjacency.get(10, set())
 
     def test_get_degree_returns_correct_count(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         cig.add_branch(10, vars_set)
         cig.add_branch(20, vars_set)
         cig.add_branch(30, vars_set)
         assert cig.get_degree(10) == 2
 
-    def test_get_neighbors_returns_correct_set(self) -> None:
+    def test_adjacency_tracks_neighbors(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         cig.add_branch(10, vars_set)
         cig.add_branch(20, vars_set)
-        assert cig.get_neighbors(10) == {20}
-        assert cig.get_neighbors(99) == set()
+        assert cig.adjacency[10] == {20}
+        assert cig.adjacency.get(99, set()) == set()
 
-    def test_num_vertices_tracks_count(self) -> None:
+    def test_num_branches_tracks_count(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
-        assert cig.num_vertices == 0
+        vars_set: frozenset[Hashable] = frozenset(["x"])
+        assert cig.num_branches == 0
         cig.add_branch(10, vars_set)
-        assert cig.num_vertices == 1
+        assert cig.num_branches == 1
 
     def test_num_edges_tracks_count(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         assert cig.num_edges == 0
         cig.add_branch(10, vars_set)
         cig.add_branch(20, vars_set)
         assert cig.num_edges == 1
 
-    def test_clear_removes_all_state(self) -> None:
+    def test_reset_removes_all_state(self) -> None:
         cig = ConstraintInteractionGraph()
-        vars_set: FrozenSet[Hashable] = frozenset(["x"])
+        vars_set: frozenset[Hashable] = frozenset(["x"])
         cig.add_branch(10, vars_set)
         cig.add_branch(20, vars_set)
-        cig.clear()
-        assert cig.num_vertices == 0
+        cig.reset()
+        assert cig.num_branches == 0
         assert cig.num_edges == 0
-        assert cig.get_neighbors(10) == set()
+        assert cig.adjacency.get(10, set()) == set()

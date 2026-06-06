@@ -1,183 +1,233 @@
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+
 from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.wasm import WasmBackend
-from pysymex.sandbox.types import ExecutionStatus, SandboxConfig
+from pysymex.sandbox.isolation.wasm import WasmBackend, resolve_wasm_python_module
+from pysymex.sandbox.types import ExecutionStatus, ResourceLimits, SandboxConfig
 
 
-class _FakeProcess:
-    def __init__(self, returncode: int, stdout: bytes, stderr: bytes) -> None:
-        self.returncode = returncode
-        self._stdout = stdout
-        self._stderr = stderr
+class _FakeWasmtimeConfig:
+    consume_fuel: bool = False
 
-    def communicate(
-        self, input: bytes | None = None, timeout: float | None = None
-    ) -> tuple[bytes, bytes]:
-        _ = input
-        _ = timeout
-        return self._stdout, self._stderr
 
-    def kill(self) -> None:
-        return None
+class _FakeWasmtimeEngine:
+    def __init__(self, config: _FakeWasmtimeConfig) -> None:
+        self.config = config
 
-    def wait(self, timeout: float | None = None) -> int:
-        _ = timeout
-        return self.returncode
+
+class _FakeWasmtimeStore:
+    def __init__(self, engine: _FakeWasmtimeEngine) -> None:
+        self.engine = engine
+        self.fuel = 0
+        self.memory_size = 0
+        self.wasi: _FakeWasiConfig | None = None
+
+    def set_limits(
+        self,
+        *,
+        memory_size: int,
+        instances: int,
+        memories: int,
+        tables: int,
+        table_elements: int,
+    ) -> None:
+        _ = instances
+        _ = memories
+        _ = tables
+        _ = table_elements
+        self.memory_size = memory_size
+
+    def set_fuel(self, fuel: int) -> None:
+        self.fuel = fuel
+
+    def set_wasi(self, wasi: "_FakeWasiConfig") -> None:
+        self.wasi = wasi
+
+
+class _FakeWasiConfig:
+    def __init__(self) -> None:
+        self.argv: list[str] = []
+        self.env: list[tuple[str, str]] = []
+        self.stdin_file = ""
+        self.stdout_file = ""
+        self.stderr_file = ""
+        self.preopens: list[tuple[str, str]] = []
+
+    def preopen_dir(self, host_path: str, guest_path: str) -> None:
+        self.preopens.append((host_path, guest_path))
+
+
+class _FakeWasmtimeModule:
+    @classmethod
+    def from_file(cls, engine: _FakeWasmtimeEngine, path: str) -> "_FakeWasmtimeModule":
+        _ = engine
+        _ = path
+        return cls()
+
+
+class _FakeWasmtimeInstance:
+    def __init__(self, output: bytes) -> None:
+        self.output = output
+
+    def exports(self, store: _FakeWasmtimeStore) -> dict[str, object]:
+        def _start(inner_store: _FakeWasmtimeStore) -> None:
+            assert inner_store.wasi is not None
+            Path(inner_store.wasi.stdout_file).write_bytes(self.output)
+
+        _ = store
+        return {"_start": _start}
+
+
+class _FakeWasmtimeLinker:
+    output: bytes = b"wasm-ok\n"
+
+    def __init__(self, engine: _FakeWasmtimeEngine) -> None:
+        self.engine = engine
+        self.wasi_defined = False
+
+    def define_wasi(self) -> None:
+        self.wasi_defined = True
+
+    def instantiate(
+        self,
+        store: _FakeWasmtimeStore,
+        module: _FakeWasmtimeModule,
+    ) -> _FakeWasmtimeInstance:
+        _ = store
+        _ = module
+        assert self.wasi_defined is True
+        return _FakeWasmtimeInstance(self.output)
+
+
+def _fake_wasmtime_module(output: bytes = b"wasm-ok\n") -> SimpleNamespace:
+    class Linker(_FakeWasmtimeLinker):
+        pass
+
+    Linker.output = output
+    return SimpleNamespace(
+        Config=_FakeWasmtimeConfig,
+        Engine=_FakeWasmtimeEngine,
+        Store=_FakeWasmtimeStore,
+        WasiConfig=_FakeWasiConfig,
+        Linker=Linker,
+        Module=_FakeWasmtimeModule,
+    )
 
 
 class TestWasmBackend:
     """Test suite for pysymex.sandbox.isolation.wasm.WasmBackend."""
 
     @pytest.mark.timeout(30)
-    def test_is_available(self) -> None:
-        """Test is_available behavior."""
-        backend = WasmBackend(SandboxConfig())
-        assert isinstance(backend.is_available, bool)
+    def test_resolve_wasm_python_module_requires_existing_file(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.wasm"
+        assert resolve_wasm_python_module(SandboxConfig(wasm_python_module=missing)) is None
+
+        artifact = tmp_path / "python.wasm"
+        artifact.write_bytes(b"\0asm")
+        assert resolve_wasm_python_module(SandboxConfig(wasm_python_module=artifact)) == artifact
 
     @pytest.mark.timeout(30)
-    def test_get_capabilities(self) -> None:
-        """Test get_capabilities behavior."""
+    def test_is_available_requires_wasmtime_and_python_artifact(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "python.wasm"
+        artifact.write_bytes(b"\0asm")
+        backend = WasmBackend(SandboxConfig(wasm_python_module=artifact))
+
+        with patch("pysymex.sandbox.isolation.wasm.runtime.find_spec", return_value=None):
+            assert backend.is_available is False
+
+        with patch("pysymex.sandbox.isolation.wasm.runtime.find_spec", return_value=object()):
+            assert backend.is_available is True
+
+    @pytest.mark.timeout(30)
+    def test_get_capabilities_reports_strong_wasi_boundary(self) -> None:
         backend = WasmBackend(SandboxConfig())
         caps = backend.get_capabilities()
         assert caps.process_isolation is True
         assert caps.filesystem_jail is True
-        assert caps.network_blocking is False
-        assert caps.syscall_filtering is False
-        assert caps.memory_limits is False
-        assert caps.cpu_limits is False
-        assert caps.process_limits is False
+        assert caps.network_blocking is True
+        assert caps.syscall_filtering is True
+        assert caps.memory_limits is True
+        assert caps.cpu_limits is True
+        assert caps.process_limits is True
 
     @pytest.mark.timeout(30)
-    def test_setup(self) -> None:
-        """Test setup behavior."""
+    def test_setup_fails_closed_without_wasmtime(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "python.wasm"
+        artifact.write_bytes(b"\0asm")
+        backend = WasmBackend(SandboxConfig(wasm_python_module=artifact))
+
+        with patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=None):
+            with pytest.raises(SandboxSetupError, match="wasmtime"):
+                backend.setup()
+
+    @pytest.mark.timeout(30)
+    def test_setup_fails_closed_without_python_artifact(self) -> None:
         backend = WasmBackend(SandboxConfig())
-        try:
-            backend.setup()
-            assert backend.is_setup is True
-            assert backend.jail_path is not None
-            assert backend.jail_path.exists()
-        finally:
-            backend.cleanup()
 
-    @pytest.mark.timeout(30)
-    def test_cleanup(self) -> None:
-        """Test cleanup behavior."""
-        backend = WasmBackend(SandboxConfig())
-        backend.setup()
-        jail_path = backend.jail_path
-        assert jail_path is not None
-        backend.cleanup()
-        assert backend.is_setup is False
-        assert backend.jail_path is None
-        assert not jail_path.exists()
-
-    @pytest.mark.timeout(30)
-    def test_execute(self) -> None:
-        """Test execute behavior."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(0, b"ok\n", b"")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
-            backend.setup()
-            try:
-                result = backend.execute(b"print('ok')\n", "target.py", b"", {})
-                assert result.status is ExecutionStatus.SUCCESS
-                assert result.exit_code == 0
-                assert "ok" in result.get_stdout_text()
-            finally:
-                backend.cleanup()
+        with patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=object()):
+            with pytest.raises(SandboxSetupError, match="WASI Python"):
+                backend.setup()
 
     @pytest.mark.timeout(30)
     def test_execute_without_setup_fails(self) -> None:
-        """Execution must fail if setup did not create an isolated jail."""
         backend = WasmBackend(SandboxConfig())
         with pytest.raises(SandboxSetupError):
             backend.execute(b"print('x')", "x.py", b"", {})
 
     @pytest.mark.timeout(30)
-    def test_network_blocked(self) -> None:
-        """Blocks outbound network access attempts in wasm fallback mode."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(1, b"", b"sandbox-harness: network access is hard-blocked")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
-            backend.setup()
-            try:
-                result = backend.execute(b"import socket\n", "net.py", b"", {})
-                assert result.status is ExecutionStatus.FAILED
-                assert "hard-blocked" in result.get_stderr_text()
-            finally:
-                backend.cleanup()
-
-    @pytest.mark.timeout(30)
-    def test_filesystem_write_blocked(self) -> None:
-        """Blocks writes outside the jail in wasm fallback mode."""
-        config = SandboxConfig(harness_restrict_builtins=False, harness_install_audit_hook=False)
+    def test_execute_runs_wasi_python_without_native_subprocess(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "python.wasm"
+        artifact.write_bytes(b"\0asm")
+        config = SandboxConfig(
+            wasm_python_module=artifact,
+            limits=ResourceLimits(timeout_seconds=1.0, cpu_seconds=1, memory_mb=32),
+            environment={"PYTHONHASHSEED": "0"},
+        )
         backend = WasmBackend(config)
-        fake = _FakeProcess(1, b"", b"sandbox-harness: blocked write")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
+
+        with (
+            patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=object()),
+            patch(
+                "pysymex.sandbox.isolation.wasm.backend.import_module",
+                return_value=_fake_wasmtime_module(),
+            ),
+        ):
             backend.setup()
             try:
-                result = backend.execute(b"open('/tmp/x', 'w')\n", "fs.py", b"", {})
-                assert result.status is ExecutionStatus.FAILED
-                assert "blocked write" in result.get_stderr_text()
+                result = backend.execute(b"print('ok')\n", "target.py", b"input", {})
             finally:
                 backend.cleanup()
 
+        assert result.status is ExecutionStatus.SUCCESS
+        assert result.exit_code == 0
+        assert result.get_stdout_text() == "wasm-ok\n"
+
     @pytest.mark.timeout(30)
-    def test_subprocess_blocked(self) -> None:
-        """Blocks subprocess spawning attempts from sandboxed wasm fallback code."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(1, b"", b"sandbox-harness: blocked runtime event")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
+    def test_execute_enforces_output_limit(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "python.wasm"
+        artifact.write_bytes(b"\0asm")
+        config = SandboxConfig(
+            wasm_python_module=artifact,
+            limits=ResourceLimits(max_output_bytes=4),
+        )
+        backend = WasmBackend(config)
+
+        with (
+            patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=object()),
+            patch(
+                "pysymex.sandbox.isolation.wasm.backend.import_module",
+                return_value=_fake_wasmtime_module(b"too much output"),
+            ),
+        ):
             backend.setup()
             try:
-                result = backend.execute(b"import subprocess\n", "proc.py", b"", {})
-                assert result.status is ExecutionStatus.FAILED
-                assert "blocked runtime event" in result.get_stderr_text()
+                result = backend.execute(b"print('x')\n", "target.py", b"", {})
             finally:
                 backend.cleanup()
 
-    @pytest.mark.timeout(30)
-    def test_forbidden_import_blocked(self) -> None:
-        """Rejects forbidden imports so host-sensitive modules remain inaccessible."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(1, b"", b"sandbox-harness: rejected")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
-            backend.setup()
-            try:
-                result = backend.execute(b"import os\n", "imp.py", b"", {})
-                assert result.status is ExecutionStatus.FAILED
-                assert "rejected" in result.get_stderr_text()
-            finally:
-                backend.cleanup()
-
-    @pytest.mark.timeout(30)
-    def test_permitted_operation_succeeds(self) -> None:
-        """Allows harmless computation to complete successfully in fallback mode."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(0, b"safe\n", b"")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
-            backend.setup()
-            try:
-                result = backend.execute(b"print('safe')\n", "safe.py", b"", {})
-                assert result.status is ExecutionStatus.SUCCESS
-                assert "safe" in result.get_stdout_text()
-            finally:
-                backend.cleanup()
-
-    @pytest.mark.timeout(30)
-    def test_graceful_degradation(self) -> None:
-        """Maintains safe subprocess fallback when WASM runtime support is unavailable."""
-        backend = WasmBackend(SandboxConfig(harness_install_audit_hook=False))
-        fake = _FakeProcess(0, b"fallback\n", b"")
-        with patch("pysymex.sandbox.isolation.wasm.subprocess.Popen", return_value=fake):
-            backend.setup()
-            try:
-                caps = backend.get_capabilities()
-                result = backend.execute(b"print('fallback')\n", "fallback.py", b"", {})
-                assert caps.memory_limits is False
-                assert result.status is ExecutionStatus.SUCCESS
-                assert "fallback" in result.get_stdout_text()
-            finally:
-                backend.cleanup()
+        assert result.status is ExecutionStatus.SECURITY_VIOLATION
+        assert result.blocked_operations == ["output-limit"]
+        assert result.stdout == b"too "

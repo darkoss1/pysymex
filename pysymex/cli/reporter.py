@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -20,26 +20,51 @@
 
 Implements the :class:`~pysymex.analysis.detectors.protocols.ScanReporter`
 protocol — all emoji / colour / progress-bar logic lives here, keeping
-``scanner.core`` free of presentation concerns.
+scanner execution free of presentation concerns.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from pysymex.cli.output import format_progress_line, safe_print
 from pysymex.scanner.types import ScanResult, ScanSession
 
 
 def _descending_count(item: tuple[str, int]) -> int:
+    """Return the negative count value of a mapping item for descending sort.
+
+    Args:
+        item (tuple[str, int]): A tuple consisting of a key and its integer count.
+
+    Returns:
+        int: The negative value of the integer count.
+    """
     return -item[1]
 
 
 def _as_scan_result(value: object) -> ScanResult | None:
+    """Cast a generic object to a ScanResult instance if compatible.
+
+    Args:
+        value (object): The object to cast.
+
+    Returns:
+        ScanResult | None: The ScanResult instance if compatible, otherwise None.
+    """
     return value if isinstance(value, ScanResult) else None
 
 
 def _as_scan_session(value: object) -> ScanSession | None:
+    """Cast a generic object to a ScanSession instance if compatible.
+
+    Args:
+        value (object): The object to cast.
+
+    Returns:
+        ScanSession | None: The ScanSession instance if compatible, otherwise None.
+    """
     return value if isinstance(value, ScanSession) else None
 
 
@@ -48,8 +73,8 @@ def _iter_object_mapping_items(value: object) -> list[tuple[str, object]]:
     if not isinstance(value, dict):
         return []
     result: list[tuple[str, object]] = []
-    raw_map: dict[object, object] = value  # type: ignore[reportUnknownVariableType]  # value is dict[Unknown, Unknown] after isinstance check
-    for key, item_value in raw_map.items():
+    mapping = cast("dict[object, object]", value)
+    for key, item_value in mapping.items():
         result.append((str(key), item_value))
     return result
 
@@ -92,6 +117,8 @@ class ConsoleScanReporter:
                     safe_print(f"       - {var} = {val}")
         elif scan_result.error:
             safe_print(f"\n[X] {scan_result.error}")
+        elif hasattr(scan_result, "degraded_passes") and scan_result.degraded_passes:
+            safe_print(f"\n[!] Analysis degraded: {', '.join(scan_result.degraded_passes)}")
         else:
             safe_print("\n[OK] No issues found!")
         stats_line = (
@@ -103,9 +130,24 @@ class ConsoleScanReporter:
         safe_print(stats_line)
 
     def on_issue(self, issue: dict[str, object]) -> None:
+        """Callback triggered when a new issue is discovered during the scan.
+
+        Prints the issue kind, message, and line number to standard output.
+
+        Args:
+            issue (dict[str, object]): A dictionary containing details of the discovered issue.
+        """
         safe_print(f"   - [{issue['kind']}] {issue['message']} (Line {issue['line']})")
 
     def on_error(self, file_path: object, error: str) -> None:
+        """Callback triggered when a file scanning error occurs.
+
+        Prints the error details to standard output.
+
+        Args:
+            file_path (object): The path of the file that failed to scan.
+            error (str): The error message string describing the failure.
+        """
         _ = file_path
         safe_print(f"\n[X] {error}")
 
@@ -120,6 +162,8 @@ class ConsoleScanReporter:
         status = "[OK]"
         if result is None or getattr(result, "error", None):
             status = "[X]"
+        elif getattr(result, "degraded_passes", []):
+            status = "[!]"
         else:
             typed_result = _as_scan_result(result)
             if typed_result is not None and typed_result.issues:
@@ -136,11 +180,14 @@ class ConsoleScanReporter:
         total_issues = sum(len(r.issues) for r in typed_results)
         files_with_issues = sum(1 for r in typed_results if r.issues)
         errors = sum(1 for r in typed_results if r.error)
+        degraded = sum(1 for r in typed_results if r.degraded_passes)
         safe_print(
             f"\nSummary: {total_issues} issues in {files_with_issues}/{len(results)} files",
         )
         if errors:
-            safe_print(f" ({errors} errors)")
+            safe_print(f" ({errors} errors, {degraded} degraded)")
+        elif degraded:
+            safe_print(f" ({degraded} degraded)")
         else:
             safe_print()
         if len(results) < total_files:
@@ -160,6 +207,7 @@ class ConsoleScanReporter:
         safe_print(f"   Files with issues: {summary['files_with_issues']}")
         safe_print(f"   Files clean:       {summary['files_clean']}")
         safe_print(f"   Files with errors: {summary['files_error']}")
+        safe_print(f"   Files degraded:    {summary['files_degraded']}")
         safe_print(f"   Total issues:      {summary['total_issues']}")
         if self.show_stats:
             safe_print(f"   Total time:        {summary.get('total_time', 0.0):.2f}s")
@@ -170,5 +218,11 @@ class ConsoleScanReporter:
         for kind, count in sorted(issue_breakdown.items(), key=_descending_count):
             bar = "#" * min(count, 30)
             safe_print(f"      {kind:<25} {count:>4} {bar}")
-        safe_print(f"\n   [LOG] Log saved to: {typed_session.log_file}")
+        if typed_session.log_write_error is not None:
+            safe_print(
+                f"\n   [X] Log not saved to {typed_session.log_file}: "
+                f"{typed_session.log_write_error}"
+            )
+        else:
+            safe_print(f"\n   [LOG] Log saved to: {typed_session.log_file}")
         safe_print("=" * 70)

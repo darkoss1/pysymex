@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,21 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tier 5 temporal logic rules.
+
+This package defines logic rules targeting Tier 5 temporal logical contradictions,
+including concurrency contradictions, resource state contradictions, and state impossibility.
+
+Bug Class Detected:
+    Logical contradiction (temporal/state violation).
+
+Required Evidence:
+    Unsatisfiable cores violating temporal, resource state, or state machine constraints.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
 
 from .state_impossibility import StateImpossibilityRule
 from .resource_state import ResourceStateContradictionRule

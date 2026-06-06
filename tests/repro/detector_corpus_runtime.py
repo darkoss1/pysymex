@@ -86,6 +86,18 @@ def index_error_negative() -> int:
     return values[1]
 
 
+def index_error_pop_empty_positive() -> int:
+    """Trigger index-error by popping from an empty list without an explicit index."""
+    values: list[int] = []
+    return values.pop()
+
+
+def index_error_pop_nonempty_negative() -> int:
+    """Avoid index-error by popping from a known nonempty list."""
+    values = [10]
+    return values.pop()
+
+
 def key_error_positive(k: str) -> int:
     """Trigger key-error by indexing a concrete dict with an unconstrained symbolic key."""
     mapping = {"a": 1}
@@ -131,7 +143,7 @@ class _ResourceHandle:
 _RESOURCE_HANDLE = _ResourceHandle()
 
 
-def open(*_args: object, **_kwargs: object) -> _ResourceHandle:
+def open(*args: object, **kwargs: object) -> _ResourceHandle:
     """Provide a local open-like callable to exercise resource leak tracking without I/O."""
     return _RESOURCE_HANDLE
 
@@ -219,6 +231,16 @@ def value_error_positive() -> int:
 def value_error_negative() -> int:
     """Avoid value-error by converting a valid concrete integer literal."""
     return int("42")
+
+
+def value_error_range_zero_step_positive(step: int) -> range:
+    """Trigger value-error when the symbolic range step is allowed to be zero."""
+    return range(0, 10, step)
+
+
+def value_error_range_nonzero_step_negative() -> range:
+    """Avoid value-error by using a concrete nonzero range step."""
+    return range(0, 10, 2)
 
 
 def _build_numeric_token(a: int, b: int, c: int, d: int, e: int, f: int) -> str:

@@ -1,6 +1,6 @@
-"""Test exports of pysymex.analysis.contracts.__init__."""
+"""Test exports of pysymex.contracts."""
 
-import pysymex.analysis.contracts as c
+import pysymex.contracts as c
 
 
 def test_has_exports() -> None:

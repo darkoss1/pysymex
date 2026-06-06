@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -31,15 +31,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
-    from pysymex.ci.core import (
-        CIRunner as CIRunner,
-        GitHubActionsReporter as GitHubActionsReporter,
-        GitLabReporter as GitLabReporter,
+    from pysymex.ci.github import GitHubActionsReporter as GitHubActionsReporter
+    from pysymex.ci.gitlab import GitLabReporter as GitLabReporter
+    from pysymex.ci.precommit import (
         generate_precommit_config as generate_precommit_config,
         generate_precommit_hook_script as generate_precommit_hook_script,
+    )
+    from pysymex.ci.runner import (
+        CIRunner as CIRunner,
         run_ci_check as run_ci_check,
     )
     from pysymex.ci.types import (
@@ -49,12 +51,15 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
-    "CIRunner": ("pysymex.ci.core", "CIRunner"),
-    "GitHubActionsReporter": ("pysymex.ci.core", "GitHubActionsReporter"),
-    "GitLabReporter": ("pysymex.ci.core", "GitLabReporter"),
-    "generate_precommit_config": ("pysymex.ci.core", "generate_precommit_config"),
-    "generate_precommit_hook_script": ("pysymex.ci.core", "generate_precommit_hook_script"),
-    "run_ci_check": ("pysymex.ci.core", "run_ci_check"),
+    "CIRunner": ("pysymex.ci.runner", "CIRunner"),
+    "GitHubActionsReporter": ("pysymex.ci.github", "GitHubActionsReporter"),
+    "GitLabReporter": ("pysymex.ci.gitlab", "GitLabReporter"),
+    "generate_precommit_config": ("pysymex.ci.precommit", "generate_precommit_config"),
+    "generate_precommit_hook_script": (
+        "pysymex.ci.precommit",
+        "generate_precommit_hook_script",
+    ),
+    "run_ci_check": ("pysymex.ci.runner", "run_ci_check"),
     "CIResult": ("pysymex.ci.types", "CIResult"),
     "ExitCode": ("pysymex.ci.types", "ExitCode"),
     "FailureThreshold": ("pysymex.ci.types", "FailureThreshold"),

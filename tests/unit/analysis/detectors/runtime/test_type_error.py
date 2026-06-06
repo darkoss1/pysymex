@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import dis
-from pysymex.analysis.detectors.runtime.type_error import TypeErrorDetector
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue, SymbolicString
+import time
+
+from pysymex.analysis.detectors.runtime.errors.type import TypeErrorDetector
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.scalars.strings import SymbolicString
 
 
 def _make_instruction(
@@ -26,7 +31,7 @@ def _make_instruction(
 
 
 class TestTypeErrorDetector:
-    """Test suite for pysymex.analysis.detectors.base.TypeErrorDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.TypeErrorDetector."""
 
     def test_check_reports_plus_mismatch_with_symbolic_string(self) -> None:
         """Report TYPE_ERROR for `str + non-str` concatenation mismatch."""
@@ -94,3 +99,23 @@ class TestTypeErrorDetector:
         issue = detector.check(state, instruction, lambda _constraints: True)
 
         assert issue is not None
+
+    def test_check_does_not_report_definite_issue_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN must not become a definite TypeError issue."""
+        detector = TypeErrorDetector()
+        instruction = _make_instruction("BINARY_OP", argrepr="+")
+        external_value, type_constraint = SymbolicValue.symbolic("unknown_type_operand")
+        state = VMState(
+            stack=[external_value, SymbolicValue.from_const(1)],
+            path_constraints=[type_constraint],
+            pc=6,
+        )
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(state, instruction, lambda _constraints: True)
+        finally:
+            active_incremental_solver.reset(token)
+
+        assert issue is None

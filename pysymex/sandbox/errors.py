@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,10 +16,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Exception classes for the sandbox module.
+"""Define process-sandbox and in-process restriction exception families.
 
-All sandbox-related errors derive from SandboxError, allowing
-callers to catch all sandbox issues with a single exception type.
+`SandboxError` is the root for isolation-backend and bridge failures.
+`ExecutionTimeout` and `SecurityError` remain separate in-process execution
+errors used by Python-level validation and policy helpers.
 """
 
 from __future__ import annotations
@@ -46,7 +47,31 @@ class SandboxSetupError(SandboxError):
     pass
 
 
-class SandboxTimeoutError(SandboxError):
+class SandboxExecutionError(SandboxError):
+    """Raised when sandboxed code or a sandbox worker fails at runtime."""
+
+    pass
+
+
+class SandboxResourceError(SandboxError):
+    """Raised when a sandbox execution exceeds a resource or size limit."""
+
+    pass
+
+
+class SandboxProtocolError(SandboxError):
+    """Raised when untrusted sandbox output violates the host protocol."""
+
+    pass
+
+
+class SandboxSecurityError(SandboxError):
+    """Raised when a sandbox security invariant is violated or denied."""
+
+    pass
+
+
+class SandboxTimeoutError(SandboxResourceError):
     """Raised when sandbox execution exceeds time limit.
 
     The sandboxed process was killed due to exceeding the
@@ -54,12 +79,20 @@ class SandboxTimeoutError(SandboxError):
     """
 
     def __init__(self, timeout_seconds: float, message: str | None = None) -> None:
+        """Store the configured timeout and initialize the error message.
+
+        Args:
+            timeout_seconds: Timeout limit associated with the failed
+                execution.
+            message: Explicit error message. When omitted, a message is
+                constructed from `timeout_seconds`.
+        """
         self.timeout_seconds = timeout_seconds
         msg = message or f"Sandbox execution timed out after {timeout_seconds}s"
         super().__init__(msg)
 
 
-class SecurityViolationError(SandboxError):
+class SecurityViolationError(SandboxSecurityError):
     """Raised when sandboxed code attempts a forbidden operation.
 
     This indicates the sandboxed code tried to perform an operation
@@ -72,6 +105,12 @@ class SecurityViolationError(SandboxError):
         operation: str,
         details: str | None = None,
     ) -> None:
+        """Store the denied operation and construct a diagnostic message.
+
+        Args:
+            operation: Operation rejected by sandbox policy.
+            details: Optional contextual information appended to the message.
+        """
         self.operation = operation
         self.details = details
         msg = f"Security violation: attempted {operation}"
@@ -80,7 +119,7 @@ class SecurityViolationError(SandboxError):
         super().__init__(msg)
 
 
-class ResourceExhaustedError(SandboxError):
+class ResourceExhaustedError(SandboxResourceError):
     """Raised when sandboxed code exceeds resource limits.
 
     This indicates the sandboxed code was killed due to exceeding
@@ -93,6 +132,13 @@ class ResourceExhaustedError(SandboxError):
         limit: int | float,
         unit: str = "",
     ) -> None:
+        """Store exceeded resource metadata and construct the message.
+
+        Args:
+            resource: Resource whose configured bound was exceeded.
+            limit: Configured limiting value.
+            unit: Optional unit suffix appended to the limiting value.
+        """
         self.resource = resource
         self.limit = limit
         self.unit = unit
@@ -107,5 +153,23 @@ class SandboxCleanupError(SandboxError):
     or processes could not be cleaned up properly. The execution
     itself may have succeeded.
     """
+
+    pass
+
+
+class ExecutionTimeout(Exception):
+    """Raised when in-process sandbox execution times out."""
+
+    pass
+
+
+class SecurityError(Exception):
+    """Raised when a security check fails in the in-process sandbox."""
+
+    pass
+
+
+class ResourceLimitError(SecurityError):
+    """Raised when in-process sandbox resource limits are exceeded."""
 
     pass

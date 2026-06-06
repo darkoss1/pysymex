@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,14 +16,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Exception handling opcodes."""
+"""Exception, generator, and async control opcode wrappers for Python 3.11.
+
+Registers handlers for the 3.11 exception stack (``PUSH_EXC_INFO``,
+``CHECK_EXC_MATCH``, ``BEFORE_WITH``, etc.) and generator/async opcodes,
+mostly delegating to :mod:`pysymex.execution.opcodes.common.exceptions`. Owns
+only the local ``PREP_RERAISE_STAR`` stack shuffle; does not implement full
+``except*``/ExceptionGroup reraise semantics.
+.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 from pysymex.execution.opcodes.common.exceptions import (
     handle_common_before_async_with,
     handle_common_before_with,
@@ -45,8 +55,8 @@ from pysymex.execution.opcodes.common.exceptions import (
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("PUSH_EXC_INFO")

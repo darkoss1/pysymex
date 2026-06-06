@@ -1,0 +1,38 @@
+# pysymex: python symbolic execution & formal verification
+# Upstream Repository: https://github.com/darkoss1/pysymex
+#
+# Copyright (C) 2026 pysymex Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Stable content hash helpers."""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Final
+
+STABLE_DIGEST_ALGORITHM: Final[str] = "blake2b-256"
+_STABLE_DIGEST_SIZE: Final[int] = 32
+
+
+def stable_digest_hex(data: bytes) -> str:
+    """Return a stable BLAKE2b-256 digest for cache keys and content identity."""
+    return hashlib.blake2b(data, digest_size=_STABLE_DIGEST_SIZE).hexdigest()
+
+
+__all__ = [
+    "STABLE_DIGEST_ALGORITHM",
+    "stable_digest_hex",
+]

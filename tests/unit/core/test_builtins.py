@@ -2,8 +2,8 @@
 
 import builtins
 
-from pysymex.core.builtins import get_all_builtins, get_safe_builtins_for_symbolic_exec
-from pysymex.core.exceptions.analyzer import BUILTIN_EXCEPTIONS
+from pysymex.core.builtins import get_all_builtins
+from pysymex.core.exceptions.builtins import BUILTIN_EXCEPTIONS
 
 
 class TestGetAllBuiltins:
@@ -31,10 +31,3 @@ class TestGetAllBuiltins:
         assert result["__debug__"] is __debug__
         assert result["__build_class__"] is builtins.__build_class__
         assert result["__import__"] is builtins.__import__
-
-
-class TestGetSafeBuiltinsForSymbolicExec:
-    def test_get_safe_builtins_returns_all_builtins(self) -> None:
-        safe_builtins = get_safe_builtins_for_symbolic_exec()
-        all_builtins = get_all_builtins()
-        assert safe_builtins == all_builtins

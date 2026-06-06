@@ -24,7 +24,7 @@ class TestPartialModel:
     def test_partial_call_returns_symbolic_value(self) -> None:
         """Calling a PartialModel produces a SymbolicValue."""
         from pysymex.models.stdlib.functools import model_partial
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types.scalars.values import SymbolicValue
 
         def dummy(a: int, b: int) -> int:
             return a + b
@@ -50,8 +50,8 @@ class TestModelReduce:
     def test_reduce_returns_symbolic(self) -> None:
         """model_reduce always returns a SymbolicValue."""
         from pysymex.models.stdlib.functools import model_reduce
-        from pysymex.core.types.scalars import SymbolicValue
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex.core.types.containers.lists import SymbolicList
 
         def add(a: object, b: object) -> object:
             return a
@@ -75,7 +75,7 @@ class TestLRUCacheModel:
     def test_wrapped_function_returns_symbolic(self) -> None:
         """Calling a wrapped function returns SymbolicValue."""
         from pysymex.models.stdlib.functools import LRUCacheModel
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types.scalars.values import SymbolicValue
 
         def my_func(x: int) -> int:
             return x * 2
@@ -116,7 +116,7 @@ class TestCachedPropertyModel:
     def test_get_with_instance_returns_symbolic(self) -> None:
         """__get__ with a real object returns SymbolicValue."""
         from pysymex.models.stdlib.functools import CachedPropertyModel
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types.scalars.values import SymbolicValue
 
         def prop(self: object) -> int:
             return 42

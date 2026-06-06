@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,30 +16,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Public exports for core solver utilities."""
+"""Core solver package.
 
-from __future__ import annotations
-
-from pysymex.core.solver.engine import (
-    DEFAULT_SOLVER_TIMEOUT_MS,
-    IncrementalSolver,
-    SolverResult,
-    clear_solver_caches,
-    create_solver,
-    get_model,
-    get_model_string,
-    is_satisfiable,
-    prove,
-)
-
-__all__ = [
-    "DEFAULT_SOLVER_TIMEOUT_MS",
-    "IncrementalSolver",
-    "SolverResult",
-    "clear_solver_caches",
-    "create_solver",
-    "get_model",
-    "get_model_string",
-    "is_satisfiable",
-    "prove",
-]
+Runtime ownership lives in direct modules under :mod:`pysymex.core.solver`.
+The Z3-backed engine owners are under :mod:`pysymex.core.solver.engine`.
+"""

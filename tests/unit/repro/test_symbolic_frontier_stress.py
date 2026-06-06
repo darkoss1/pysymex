@@ -4,9 +4,12 @@ from __future__ import annotations
 
 
 from pysymex.analysis.detectors import IssueKind
-from pysymex.execution.executors.async_exec import AsyncSymbolicExecutor, SymbolicEventLoop
+from pysymex.execution.executors.async_support.runner import (
+    AsyncSymbolicExecutor,
+    SymbolicEventLoop,
+)
 from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.types import ExecutionConfig
+from pysymex.execution.config.settings import ExecutionConfig
 
 
 def _build_executor(
@@ -18,9 +21,6 @@ def _build_executor(
         max_depth=128,
         max_iterations=16384,
         timeout_seconds=20.0,
-        enable_chtd=False,
-        enable_h_acceleration=False,
-        enable_abstract_interpretation=False,
         enable_cross_function=False,
         enable_type_inference=False,
         use_loop_analysis=use_loop_analysis,
@@ -40,9 +40,6 @@ def _build_async_executor() -> AsyncSymbolicExecutor:
         max_depth=128,
         max_iterations=16384,
         timeout_seconds=20.0,
-        enable_chtd=False,
-        enable_h_acceleration=False,
-        enable_abstract_interpretation=False,
         enable_cross_function=False,
         enable_type_inference=False,
         use_loop_analysis=False,
@@ -181,17 +178,6 @@ def test_async_executor_handles_symbolic_await_branch() -> None:
     executor = _build_async_executor()
     result = executor.execute_function(branch_and_await, symbolic_args={"value": "int"})
     assert result.paths_completed >= 1
-
-
-def test_symbolic_event_loop_enumerates_two_coroutine_orders() -> None:
-    """Verify event-loop scheduler enumerates both interleavings for two ready coroutines."""
-    loop = SymbolicEventLoop(max_interleavings=8)
-    first = loop.create_coroutine("first")
-    second = loop.create_coroutine("second")
-    loop.schedule(first)
-    loop.schedule(second)
-    schedules = loop.get_possible_schedules()
-    assert len(schedules) == 2
 
 
 def test_symbolic_event_loop_detects_two_node_await_cycle() -> None:

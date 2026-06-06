@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,44 +16,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Helpers for specialized detectors.
+
+Provides utility functions for name resolution and display representation in specialized detectors.
+"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
+
+from pysymex.analysis.detectors.calls import resolve_call_target_name
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-
-
-@runtime_checkable
-class HasName(Protocol):
-    @property
-    def name(self) -> str:
-        """Return an identifier-like display name."""
-        return ""
+    from pysymex.core.state.record import VMState
 
 
 def get_named_value_name(value: object) -> str | None:
-    """Return ``value.name`` only when statically and dynamically safe."""
-    if isinstance(value, HasName):
-        return value.name
+    """Return ``value.name`` only when it is a real display-name string."""
+    try:
+        name = getattr(value, "name", None)
+    except Exception:
+        return None
+    if isinstance(name, str) and name:
+        return name
     return None
 
 
 def resolve_target_name(state: VMState, argc: int) -> str | None:
     """Resolve target name."""
-    candidate_indices = [len(state.stack) - argc - 1, len(state.stack) - argc - 2]
-    for index in candidate_indices:
-        if index < 0 or index >= len(state.stack):
-            continue
-        candidate = state.stack[index]
-        candidate_type_name = type(candidate).__name__
-        if candidate_type_name == "SymbolicNone":
-            continue
-        for attr in ("__name__", "__qualname__", "qualname", "name", "origin"):
-            value = getattr(candidate, attr, None)
-            if isinstance(value, str) and value:
-                lowered = value.lower()
-                if lowered in {"none", "null", "push_null_none"}:
-                    continue
-                return value
-    return None
+    return resolve_call_target_name(state, argc, prefer_pre_null=False)

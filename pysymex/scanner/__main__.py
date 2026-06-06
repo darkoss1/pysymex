@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,7 +15,10 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from pysymex.scanner.core import main
+
+"""Main entry point for running the scanner package from the command line."""
+
+from pysymex.scanner.cli import main
 
 if __name__ == "__main__":
     main()

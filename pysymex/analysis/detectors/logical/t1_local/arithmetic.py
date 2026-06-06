@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,21 +16,41 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Arithmetic impossibility logical contradiction rule.
+
+Detects arithmetic contradictions that are unsat over integers but sat over reals.
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
-from pysymex.core.solver.engine import is_satisfiable
+from pysymex.core.solver.engine.queries import check_sat_result
 from pysymex.analysis.detectors.logical.utils import (
+    check_sat_over_reals_result,
     count_variables,
     core_has_operator,
-    is_sat_over_reals,
 )
 
 
 class ArithmeticImpossibilityRule(LogicRule):
+    """Rule that matches arithmetic contradictions that are impossible over integers.
+
+    Typically detects contradictions involving single-variable integer arithmetic
+    relationships that would be satisfiable if the variable were real (e.g. 2 * x == 1).
+    """
+
     name = "Arithmetic Impossibility"
     tier = 1
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents an arithmetic impossibility.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains arithmetic operators, equality, no modulo operators,
+            concerns a single variable, is unsat, but is sat over reals.
+        """
         if count_variables(ctx.core) != 1:
             return False
         has_arith = core_has_operator(
@@ -40,4 +60,7 @@ class ArithmeticImpossibilityRule(LogicRule):
         has_mod = core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM})
         if not (has_arith and has_eq and not has_mod):
             return False
-        return not is_satisfiable(ctx.core) and is_sat_over_reals(ctx.core)
+        integer_result = check_sat_result(ctx.core)
+        if not integer_result.is_unsat:
+            return False
+        return check_sat_over_reals_result(ctx.core).is_sat

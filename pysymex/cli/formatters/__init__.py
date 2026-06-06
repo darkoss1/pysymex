@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,19 +16,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""CLI formatters for pysymex scan reports.
+"""CLI formatters for command-level scan reports.
 
-Provides a unified interface for JSON, SARIF, and Text/Rich formatting.
+These adapters aggregate static, pipeline, symbolic, and verify command result
+shapes. Single-execution-result rendering is owned by
+``pysymex.reporting.formatters``.
 """
 
 from __future__ import annotations
 
 from pysymex.cli.formatters.base import Formatter
-from pysymex.cli.formatters.json_fmt import JsonFormatter
-from pysymex.cli.formatters.sarif_fmt import SarifFormatter
-from pysymex.cli.formatters.text_fmt import TextFormatter
-from pysymex.cli.formatters.html_fmt import HtmlFormatter
-from pysymex.cli.formatters.markdown_fmt import MarkdownFormatter
+from pysymex.cli.formatters.json import JsonFormatter
+from pysymex.cli.formatters.sarif import SarifFormatter
+from pysymex.cli.formatters.text import TextFormatter
+from pysymex.cli.formatters.html import HtmlFormatter
+from pysymex.cli.formatters.markdown import MarkdownFormatter
 
 
 def get_formatter(format_name: str) -> Formatter:
@@ -46,12 +48,11 @@ def get_formatter(format_name: str) -> Formatter:
         return SarifFormatter()
     if format_name == "rich":
         return TextFormatter(use_rich=True)
+    if format_name == "text":
+        return TextFormatter(use_rich=True)
     if format_name == "html":
         return HtmlFormatter()
     if format_name == "markdown":
         return MarkdownFormatter()
 
-    # Default is text (which might fallback to ascii if rich isn't installed
-    # but the user requested 'text'. Actually in pysymex 'text' means use rich
-    # gracefully fallback to ascii)
-    return TextFormatter(use_rich=True)
+    raise ValueError(f"Unsupported formatter: {format_name}")

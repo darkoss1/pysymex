@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,11 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Pure-function type predicates shared by execution and analysis layers.
+"""Heuristic type-shape predicates shared by execution and analysis layers.
 
 This module lives in ``core`` (a leaf package) so that both
 ``pysymex.execution.opcodes`` and ``pysymex.analysis.detectors`` can import
-from it without creating a circular dependency.
+from it without creating a circular dependency. These checks inspect names
+and attached labels; they are not solver-backed type proofs.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pysymex.core.types import SymbolicValue
+    from pysymex.core.types.scalars.values import SymbolicValue
 
 _OVERLOAD_NAME_PARTS: frozenset[str] = frozenset(
     {
@@ -118,10 +119,7 @@ BUILTIN_TYPE_NAMES: frozenset[str] = frozenset(
 
 
 def is_overloaded_arithmetic(left: SymbolicValue, right: SymbolicValue) -> bool:
-    """Return True if either operand appears to be from an operator-overloading
-    type (Z3, numpy, Decimal, etc.) where ``/`` and ``%`` build expression trees
-    rather than performing real numeric division.
-    """
+    """Return whether operand labels heuristically indicate overloaded arithmetic."""
     for operand in (left, right):
         name = getattr(operand, "_name", "") or getattr(operand, "name", "") or ""
         name_lower = name.lower()
@@ -145,9 +143,7 @@ def is_overloaded_arithmetic(left: SymbolicValue, right: SymbolicValue) -> bool:
 
 
 def is_type_subscription(container: object) -> bool:
-    """Return True if *container* is a type object being subscripted for
-    generic-alias syntax (e.g. ``list[int]``) rather than real indexing.
-    """
+    """Return whether labels heuristically identify generic-alias subscripting."""
     name: str = getattr(container, "_name", "") or getattr(container, "name", "") or ""
 
     if name.startswith("global_"):

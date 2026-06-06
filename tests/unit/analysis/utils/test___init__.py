@@ -1,4 +1,4 @@
-"""Test exports of pysymex.analysis.utils.__init__."""
+"""Test exports of pysymex.analysis.utils."""
 
 import pysymex.analysis.utils as u
 

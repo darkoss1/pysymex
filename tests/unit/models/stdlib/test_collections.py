@@ -1,26 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
+from pysymex.models.stdlib import collections as collections_models
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicDict, SymbolicList, SymbolicValue
-
-
-def _load_collections_models() -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "collections.py"
-    )
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_collections", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib collections models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-collections_models = _load_collections_models()
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.dicts import SymbolicDict
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 def _state() -> VMState:
@@ -70,11 +55,6 @@ class TestDequeModel:
     def test_faithfulness(self) -> None:
         dq = collections_models.DequeModel.model_init(_state())
         assert isinstance(dq, SymbolicList)
-        assert collections_models.DequeModel.model_append(dq, SymbolicValue.from_const(1)) is None
-        assert (
-            collections_models.DequeModel.model_appendleft(dq, SymbolicValue.from_const(1)) is None
-        )
-        assert collections_models.DequeModel.model_rotate(dq, 1) is None
         assert collections_models.DequeModel.model_extend(dq, SymbolicList.empty("src")) is None
         assert collections_models.DequeModel.model_extendleft(dq, SymbolicList.empty("src")) is None
         assert collections_models.DequeModel.model_clear(dq) is None

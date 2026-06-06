@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -24,26 +24,26 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .core import (
-        SARIFGenerator as SARIFGenerator,
-        generate_sarif as generate_sarif,
-        issue_to_sarif_result as issue_to_sarif_result,
-        severity_to_level as severity_to_level,
-        vuln_type_to_rule_id as vuln_type_to_rule_id,
-        vulnerability_to_sarif_result as vulnerability_to_sarif_result,
-        SECURITY_RULES as SECURITY_RULES,
-        severity_to_security_severity as severity_to_security_severity,
+        SARIFGenerator,
+        generate_sarif,
+        issue_to_sarif_result,
+        severity_to_level,
+        vuln_type_to_rule_id,
+        vulnerability_to_sarif_result,
+        SECURITY_RULES,
+        severity_to_security_severity,
     )
     from .types import (
-        CodeFlow as CodeFlow,
-        LogicalLocation as LogicalLocation,
-        PhysicalLocation as PhysicalLocation,
-        ReportingDescriptor as ReportingDescriptor,
-        Run as Run,
-        SARIFLog as SARIFLog,
-        SARIFResult as SARIFResult,
-        Severity as Severity,
-        ToolDriver as ToolDriver,
-        VulnerabilityReport as VulnerabilityReport,
+        CodeFlow,
+        LogicalLocation,
+        PhysicalLocation,
+        ReportingDescriptor,
+        Run,
+        SARIFLog,
+        SARIFResult,
+        Severity,
+        ToolDriver,
+        VulnerabilityReport,
     )
 
 _EXPORTS: dict[str, tuple[str, str]] = {

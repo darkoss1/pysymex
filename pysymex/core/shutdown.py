@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -18,47 +18,123 @@
 
 """Graceful shutdown helpers for async pysymex operations.
 
-Provides:
+The module provides three small primitives:
 
-* :func:`install_signal_handlers` – installs SIGINT / SIGTERM handlers
-  that cancel all running tasks within the current event loop.
-* :func:`cancel_all_tasks` – utility to cancel every non-current task.
-* :func:`run_with_shutdown` – convenience wrapper around ``asyncio.run()``
-  that installs signal handlers and ensures clean teardown.
+* :func:`cancel_all_tasks` cancels every pending task on an event loop except
+  the current task when one exists.
+* :func:`install_signal_handlers` installs SIGINT and SIGTERM handlers that
+  schedule task cancellation on the target loop.
+* :func:`run_with_shutdown` wraps ``asyncio.run()`` and converts cancellation
+  caused by an installed shutdown signal into ``KeyboardInterrupt``.
 
-The signal handlers work by cancelling running ``asyncio.Task`` objects,
-which causes ``asyncio.CancelledError`` to propagate through any active
-``TaskGroup``.  The TaskGroup then cancels all sibling tasks and exits,
-giving a clean structured-concurrency shutdown.
-
-On Windows, only SIGINT (Ctrl+C) is usable with ``loop.add_signal_handler``
-via a fallback to ``signal.signal``.
+On Unix-like platforms, handlers are installed through
+``loop.add_signal_handler``.  When event-loop signal handlers are unavailable
+or unsupported, process-level ``signal.signal`` handlers are installed where
+Python allows it.  The returned :class:`ShutdownHandle` restores installed
+handlers deterministically.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import signal
 import sys
-from collections.abc import Coroutine
-from typing import TypeVar
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
+from types import FrameType
+from typing import TypeAlias, TypeVar
 
-logger = logging.getLogger(__name__)
+from pysymex.logger import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar("T")
+SignalHandler: TypeAlias = int | signal.Handlers | Callable[[int, FrameType | None], object] | None
 
 
-def cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:
+def _signal_name(signum: int) -> str:
+    """Return a stable signal name for diagnostics."""
+    try:
+        return signal.Signals(signum).name
+    except ValueError:
+        return f"signal {signum}"
+
+
+@dataclass(slots=True)
+class ShutdownHandle:
+    """Installed signal-handler state that can be restored deterministically."""
+
+    loop: asyncio.AbstractEventLoop
+    _loop_signals: tuple[signal.Signals, ...] = ()
+    _previous_handlers: tuple[tuple[signal.Signals, SignalHandler], ...] = ()
+    _shutdown_requested: bool = False
+    _closed: bool = False
+
+    @property
+    def shutdown_requested(self) -> bool:
+        """Return whether a registered shutdown signal has been observed."""
+        return self._shutdown_requested
+
+    def request_shutdown(self, sig_name: str) -> None:
+        """Schedule cancellation of tasks owned by this handle's event loop."""
+        self._shutdown_requested = True
+        logger.info("Received %s - initiating graceful shutdown", sig_name)
+        if self.loop.is_closed():
+            return
+        try:
+            self.loop.call_soon_threadsafe(cancel_all_tasks, self.loop)
+        except RuntimeError:
+            logger.debug("Event loop rejected graceful shutdown scheduling", exc_info=True)
+
+    def record_installation(
+        self,
+        loop_signals: list[signal.Signals],
+        previous_handlers: list[tuple[signal.Signals, SignalHandler]],
+    ) -> None:
+        """Record installed handlers after registration succeeds."""
+        self._loop_signals = tuple(loop_signals)
+        self._previous_handlers = tuple(previous_handlers)
+
+    def close(self) -> None:
+        """Restore installed signal handlers once the protected run has finished."""
+        if self._closed:
+            return
+        self._closed = True
+
+        for sig in self._loop_signals:
+            try:
+                self.loop.remove_signal_handler(sig)
+            except (NotImplementedError, RuntimeError, ValueError):
+                logger.debug("Failed to remove loop signal handler for %s", sig.name, exc_info=True)
+
+        for sig, previous_handler in self._previous_handlers:
+            if previous_handler is None:
+                continue
+            try:
+                signal.signal(sig, previous_handler)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                logger.debug(
+                    "Failed to restore process signal handler for %s",
+                    sig.name,
+                    exc_info=True,
+                )
+
+
+def cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> int:
     """Cancel every pending task on *loop* except the current one.
 
-    This mirrors the cleanup logic in ``asyncio.run()`` but can be
-    called from a signal handler callback.
+    This mirrors the cleanup logic in ``asyncio.run()`` but can be called from
+    a signal handler callback.  The return value is the number of tasks that
+    were asked to cancel.
     """
     if loop.is_closed():
-        return
+        return 0
 
-    to_cancel = asyncio.all_tasks(loop)
+    try:
+        to_cancel = asyncio.all_tasks(loop)
+    except RuntimeError:
+        return 0
+
     try:
         current = asyncio.current_task(loop=loop)
     except RuntimeError:
@@ -67,57 +143,72 @@ def cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:
         to_cancel.discard(current)
 
     if not to_cancel:
-        return
+        return 0
 
-    logger.info("Cancelling %d outstanding task(s)…", len(to_cancel))
+    logger.info("Cancelling %d outstanding task(s)", len(to_cancel))
     for task in to_cancel:
         task.cancel()
+    return len(to_cancel)
 
 
-def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+def _install_process_signal_handler(
+    handle: ShutdownHandle,
+    sig: signal.Signals,
+    previous_handlers: list[tuple[signal.Signals, SignalHandler]],
+) -> None:
+    """Install a process-level handler when the loop cannot own *sig*."""
+
+    def _process_handler(signum: int, frame: FrameType | None) -> None:
+        """Request cooperative shutdown for a process-level signal."""
+        _ = frame
+        handle.request_shutdown(_signal_name(signum))
+
+    try:
+        previous = signal.getsignal(sig)
+        signal.signal(sig, _process_handler)
+    except (OSError, RuntimeError, ValueError):
+        logger.debug("Process signal handler unavailable for %s", sig.name, exc_info=True)
+        return
+
+    previous_handlers.append((sig, previous))
+
+
+def install_signal_handlers(loop: asyncio.AbstractEventLoop) -> ShutdownHandle:
     """Install SIGINT / SIGTERM handlers that cancel running tasks.
 
-    On Unix the handlers are registered via ``loop.add_signal_handler``.
-    On Windows, where ``add_signal_handler`` only supports SIGINT in
-    limited fashion, we fall back to ``signal.signal`` for SIGINT.
-    SIGTERM on Windows is not typically delivered to console apps so
-    we install it best-effort.
+    On Unix-like platforms the handlers are registered via
+    ``loop.add_signal_handler``.  Otherwise, process-level ``signal.signal``
+    handlers are installed where Python allows it.  The returned handle can be
+    closed to restore process and loop handlers.
     """
-
-    def _shutdown(sig_name: str) -> None:
-        """Shutdown."""
-        logger.info("Received %s – initiating graceful shutdown", sig_name)
-        if loop.is_closed():
-            return
-        try:
-            loop.call_soon_threadsafe(cancel_all_tasks, loop)
-        except RuntimeError:
-            return
+    handle = ShutdownHandle(loop=loop)
+    loop_signals: list[signal.Signals] = []
+    previous_handlers: list[tuple[signal.Signals, SignalHandler]] = []
+    handled_signals = (signal.SIGINT, signal.SIGTERM)
 
     if sys.platform == "win32":
-        _original_sigint = signal.getsignal(signal.SIGINT)
-
-        def _win_handler(signum: int, frame: object) -> None:
-            """Win handler."""
-            _shutdown(signal.Signals(signum).name)
-
-            signal.signal(signal.SIGINT, _original_sigint)
-
-        signal.signal(signal.SIGINT, _win_handler)
+        for sig in handled_signals:
+            _install_process_signal_handler(handle, sig, previous_handlers)
     else:
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, _shutdown, sig.name)
+        for sig in handled_signals:
+            try:
+                loop.add_signal_handler(sig, handle.request_shutdown, sig.name)
+            except (NotImplementedError, RuntimeError, ValueError):
+                logger.debug(
+                    "Loop signal handler unavailable for %s; trying process handler",
+                    sig.name,
+                    exc_info=True,
+                )
+                _install_process_signal_handler(handle, sig, previous_handlers)
+            else:
+                loop_signals.append(sig)
+
+    handle.record_installation(loop_signals, previous_handlers)
+    return handle
 
 
 def run_with_shutdown(coro: Coroutine[object, object, T]) -> T:
     """Run *coro* with signal-based graceful shutdown.
-
-    This is a thin wrapper around ``asyncio.run()`` that:
-
-    1. Creates a new event loop.
-    2. Installs signal handlers (SIGINT / SIGTERM).
-    3. Runs the coroutine.
-    4. On cancellation, ensures remaining tasks are cleaned up.
 
     Args:
         coro: The top-level coroutine to run.
@@ -126,14 +217,31 @@ def run_with_shutdown(coro: Coroutine[object, object, T]) -> T:
         The return value of *coro*.
 
     Raises:
-        KeyboardInterrupt: Re-raised if the coroutine was cancelled
-            by a SIGINT signal.
+        KeyboardInterrupt: Raised when a registered shutdown signal cancels
+            the top-level coroutine.
+        asyncio.CancelledError: Preserved when the coroutine cancels itself
+            without a registered shutdown signal.
     """
 
     async def _main() -> T:
-        """Main."""
+        """Run the coroutine while translating registered cancellation."""
         loop = asyncio.get_running_loop()
-        install_signal_handlers(loop)
-        return await coro
+        handle = install_signal_handlers(loop)
+        try:
+            return await coro
+        except asyncio.CancelledError as exc:
+            if handle.shutdown_requested:
+                raise KeyboardInterrupt from exc
+            raise
+        finally:
+            handle.close()
 
     return asyncio.run(_main())
+
+
+__all__ = [
+    "ShutdownHandle",
+    "cancel_all_tasks",
+    "install_signal_handlers",
+    "run_with_shutdown",
+]

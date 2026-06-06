@@ -11,6 +11,11 @@ def test_benchmark_result_computed_metrics_and_dict() -> None:
         mean_seconds=2.0,
         instructions_executed=200,
         paths_explored=10,
+        solver_calls=4,
+        solver_sat=2,
+        solver_unsat=1,
+        solver_unknown=1,
+        issue_count=3,
     )
 
     assert result.throughput == 100.0
@@ -18,6 +23,11 @@ def test_benchmark_result_computed_metrics_and_dict() -> None:
     data = result.to_dict()
     assert data["category"] == "ANALYSIS"
     assert data["throughput"] == 100.0
+    assert data["solver_calls"] == 4
+    assert data["solver_sat"] == 2
+    assert data["solver_unsat"] == 1
+    assert data["solver_unknown"] == 1
+    assert data["issue_count"] == 3
 
 
 def test_regression_result_description_direction() -> None:

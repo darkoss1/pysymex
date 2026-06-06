@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import dis
+import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.attribute_error import AttributeErrorDetector
-from pysymex.core.state import VMState
-from pysymex.core.types.containers import SymbolicObject
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.analysis.detectors.runtime.errors.attribute import AttributeErrorDetector
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.objects import SymbolicClass, SymbolicInstance
 
 
 def _make_instruction(
@@ -33,7 +38,7 @@ def _make_instruction(
 
 
 class TestAttributeErrorDetector:
-    """Test suite for pysymex.analysis.detectors.base.AttributeErrorDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.AttributeErrorDetector."""
 
     def test_check_ignores_empty_stack(self) -> None:
         """Return None when there is no object to inspect on the VM stack."""
@@ -57,6 +62,28 @@ class TestAttributeErrorDetector:
         instruction = _make_instruction("LOAD_ATTR", "bit_length")
         state = VMState(stack=[1], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_does_not_report_attribute_error_for_non_attribute_probe_failure(
+        self,
+    ) -> None:
+        """Non-AttributeError descriptor/probe failures are unknown, not missing attributes."""
+
+        class RaisesRuntime:
+            def __call__(self) -> None:
+                return None
+
+            def __getattribute__(self, name: str) -> object:
+                if name == "boom":
+                    raise RuntimeError("not attribute absence")
+                return object.__getattribute__(self, name)
+
+        detector = AttributeErrorDetector()
+        instruction = _make_instruction("LOAD_ATTR", "boom")
+        state = VMState(stack=[RaisesRuntime()], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
         assert issue is None
 
     def test_check_reports_missing_attr_for_symbolic_int(self) -> None:
@@ -94,5 +121,62 @@ class TestAttributeErrorDetector:
         state = VMState(stack=[symbolic_attr], path_constraints=[type_constraint], pc=1)
 
         issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
+    def test_check_ignores_modeled_pathlib_symbolic_path_attribute(self) -> None:
+        """Modeled pathlib string carriers expose their synthetic path properties."""
+        detector = AttributeErrorDetector()
+        instruction = _make_instruction("LOAD_ATTR", "suffix")
+        path_value, type_constraint = SymbolicString.symbolic("purepath_1")
+        state = VMState(stack=[path_value], path_constraints=[type_constraint], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
+    def test_check_reports_unknown_attribute_on_modeled_pathlib_symbolic_path(self) -> None:
+        """Unsupported attributes on path-like carriers still report as missing."""
+        detector = AttributeErrorDetector()
+        instruction = _make_instruction("LOAD_ATTR", "not_a_path_property")
+        path_value, type_constraint = SymbolicString.symbolic("purepath_1")
+        state = VMState(stack=[path_value], path_constraints=[type_constraint], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is not None
+
+    def test_check_ignores_retained_declared_descriptor_attribute(self) -> None:
+        """Retained descriptor metadata proves the attribute exists on the class."""
+        detector = AttributeErrorDetector()
+        instruction = _make_instruction("LOAD_ATTR", "value")
+        modeled_class = SymbolicClass("Record")
+        setattr(modeled_class, "_pysymex_declared_descriptors", {"value": object()})
+        receiver, type_constraint = SymbolicValue.symbolic("record")
+        receiver.attach_modeled_object(SymbolicInstance(modeled_class, instance_id=1))
+        state = VMState(stack=[receiver], path_constraints=[type_constraint], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
+
+    def test_check_does_not_report_definite_issue_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN must not become a definite AttributeError issue."""
+        detector = AttributeErrorDetector()
+        instruction = _make_instruction("LOAD_ATTR", "not_a_real_attr")
+        symbolic_int, type_constraint = SymbolicValue.symbolic_int("unknown_attr_target")
+        deadline_probe = z3.Int("deadline_probe")
+        state = VMState(
+            stack=[symbolic_int],
+            path_constraints=[type_constraint, deadline_probe >= 0],
+            pc=7,
+        )
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(state, instruction, lambda _constraints: True)
+        finally:
+            active_incremental_solver.reset(token)
 
         assert issue is None

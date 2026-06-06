@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import pysymex.models.concurrency.asyncio as asyncio_models
-import pysymex.models.concurrency.threading as threading_models
+import pysymex.models.concurrency.threading.registry as threading_models
 
 
 @pytest.mark.parametrize("name", ["Task", "Event", "Lock", "Future"])

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,10 +16,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Lowering for comparison opcodes.
+"""Lower ``COMPARE_OP`` to Z3 boolean expressions with CPython type-case structure.
 
-The lowerer encodes type case analysis in a single boolean expression and
-separates TypeError reachability from the comparison result.
+Encodes mixed-type comparisons, ``is`` / ``is not``, and exception-type checks in one
+formula, tracking separate TypeError feasibility from the comparison truth value. Used by
+version ``compare`` opcode modules and membership lowering.
+
+Limitations:
+    Custom rich comparison on incompletely modeled objects may degrade to unsupported
+    abstraction tags instead of full dunder dispatch.
 """
 
 from __future__ import annotations
@@ -28,16 +33,17 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 import z3
 
-from pysymex.core.types.scalars import (
-    Z3_FALSE,
-    Z3_TRUE,
-    Z3_ZERO,
-    SymbolicString,
-    SymbolicValue,
-)
+from pysymex.core.types.advanced_float import AdvancedSymbolicFloat
+from pysymex.core.constants import Z3_FALSE
+from pysymex.core.constants import Z3_EMPTY_STRING
+from pysymex.core.constants import Z3_ONE
+from pysymex.core.constants import Z3_TRUE
+from pysymex.core.constants import Z3_ZERO
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
+    from pysymex.typing import StackValue
 
 _T = TypeVar("_T")
 
@@ -46,6 +52,7 @@ class ComparisonLowerer:
     """Translate Python comparisons to result and TypeError formulas."""
 
     def __init__(self, pc: int):
+        """Record the bytecode offset used for comparison lowering."""
         self.pc = pc
 
     def lower(
@@ -66,7 +73,7 @@ class ComparisonLowerer:
 
         result = SymbolicValue(
             _name=f"compare_{self.pc}",
-            z3_int=z3.If(res_bool, z3.IntVal(1), Z3_ZERO),
+            z3_int=z3.If(res_bool, Z3_ONE, Z3_ZERO),
             is_int=Z3_FALSE,
             z3_bool=res_bool,
             is_bool=Z3_TRUE,
@@ -75,8 +82,20 @@ class ComparisonLowerer:
         return result, type_error_cond
 
     def _to_symbolic(self, val: StackValue) -> SymbolicValue | SymbolicString:
+        """Normalize a stack operand to symbolic scalar or string form."""
         if isinstance(val, (SymbolicValue, SymbolicString)):
             return val
+        if isinstance(val, AdvancedSymbolicFloat):
+            return SymbolicValue(
+                _name=val.name,
+                z3_int=Z3_ZERO,
+                is_int=Z3_FALSE,
+                z3_bool=Z3_FALSE,
+                is_bool=Z3_FALSE,
+                z3_float=val.z3_expr,
+                is_float=Z3_TRUE,
+                affinity_type="float",
+            )
         if isinstance(val, str):
             return SymbolicString.from_const(val)
         return SymbolicValue.from_const(val)
@@ -112,8 +131,8 @@ class ComparisonLowerer:
         num_cmp = self._compare_numeric(op, left, right)
 
         both_str = z3.And(l_is_str, r_is_str)
-        l_str = self._get_attr(left, "z3_str", z3.StringVal(""))
-        r_str = self._get_attr(right, "z3_str", z3.StringVal(""))
+        l_str = self._get_attr(left, "z3_str", Z3_EMPTY_STRING)
+        r_str = self._get_attr(right, "z3_str", Z3_EMPTY_STRING)
         str_cmp = self._compare_strings(op, l_str, r_str)
 
         if op in ("==", "!="):
@@ -143,14 +162,10 @@ class ComparisonLowerer:
             return None
 
         left_expr = (
-            z3.If(left.z3_bool, z3.IntVal(1), Z3_ZERO)
-            if left.affinity_type == "bool"
-            else left.z3_int
+            z3.If(left.z3_bool, Z3_ONE, Z3_ZERO) if left.affinity_type == "bool" else left.z3_int
         )
         right_expr = (
-            z3.If(right.z3_bool, z3.IntVal(1), Z3_ZERO)
-            if right.affinity_type == "bool"
-            else right.z3_int
+            z3.If(right.z3_bool, Z3_ONE, Z3_ZERO) if right.affinity_type == "bool" else right.z3_int
         )
         return self._emit_rel(op, left_expr, right_expr)
 
@@ -191,6 +206,7 @@ class ComparisonLowerer:
         )
 
     def _emit_rel(self, op: str, left: z3.ArithRef, right: z3.ArithRef) -> z3.BoolRef:
+        """Emit a Z3 integer relational comparison for *op*."""
         if op == "==":
             return left == right
         if op == "!=":
@@ -206,6 +222,7 @@ class ComparisonLowerer:
         return Z3_FALSE
 
     def _emit_fp_rel(self, op: str, left: z3.FPRef, right: z3.FPRef) -> z3.BoolRef:
+        """Emit a Z3 floating-point relational comparison for *op*."""
         if op == "==":
             return z3.fpEQ(left, right)
         if op == "!=":
@@ -221,6 +238,7 @@ class ComparisonLowerer:
         return Z3_FALSE
 
     def _compare_strings(self, op: str, left: z3.SeqRef, right: z3.SeqRef) -> z3.BoolRef:
+        """Emit a Z3 sequence relational comparison for string operands."""
         if op == "==":
             return left == right
         if op == "!=":
@@ -236,6 +254,7 @@ class ComparisonLowerer:
         return Z3_FALSE
 
     def _get_attr(self, obj: object, name: str, default: _T) -> _T:
+        """Read attribute *name* from *obj*, falling back to *default*."""
         return cast("_T", getattr(obj, name, default))
 
     def _as_arith(self, expr: object) -> z3.ArithRef:

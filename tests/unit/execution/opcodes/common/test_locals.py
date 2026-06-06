@@ -4,10 +4,14 @@ import dis
 
 import pytest
 
-from pysymex.core.state import VMState, VMStateError
-from pysymex.core.types import SymbolicNone, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.state.types import CallFrame, VMStateError, wrap_cow_dict
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.common.locals import (
+    handle_common_delete_name,
+    handle_common_load_const,
     handle_common_load_global,
     handle_common_load_from_dict_or_deref,
     handle_common_load_from_dict_or_globals,
@@ -41,6 +45,18 @@ def test_handle_common_load_global_pushes_null_below_callable() -> None:
     assert getattr(next_state.stack[1], "model_name") == "range"
 
 
+def test_handle_common_load_const_preserves_literal_tuple_for_pattern_consumers() -> None:
+    state = VMState(pc=20)
+
+    result = handle_common_load_const(
+        _instr("LOAD_CONST", ("fallback", 0)),
+        state,
+        OpcodeDispatcher(),
+    )
+
+    assert result.new_states[0].peek() == ("fallback", 0)
+
+
 def test_handle_common_store_fast_rejects_missing_value() -> None:
     state = VMState(pc=20)
 
@@ -60,6 +76,53 @@ def test_handle_common_store_name_rejects_missing_value() -> None:
 
     with pytest.raises(VMStateError, match="STORE_NAME"):
         handle_common_store_name(_instr("STORE_NAME", "x"), state, OpcodeDispatcher())
+
+
+def test_handle_common_store_name_mirrors_root_exec_namespace_to_globals() -> None:
+    state = VMState(stack=[21], pc=30)
+
+    result = handle_common_store_name(_instr("STORE_NAME", "value"), state, OpcodeDispatcher())
+
+    next_state = result.new_states[0]
+    assert next_state.local_vars["value"] == 21
+    assert next_state.global_vars["value"] == 21
+
+
+def test_handle_common_store_name_keeps_nested_namespace_local_only() -> None:
+    frame = CallFrame("class-body", 1, wrap_cow_dict({}), 0)
+    state = VMState(stack=[21], call_stack=[frame], pc=31)
+
+    result = handle_common_store_name(_instr("STORE_NAME", "value"), state, OpcodeDispatcher())
+
+    next_state = result.new_states[0]
+    assert next_state.local_vars["value"] == 21
+    assert "value" not in next_state.global_vars
+
+
+def test_handle_common_delete_name_removes_root_exec_global_alias() -> None:
+    state = VMState(local_vars={"value": 21}, global_vars={"value": 21}, pc=32)
+
+    result = handle_common_delete_name(_instr("DELETE_NAME", "value"), state, OpcodeDispatcher())
+
+    next_state = result.new_states[0]
+    assert "value" not in next_state.local_vars
+    assert "value" not in next_state.global_vars
+
+
+def test_handle_common_delete_name_keeps_nested_global_binding() -> None:
+    frame = CallFrame("class-body", 1, wrap_cow_dict({}), 0)
+    state = VMState(
+        local_vars={"value": 21},
+        global_vars={"value": 34},
+        call_stack=[frame],
+        pc=33,
+    )
+
+    result = handle_common_delete_name(_instr("DELETE_NAME", "value"), state, OpcodeDispatcher())
+
+    next_state = result.new_states[0]
+    assert "value" not in next_state.local_vars
+    assert next_state.global_vars["value"] == 34
 
 
 def test_handle_common_store_deref_rejects_missing_value() -> None:

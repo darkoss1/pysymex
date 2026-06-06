@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Narrowing contradiction logical contradiction rule.
+
+Detects contradictions arising from successive domain narrowing along a path, leading to
+empty domains (e.g. x > 5, then x < 3, or x == 2 when x has been constrained to > 5).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
@@ -25,10 +31,22 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class NarrowingContradictionRule(LogicRule):
+    """Rule that matches contradictions resulting from inconsistent path domain narrowing."""
+
     name = "Narrowing Contradiction"
     tier = 3
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a narrowing contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains at least 3 assertions and indicates inconsistent bounds,
+            conflicting equalities, or equalities conflicting with bounds for any variable,
+            otherwise False.
+        """
         if len(ctx.core) < 3:
             return False
 

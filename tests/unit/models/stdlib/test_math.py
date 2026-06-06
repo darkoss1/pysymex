@@ -1,25 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
 import math
-from pathlib import Path
-from types import ModuleType
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.base import is_raised_exception_effect
+from pysymex.models.builtins.results import is_potential_exception_effect
 
-
-def _load_math_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "math.py"
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_math", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib math models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-math_models = _load_math_models()
+from pysymex.models.stdlib import math as math_models
 
 
 def _state() -> VMState:
@@ -91,7 +79,7 @@ class TestMathSinModel:
         assert result.value == math.sin(0.5)
 
     def test_error_path(self) -> None:
-        math_models.MathSinModel().apply([object()], {}, _state())
+        math_models.MathSinModel().apply([SymbolicValue.from_const("x")], {}, _state())
 
 
 class TestMathCosModel:
@@ -102,7 +90,7 @@ class TestMathCosModel:
         assert result.value == math.cos(0.5)
 
     def test_error_path(self) -> None:
-        math_models.MathCosModel().apply([object()], {}, _state())
+        math_models.MathCosModel().apply([SymbolicValue.from_const("x")], {}, _state())
 
 
 class TestMathTanModel:
@@ -169,7 +157,9 @@ class TestMathIsinfModel:
     def test_error_path(self) -> None:
         result = math_models.MathIsinfModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicValue)
-        assert result.value.value is False
+        raised = result.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(raised)
+        assert raised["exception_type"] == "TypeError"
 
 
 class TestMathIsnanModel:
@@ -182,4 +172,117 @@ class TestMathIsnanModel:
     def test_error_path(self) -> None:
         result = math_models.MathIsnanModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicValue)
-        assert result.value.value is False
+        raised = result.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(raised)
+        assert raised["exception_type"] == "TypeError"
+
+
+class TestMathRadiansModel:
+    """Test suite for pysymex.models.stdlib.math.MathRadiansModel."""
+
+    def test_faithfulness(self) -> None:
+        result = math_models.MathRadiansModel().apply([180.0], {}, _state())
+        assert result.value == math.radians(180.0)
+
+    def test_symbolic(self) -> None:
+        x, _ = SymbolicValue.symbolic("x")
+        result = math_models.MathRadiansModel().apply([x], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        assert len(result.constraints) > 0
+
+    def test_error_path(self) -> None:
+        result = math_models.MathRadiansModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+
+class TestMathDegreesModel:
+    """Test suite for pysymex.models.stdlib.math.MathDegreesModel."""
+
+    def test_faithfulness(self) -> None:
+        result = math_models.MathDegreesModel().apply([math.pi], {}, _state())
+        assert result.value == math.degrees(math.pi)
+
+    def test_symbolic(self) -> None:
+        x, _ = SymbolicValue.symbolic("x")
+        result = math_models.MathDegreesModel().apply([x], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        assert len(result.constraints) > 0
+
+    def test_error_path(self) -> None:
+        result = math_models.MathDegreesModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+
+class TestMathCopysignModel:
+    """Test suite for pysymex.models.stdlib.math.MathCopysignModel."""
+
+    def test_faithfulness(self) -> None:
+        result = math_models.MathCopysignModel().apply([1.5, -2.0], {}, _state())
+        assert result.value == math.copysign(1.5, -2.0)
+
+    def test_symbolic(self) -> None:
+        x, _ = SymbolicValue.symbolic("x")
+        y, _ = SymbolicValue.symbolic("y")
+        result = math_models.MathCopysignModel().apply([x, y], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        assert len(result.constraints) > 0
+
+    def test_error_path(self) -> None:
+        result = math_models.MathCopysignModel().apply([1.5], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+
+class TestMathFactorialModel:
+    """Test suite for pysymex.models.stdlib.math.MathFactorialModel."""
+
+    def test_faithfulness(self) -> None:
+        result = math_models.MathFactorialModel().apply([5], {}, _state())
+        assert result.value == math.factorial(5)
+        result2 = math_models.MathFactorialModel().apply([5.0], {}, _state())
+        assert result2.value == math.factorial(5)
+
+    def test_concrete_errors(self) -> None:
+        res1 = math_models.MathFactorialModel().apply([-1], {}, _state())
+        raised1 = res1.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(raised1)
+        assert raised1["exception_type"] == "ValueError"
+
+        res2 = math_models.MathFactorialModel().apply([5.5], {}, _state())
+        raised2 = res2.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(raised2)
+        assert raised2["exception_type"] == "ValueError"
+
+    def test_symbolic(self) -> None:
+        x, _ = SymbolicValue.symbolic("x")
+        result = math_models.MathFactorialModel().apply([x], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        assert len(result.constraints) > 0
+        potential = result.side_effects.get("potential_exception")
+        assert is_potential_exception_effect(potential)
+
+    def test_error_path(self) -> None:
+        result = math_models.MathFactorialModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+
+
+class TestMathTruncModel:
+    """Test suite for pysymex.models.stdlib.math.MathTruncModel."""
+
+    def test_faithfulness(self) -> None:
+        result = math_models.MathTruncModel().apply([2.9], {}, _state())
+        assert result.value == math.trunc(2.9)
+        result2 = math_models.MathTruncModel().apply([-2.9], {}, _state())
+        assert result2.value == math.trunc(-2.9)
+
+    def test_symbolic(self) -> None:
+        x, _ = SymbolicValue.symbolic("x")
+        result = math_models.MathTruncModel().apply([x], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        assert len(result.constraints) > 0
+        assert "potential_exception" in result.side_effects
+
+    def test_error_path(self) -> None:
+        result = math_models.MathTruncModel().apply([], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        raised = result.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(raised)

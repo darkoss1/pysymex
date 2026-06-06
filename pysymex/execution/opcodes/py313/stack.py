@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,14 +16,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Stack manipulation opcodes."""
+"""Stack manipulation opcode wrappers for Python 3.13.
+
+Registers stack primitives and PEP 669 ``INSTRUMENTED_*`` pass-through handlers
+via :mod:`pysymex.execution.opcodes.common.stack`. Does not manage frame locals,
+the block stack, or sys.monitoring event delivery.
+.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 from pysymex.execution.opcodes.common.stack import (
     handle_common_cache,
     handle_common_copy,
@@ -35,8 +43,8 @@ from pysymex.execution.opcodes.common.stack import (
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("POP_TOP")

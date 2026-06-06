@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
 
 import z3
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicString
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.scalars.strings import SymbolicString
 
-
-def _load_regex_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "regex.py"
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_regex", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib regex models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-regex_models = _load_regex_models()
+from pysymex.models.stdlib import regex as regex_models
 
 
 def _state() -> VMState:
@@ -63,6 +50,24 @@ class TestReMatchModel:
     def test_error_path(self) -> None:
         _assert_result(lambda: regex_models.ReMatchModel().apply([], {}, _state()))
 
+    def test_matching_result_is_truthy(self) -> None:
+        result = regex_models.ReMatchModel().apply(
+            [SymbolicString.from_const("0+"), SymbolicString.from_const("00")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, z3.Not(result.value.could_be_truthy()))
+        assert solver.check() == z3.unsat
+
+    def test_nonmatching_result_is_falsy(self) -> None:
+        result = regex_models.ReMatchModel().apply(
+            [SymbolicString.from_const("0+"), SymbolicString.from_const("10")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, result.value.could_be_truthy())
+        assert solver.check() == z3.unsat
+
 
 class TestReSearchModel:
     """Test suite for pysymex.models.stdlib.regex.ReSearchModel."""
@@ -74,6 +79,24 @@ class TestReSearchModel:
     def test_error_path(self) -> None:
         _assert_result(lambda: regex_models.ReSearchModel().apply([], {}, _state()))
 
+    def test_matching_result_is_truthy(self) -> None:
+        result = regex_models.ReSearchModel().apply(
+            [SymbolicString.from_const("0+"), SymbolicString.from_const("a0")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, z3.Not(result.value.could_be_truthy()))
+        assert solver.check() == z3.unsat
+
+    def test_nonmatching_result_is_falsy(self) -> None:
+        result = regex_models.ReSearchModel().apply(
+            [SymbolicString.from_const("0+"), SymbolicString.from_const("abc")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, result.value.could_be_truthy())
+        assert solver.check() == z3.unsat
+
 
 class TestReFullmatchModel:
     """Test suite for pysymex.models.stdlib.regex.ReFullmatchModel."""
@@ -84,6 +107,24 @@ class TestReFullmatchModel:
 
     def test_error_path(self) -> None:
         _assert_result(lambda: regex_models.ReFullmatchModel().apply([], {}, _state()))
+
+    def test_matching_result_is_truthy(self) -> None:
+        result = regex_models.ReFullmatchModel().apply(
+            [SymbolicString.from_const("abc"), SymbolicString.from_const("abc")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, z3.Not(result.value.could_be_truthy()))
+        assert solver.check() == z3.unsat
+
+    def test_nonmatching_result_is_falsy(self) -> None:
+        result = regex_models.ReFullmatchModel().apply(
+            [SymbolicString.from_const("abc"), SymbolicString.from_const("xyz")], {}, _state()
+        )
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(*result.constraints, result.value.could_be_truthy())
+        assert solver.check() == z3.unsat
 
 
 class TestReFindallModel:

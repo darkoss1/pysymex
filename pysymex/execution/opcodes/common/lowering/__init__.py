@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,7 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Opcode lowering layer for SMT translation."""
+"""Lowering layer translating stack values into Z3 constraints and heap updates.
+
+Owns comparison, call, and collection lowerers consumed by common opcode handlers.
+Does not register VM opcodes or fork paths; handlers in
+:mod:`pysymex.execution.opcodes.common` call into these classes after stack pops.
+"""
 
 from __future__ import annotations
 

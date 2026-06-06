@@ -3,10 +3,12 @@ from __future__ import annotations
 import z3
 import pytest
 
-from pysymex._typing import StackValue
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
+from pysymex.typing import StackValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
 from pysymex.models.builtins.base import FunctionModel, ModelResult
+from pysymex.models.builtins.results import ModelResult as CanonicalModelResult
 
 
 class _IdentityModel(FunctionModel):
@@ -29,6 +31,10 @@ class _IdentityModel(FunctionModel):
 
 class TestModelResult:
     """Test suite for pysymex.models.builtins.base.ModelResult."""
+
+    def test_base_import_reexports_canonical_result(self) -> None:
+        """Public base import and canonical result import point to the same class."""
+        assert ModelResult is CanonicalModelResult
 
     def test_initialization(self) -> None:
         """Test basic initialization."""

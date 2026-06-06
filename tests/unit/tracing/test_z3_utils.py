@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pysymex.tracing.z3_utils import Z3SemanticRegistry, Z3Serializer
+from pysymex.tracing.z3.registry import Z3SemanticRegistry
+from pysymex.tracing.z3.serializer import Z3Serializer
 
 
 def test_semantic_registry_update_lookup_and_snapshot() -> None:

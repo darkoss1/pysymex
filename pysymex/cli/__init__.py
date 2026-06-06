@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -20,14 +20,12 @@
 
 from __future__ import annotations
 
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.lazy import lazy_dir, lazy_getattr
+from pysymex.cli.entry_helpers import IssueLike, SymbolicResultLike, is_issue_like_list
 from pysymex.cli.entrypoint import (
     __version__,
-    IssueLike as _IssueLike,
-    SymbolicResultLike as _SymbolicResultLike,
-    is_issue_like_list as _is_issue_like_list,
     main,
-    normalize_argv as _normalize_argv,
+    normalize_argv,
 )
 
 
@@ -39,7 +37,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "cmd_analyze": ("pysymex.cli.commands", "cmd_analyze"),
     "cmd_benchmark": ("pysymex.cli.commands", "cmd_benchmark"),
     "cmd_check": ("pysymex.cli.commands", "cmd_check"),
-    "cmd_concolic": ("pysymex.cli.commands", "cmd_concolic"),
     "cmd_verify": ("pysymex.cli.commands", "cmd_verify"),
     "generate_completion": ("pysymex.cli.commands", "generate_completion"),
 }
@@ -57,10 +54,10 @@ def __dir__() -> list[str]:
         globals(),
         extra=(
             "__version__",
-            "_IssueLike",
-            "_SymbolicResultLike",
-            "_is_issue_like_list",
-            "_normalize_argv",
+            "IssueLike",
+            "SymbolicResultLike",
+            "is_issue_like_list",
+            "normalize_argv",
             "main",
         ),
     )
@@ -68,9 +65,9 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "__version__",
-    "_IssueLike",
-    "_SymbolicResultLike",
-    "_is_issue_like_list",
-    "_normalize_argv",
+    "IssueLike",
+    "SymbolicResultLike",
+    "is_issue_like_list",
+    "normalize_argv",
     "main",
 ]

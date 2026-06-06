@@ -18,7 +18,7 @@ class TestScannerInit:
     def test_scanner_init_getattr_raises_attribute_error(self) -> None:
         """Verify __getattr__ raises AttributeError for unknown symbols."""
         with pytest.raises(AttributeError, match="has no attribute"):
-            _ = pysymex.scanner.this_symbol_does_not_exist  # type: ignore[attr-defined] # testing missing attr
+            getattr(pysymex.scanner, "this_symbol_does_not_exist")
 
     def test_scanner_init_dir_lists_exports(self) -> None:
         """Verify __dir__ lists the contents of the module's defined exports."""

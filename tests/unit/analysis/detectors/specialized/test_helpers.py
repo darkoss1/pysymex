@@ -2,7 +2,6 @@
 
 import dis
 from pysymex.analysis.detectors.specialized.helpers import (
-    HasName,
     get_named_value_name,
     resolve_target_name,
 )
@@ -25,15 +24,6 @@ def MockInstr(
         argrepr=argrepr,
         offset=offset,
     )
-
-
-class TestHasName:
-    """Test suite for HasName."""
-
-    def test_initialization(self) -> None:
-        """Test basic initialization and properties."""
-        assert HasName is not None
-        assert HasName.__name__ == "HasName"
 
 
 def test_get_named_value_name_exists() -> None:

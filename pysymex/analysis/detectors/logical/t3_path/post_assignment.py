@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Post-assignment contradiction logical contradiction rule.
+
+Detects contradictions arising immediately after a variable is assigned a concrete value
+and then asserted to violate that value (e.g. x = 5, then asserting x != 5 or x < 3).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     bounds_are_inconsistent,
@@ -26,10 +32,21 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class PostAssignmentContradictionRule(LogicRule):
+    """Rule that matches contradictions occurring immediately after a concrete variable assignment."""
+
     name = "Post-assignment Contradiction"
     tier = 3
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a post-assignment contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains a variable equality and subsequent assertions that conflict
+            with the assigned value (bounds or disequalities), otherwise False.
+        """
         if len(ctx.core) < 2:
             return False
 

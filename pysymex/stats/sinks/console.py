@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,25 +16,38 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Rich-powered console sink for engine statistics.
+
+Provides real-time interactive terminal visualization of statistics
+(e.g., path rate, peak memory, and SMT SAT/UNSAT ratio) with graceful fallbacks
+to plain text.
+"""
+
 from __future__ import annotations
 
-import logging
+from pysymex.logger import get_logger
 import sys
 from typing import Any
 
 from .base import StatsSink
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Metric display names and formatting for the Rich table.
 _METRIC_LABELS: dict[str, str] = {
     "total_paths_explored": "Paths Explored",
     "path_exploration_rate": "Path Rate (inst.)",
     "path_exploration_rate_avg": "Path Rate (avg)",
-    "engine_activity_rate": "Engine Activity",
+    "engine_activity_rate": "Stats Event Rate",
     "max_memory_mb": "Peak Memory",
     "avg_memory_mb": "Avg Memory",
-    "sat_unsat_ratio": "SAT/UNSAT Ratio",
+    "solver_queries": "Solver Queries",
+    "solver_sat": "Solver SAT",
+    "solver_unsat": "Solver UNSAT",
+    "solver_unknown": "Solver Unknown",
+    "solver_total_clauses": "Solver Clauses",
+    "solver_avg_clauses": "Avg Solver Clauses",
+    "sat_unsat_ratio": "SAT/(SAT+UNSAT)",
 }
 
 _UNIT_SUFFIXES: dict[str, str] = {
@@ -46,7 +59,7 @@ _UNIT_SUFFIXES: dict[str, str] = {
 }
 
 
-def _format_metric_value(key: str, value: float | int | str) -> str:
+def format_metric_value(key: str, value: float | int | str) -> str:
     """Format a metric value with its unit suffix."""
     suffix = _UNIT_SUFFIXES.get(key, "")
     if isinstance(value, float):
@@ -68,60 +81,64 @@ class ConsoleSink(StatsSink):
     """
 
     def __init__(self) -> None:
-        self._live: Any | None = None
+        """Initialize the console statistics sink.
+
+        Prepares initial console, live display instance variables, and internal metrics caching.
+        """
+        self.live: Any | None = None
         self._console: Any | None = None
-        self._last_metrics: dict[str, float | int | str] = {}
-        self._started = False
+        self.last_metrics: dict[str, float | int | str] = {}
+        self.started = False
 
     def start(self) -> None:
         """Begin the Rich Live display on stderr."""
-        if self._started:
+        if self.started:
             return
-        self._started = True
+        self.started = True
         try:
             from rich.console import Console
             from rich.live import Live
 
             self._console = Console(stderr=True, force_terminal=None)
-            self._live = Live(
-                self._build_table({}),
+            self.live = Live(
+                self.build_table({}),
                 console=self._console,
                 refresh_per_second=4,
                 transient=True,
             )
-            self._live.start()
+            self.live.start()
         except Exception:
             # Rich unavailable or non-TTY: fall back to plain text at stop().
             logger.debug("Rich Live display unavailable, will use plain-text fallback")
-            self._live = None
+            self.live = None
             self._console = None
 
     def stop(self) -> None:
         """Stop the Rich Live display and print a final summary."""
-        if not self._started:
+        if not self.started:
             return
-        self._started = False
-        if self._live is not None:
+        self.started = False
+        if self.live is not None:
             try:
-                self._live.stop()
+                self.live.stop()
             except Exception:
-                pass
-            self._live = None
+                logger.debug("Rich Live display stop failed", exc_info=True)
+            self.live = None
 
-        # Print a final, static summary of the last known metrics.
-        self._print_final_summary(self._last_metrics)
+            # Print a final, static summary of the last known metrics.
+        self._print_final_summary(self.last_metrics)
 
     def write(self, metrics: dict[str, float | int | str]) -> None:
         """Update the live display with the latest metrics snapshot."""
-        self._last_metrics = dict(metrics)
-        if self._live is not None:
+        self.last_metrics = dict(metrics)
+        if self.live is not None:
             try:
-                self._live.update(self._build_table(metrics))
+                self.live.update(self.build_table(metrics))
             except Exception:
-                pass
+                logger.debug("Rich Live metrics update failed", exc_info=True)
 
     @staticmethod
-    def _build_table(metrics: dict[str, float | int | str]) -> Any:
+    def build_table(metrics: dict[str, float | int | str]) -> Any:
         """Build a Rich Table from the current metrics dict."""
         try:
             from rich import box
@@ -149,7 +166,7 @@ class ConsoleSink(StatsSink):
                     continue
                 value = metrics[key]
                 label = _METRIC_LABELS[key]
-                formatted = _format_metric_value(key, value)
+                formatted = format_metric_value(key, value)
 
                 # Color-code memory values when they get high.
                 if key.endswith("_mb") and isinstance(value, (int, float)):
@@ -162,18 +179,18 @@ class ConsoleSink(StatsSink):
 
                 table.add_row(label, formatted)
 
-            # Show any extra metrics not in the predefined list.
+                # Show any extra metrics not in the predefined list.
             for key, value in metrics.items():
                 if key in _METRIC_LABELS:
                     continue
                 label = key.replace("_", " ").title()
-                formatted = _format_metric_value(key, value)
+                formatted = format_metric_value(key, value)
                 table.add_row(f"[dim]{label}[/dim]", f"[dim]{formatted}[/dim]")
 
             return table
         except ImportError:
             # If rich is somehow missing at runtime, return a plain string.
-            return _plain_text_metrics(metrics)
+            return plain_text_metrics(metrics)
 
     def _print_final_summary(self, metrics: dict[str, float | int | str]) -> None:
         """Print a static final summary, trying Rich before plain text."""
@@ -183,14 +200,14 @@ class ConsoleSink(StatsSink):
             from rich.console import Console
 
             console = Console(stderr=True)
-            table = self._build_table(metrics)
+            table = self.build_table(metrics)
             console.print(table, end="")
         except Exception:
             # Pure plain-text fallback.
-            print(_plain_text_metrics(metrics), file=sys.stderr)
+            print(plain_text_metrics(metrics), file=sys.stderr)
 
 
-def _plain_text_metrics(metrics: dict[str, float | int | str]) -> str:
+def plain_text_metrics(metrics: dict[str, float | int | str]) -> str:
     """Format metrics as plain text (fallback when Rich is unavailable)."""
     lines = ["=== Engine Statistics ==="]
     for key, value in metrics.items():

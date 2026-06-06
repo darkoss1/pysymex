@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,43 +16,62 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Quantifier support package for contracts."""
+"""Parse, translate, instantiate, and verify quantified contract conditions.
+
+Supports ``forall``, ``exists``, and ``exists_unique`` in string predicates and
+factory helpers. Used from :mod:`pysymex.contracts.compiler` and exposed on the
+public :mod:`pysymex.contracts` namespace.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .core import (
-        ConditionTranslator as ConditionTranslator,
-        QuantifierInstantiator as QuantifierInstantiator,
-        QuantifierParser as QuantifierParser,
-        QuantifierVerifier as QuantifierVerifier,
-        exists as exists,
-        exists_unique as exists_unique,
-        extract_quantifiers as extract_quantifiers,
-        forall as forall,
-        parse_condition_to_z3 as parse_condition_to_z3,
-        replace_quantifiers_with_z3 as replace_quantifiers_with_z3,
+    from .extraction import (
+        extract_quantifiers,
+        replace_quantifiers_with_z3,
+    )
+    from .factories import exists, exists_unique, forall
+    from .instantiation import QuantifierInstantiator
+    from .lowering import (
+        ConcreteRange,
+        QuantifierLoweringError,
+        QuantifierLoweringPolicy,
+        find_quantifier_occurrences,
+        lower_condition_quantifiers,
+        lower_quantifier,
+    )
+    from .parser import QuantifierParser
+    from .translator import (
+        ConditionTranslator,
+        parse_condition_to_z3,
     )
     from .types import (
-        BoundSpec as BoundSpec,
-        Quantifier as Quantifier,
-        QuantifierKind as QuantifierKind,
-        QuantifierVar as QuantifierVar,
+        BoundSpec,
+        Quantifier,
+        QuantifierKind,
+        QuantifierVar,
     )
+    from .verification import QuantifierVerifier
 
 _EXPORTS: dict[str, tuple[str, str]] = {
-    "ConditionTranslator": (".core", "ConditionTranslator"),
-    "QuantifierInstantiator": (".core", "QuantifierInstantiator"),
-    "QuantifierParser": (".core", "QuantifierParser"),
-    "QuantifierVerifier": (".core", "QuantifierVerifier"),
-    "exists": (".core", "exists"),
-    "exists_unique": (".core", "exists_unique"),
-    "extract_quantifiers": (".core", "extract_quantifiers"),
-    "forall": (".core", "forall"),
-    "parse_condition_to_z3": (".core", "parse_condition_to_z3"),
-    "replace_quantifiers_with_z3": (".core", "replace_quantifiers_with_z3"),
+    "ConditionTranslator": (".translator", "ConditionTranslator"),
+    "ConcreteRange": (".lowering", "ConcreteRange"),
+    "QuantifierLoweringError": (".lowering", "QuantifierLoweringError"),
+    "QuantifierLoweringPolicy": (".lowering", "QuantifierLoweringPolicy"),
+    "QuantifierInstantiator": (".instantiation", "QuantifierInstantiator"),
+    "QuantifierParser": (".parser", "QuantifierParser"),
+    "QuantifierVerifier": (".verification", "QuantifierVerifier"),
+    "exists": (".factories", "exists"),
+    "exists_unique": (".factories", "exists_unique"),
+    "extract_quantifiers": (".extraction", "extract_quantifiers"),
+    "find_quantifier_occurrences": (".lowering", "find_quantifier_occurrences"),
+    "forall": (".factories", "forall"),
+    "lower_condition_quantifiers": (".lowering", "lower_condition_quantifiers"),
+    "lower_quantifier": (".lowering", "lower_quantifier"),
+    "parse_condition_to_z3": (".translator", "parse_condition_to_z3"),
+    "replace_quantifiers_with_z3": (".extraction", "replace_quantifiers_with_z3"),
     "BoundSpec": (".types", "BoundSpec"),
     "Quantifier": (".types", "Quantifier"),
     "QuantifierKind": (".types", "QuantifierKind"),
@@ -74,13 +93,19 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ConditionTranslator",
+    "ConcreteRange",
+    "QuantifierLoweringError",
+    "QuantifierLoweringPolicy",
     "QuantifierInstantiator",
     "QuantifierParser",
     "QuantifierVerifier",
     "exists",
     "exists_unique",
     "extract_quantifiers",
+    "find_quantifier_occurrences",
     "forall",
+    "lower_condition_quantifiers",
+    "lower_quantifier",
     "parse_condition_to_z3",
     "replace_quantifiers_with_z3",
     "BoundSpec",

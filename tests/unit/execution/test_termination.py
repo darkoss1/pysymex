@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import z3
 
 from pysymex.execution.termination import (
@@ -35,6 +36,22 @@ class TestRankingFunction:
 
         assert str(compiled) == "x"
         assert ranking.z3_expr is not None
+
+    def test_compile_arithmetic_without_host_eval(self) -> None:
+        """Ranking expressions are parsed as arithmetic, not evaluated as Python code."""
+        x = z3.Int("x")
+        ranking = RankingFunction(name="r", expression="x + 1")
+
+        compiled = ranking.compile({"x": x})
+
+        assert z3.is_true(z3.simplify(compiled == x + 1))
+
+    def test_compile_rejects_calls_without_host_eval(self) -> None:
+        """Function calls are unsupported rather than evaluated on the host."""
+        ranking = RankingFunction(name="r", expression="__import__('os').system('echo bad')")
+
+        with pytest.raises(ValueError, match="Unsupported ranking expression node: Call"):
+            ranking.compile({})
 
 
 class TestTerminationProof:
@@ -80,3 +97,22 @@ class TestTerminationAnalyzer:
 
         assert unknown.status is TerminationStatus.UNKNOWN
         assert "decreasing" in unknown.message.lower()
+
+    def test_check_termination_reports_unsupported_ranking_as_unknown(self) -> None:
+        """Unsupported ranking syntax must not escape as host execution."""
+        x = z3.Int("x")
+        analyzer = TerminationAnalyzer(timeout_ms=1000)
+        unsupported = RankingFunction(
+            name="unsafe",
+            expression="__import__('os').system('echo bad')",
+        )
+
+        proof = analyzer.check_termination(
+            loop_condition=x > 0,
+            loop_body_effect={"x": x - 1},
+            symbols={"x": x},
+            ranking=unsupported,
+        )
+
+        assert proof.status is TerminationStatus.UNKNOWN
+        assert "could not be compiled" in proof.message

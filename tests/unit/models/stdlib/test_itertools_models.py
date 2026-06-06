@@ -11,7 +11,7 @@ class TestModelChain:
     def test_empty_chain_returns_symbolic_list(self) -> None:
         """chain() with no iterables returns empty SymbolicList."""
         from pysymex.models.stdlib.itertools import model_chain
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         result = model_chain()
         assert isinstance(result, SymbolicList)
@@ -19,7 +19,7 @@ class TestModelChain:
     def test_chain_single_iterable_preserves_length(self) -> None:
         """chain(iter1) has z3_len == iter1.z3_len."""
         from pysymex.models.stdlib.itertools import model_chain
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         it1 = SymbolicList.empty("a")
         it1.z3_len = z3.IntVal(5)
@@ -31,7 +31,7 @@ class TestModelChain:
     def test_chain_two_iterables_sums_length(self) -> None:
         """chain(a, b) has z3_len == a.z3_len + b.z3_len."""
         from pysymex.models.stdlib.itertools import model_chain
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         a = SymbolicList.empty("a")
         a.z3_len = z3.IntVal(3)
@@ -49,7 +49,7 @@ class TestModelIslice:
     def test_islice_with_stop_only(self) -> None:
         """islice(iter, 5) clamps at min(iter.z3_len, 5)."""
         from pysymex.models.stdlib.itertools import model_islice
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         it = SymbolicList.empty("it")
         it.z3_len = z3.IntVal(10)
@@ -59,7 +59,7 @@ class TestModelIslice:
     def test_islice_with_start_stop_step(self) -> None:
         """islice(iter, 0, 10, 3) produces ceil(10/3) = 4 elements."""
         from pysymex.models.stdlib.itertools import model_islice
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         it = SymbolicList.empty("it")
         it.z3_len = z3.IntVal(20)
@@ -75,7 +75,7 @@ class TestModelProduct:
     def test_empty_product_returns_list(self) -> None:
         """product() with no iterables returns empty SymbolicList."""
         from pysymex.models.stdlib.itertools import model_product
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         result = model_product()
         assert isinstance(result, SymbolicList)
@@ -87,7 +87,7 @@ class TestModelRepeat:
     def test_repeat_with_times(self) -> None:
         """repeat(obj, 5) has z3_len == 5."""
         from pysymex.models.stdlib.itertools import model_repeat
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         result = model_repeat("x", times=5)
         assert isinstance(result, SymbolicList)
@@ -102,7 +102,7 @@ class TestModelAccumulate:
     def test_accumulate_with_initial(self) -> None:
         """accumulate(iter, initial=0) has z3_len == iter.z3_len + 1."""
         from pysymex.models.stdlib.itertools import model_accumulate
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         it = SymbolicList.empty("it")
         it.z3_len = z3.IntVal(5)
@@ -118,7 +118,7 @@ class TestModelCount:
     def test_returns_symbolic_value(self) -> None:
         """count() returns a SymbolicValue."""
         from pysymex.models.stdlib.itertools import model_count
-        from pysymex.core.types.scalars import SymbolicValue
+        from pysymex.core.types.scalars.values import SymbolicValue
 
         result = model_count()
         assert isinstance(result, SymbolicValue)
@@ -130,7 +130,7 @@ class TestModelGroupby:
     def test_returns_symbolic_list(self) -> None:
         """groupby returns a SymbolicList."""
         from pysymex.models.stdlib.itertools import model_groupby
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         it = SymbolicList.empty("it")
         result = model_groupby(it)
@@ -143,7 +143,7 @@ class TestModelZipLongest:
     def test_empty_returns_list(self) -> None:
         """zip_longest() with no iterables returns SymbolicList."""
         from pysymex.models.stdlib.itertools import model_zip_longest
-        from pysymex.core.types.containers import SymbolicList
+        from pysymex.core.types.containers.lists import SymbolicList
 
         result = model_zip_longest()
         assert isinstance(result, SymbolicList)

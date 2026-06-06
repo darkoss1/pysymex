@@ -1,384 +1,173 @@
-# pysymex Command-Line Interface (CLI) Guide
+# Command-Line Interface
 
-Complete guide for using pysymex from the command line.
+The `pysymex` command is registered by `pyproject.toml` and implemented under `pysymex.cli`.
+Command names and flags come from `pysymex.cli.parser`.
 
----
+## Global Options
 
-## Table of Contents
+| Option | Meaning |
+| --- | --- |
+| `-V`, `--version` | Print the package version. |
+| `--generate-completion {bash,zsh,fish}` | Generate a shell completion script. |
+| `--quiet` | Suppress non-error diagnostics. |
+| `--debug` | Enable debug diagnostics. |
+| `--diagnostic-trace` | Enable trace diagnostics. |
+| `--log-category NAME` | Enable a diagnostic category. May be passed multiple times. |
+| `--log-jsonl PATH` | Write structured diagnostics to a JSONL file. |
+| `--log-history N` | Retain a bounded in-memory diagnostic history for the run. |
 
-1. [Quick Start](#quick-start)
-2. [Installation](#installation)
-3. [Commands Overview](#commands-overview)
-4. [scan](#scan)
-5. [analyze](#analyze)
-6. [verify](#verify)
-7. [concolic](#concolic)
-8. [benchmark](#benchmark)
-9. [Output Formats](#output-formats)
-10. [check](#check)
-11. [Examples](#examples)
+## Commands
 
----
+| Command | Purpose |
+| --- | --- |
+| `pysymex scan PATH` | Scan one file or directory for supported issue patterns. |
+| `pysymex analyze FILE -f NAME` | Analyze one function from a file. |
+| `pysymex verify FILE -f NAME` | Preview contract-aware verification for one function. |
+| `pysymex benchmark` | Run built-in benchmark cases. |
+| `pysymex check PATH...` | CI-oriented scan with severity-gated exit behavior and optional SARIF output. |
 
-## Quick Start
+## `scan`
 
 ```bash
-# Scan a single file
-pysymex scan mycode.py
-
-# Scan a directory recursively
-pysymex scan src/ -r
-
-# Analyze a specific function with typed arguments
-pysymex analyze mycode.py -f risky_func --args x:int y:str
-
-# Generate SARIF report for CI/CD
+pysymex scan path/to/file.py
 pysymex scan src/ -r --format sarif -o report.sarif
-
-# Run benchmarks
-pysymex benchmark --format markdown
+pysymex scan "src/**/*.py" --deterministic --seed 42
 ```
 
----
+Important options:
 
-## Installation
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--format {text,json,sarif,rich,html,markdown}` | `text` | Output format. |
+| `-o`, `--output PATH` | none | Write report to a file. |
+| `-r`, `--recursive` | `False` | Scan directories recursively. |
+| `-v`, `--verbose` | `False` | Verbose scan output. |
+| `--stats` | `False` | Show performance statistics. |
+| `--max-paths N` | `5000` | Maximum paths per function. |
+| `--timeout SECONDS` | `10` | Timeout per function. |
+| `--workers N` | `0` | Directory worker processes. `0` uses conservative auto mode; `1` is sequential. |
+| `--auto` | `False` | Auto-tune analysis configuration. |
+| `--no-cache` | `False` | Disable process-local, result, and solver caches for fresh analysis. |
+| `--no-sandbox` | `False` | Compile target bytecode in-process instead of using sandboxed extraction. This is faster but bypasses the sandboxed bytecode extraction boundary. |
+| `--max-iterations N` | `0` | Maximum iterations per function. `0` auto-calculates. |
+| `--reproduce` | `False` | Generate reproduction scripts for findings when the formatter supports it. |
+| `--visualize` | `False` | Use realtime progress visualization. |
+| `--async` | `False` | Use the async scanner runner. |
+| `--trace` | `False` | Emit execution traces. |
+| `--trace-output-dir PATH` | `.pysymex/traces` | Trace output directory. |
+| `--trace-verbosity {quiet,delta_only,full}` | `delta_only` | Trace detail level. |
+| `--deterministic` | `False` | Use deterministic non-dynamic exploration for reproducible directory runs. |
+| `--seed N` | `42` | Random seed for deterministic runs. |
 
-### From Source
+Exit behavior visible in code:
+
+- `0` when scan results contain no issues, no fatal errors, and no degraded analyses.
+- `1` when issues are found, the scan target is missing, no file result is produced, report
+  generation fails, any file has a fatal error, or any analysis records degraded passes.
+
+## `analyze`
 
 ```bash
-git clone https://github.com/darkoss1/pysymex.git
-cd pysymex
-pip install -e .
+pysymex analyze src/example.py -f risky_divide --args x:int y:int
+pysymex analyze src/example.py -f risky_divide --format json -o result.json
 ```
 
-### Requirements
+Options:
 
-- Python 3.11+
-- z3-solver == 4.15.3.0
-- pydantic >= 2.12.0
-- immutables == 0.21
-- rich >= 13.0.0
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `FILE` | required | Python file containing the function. |
+| `-f`, `--function NAME` | required | Function to analyze. |
+| `--args name:type ...` | none | Symbolic argument hints. |
+| `--format {text,json,sarif,rich,html,markdown}` | `text` | Output format. |
+| `-o`, `--output PATH` | none | Write report to a file. |
+| `--max-paths N` | `100000` | Maximum execution paths. |
+| `--timeout SECONDS` | `60` | Maximum analysis time. |
+| `-v`, `--verbose` | `False` | Verbose output. |
+| `--stats` | `False` | Show performance statistics. |
 
----
+Exit behavior:
 
-## Commands Overview
+- `0` when the analyzed function returns an `ExecutionResult` with no issues.
+- `1` when issues are found, the file is missing, or analysis raises a handled
+  `ValueError`, `TypeError`, `SyntaxError`, or `OSError`.
 
-| Command | Description |
-|---------|-------------|
-| `scan` | Scan a file or directory for bugs |
-| `analyze` | Symbolically analyze a specific function |
-| `verify` | Verify function contracts |
-| `concolic` | Generate test cases via concolic execution |
-| `benchmark` | Run the benchmark suite |
-| `check` | Run a CI-friendly severity-gated scan |
-
----
-
-## scan
-
-Scan a Python file or directory for bugs and vulnerabilities.
+## `verify`
 
 ```bash
-pysymex scan PATH [OPTIONS]
+pysymex verify src/contracts.py -f bounded_divide --args x:int y:int
 ```
 
-### Arguments
+Options:
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `path` | (required) | File or directory to scan |
-| `--mode {symbolic,static,pipeline}` | `symbolic` | Analysis mode |
-| `--format {text,json,sarif,rich,html,markdown}` | `text` | Output format |
-| `-o OUTPUT` | stdout | Write report to file |
-| `-r` / `--recursive` | False | Scan directories recursively |
-| `-v` / `--verbose` | False | Verbose output |
-| `--stats` | False | Show detailed performance statistics |
-| `--max-paths N` | 5000 | Max paths per function |
-| `--timeout N` | 5 | Timeout per function in seconds |
-| `--workers N` | 0 (auto) | Worker processes (0 = CPU count, 1 = sequential) |
-| `--auto` | False | Auto-tune analysis configuration |
-| `--no-cache` | False | Disable all caching for fresh analysis |
-| `--max-iterations N` | 0 (auto) | Max iterations per function |
-| `--reproduce` | False | Generate reproduction scripts for findings |
-| `--visualize` | False | Show real-time progress visualization |
-| `--async` | False | Use async scanner (TaskGroup-based concurrency) |
-| `--trace` | False | Emit execution traces for symbolic runs |
-| `--trace-output-dir DIR` | `.pysymex/traces` | Directory for trace JSONL files |
-| `--trace-verbosity` | `delta_only` | Trace detail: `quiet`, `delta_only`, `full` |
-| `--sandbox` / `--no-sandbox` | sandbox enabled | Compile scan targets through the sandbox bridge |
-| `--deterministic` | False | Use deterministic exploration for reproducible runs |
-| `--seed N` | 42 | Random seed for deterministic runs |
-| `--no-chtd` | False | Disable CHTD pruning |
-| `--no-acceleration` | False | Disable acceleration backend |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `FILE` | required | Python file containing contract-decorated code. |
+| `-f`, `--function NAME` | parser default is all contracts | Current sandboxed command path requires this option. |
+| `--args name:type ...` | none | Symbolic argument hints. |
+| `--format {text,json,sarif,rich,html,markdown}` | `text` | Output format. |
+| `-o`, `--output PATH` | none | Write report to a file. |
+| `-v`, `--verbose` | `False` | Verbose output. |
 
-### Analysis Modes
+The command emits a preview warning. Current sandboxed verify behavior requires `--function`; if it
+is omitted, the command returns `1`.
 
-| Mode | Description |
-|------|-------------|
-| `symbolic` | Full symbolic execution with Z3 (default) |
-| `static` | Fast static analysis without SMT solving |
-| `pipeline` | Combined static + symbolic pipeline |
+Exit behavior:
 
-### Examples
+- `0` when execution succeeds, no symbolic issues are found, no contract or arithmetic issues are
+  found, and no degraded passes are recorded.
+- `1` when the file is missing, `VerifiedExecutor` is unavailable, `--function` is omitted on the
+  sandboxed path, execution fails, findings are emitted, degraded passes are recorded, or command
+  handling raises an exception.
+
+## `benchmark`
 
 ```bash
-# Scan a single file
-pysymex scan mycode.py
-
-# Scan a directory recursively
-pysymex scan src/ -r
-
-# Static analysis mode (faster)
-pysymex scan src/ --mode static
-
-# Full pipeline mode
-pysymex scan src/ --mode pipeline
-
-# Generate SARIF report (GitHub Security tab compatible)
-pysymex scan src/ -r --format sarif -o report.sarif
-
-# JSON output
-pysymex scan src/ --format json -o results.json
-
-# Parallel workers
-pysymex scan src/ --workers 4
-
-# Fresh analysis (bypass caches)
-pysymex scan src/ --no-cache
-
-# Async scanner
-pysymex scan src/ -r --async
-```
-
----
-
-## analyze
-
-Perform symbolic execution on a specific function.
-
-```bash
-pysymex analyze FILE -f FUNCTION [OPTIONS]
-```
-
-### Arguments
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `file` | (required) | Python file to analyze |
-| `-f` / `--function` | (required) | Function name to analyze |
-| `--args NAME:TYPE...` | None | Symbolic arguments (e.g., `x:int y:str`) |
-| `--format` | `text` | Output format: `text`, `json`, `sarif`, `html`, `markdown`, `rich` |
-| `-o OUTPUT` | stdout | Write report to file |
-| `--max-paths N` | 100000 | Max paths to explore |
-| `--timeout N` | 60 | Timeout in seconds |
-| `-v` / `--verbose` | False | Verbose output |
-| `--stats` | False | Show detailed performance statistics |
-
-### Supported Argument Types
-
-| Type | Description |
-|------|-------------|
-| `int` | Symbolic integer |
-| `str` | Symbolic string |
-| `list` | Symbolic list |
-| `bool` | Symbolic boolean |
-| `dict` | Symbolic dictionary |
-
-### Examples
-
-```bash
-# Analyze a function
-pysymex analyze mycode.py -f risky_divide
-
-# With typed symbolic arguments
-pysymex analyze mycode.py -f process --args items:list index:int
-
-# HTML report
-pysymex analyze mycode.py -f check_input --format html -o report.html
-
-# Markdown report
-pysymex analyze mycode.py -f my_func --format markdown
-```
-
----
-
-## verify
-
-Verify function contracts and postconditions.
-
-```bash
-pysymex verify FILE [OPTIONS]
-```
-
----
-
-## concolic
-
-Generate test cases using concolic (concrete + symbolic) execution.
-
-```bash
-pysymex concolic FILE -f FUNCTION [OPTIONS]
-```
-
-### Examples
-
-```bash
-pysymex concolic mycode.py -f my_func -n 50
-```
-
----
-
-## benchmark
-
-Run the built-in benchmark suite to measure engine performance.
-
-```bash
-pysymex benchmark [OPTIONS]
-```
-
-### Examples
-
-```bash
-# Run benchmarks, print table
 pysymex benchmark
-
-# Markdown output
-pysymex benchmark --format markdown
-
-# JSON output to file
-pysymex benchmark --format json -o benchmarks/baseline.json
-
-# Compare against a baseline
-pysymex benchmark --baseline benchmarks/baseline.json
-
-# Run one benchmark case
-pysymex benchmark --case executor_core_function
+pysymex benchmark --mode quick --format markdown -o benchmark.md
+pysymex benchmark --mode all --format markdown -o benchmark.md
+pysymex benchmark --category solving --iterations 3 --warmup 1
 ```
 
----
+Options:
 
-## Output Formats
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--format {text,json,markdown}` | `text` | Output format. |
+| `--mode {quick,full,stress,all}` | auto | Benchmark scope. `all` runs every registered case. |
+| `--category CATEGORY` | none | Run one benchmark category. |
+| `-o`, `--output PATH` | none | Write results to a file. |
+| `--baseline PATH` | none | Compare against a baseline file. |
+| `-n`, `--iterations N` | `1` | Iterations per benchmark. |
+| `--warmup N` | `1` | Warm-up iterations. |
+| `--case NAME` | none | Run one benchmark case. |
+| `--list` | `False` | List benchmark cases and exit. |
+| `--threshold PERCENT` | `10.0` | Regression threshold when using `--baseline`. |
 
-### text (default)
+Exit behavior is delegated to `pysymex.benchmarks.run_benchmarks`. The command returns `1` when the
+runner raises an exception or when the benchmark runner reports a regression/failure.
+Unfiltered runs default to quick mode; focused category/case filters include all matching cases
+unless `--mode` is supplied. Legacy long case names remain accepted by `--case` as aliases.
 
-Human-readable output printed to stdout.
-
-```
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ pysymex - formal verification report                                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-ISSUES FOUND (1)
-────────────────────────────────────────────────────────────
-╭─ [ DIVISION_BY_ZERO ] ───────────────────────────────────────────────────────╮
-│  Location: mycode.py:12 in unsafe_divide()                                   │
-│  Type:    DIVISION_BY_ZERO                                                   │
-│  Error:    Division by zero: y can be 0                                      │
-│  Trigger:  y = 0                                                             │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-SUMMARY
-────────────────────────────────────────────────────────────
-Paths explored:         1
-Paths completed:        1
-Instructions:           4
-Execution time:     0.018s
-
-Proven safe:            0
-Issues found:           1
-```
-
-### json
-
-Structured JSON suitable for programmatic processing.
-
-### sarif
-
-SARIF 2.1.0 format, compatible with GitHub Security tab and other SARIF viewers.
+## `check`
 
 ```bash
-pysymex scan src/ -r --format sarif -o report.sarif
+pysymex check src/ --fail-on high --sarif report.sarif
 ```
 
-### rich / html / markdown
+Options:
 
-Available from the CLI formatters for scan, analyze, and verification-style output.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `PATH...` | required | Files or directories to check. |
+| `--fail-on {low,medium,high,critical}` | `high` | Minimum severity that causes a non-zero exit. |
+| `--sarif PATH` | none | Write SARIF output. |
+| `-v`, `--verbose` | `False` | Verbose output. |
 
----
+`check` delegates to `pysymex.ci.run_ci_check`. It is intended for CI, so its exit code reflects
+the configured severity threshold rather than just process success.
 
-## check
+## Output Semantics
 
-Run CI-friendly checks across one or more files or directories.
-
-```bash
-pysymex check PATH [PATH ...] [OPTIONS]
-```
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `paths` | (required) | Files or directories to check |
-| `--fail-on {low,medium,high,critical}` | `high` | Minimum severity that returns a non-zero exit |
-| `--sarif PATH` | None | Write SARIF output |
-| `-v` / `--verbose` | False | Verbose output |
-
----
-
-## Examples
-
-### Quick Project Scan
-
-```bash
-pysymex scan ./src -r --format sarif -o security.sarif
-```
-
-### CI/CD Integration
-
-```yaml
-# .github/workflows/security.yml
-name: Security Scan
-on: [push, pull_request]
-
-jobs:
-  pysymex:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install -e .
-      - run: pysymex scan ./src -r --format sarif -o report.sarif
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sarif-report
-          path: report.sarif
-```
-
-### Validation Workflow
-
-Alpha 5 added both focused pytest coverage and the `experiments/runner.py` milestone
-validation harness. Use focused pytest targets for regression checks, the experiment
-runner for curated corpus validation, and `pysymex benchmark` for benchmark coverage.
-
-```bash
-uv run pytest tests/unit/scanner
-uv run python experiments/runner.py
-uv run pysymex benchmark --format markdown
-```
-
----
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | No issues found |
-| 1 | Issues found or error |
-
----
-
-## See Also
-
-- [API Reference](API.md) - Python API
-- [Scanner Guide](SCANNER.md) - Scanner module API
-- [Examples](../examples/) - Code examples
+Output format does not change finding certainty. Text, rich, JSON, SARIF, HTML, and Markdown are
+presentation formats over the same issue, error, degraded-pass, and solver-stat data.

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,14 +16,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Exception handling opcodes."""
+"""Exception, generator, and async control opcode wrappers for Python 3.12.
+
+Registers block-stack setup (``SETUP_FINALLY``, ``SETUP_WITH``), 3.12 cleanup
+opcodes (``CLEANUP_THROW``, ``END_SEND``, ``INTERPRETER_EXIT``), and shared
+exception/generator handlers via :mod:`pysymex.execution.opcodes.common.exceptions`.
+Does not model sys.monitoring hooks or full async runtime scheduling.
+.
+
+Each ``@opcode_handler`` entry registers CPython opcode names for this interpreter version and delegates semantics to :mod:`pysymex.execution.opcodes.common` (stack effects, forks, constraints, and limitations are documented on the common handlers)."""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.execution.dispatcher import OpcodeResult, opcode_handler
+from pysymex.execution.dispatch.dispatcher import opcode_handler
+from pysymex.execution.dispatch.result import OpcodeResult
 from pysymex.execution.opcodes.common.exceptions import (
     handle_common_before_async_with,
     handle_common_before_with,
@@ -45,13 +54,14 @@ from pysymex.execution.opcodes.common.exceptions import (
     handle_common_send,
     handle_common_setup_cleanup,
     handle_common_setup_finally,
+    handle_common_setup_with,
     handle_common_with_except_start,
     handle_common_yield_value,
 )
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 @opcode_handler("SETUP_FINALLY")
@@ -60,6 +70,14 @@ def handle_setup_finally(
 ) -> OpcodeResult:
     """Set up a try/finally block by pushing a handler onto the block stack."""
     return handle_common_setup_finally(instr, state, ctx)
+
+
+@opcode_handler("SETUP_WITH")
+def handle_setup_with(
+    instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
+) -> OpcodeResult:
+    """Set up a with block."""
+    return handle_common_setup_with(instr, state, ctx)
 
 
 @opcode_handler("POP_BLOCK")

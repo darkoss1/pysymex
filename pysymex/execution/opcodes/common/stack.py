@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,20 +16,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Common stack manipulation operations for opcodes."""
+"""Stack manipulation opcode handlers (POP_TOP, COPY, SWAP, PUSH_NULL, caches).
+
+Implements CPython 3.11+ stack depth helpers and no-fork opcodes that only adjust
+``VMState.stack``. Version packages register thin wrappers; does not own calls or
+locals (see :mod:`pysymex.execution.opcodes.common.functions` and
+:mod:`pysymex.execution.opcodes.common.locals`).
+"""
 
 from __future__ import annotations
 
 import dis
 from typing import TYPE_CHECKING
 
-from pysymex.core.state import VMStateError
-from pysymex.core.types import SymbolicNone
-from pysymex.execution.dispatcher import OpcodeResult
+from pysymex.core.state.types import VMStateError
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.execution.dispatch.result import OpcodeResult
 
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
-    from pysymex.execution.dispatcher import OpcodeDispatcher
+    from pysymex.core.state.record import VMState
+    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 
 
 def _require_stack_depth(
@@ -49,7 +55,11 @@ def _require_stack_depth(
 def handle_common_pop_top(
     instr: dis.Instruction, state: VMState, ctx: OpcodeDispatcher
 ) -> OpcodeResult:
-    """Discard top of stack."""
+    """Execute ``POP_TOP``: remove one stack slot without pushing a result.
+
+    CPython stack effect: ``--TOS``. Raises :class:`~pysymex.core.state.types.VMStateError`
+    when the stack is empty.
+    """
     _require_stack_depth(state, instr, 1, "POP_TOP")
     state.pop()
     state = state.advance_pc()

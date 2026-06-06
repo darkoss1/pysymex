@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,40 +16,54 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""PySymex detectors package.
+
+This package exposes the default registry and all built-in static, runtime,
+and specialized bug detectors.
+
+Detectors registered in this package check for various bug classes including:
+- ZeroDivisionError (DivisionByZeroDetector)
+- IndexError (IndexErrorDetector)
+- KeyError (KeyErrorDetector)
+- AttributeError / None dereference (NoneDereferenceDetector, AttributeErrorDetector)
+- AssertionError (AssertionErrorDetector)
+- TypeError (TypeErrorDetector)
+- ValueError (ValueErrorDetector)
+- Use after free / Resource leaks (UseAfterFreeDetector, ResourceLeakDetector)
+"""
+
 from __future__ import annotations
 
-from pysymex.analysis.detectors.base import (
-    Detector,
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.registry import DetectorRegistry
+from pysymex.analysis.detectors.detector.types import (
     DetectorFn,
     DetectorInfo,
-    DetectorRegistry,
     GetModelFn,
     IsSatFn,
     Issue,
     IssueKind,
+    Severity,
 )
 
-from pysymex.analysis.detectors.runtime.assertion_error import AssertionErrorDetector
-from pysymex.analysis.detectors.runtime.attribute_error import AttributeErrorDetector
+from pysymex.analysis.detectors.runtime.errors.assertion import AssertionErrorDetector
+from pysymex.analysis.detectors.runtime.errors.attribute import AttributeErrorDetector
 from pysymex.analysis.detectors.runtime.division_by_zero import DivisionByZeroDetector
-from pysymex.analysis.detectors.runtime.index_error import IndexErrorDetector
-from pysymex.analysis.detectors.runtime.key_error import KeyErrorDetector
+from pysymex.analysis.detectors.runtime.index_error.detector import IndexErrorDetector
+from pysymex.analysis.detectors.runtime.errors.key import KeyErrorDetector
 from pysymex.analysis.detectors.runtime.none_dereference import NoneDereferenceDetector
 from pysymex.analysis.detectors.runtime.overflow import OverflowDetector
 from pysymex.analysis.detectors.runtime.resource_leak import ResourceLeakDetector
-from pysymex.analysis.detectors.runtime.type_error import TypeErrorDetector
+from pysymex.analysis.detectors.runtime.errors.type import TypeErrorDetector
 from pysymex.analysis.detectors.runtime.unbound_variable import UnboundVariableDetector
 from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
 from pysymex.analysis.detectors.runtime.value_error import ValueErrorDetector
 
 from pysymex.analysis.detectors.specialized.infinite_loop import InfiniteLoopDetector
-from pysymex.analysis.detectors.specialized.integer_overflow import IntegerOverflowDetector
 from pysymex.analysis.detectors.specialized.null_dereference import NullDereferenceDetector
 from pysymex.analysis.detectors.specialized.unreachable_code import UnreachableCodeDetector
 from pysymex.analysis.detectors.specialized.use_after_free import UseAfterFreeDetector
 from pysymex.analysis.detectors.specialized.format_string import FormatStringDetector
-
-from pysymex.analysis.detectors.static.analyzer import StaticAnalyzer
 
 
 def _create_default_registry() -> DetectorRegistry:
@@ -73,7 +87,6 @@ def _create_default_registry() -> DetectorRegistry:
     # Specialized detectors
     registry.register(InfiniteLoopDetector)
     # Runtime OverflowDetector subsumes bounded-overflow semantics.
-    # Keep IntegerOverflowDetector available for opt-in compatibility only.
     # registry.register(NullDereferenceDetector)  # Redundant with NoneDereferenceDetector + AttributeErrorDetector
     # UNREACHABLE_CODE is handled by dedicated dead-code/static analyses.
     # Keeping it out of the default runtime registry avoids symbolic-path
@@ -98,16 +111,15 @@ __all__ = [
     "GetModelFn",
     "IndexErrorDetector",
     "InfiniteLoopDetector",
-    "IntegerOverflowDetector",
     "IsSatFn",
     "Issue",
     "IssueKind",
+    "Severity",
     "KeyErrorDetector",
     "NoneDereferenceDetector",
     "NullDereferenceDetector",
     "OverflowDetector",
     "ResourceLeakDetector",
-    "StaticAnalyzer",
     "TypeErrorDetector",
     "UnboundVariableDetector",
     "UnreachableCodeDetector",

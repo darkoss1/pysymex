@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,27 +16,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""HavocValue — precision-preserving value for unmodeled function calls.
+"""Unconstrained symbolic values for unsupported or unmodeled results.
 
-When the symbolic executor encounters a call to an **unmodeled** function
-(e.g. ``requests.get``, ``asyncio.run``), it pushes a ``HavocValue`` onto the
-symbolic stack. ``HavocValue`` is a genuine :class:`SymbolicValue` subclass
-backed by fresh, unconstrained Z3 variables.
+``HavocValue.havoc`` creates fresh symbolic components plus an exactly-one
+type constraint. Calls, attribute access, and subscripts on a havoc value
+create additional havoc values.
 
-This means:
-
-* **Arithmetic / comparison** works exactly like a normal symbolic value —
-  ``HavocValue / 0`` still triggers ``DivisionByZeroDetector``.
-* **Branching** forks correctly — ``if havoc_val: ...`` creates two feasible
-  paths because ``could_be_truthy()`` is a real Z3 expression.
-* **Structural operations** (attribute access, calls, subscripts) produce
-  *new* ``HavocValue`` instances so downstream code doesn't crash.
-
-Detectors run their normal Z3 checks; issues whose counterexample involves
-havoc variables are confidence-degraded in the false-positive filter (not
-blindly suppressed).
-
-.. versionadded:: 0.2.0-alpha
+Limitations:
+    Havoc explicitly records precision loss. A havoc-dependent expression is
+    not by itself proof of a concrete runtime result or a definite issue.
 """
 
 from __future__ import annotations
@@ -46,25 +34,41 @@ from typing import TypeGuard
 
 import z3
 
-from pysymex.core.types.scalars import SymbolicValue, exactly_one_bool
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.core.types.scalars.values import exactly_one_bool
+
+_havoc_values_created = False
+
+
+def _new_havoc_attributes() -> dict[str, tuple[HavocValue, z3.BoolRef]]:
+    """Create an empty per-value attribute result cache."""
+    return {}
 
 
 @dataclass(slots=True)
 class HavocValue(SymbolicValue):
-    """A :class:`SymbolicValue` produced by an unmodeled built-in/call.
+    """Symbolic value marked as lacking concrete modeled provenance.
 
-    Internally it is a perfectly normal symbolic value (fresh Z3 variables,
-    unconstrained int/bool type tag).  The only extra bookkeeping is a
-    boolean marker (``_is_havoc``) that downstream code can inspect when it
-    needs to know *why* the value has no concrete provenance.
+    The value carries fresh Z3 fields, an explicit marker, and an exposed
+    attribute-map field. Create values through :meth:`havoc` so the required
+    type constraint is returned alongside the value.
 
-    Create instances via the :meth:`havoc` factory, **not** the constructor.
+    Limitations:
+        Attribute access, calls, and subscripts construct fresh havoc results;
+        this class does not itself add their returned constraints to a path.
     """
 
     _is_havoc: bool = field(default=True, init=False, repr=False, compare=False)
-    _attributes: dict[str, tuple[HavocValue, z3.BoolRef]] = field(  # type: ignore[assignment]  # default_factory=dict returns dict, not dict[str, tuple[...]]
-        default_factory=dict, init=False, repr=False, compare=False
+    _attributes: dict[str, tuple[HavocValue, z3.BoolRef]] = field(
+        default_factory=_new_havoc_attributes, init=False, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        """Register havoc allocation and preserve scalar carrier initialization."""
+        global _havoc_values_created
+
+        _havoc_values_created = True
+        SymbolicValue.__post_init__(self)
 
     @staticmethod
     def havoc(
@@ -72,15 +76,11 @@ class HavocValue(SymbolicValue):
     ) -> tuple[HavocValue, z3.BoolRef]:
         """Create a fresh havoc value with its own Z3 variables.
 
-        Parameters
-        ----------
-        name:
-            Debugging / variable-naming prefix (e.g. ``"havoc_call@42"``).
+        Args:
+            name: Prefix used for generated Z3 variable names.
 
-        Returns
-        -------
-        (HavocValue, type_constraint)
-            A tuple mirroring :meth:`SymbolicValue.symbolic`.
+        Returns:
+            A havoc value and its exactly-one symbolic type constraint.
         """
         z3_int = z3.Int(f"{name}_int")
         z3_bool = z3.Bool(f"{name}_bool")
@@ -122,35 +122,51 @@ class HavocValue(SymbolicValue):
         return val, type_constraint
 
     def __getitem__(self, key: object) -> tuple[HavocValue, z3.BoolRef]:
-        """Subscripting a HavocValue produces a new HavocValue."""
+        """Return fresh havoc for a subscript and its type constraint."""
         name = f"{self._name}[{getattr(key, 'name', str(key))}]"
         return HavocValue.havoc(name)
 
     def __getattr__(self, name: str) -> tuple[HavocValue, z3.BoolRef]:
-        """Accessing attribute on a HavocValue produces a new HavocValue."""
+        """Return fresh havoc for a public attribute and its type constraint.
+
+        Raises:
+            AttributeError: If ``name`` starts with an underscore.
+        """
         if name.startswith("_"):
             raise AttributeError(name)
         full_name = f"{self._name}.{name}"
         return HavocValue.havoc(full_name)
 
     def __call__(self, *args: object, **kwargs: object) -> tuple[HavocValue, z3.BoolRef]:
-        """Calling a HavocValue produces a new HavocValue."""
+        """Return fresh havoc for a call result and its type constraint."""
         full_name = f"{self._name}()"
         return HavocValue.havoc(full_name)
 
     def __repr__(self) -> str:
+        """Return the diagnostic representation for this havoc carrier."""
         return f"HavocValue({self._name})"
 
     def get_cached_attributes(self) -> dict[str, tuple[HavocValue, z3.BoolRef]]:
-        """Return the attribute cache used for lazy havoc attribute materialization."""
+        """Return the attribute mapping stored on this havoc value.
+
+        Notes:
+            This module does not populate the mapping during ``__getattr__``.
+        """
         return self._attributes
 
 
 def is_havoc(value: object) -> TypeGuard[HavocValue]:
     """Return ``True`` if *value* is a :class:`HavocValue`."""
-    return isinstance(value, HavocValue)
+    return type(value) is HavocValue
+
+
+def havoc_values_may_exist() -> bool:
+    """Return whether any :class:`HavocValue` has been constructed in this process."""
+    return _havoc_values_created
 
 
 def has_havoc(*values: object) -> bool:
     """Return ``True`` if **any** of *values* is a :class:`HavocValue`."""
-    return any(isinstance(v, HavocValue) for v in values)
+    if not _havoc_values_created:
+        return False
+    return any(type(value) is HavocValue for value in values)

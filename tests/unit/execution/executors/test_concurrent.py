@@ -6,7 +6,7 @@ from pysymex.execution.executors.concurrent import (
     SharedVariableTracker,
     analyze_concurrent,
 )
-from pysymex.execution.types import ExecutionConfig
+from pysymex.execution.config.settings import ExecutionConfig
 
 
 class TestSharedVariableTracker:
@@ -19,27 +19,11 @@ class TestSharedVariableTracker:
         tracker.record_access("t2", "x", is_write=False)
         assert tracker.is_shared("x") is True
 
-    def test_get_shared_variables(self) -> None:
-        """Test get_shared_variables behavior."""
-        tracker = SharedVariableTracker()
-        tracker.record_access("t1", "a")
-        tracker.record_access("t2", "a")
-        shared = tracker.get_shared_variables()
-        assert "a" in shared
-
     def test_is_shared(self) -> None:
         """Test is_shared behavior."""
         tracker = SharedVariableTracker()
         tracker.record_access("t1", "k")
         assert tracker.is_shared("k") is False
-
-    def test_reset(self) -> None:
-        """Test reset behavior."""
-        tracker = SharedVariableTracker()
-        tracker.record_access("t1", "x")
-        tracker.record_access("t2", "x")
-        tracker.reset()
-        assert tracker.get_shared_variables() == set()
 
 
 class TestConcurrentSymbolicExecutor:

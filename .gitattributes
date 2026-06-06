@@ -1,0 +1,31 @@
+* text=auto
+
+*.py text eol=lf
+*.pyi text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.typed text eol=lf
+Dockerfile* text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Release/source archives omit maintainer-only assets and generated artifacts.
+AGENTS.md export-ignore
+WORKLOG.md export-ignore
+.agents/** export-ignore
+.benchmarks/** export-ignore
+.hypothesis/** export-ignore
+.pysymex/** export-ignore
+.pytest*/** export-ignore
+.ruff_cache/** export-ignore
+.tmp/** export-ignore
+.tmp_profile/** export-ignore
+dist/** export-ignore
+experiments/** export-ignore
+fuzzing/** export-ignore
+manual_fp_probe/** export-ignore

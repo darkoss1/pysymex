@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dis
+import time
 
 import z3
 
@@ -10,8 +11,11 @@ from pysymex.analysis.detectors.runtime.none_dereference import (
     NoneDereferenceDetector,
     pure_check_none_deref,
 )
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicNone, SymbolicValue
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 class _RecordingZ3Checker:
@@ -48,7 +52,7 @@ def _make_instruction(
 
 
 class TestNoneDereferenceDetector:
-    """Test suite for pysymex.analysis.detectors.base.NoneDereferenceDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.NoneDereferenceDetector."""
 
     def test_check_reports_concrete_none_dereference(self) -> None:
         """Report NULL_DEREFERENCE when concrete None is dereferenced."""
@@ -145,3 +149,17 @@ def test_pure_check_none_deref_symbolic_none_reports_issue() -> None:
         pc=3,
     )
     assert issue is not None
+
+
+def test_pure_check_none_deref_does_not_report_definite_issue_on_solver_unknown() -> None:
+    """Solver UNKNOWN must not become a definite None-dereference issue."""
+    obj, type_constraint = SymbolicValue.symbolic("unknown_none_deref_obj")
+    solver = IncrementalSolver(timeout_ms=1000)
+    solver.set_deadline(time.perf_counter() - 1.0)
+    token = active_incremental_solver.set(solver)
+    try:
+        issue = pure_check_none_deref(obj, "missing", [type_constraint], pc=5)
+    finally:
+        active_incremental_solver.reset(token)
+
+    assert issue is None

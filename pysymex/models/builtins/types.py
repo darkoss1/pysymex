@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -32,11 +32,11 @@ from typing import TYPE_CHECKING
 import z3
 
 if TYPE_CHECKING:
-    from pysymex._typing import StackValue
-    from pysymex.core.state import VMState
+    from pysymex.typing import StackValue
+    from pysymex.core.state.record import VMState
 
 
-def _new_side_effects() -> dict[str, object]:
+def new_side_effects() -> dict[str, object]:
     """Create an empty side-effects map."""
     return {}
 
@@ -47,7 +47,7 @@ class TypeModelResult:
 
     value: StackValue
     constraints: Sequence[z3.ExprRef | z3.BoolRef] = field(default_factory=tuple)
-    side_effects: dict[str, object] = field(default_factory=_new_side_effects)
+    side_effects: dict[str, object] = field(default_factory=new_side_effects)
 
 
 class TypeModel(ABC):

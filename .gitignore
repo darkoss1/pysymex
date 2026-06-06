@@ -80,7 +80,9 @@ dmypy.json
 
 # IDE
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 *.swp
 *.swo
 *~
@@ -115,3 +117,6 @@ dist_tmp/
 # Tool artifacts
 .ruff_cache/
 .tmp/
+.pytest_runtime/
+.pytest-*/
+.pytest_*/

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -18,8 +18,8 @@
 
 """Async scanner using ``asyncio.TaskGroup`` for structured concurrency.
 
-This module provides :func:`scan_directory_async`, a drop-in async
-replacement for :func:`pysymex.scanner.core.scan_directory` that uses
+This module provides :func:`scan_directory`, a drop-in async
+counterpart to :func:`pysymex.scanner.directory.scan_directory` that uses
 Python 3.11+ :class:`asyncio.TaskGroup` for concurrent file scanning.
 
 Key design decisions:
@@ -34,20 +34,32 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import logging
+from pysymex.logger import get_logger
 import os
 from functools import partial
 from pathlib import Path
 
+from pysymex.config.defaults import (
+    DEFAULT_SCAN_RANDOM_SEED,
+    DEFAULT_SCANNER_FILE_MAX_PATHS,
+    DEFAULT_SCANNER_TIMEOUT_SECONDS,
+    DEFAULT_TRACE_VERBOSITY,
+)
+from pysymex.config.environment import async_scanner_process_pool_enabled
+from pysymex.pathing import normalize_input_path
 from pysymex.scanner.types import ScanResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _pool: concurrent.futures.ProcessPoolExecutor | None = None
 
 
 def _get_pool() -> concurrent.futures.ProcessPoolExecutor:
-    """Get or create a shared ProcessPoolExecutor."""
+    """Return the lazy process-global :class:`ProcessPoolExecutor` used for file scans.
+
+    Returns:
+        Shared executor that runs :func:`~pysymex.scanner.file.scan_file` in worker processes.
+    """
     global _pool
     if _pool is None:
         _pool = concurrent.futures.ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1))
@@ -59,15 +71,26 @@ async def _scan_file_async(
     max_paths: int,
     timeout: float,
     auto_tune: bool,
+    use_sandbox: bool,
+    deterministic_mode: bool,
+    random_seed: int,
+    no_cache: bool,
+    max_iterations: int,
     trace_enabled: bool | None,
     trace_output_dir: str | None,
     trace_verbosity: str,
+    enable_fp_filtering: bool,
 ) -> ScanResult:
-    """Scan a single file in a subprocess, returning its :class:`ScanResult`.
+    """Scan a single Python file asynchronously in a subprocess.
 
-    Uses a ProcessPoolExecutor to ensure Z3 context isolation and bypass the GIL.
+    Uses a ProcessPoolExecutor to run :func:`~pysymex.scanner.file.scan_file`
+    to isolate Z3 solver environments and avoid blocking the event loop with the GIL.
+    Falls back to running in-thread if subprocess allocation fails.
+
+    Returns:
+        The finished scan result payload.
     """
-    from pysymex.scanner.core import scan_file
+    from pysymex.scanner.file import scan_file
 
     task = partial(
         scan_file,
@@ -76,19 +99,19 @@ async def _scan_file_async(
         max_paths=max_paths,
         timeout=timeout,
         auto_tune=auto_tune,
+        use_sandbox=use_sandbox,
+        deterministic_mode=deterministic_mode,
+        random_seed=random_seed,
+        no_cache=no_cache,
+        max_iterations=max_iterations,
         trace_enabled=trace_enabled,
         trace_output_dir=trace_output_dir,
         trace_verbosity=trace_verbosity,
+        enable_fp_filtering=enable_fp_filtering,
     )
 
     async with asyncio.timeout(timeout + 10.0):
-        use_process_pool = os.getenv("PYSYMEX_ASYNC_USE_PROCESS_POOL", "1").strip().lower() not in {
-            "0",
-            "false",
-            "no",
-            "off",
-        }
-        if not use_process_pool:
+        if not async_scanner_process_pool_enabled():
             return await asyncio.to_thread(task)
 
         loop = asyncio.get_running_loop()
@@ -104,51 +127,59 @@ async def _scan_file_async(
             raise
 
 
-async def scan_directory_async(
+async def scan_directory(
     dir_path: str | Path,
     pattern: str = "**/*.py",
     verbose: bool = True,
-    max_paths: int = 100,
-    timeout: float = 30.0,
+    max_paths: int = DEFAULT_SCANNER_FILE_MAX_PATHS,
+    timeout: float = DEFAULT_SCANNER_TIMEOUT_SECONDS,
     max_concurrency: int | None = None,
     auto_tune: bool = False,
+    use_sandbox: bool = True,
+    deterministic_mode: bool = False,
+    random_seed: int = DEFAULT_SCAN_RANDOM_SEED,
+    no_cache: bool = False,
+    max_iterations: int = 0,
     trace_enabled: bool | None = None,
     trace_output_dir: str | None = None,
-    trace_verbosity: str = "delta_only",
+    trace_verbosity: str = DEFAULT_TRACE_VERBOSITY,
+    enable_fp_filtering: bool = True,
 ) -> list[ScanResult]:
     """Scan all Python files in a directory using ``asyncio.TaskGroup``.
 
-    This is the structured-concurrency counterpart of
-    :func:`pysymex.scanner.core.scan_directory`.  It creates one async
-    task per file inside a ``TaskGroup`` and uses a ``Semaphore`` to cap
-    concurrency.
+    Structured-concurrency counterpart of
+    :func:`pysymex.scanner.directory.scan_directory`. Worker tasks pull paths from a
+    bounded queue so at most ``max_concurrency`` file scans run at once.
 
-    **Cancellation behaviour**: if any task raises
-    ``asyncio.CancelledError`` (e.g. from a signal handler calling
-    ``task.cancel()``), the TaskGroup cancels all remaining sibling
-    tasks and re-raises the error.
-
-    **Error handling**: file-level errors are caught per task and
-    collected.  After the TaskGroup exits, they are raised as an
-    ``ExceptionGroup`` (which callers can handle with ``except*``).
+    Cancellation: if any task raises :class:`asyncio.CancelledError`, the
+    :class:`asyncio.TaskGroup` cancels remaining sibling tasks and re-raises.
 
     Args:
         dir_path: Root directory to scan.
-        pattern: Glob pattern (default ``**/*.py``).
-        verbose: Print progress lines.
-        max_paths: Maximum execution paths per function.
-        timeout: Per-file timeout in seconds.
-        max_concurrency: Maximum parallel scans.  Defaults to
-            ``os.cpu_count()``.
-        auto_tune: Auto-tune analysis config per function.
+        pattern: Glob pattern for source files (default ``**/*.py``).
+        verbose: Print per-file progress and summary lines to stdout.
+        max_paths: Maximum symbolic paths explored per code object.
+        timeout: Per-file scan timeout in seconds.
+        max_concurrency: Concurrent worker tasks; defaults to CPU count when unset.
+        auto_tune: Auto-tune execution config per function.
+        use_sandbox: Run each file scan with sandboxed extraction when enabled.
+        deterministic_mode: Use deterministic execution settings for each file.
+        random_seed: Seed for deterministic mode.
+        no_cache: Disable process-local, executor-result, and solver caches
+            for each file scan.
+        max_iterations: Cap VM iterations per path (``0`` means no extra cap).
+        trace_enabled: Override trace collection; ``None`` uses environment defaults.
+        trace_output_dir: Directory for trace artifacts when tracing is enabled.
+        trace_verbosity: Trace detail level string.
+        enable_fp_filtering: Apply false-positive filtering to emitted issues.
 
     Returns:
-        List of :class:`ScanResult` objects, one per file.
+        :class:`~pysymex.scanner.types.ScanResult` list sorted by ``file_path``.
 
     Raises:
-        ExceptionGroup: If one or more files failed to scan.
+        ExceptionGroup: When one or more file tasks fail with unexpected exceptions.
     """
-    dir_path = Path(dir_path)
+    dir_path = normalize_input_path(dir_path)
     files = sorted(dir_path.glob(pattern))
     if not files:
         if verbose:
@@ -167,7 +198,7 @@ async def scan_directory_async(
     queue: asyncio.Queue[Path | None] = asyncio.Queue(maxsize=max_concurrency * 2)
 
     async def _consume_files() -> None:
-        """Consume queued files and scan them with bounded worker parallelism."""
+        """Consume queued files and scan them concurrently."""
         nonlocal completed
         while True:
             file_path = await queue.get()
@@ -176,13 +207,19 @@ async def scan_directory_async(
                 return
             try:
                 result = await _scan_file_async(
-                    file_path,
-                    max_paths,
-                    timeout,
-                    auto_tune,
-                    trace_enabled,
-                    trace_output_dir,
-                    trace_verbosity,
+                    file_path=file_path,
+                    max_paths=max_paths,
+                    timeout=timeout,
+                    auto_tune=auto_tune,
+                    use_sandbox=use_sandbox,
+                    deterministic_mode=deterministic_mode,
+                    random_seed=random_seed,
+                    no_cache=no_cache,
+                    max_iterations=max_iterations,
+                    trace_enabled=trace_enabled,
+                    trace_output_dir=trace_output_dir,
+                    trace_verbosity=trace_verbosity,
+                    enable_fp_filtering=enable_fp_filtering,
                 )
                 async with progress_lock:
                     results.append(result)
@@ -197,7 +234,7 @@ async def scan_directory_async(
                         print(f"[{completed}/{total}] ({pct}%) {file_path.name} {status}")
             except asyncio.CancelledError:
                 raise
-            except (TimeoutError, Exception) as exc:
+            except Exception as exc:
                 async with progress_lock:
                     errors.append(exc)
                     completed += 1
@@ -224,32 +261,24 @@ async def scan_directory_async(
         await queue.join()
 
     if errors:
-        try:
-            raise ExceptionGroup(
-                f"async scan: {len(errors)} file(s) had errors",
-                errors,
-            )
-        except* OSError as eg:
-            logger.warning(
-                "%d OS error(s) during async scan",
-                len(eg.exceptions),
-            )
-        except* Exception as eg:
-            logger.warning(
-                "%d error(s) during async scan",
-                len(eg.exceptions),
-            )
+        raise ExceptionGroup(
+            f"async scan: {len(errors)} file(s) had errors",
+            errors,
+        )
 
     if verbose:
         total_issues = sum(len(r.issues) for r in results)
         files_with_issues = sum(1 for r in results if r.issues)
         err_count = sum(1 for r in results if r.error)
+        degraded_count = sum(1 for r in results if r.degraded_passes)
         print(
             f"\nSummary: {total_issues} issues in {files_with_issues}/{len(results)} files",
             end="",
         )
         if err_count:
-            print(f" ({err_count} errors)")
+            print(f" ({err_count} errors, {degraded_count} degraded)")
+        elif degraded_count:
+            print(f" ({degraded_count} degraded)")
         else:
             print()
 

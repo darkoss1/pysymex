@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from pysymex.stats.sinks.console import (
     ConsoleSink,
-    _format_metric_value,  # pyright: ignore[reportPrivateUsage]  # white-box test for format helper
-    _plain_text_metrics,  # pyright: ignore[reportPrivateUsage]  # white-box test for fallback formatter
+    format_metric_value,
+    plain_text_metrics,
 )
 
 
@@ -17,13 +17,13 @@ class TestConsoleSink:
         sink = ConsoleSink()
         metrics: dict[str, float | int | str] = {"foo": 3.14159265}
         sink.write(metrics)
-        assert sink._last_metrics == {"foo": 3.14159265}  # pyright: ignore[reportPrivateUsage]  # white-box test
+        assert sink.last_metrics == {"foo": 3.14159265}
 
     def test_write_updates_live_display_when_active(self) -> None:
         """Verify that write() calls live.update() when the live display is active."""
         sink = ConsoleSink()
         mock_live = MagicMock()
-        sink._live = mock_live  # pyright: ignore[reportPrivateUsage]  # white-box test
+        sink.live = mock_live
         metrics: dict[str, float | int | str] = {"total_paths_explored": 42.0}
         sink.write(metrics)
         mock_live.update.assert_called_once()
@@ -33,7 +33,7 @@ class TestConsoleSink:
         sink = ConsoleSink()
         metrics: dict[str, float | int | str] = {"status": "ok"}
         sink.write(metrics)
-        assert sink._last_metrics == {"status": "ok"}  # pyright: ignore[reportPrivateUsage]  # white-box test
+        assert sink.last_metrics == {"status": "ok"}
 
     def test_start_initializes_live_display(self) -> None:
         """Verify that start() sets up the Rich Live context."""
@@ -44,21 +44,21 @@ class TestConsoleSink:
             with patch("rich.console.Console"):
                 sink.start()
                 mock_live_instance.start.assert_called_once()
-        # Cleanup
-        sink._live = None  # pyright: ignore[reportPrivateUsage]  # white-box test cleanup
-        sink._started = False  # pyright: ignore[reportPrivateUsage]  # white-box test cleanup
+                # Cleanup
+        sink.live = None
+        sink.started = False
 
     def test_stop_prints_final_summary(self) -> None:
         """Verify that stop() prints a final summary of the last metrics."""
         sink = ConsoleSink()
-        sink._started = True  # pyright: ignore[reportPrivateUsage]  # white-box test setup
-        sink._last_metrics = {"total_paths_explored": 100.0}  # pyright: ignore[reportPrivateUsage]  # white-box test setup
+        sink.started = True
+        sink.last_metrics = {"total_paths_explored": 100.0}
         mock_live = MagicMock()
-        sink._live = mock_live  # pyright: ignore[reportPrivateUsage]  # white-box test setup
+        sink.live = mock_live
         with patch.object(sink, "_print_final_summary") as mock_summary:
             sink.stop()
             mock_summary.assert_called_once_with({"total_paths_explored": 100.0})
-        assert sink._live is None  # pyright: ignore[reportPrivateUsage]  # white-box test
+        assert sink.live is None
 
     def test_stop_idempotent(self) -> None:
         """Verify that calling stop() when not started is a no-op."""
@@ -67,27 +67,40 @@ class TestConsoleSink:
 
     def test_format_metric_value_float_memory(self) -> None:
         """Verify memory metrics are formatted with 1 decimal and unit."""
-        result = _format_metric_value("max_memory_mb", 123.456)
+        result = format_metric_value("max_memory_mb", 123.456)
         assert result == "123.5 MB"
 
     def test_format_metric_value_float_rate(self) -> None:
         """Verify rate metrics include unit suffix."""
-        result = _format_metric_value("path_exploration_rate", 1234.5)
+        result = format_metric_value("path_exploration_rate", 1234.5)
         assert result == "1,234.5 paths/s"
 
     def test_format_metric_value_ratio(self) -> None:
         """Verify ratio metrics are formatted with 4 decimal places."""
-        result = _format_metric_value("sat_unsat_ratio", 0.75)
+        result = format_metric_value("sat_unsat_ratio", 0.75)
         assert result == "0.7500"
+
+    def test_plain_text_metrics_uses_honest_solver_labels(self) -> None:
+        """Verify solver counters use explicit human-facing labels."""
+        rendered = plain_text_metrics(
+            {
+                "solver_queries": 3,
+                "solver_unknown": 1,
+                "sat_unsat_ratio": 0.5,
+            }
+        )
+        assert "Solver Queries" in rendered
+        assert "Solver Unknown" in rendered
+        assert "SAT/(SAT+UNSAT)" in rendered
 
     def test_format_metric_value_int(self) -> None:
         """Verify integer values are formatted directly."""
-        result = _format_metric_value("total_paths_explored", 42)
+        result = format_metric_value("total_paths_explored", 42)
         assert result == "42"
 
     def test_format_metric_value_string(self) -> None:
         """Verify string values are passed through."""
-        result = _format_metric_value("status", "ok")
+        result = format_metric_value("status", "ok")
         assert result == "ok"
 
     def test_plain_text_metrics_formats_correctly(self) -> None:
@@ -96,7 +109,7 @@ class TestConsoleSink:
             "total_paths_explored": 100.0,
             "max_memory_mb": 50.5,
         }
-        output = _plain_text_metrics(metrics)
+        output = plain_text_metrics(metrics)
         assert "=== Engine Statistics ===" in output
         assert "Paths Explored" in output
         assert "Peak Memory" in output
@@ -104,27 +117,27 @@ class TestConsoleSink:
     def test_plain_text_metrics_float_format(self) -> None:
         """Verify plain-text fallback formats floats with 4 decimal places."""
         metrics: dict[str, float | int | str] = {"foo": 3.14159265}
-        output = _plain_text_metrics(metrics)
+        output = plain_text_metrics(metrics)
         assert "3.1416" in output
 
     def test_plain_text_metrics_string_format(self) -> None:
         """Verify plain-text fallback formats strings correctly."""
         metrics: dict[str, float | int | str] = {"status": "ok"}
-        output = _plain_text_metrics(metrics)
+        output = plain_text_metrics(metrics)
         assert "status" in output.lower() or "Status" in output
         assert "ok" in output
 
     def test_build_table_returns_rich_table(self) -> None:
-        """Verify _build_table produces a Rich Table object."""
+        """Verify build_table produces a Rich Table object."""
         from rich.table import Table
 
         metrics: dict[str, float | int | str] = {"total_paths_explored": 42.0}
-        table = ConsoleSink._build_table(metrics)  # pyright: ignore[reportPrivateUsage]  # white-box test
+        table = ConsoleSink.build_table(metrics)
         assert isinstance(table, Table)
 
     def test_build_table_empty_metrics(self) -> None:
-        """Verify _build_table handles empty metrics gracefully."""
+        """Verify build_table handles empty metrics gracefully."""
         from rich.table import Table
 
-        table = ConsoleSink._build_table({})  # pyright: ignore[reportPrivateUsage]  # white-box test
+        table = ConsoleSink.build_table({})
         assert isinstance(table, Table)

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Resource State Contradiction logic rule.
+
+This module implements the resource state contradiction logic rule (Tier 5), which detects
+contradictions in constraints representing the state of files, sockets, handles, streams, or locks.
+
+Bug Class Detected:
+    Logical contradiction (resource state contradiction).
+
+Required Evidence:
+    An unsatisfiable core containing conflicting assignments or state checks on resource variables.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     extract_bool_assignments,
@@ -24,10 +39,33 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class ResourceStateContradictionRule(LogicRule):
+    """Logic rule for detecting resource state contradictions.
+
+    This rule checks the unsatisfiable core for conflicting boolean assignments on variables
+    associated with resources (e.g., a file being simultaneously open and closed).
+
+    Bug Class Detected:
+        Logical contradiction (resource state contradiction).
+
+    Required Evidence:
+        ContradictionContext with conflicting boolean state assignments on resource-related variables.
+
+    Issue Kinds:
+        IssueKind.LOGICAL_CONTRADICTION
+    """
+
     name = "Resource State Contradiction"
     tier = 5
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Determine if the contradiction context contains a resource state contradiction.
+
+        Args:
+            ctx (ContradictionContext): The contradiction context containing the unsat core.
+
+        Returns:
+            bool: True if a resource state contradiction is detected, False otherwise.
+        """
         names = get_variable_names_all(ctx.core)
         resource_names = [
             n

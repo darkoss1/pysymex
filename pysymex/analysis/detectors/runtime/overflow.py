@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,74 +16,69 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Bounded Integer Overflow detection module.
+
+This module provides detection for bounded integer overflow/underflow errors on binary operations,
+specifically supporting signed 32-bit, signed 64-bit, and unsigned size_t integer representations.
+
+Bug Class Detected:
+    Integer Overflow / Underflow.
+
+Required Evidence:
+    Satisfiable path constraints extended with a boundary violation condition (e.g. result < MIN or result > MAX).
+
+Issue Kinds:
+    IssueKind.OVERFLOW
+"""
+
 from __future__ import annotations
 
 import dis
 import z3
 from typing import TYPE_CHECKING
 
+from pysymex.core.bytecode import resolve_binary_op_symbol
+from pysymex.core.constants import Z3_FALSE
+from pysymex.core.constants import Z3_TRUE
+from pysymex.core.solver.constraints.hashing import get_int_val
+
 if TYPE_CHECKING:
-    from pysymex.core.state import VMState
+    from pysymex.core.state.record import VMState
 
-from pysymex.core.solver.engine import get_model, is_satisfiable
-from pysymex.core.types import SymbolicValue
-from pysymex.analysis.detectors.base import Detector, Issue, IssueKind, IsSatFn, GetModelFn
-
-_BINARY_OP_SYMBOL_BY_ARG: dict[int, str] = {
-    0: "+",
-    1: "&",
-    2: "//",
-    3: "<<",
-    4: "@",
-    5: "*",
-    6: "%",
-    7: "|",
-    8: "**",
-    9: ">>",
-    10: "-",
-    11: "/",
-    12: "^",
-    13: "+=",
-    14: "&=",
-    15: "//=",
-    16: "<<=",
-    17: "@=",
-    18: "*=",
-    19: "%=",
-    20: "|=",
-    21: "**=",
-    22: ">>=",
-    23: "-=",
-    24: "/=",
-    25: "^=",
-}
-
-
-def resolve_binary_op_symbol(instruction: dis.Instruction) -> str:
-    """Resolve operator symbol for ``BINARY_OP`` instructions."""
-    if instruction.argrepr:
-        return instruction.argrepr
-    if isinstance(instruction.argval, str):
-        return instruction.argval
-    if not isinstance(instruction.arg, int):
-        return ""
-    return _BINARY_OP_SYMBOL_BY_ARG.get(instruction.arg, "")
-
-
-_resolve_binary_op_symbol = resolve_binary_op_symbol
+from pysymex.core.solver.engine.policies import path_may_be_feasible
+from pysymex.core.solver.engine.queries import get_model
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.analysis.detectors.detector.contract import Detector
+from pysymex.analysis.detectors.detector.types import IsSatFn, Issue, IssueKind, GetModelFn
+from pysymex.analysis.detectors.feasibility import get_model_if_satisfiable
+from pysymex.analysis.static.arithmetic.conditions import (
+    BOUNDED_OVERFLOW_OPERATORS,
+    bounded_integer_overflow_condition,
+    normalize_assignment_operator,
+)
 
 
 def _fresh_concrete_int(value: int, *, is_bool: bool = False) -> SymbolicValue:
+    """Wrap a concrete integer *value* in a :class:`SymbolicValue` for overflow analysis.
+
+    Args:
+        value: The concrete integer to wrap.
+        is_bool: Whether to represent the value as a boolean type.
+
+    Returns:
+        A :class:`SymbolicValue` with Z3 integer and boolean tags set.
+    """
     int_value = int(value)
+    bool_value = bool(value)
     return SymbolicValue(
         _name=str(value),
-        z3_int=z3.IntVal(int_value),
-        is_int=z3.BoolVal(not is_bool),
-        z3_bool=z3.BoolVal(bool(value)),
-        is_bool=z3.BoolVal(is_bool),
-        is_float=z3.BoolVal(False),
-        is_path=z3.BoolVal(False),
-        _constant_value=bool(value) if is_bool else int_value,
+        z3_int=get_int_val(int_value),
+        is_int=Z3_FALSE if is_bool else Z3_TRUE,
+        z3_bool=Z3_TRUE if bool_value else Z3_FALSE,
+        is_bool=Z3_TRUE if is_bool else Z3_FALSE,
+        is_float=Z3_FALSE,
+        is_path=Z3_FALSE,
+        _constant_value=bool_value if is_bool else int_value,
         affinity_type="bool" if is_bool else "int",
         min_val=int_value,
         max_val=int_value,
@@ -91,7 +86,11 @@ def _fresh_concrete_int(value: int, *, is_bool: bool = False) -> SymbolicValue:
 
 
 def as_symbolic_int(value: object) -> SymbolicValue | None:
-    """Convert supported numeric values into SymbolicValue form."""
+    """Return *value* wrapped as a :class:`SymbolicValue`, or ``None`` if unsupported.
+
+    Accepts existing :class:`SymbolicValue` instances, ``bool``, or ``int``.
+    Returns ``None`` for other types (e.g. ``float``, ``str``).
+    """
     if isinstance(value, SymbolicValue):
         return value
     if isinstance(value, bool):
@@ -99,9 +98,6 @@ def as_symbolic_int(value: object) -> SymbolicValue | None:
     if isinstance(value, int):
         return _fresh_concrete_int(value)
     return None
-
-
-_as_symbolic_int = as_symbolic_int
 
 
 def _pure_check_overflow(
@@ -112,77 +108,118 @@ def _pure_check_overflow(
     pc: int,
     min_val: int,
     max_val: int,
-    is_satisfiable_fn: IsSatFn = is_satisfiable,
+    is_satisfiable_fn: IsSatFn = path_may_be_feasible,
     get_model_fn: GetModelFn = get_model,
 ) -> Issue | None:
-    """Pure: check if arithmetic *op* on *left*/*right* can overflow."""
+    """Determine whether *op* applied to *left* and *right* can overflow *[min_val, max_val]*.
+
+    Pure function — no I/O, no global state.  Extends *path_constraints*
+    with a boundary-violation condition and queries the solver.
+
+    Args:
+        left: Symbolic left operand.
+        right: Symbolic right operand.
+        op: Binary operator symbol (e.g. ``"+"``, ``"<<"``, ``"**"``).
+        path_constraints: Current path constraint list.
+        pc: Bytecode offset of the operation.
+        min_val: Lower bound of the target integer type.
+        max_val: Upper bound of the target integer type.
+        is_satisfiable_fn: Solver satisfiability callback.
+        get_model_fn: Solver model-extraction callback.
+
+    Returns:
+        An :class:`Issue` if overflow is feasible on the current path,
+        ``None`` otherwise.
+    """
+    normalized_op = normalize_assignment_operator(op)
     int_like_left = z3.Or(left.is_int, left.is_bool)
     int_like_right = z3.Or(right.is_int, right.is_bool)
 
-    if op == "<<":
+    overflow_condition = bounded_integer_overflow_condition(
+        left.z3_int,
+        right.z3_int,
+        normalized_op,
+        min_val,
+        max_val,
+    )
+    if overflow_condition is None:
+        return None
+
+    if normalized_op == "<<":
         shift_overflow = [
             *path_constraints,
             int_like_left,
             int_like_right,
-            right.z3_int > 63,
+            overflow_condition,
         ]
-        if is_satisfiable_fn(shift_overflow):
+        model = get_model_if_satisfiable(shift_overflow, is_satisfiable_fn, get_model_fn)
+        if model is not None:
             return Issue(
                 kind=IssueKind.OVERFLOW,
-                message=f"Excessive bit shift: {right.name} could be > 63",
+                message=f"Excessive bounded-width bit shift: {right.name} could be > 63",
                 constraints=shift_overflow,
-                model=get_model_fn(shift_overflow),
+                model=model,
                 pc=pc,
             )
         return None
-    if op == "**":
+    if normalized_op == "**":
         power_overflow = [
             *path_constraints,
             int_like_left,
             int_like_right,
-            left.z3_int > 2,
-            right.z3_int > 62,
+            overflow_condition,
         ]
-        if is_satisfiable_fn(power_overflow):
+        model = get_model_if_satisfiable(power_overflow, is_satisfiable_fn, get_model_fn)
+        if model is not None:
             return Issue(
                 kind=IssueKind.OVERFLOW,
-                message="Potential overflow in exponentiation",
+                message="Potential bounded integer overflow in exponentiation",
                 constraints=power_overflow,
-                model=get_model_fn(power_overflow),
+                model=model,
                 pc=pc,
             )
-        return None
-    result: z3.ArithRef
-    if op == "*":
-        result = left.z3_int * right.z3_int
-    elif op == "+":
-        result = left.z3_int + right.z3_int
-    elif op == "-":
-        result = left.z3_int - right.z3_int
-    else:
         return None
     overflow_constraint = [
         *path_constraints,
         int_like_left,
         int_like_right,
-        z3.Or(result > max_val, result < min_val),
+        overflow_condition,
     ]
-    if is_satisfiable_fn(overflow_constraint):
-        return Issue(
-            kind=IssueKind.OVERFLOW,
-            message=f"Possible integer overflow in {op} operation",
-            constraints=overflow_constraint,
-            model=get_model_fn(overflow_constraint),
-            pc=pc,
-        )
-    return None
+    model = get_model_if_satisfiable(overflow_constraint, is_satisfiable_fn, get_model_fn)
+    if model is None:
+        return None
+    return Issue(
+        kind=IssueKind.OVERFLOW,
+        message=f"Possible bounded integer overflow in {normalized_op} operation",
+        constraints=overflow_constraint,
+        model=model,
+        pc=pc,
+    )
 
 
 class OverflowDetector(Detector):
-    """Detects integer overflow conditions."""
+    """Detect bounded-width integer overflow on arithmetic operations.
+
+    Bug class:
+        Signed overflow (32-bit or 64-bit) or unsigned overflow (``size_t``)
+        in ``+``, ``-``, ``*``, ``**``, and ``<<`` operations.
+
+    Evidence:
+        Satisfiable path constraints extended with a boundary violation
+        condition (result outside ``[min_val, max_val]``).
+
+    Issue kind:
+        ``IssueKind.OVERFLOW``.
+
+    Known limitations:
+        Only checks ``BINARY_OP`` opcode; does not detect in-place
+        operators or augmented assignments as separate opcodes on older
+        CPython.  Python integers are unbounded by default; this detector
+        is useful when interfacing with bounded foreign types.
+    """
 
     name = "overflow"
-    description = "Detects integer overflow"
+    description = "Detects bounded-width integer overflow"
     issue_kind = IssueKind.OVERFLOW
     relevant_opcodes = frozenset({"BINARY_OP"})
     BOUNDS = {
@@ -192,6 +229,12 @@ class OverflowDetector(Detector):
     }
 
     def __init__(self, bound_type: str = "64bit") -> None:
+        """Initialise with a specific integer boundary width.
+
+        Args:
+            bound_type: One of ``"32bit"``, ``"64bit"``, or ``"size_t"``.
+                Defaults to ``"64bit"``.
+        """
         self.min_val, self.max_val = self.BOUNDS.get(bound_type, self.BOUNDS["64bit"])
 
     def check(
@@ -200,19 +243,19 @@ class OverflowDetector(Detector):
         instruction: dis.Instruction,
         _solver_check: IsSatFn,
     ) -> Issue | None:
-        """Check."""
+        """Inspect *instruction* for a ``BINARY_OP`` that may overflow the configured bounds."""
         if instruction.opname != "BINARY_OP":
             return None
         op_symbol = resolve_binary_op_symbol(instruction)
         if not op_symbol:
             return None
-        op = op_symbol[:-1] if op_symbol.endswith("=") else op_symbol
-        if op not in {"*", "+", "-", "**", "<<"}:
+        op = normalize_assignment_operator(op_symbol)
+        if op not in BOUNDED_OVERFLOW_OPERATORS:
             return None
         if len(state.stack) < 2:
             return None
-        left = _as_symbolic_int(state.stack[-2])
-        right = _as_symbolic_int(state.stack[-1])
+        left = as_symbolic_int(state.stack[-2])
+        right = as_symbolic_int(state.stack[-1])
         if left is None or right is None:
             return None
         return _pure_check_overflow(

@@ -1,7 +1,7 @@
 import pysymex.core.types.checks
 from typing import cast
 
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 class _DummyValue:

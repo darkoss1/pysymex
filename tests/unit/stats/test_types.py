@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import time
 
-from pysymex.stats.types import Event, EventType, Metadata, _new_metadata  # type: ignore[reportPrivateUsage]  # white-box test requires access to internal state
+from pysymex.stats.types import Event, EventType, Metadata, new_metadata
 
 
 class TestTypes:
     """Test suite for stats/types.py."""
 
     def test_new_metadata_returns_empty_dict(self) -> None:
-        """Verify that _new_metadata returns an empty dictionary."""
-        metadata = _new_metadata()
+        """Verify that new_metadata returns an empty dictionary."""
+        metadata = new_metadata()
         assert metadata == {}
         assert isinstance(metadata, dict)
 

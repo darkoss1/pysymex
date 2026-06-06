@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,9 +16,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Quantifier Types for pysymex.
-Dataclasses, enums, and type-only definitions for quantifier support.
+"""Dataclasses and enums for quantified contract syntax trees.
+
+Shared schemas for parser, translator, instantiation, and verifier modules. Contains
+no parsing or solver logic.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from enum import Enum, auto
 from typing import cast
 
 import z3
+
+from pysymex.core.constants import Z3_TRUE, Z3_ZERO
 
 
 class QuantifierKind(Enum):
@@ -43,10 +46,13 @@ class QuantifierKind(Enum):
 class QuantifierVar:
     """A quantified variable bound to a Z3 sort.
 
+    Represents a single bound variable within a quantified contract clause
+    (such as ``i`` inside ``forall(i, ...)``).
+
     Attributes:
         name: Variable identifier.
-        sort: Z3 sort (IntSort, BoolSort, etc.).
-        z3_var: Resolved Z3 expression (auto-created in ``__post_init__``).
+        sort: The Z3 sort (e.g. ``IntSort``, ``BoolSort``) of this variable.
+        z3_var: The resolved Z3 symbolic expression.
     """
 
     name: str
@@ -54,6 +60,12 @@ class QuantifierVar:
     z3_var: z3.ExprRef | None = None
 
     def __post_init__(self) -> None:
+        """Initialize default Z3 variables for the quantified variable.
+
+        If a Z3 expression is not provided during construction, creates one matching
+        the specified name and Z3 sort (such as IntSort, BoolSort, or RealSort) using
+        object.__setattr__ to bypass frozen dataclass mutability constraints.
+        """
         if self.z3_var is None:
             if self.sort == z3.IntSort():
                 object.__setattr__(self, "z3_var", z3.Int(self.name))
@@ -69,13 +81,14 @@ class QuantifierVar:
 class BoundSpec:
     """Bound specification for a quantified variable.
 
-    At most one of the numeric bounds or ``in_collection`` should be set.
+    Restricts the domain of the quantified variable. Supports numeric ranges
+    or collection membership.
 
     Attributes:
         lower: Lower-bound Z3 expression.
         upper: Upper-bound Z3 expression.
-        lower_inclusive: Whether lower bound is inclusive.
-        upper_inclusive: Whether upper bound is inclusive.
+        lower_inclusive: Whether the lower bound is inclusive (``<=``).
+        upper_inclusive: Whether the upper bound is inclusive (``<=``).
         in_collection: Z3 array/set expression for membership bounds.
     """
 
@@ -86,9 +99,20 @@ class BoundSpec:
     in_collection: z3.ExprRef | None = None
 
     def to_constraint(self, var: z3.ExprRef | None) -> z3.BoolRef:
-        """Convert bound to Z3 constraint."""
+        """Translate this bound specification into a Z3 boolean constraint.
+
+        Args:
+            var: The Z3 variable expression being bounded.
+
+        Returns:
+            A Z3 boolean constraint representing the range/domain limitation.
+
+        Raises:
+            ValueError: If array membership selection theory fails or is
+                unsupported.
+        """
         if var is None:
-            return z3.BoolVal(True)
+            return Z3_TRUE
         arith_var = cast("z3.ArithRef", var)
         constraints: list[z3.BoolRef] = []
         if self.lower is not None:
@@ -105,11 +129,11 @@ class BoundSpec:
                 constraints.append(arith_var < upper)
         if self.in_collection is not None:
             try:
-                constraints.append(z3.Select(self.in_collection, var) != z3.IntVal(0))
-            except z3.Z3Exception:
-                pass
+                constraints.append(z3.Select(self.in_collection, var) != Z3_ZERO)
+            except z3.Z3Exception as exc:
+                raise ValueError("Unsupported quantified collection membership model") from exc
         if not constraints:
-            return z3.BoolVal(True)
+            return Z3_TRUE
         return z3.And(*constraints)
 
 
@@ -117,13 +141,16 @@ class BoundSpec:
 class Quantifier:
     """A fully-parsed quantified expression.
 
+    Holds the structured components of a quantified clause extracted from
+    contract strings.
+
     Attributes:
-        kind: Quantifier type (FORALL, EXISTS, UNIQUE, COUNT).
-        variables: Bound quantifier variables.
-        bounds: Per-variable bound specifications.
-        body: Z3 Boolean body expression.
-        original_text: Source text the quantifier was parsed from.
-        instantiation_hints: Optional Z3 trigger expressions.
+        kind: The quantifier kind (FORALL, EXISTS, UNIQUE, COUNT).
+        variables: List of quantified variables bound in this quantifier.
+        bounds: Per-variable bound specification limits.
+        body: Z3 boolean body expression.
+        original_text: Raw source string from which this was parsed.
+        instantiation_hints: Trigger patterns for Z3 E-matching.
     """
 
     kind: QuantifierKind
@@ -134,11 +161,23 @@ class Quantifier:
     instantiation_hints: list[z3.ExprRef] = field(default_factory=list[z3.ExprRef])
 
     def to_z3(self) -> z3.BoolRef:
-        """Convert to Z3 quantified formula."""
+        """Translate this quantifier structure into a native Z3 quantifier expression.
+
+        Converts universal, existential, and unique existential structures.
+
+        Returns:
+            A ``z3.BoolRef`` representing the quantified formula.
+
+        Raises:
+            ValueError: If count of variables and bounds mismatch, or if
+                quantifier kind is unsupported.
+        """
+        if len(self.variables) != len(self.bounds):
+            raise ValueError("Each quantified variable requires exactly one bound")
         bound_constraints: list[z3.BoolRef] = []
-        for var, bound in zip(self.variables, self.bounds, strict=False):
+        for var, bound in zip(self.variables, self.bounds, strict=True):
             bound_constraints.append(bound.to_constraint(var.z3_var))
-        bound_constraint = z3.And(*bound_constraints) if bound_constraints else z3.BoolVal(True)
+        bound_constraint = z3.And(*bound_constraints) if bound_constraints else Z3_TRUE
         z3_vars: list[z3.ExprRef] = []
         for var in self.variables:
             if var.z3_var is not None:
@@ -149,12 +188,13 @@ class Quantifier:
             return z3.Exists(z3_vars, z3.And(bound_constraint, self.body))
         elif self.kind == QuantifierKind.UNIQUE:
             y_vars = [z3.FreshConst(v.sort, "y") for v in self.variables]
-            body_with_y = z3.substitute(self.body, *zip(z3_vars, y_vars, strict=False))
-            bound_with_y = z3.substitute(bound_constraint, *zip(z3_vars, y_vars, strict=False))
+            substitutions = list(zip(z3_vars, y_vars, strict=True))
+            body_with_y = z3.substitute(self.body, *substitutions)
+            bound_with_y = z3.substitute(bound_constraint, *substitutions)
 
-            eq_all = z3.And(*[x == y for x, y in zip(z3_vars, y_vars, strict=False)])
+            eq_all = z3.And(*[x == y for x, y in zip(z3_vars, y_vars, strict=True)])
             uniqueness = z3.ForAll(y_vars, z3.Implies(z3.And(bound_with_y, body_with_y), eq_all))
-            return z3.And(z3.Exists(z3_vars, z3.And(bound_constraint, self.body)), uniqueness)
+            return z3.Exists(z3_vars, z3.And(bound_constraint, self.body, uniqueness))
         elif self.kind == QuantifierKind.COUNT:
             raise ValueError("COUNT quantifier requires dedicated lowering and is unsupported here")
         else:

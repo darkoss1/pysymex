@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,8 +16,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Benchmarking suite types for pysymex.
-Dataclasses and enums used by the benchmarking framework.
+"""Shared benchmark suite types.
+
+This module owns benchmark metadata and result contracts used by the CLI,
+runner, comparison, and reporting layers.
 """
 
 from __future__ import annotations
@@ -40,6 +42,29 @@ class BenchmarkCategory(Enum):
     END_TO_END = auto()
     MEMORY = auto()
     CONCURRENCY = auto()
+    MODELS = auto()
+    REPORTING = auto()
+    SANDBOX = auto()
+    CLI = auto()
+
+
+class BenchmarkMode(Enum):
+    """Supported benchmark run scales.
+
+    ``QUICK`` is the default local loop, ``FULL`` covers all normal workloads,
+    and ``STRESS`` is reserved for intentionally expensive cases.
+    """
+
+    QUICK = "quick"
+    FULL = "full"
+    STRESS = "stress"
+
+
+class BenchmarkStatus(Enum):
+    """Execution status for one benchmark case."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +84,19 @@ class BenchmarkResult:
         paths_explored: Symbolic-execution paths explored.
         instructions_executed: VM instructions executed.
         solver_calls: Number of Z3 solver invocations.
+        solver_sat: Number of SAT solver outcomes.
+        solver_unsat: Number of UNSAT solver outcomes.
+        solver_unknown: Number of UNKNOWN solver outcomes.
+        issue_count: Number of detector or scanner issues observed by the workload.
         iterations: Number of timing iterations.
         warmup_iterations: Number of discarded warm-up iterations.
         timestamp: ISO-8601 timestamp of the run.
         python_version: CPython version string.
         platform: OS/arch identifier.
+        status: Execution status for the benchmark case.
+        failure: Failure detail when the case did not complete.
+        tags: Stable tags describing the benchmark concern.
+        stability: Trust/stability note such as ``stable`` or ``machine-dependent``.
     """
 
     name: str
@@ -78,11 +111,19 @@ class BenchmarkResult:
     paths_explored: int = 0
     instructions_executed: int = 0
     solver_calls: int = 0
+    solver_sat: int = 0
+    solver_unsat: int = 0
+    solver_unknown: int = 0
+    issue_count: int = 0
     iterations: int = 1
     warmup_iterations: int = 0
     timestamp: str = ""
     python_version: str = ""
     platform: str = ""
+    status: BenchmarkStatus = BenchmarkStatus.COMPLETED
+    failure: str | None = None
+    tags: tuple[str, ...] = ()
+    stability: str = "stable"
 
     @property
     def throughput(self) -> float:
@@ -113,13 +154,35 @@ class BenchmarkResult:
             "paths_explored": self.paths_explored,
             "instructions_executed": self.instructions_executed,
             "solver_calls": self.solver_calls,
+            "solver_sat": self.solver_sat,
+            "solver_unsat": self.solver_unsat,
+            "solver_unknown": self.solver_unknown,
+            "issue_count": self.issue_count,
             "iterations": self.iterations,
+            "warmup_iterations": self.warmup_iterations,
             "throughput": self.throughput,
             "paths_per_second": self.paths_per_second,
             "timestamp": self.timestamp,
             "python_version": self.python_version,
             "platform": self.platform,
+            "status": self.status.value,
+            "failure": self.failure,
+            "tags": list(self.tags),
+            "stability": self.stability,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkEvent:
+    """Live progress event emitted while a benchmark suite runs."""
+
+    benchmark_name: str
+    category: BenchmarkCategory
+    phase: str
+    completed: int
+    total: int
+    elapsed_seconds: float = 0.0
+    message: str = ""
 
 
 @dataclass(frozen=True, slots=True)

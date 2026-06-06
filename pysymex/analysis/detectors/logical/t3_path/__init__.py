@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,22 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tier 3 path contradiction logic rules.
+
+This package defines logic rules targeting Tier 3 path contradictions, including sequential
+modular contradictions, post-assignment contradictions, return type contradictions, loop invariant
+violations, and constraint narrowing contradictions.
+
+Bug Class Detected:
+    Logical contradiction (infeasible paths).
+
+Required Evidence:
+    Unsatisfiable cores violating path logic constraints.
+
+Issue Kinds:
+    IssueKind.LOGICAL_CONTRADICTION
+"""
 
 from .sequential_modular import SequentialModularRule
 from .post_assignment import PostAssignmentContradictionRule

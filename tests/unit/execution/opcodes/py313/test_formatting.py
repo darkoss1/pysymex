@@ -6,9 +6,10 @@ import sys
 import pytest
 
 from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py313.formatting import (
     handle_convert_value,
     handle_format_simple,

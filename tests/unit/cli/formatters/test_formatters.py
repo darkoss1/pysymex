@@ -1,11 +1,23 @@
-import pytest
+import json
 from unittest.mock import MagicMock, patch
+
+import pytest
 from pysymex.cli.formatters import get_formatter
-from pysymex.cli.formatters.json_fmt import JsonFormatter
-from pysymex.cli.formatters.text_fmt import TextFormatter
-from pysymex.cli.formatters.sarif_fmt import SarifFormatter
-from pysymex.cli.formatters.html_fmt import HtmlFormatter
-from pysymex.cli.formatters.markdown_fmt import MarkdownFormatter
+from pysymex.cli.formatters.base import iter_verify_issue_records
+from pysymex.cli.formatters.json import JsonFormatter
+from pysymex.cli.formatters.text import TextFormatter
+from pysymex.cli.formatters.sarif import SarifFormatter
+from pysymex.cli.formatters.html import HtmlFormatter
+from pysymex.cli.formatters.markdown import MarkdownFormatter
+from pysymex.contracts.decorators import get_function_contract, requires
+from pysymex.contracts.ir.evidence import SolverStatus, UnsupportedReason
+from pysymex.contracts.ir.obligations import ObligationHook, QueryKind
+from pysymex.contracts.obligations import build_contract_evidence
+from pysymex.contracts.types import Contract, VerificationResult
+from pysymex.reporting.formatters import (
+    JSONFormatter as ReportingJsonFormatter,
+    MarkdownFormatter as ReportingMarkdownFormatter,
+)
 
 
 @pytest.fixture
@@ -42,8 +54,63 @@ def mock_scan_result() -> MagicMock:
     result.avg_memory_mb = 120.0
     result.paths_explored = 5
     result.max_depth_reached = 3
+    result.error = None
     result.to_dict.return_value = {"file": "test.py", "issues": result.issues, "elapsed_time": 1.5}
     return result
+
+
+@pytest.fixture
+def mock_verify_result() -> MagicMock:
+    result = MagicMock()
+    result.function_name = "checked"
+    result.source_file = "verify_target.py"
+    result.paths_explored = 3
+    result.degraded_passes = []
+
+    runtime_issue = MagicMock()
+    runtime_issue.kind = "RUNTIME"
+    runtime_issue.line_number = 7
+    runtime_issue.format.return_value = "runtime failed"
+
+    contract_issue = MagicMock()
+    contract_issue.kind = "CONTRACT"
+    contract_issue.line_number = 11
+    contract_issue.format.return_value = "contract failed"
+
+    arithmetic_issue = MagicMock()
+    arithmetic_issue.kind = "ARITHMETIC"
+    arithmetic_issue.line_number = 13
+    arithmetic_issue.format.return_value = "arithmetic failed"
+
+    result.issues = [runtime_issue]
+    result.contract_issues = [contract_issue]
+    result.arithmetic_issues = [arithmetic_issue]
+    return result
+
+
+@requires("x > 0")
+def _contract_target_for_report(x: int) -> int:
+    return x
+
+
+def _contract_clause_for_report() -> Contract:
+    contract = get_function_contract(_contract_target_for_report)
+    assert contract is not None
+    return contract.preconditions[0]
+
+
+def _contract_evidence_for_report() -> object:
+    return build_contract_evidence(
+        _contract_clause_for_report(),
+        _contract_target_for_report,
+        hook=ObligationHook.CALL_SITE,
+        query_kind=QueryKind.CALL_PRECONDITION,
+        pc=11,
+        status=VerificationResult.UNSUPPORTED,
+        solver_status=SolverStatus.UNSUPPORTED,
+        message="predicate could not be lowered",
+        unsupported_reasons=(UnsupportedReason.PREDICATE_LOWERING,),
+    )
 
 
 def test_get_formatter() -> None:
@@ -53,101 +120,205 @@ def test_get_formatter() -> None:
     assert isinstance(get_formatter("sarif"), SarifFormatter)
     assert isinstance(get_formatter("html"), HtmlFormatter)
     assert isinstance(get_formatter("markdown"), MarkdownFormatter)
-    assert isinstance(get_formatter("unknown"), TextFormatter)
 
 
-def test_json_formatter(mock_issue: MagicMock, mock_scan_result: MagicMock) -> None:
+def test_get_formatter_rejects_unknown_format() -> None:
+    with pytest.raises(ValueError, match="Unsupported formatter: unknown"):
+        get_formatter("unknown")
+
+
+def test_cli_formatters_are_distinct_from_single_result_reporting_formatters() -> None:
+    """CLI formatters own command aggregation; reporting formatters own one result."""
+    assert JsonFormatter is not ReportingJsonFormatter
+    assert MarkdownFormatter is not ReportingMarkdownFormatter
+    assert hasattr(JsonFormatter(), "format_symbolic")
+    assert hasattr(ReportingJsonFormatter(), "format")
+
+
+def test_iter_verify_issue_records_normalizes_all_verify_issue_buckets(
+    mock_verify_result: MagicMock,
+) -> None:
+    records = list(iter_verify_issue_records(mock_verify_result))
+
+    assert [record.issue_type for record in records] == ["RUNTIME", "CONTRACT", "ARITHMETIC"]
+    assert [record.message for record in records] == [
+        "runtime failed",
+        "contract failed",
+        "arithmetic failed",
+    ]
+    assert [record.line_number for record in records] == [7, 11, 13]
+    assert {record.source_file for record in records} == {"verify_target.py"}
+    assert {record.function_name for record in records} == {"checked"}
+
+
+def test_json_formatter(mock_scan_result: MagicMock) -> None:
     fmt = JsonFormatter()
-
-    # Static
-    out = fmt.format_static([mock_issue], 1, 0, 1.0)
-    assert '"mode": "static"' in out
-    assert '"total_issues": 1' in out
-
-    # Pipeline
-    mock_pipeline_result = MagicMock()
-    mock_pipeline_result.issues = [mock_issue]
-    out = fmt.format_pipeline({"test.py": mock_pipeline_result}, [("test.py", mock_issue)], 1, 1.0)
-    assert '"mode": "pipeline"' in out
-    assert '"files_scanned": 1' in out
-
-    # Symbolic
     out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
     assert '"mode": "symbolic"' in out
     assert '"total_issues": 1' in out
 
 
-def test_text_formatter(mock_issue: MagicMock, mock_scan_result: MagicMock) -> None:
+def test_json_verify_formatter_includes_contract_evidence_schema(
+    mock_verify_result: MagicMock,
+) -> None:
+    evidence = _contract_evidence_for_report()
+    mock_verify_result.contract_evidence = [evidence]
+
+    data = json.loads(JsonFormatter().format_verify([mock_verify_result], 3, 1.0))
+
+    assert data["evidence_schema"] == "pysymex.contracts.evidence.v1"
+    assert data["results"][0]["contract_evidence"][0]["solver_status"] == "unsupported"
+
+
+def test_text_verify_formatter_shows_contract_evidence_rows(
+    mock_verify_result: MagicMock,
+) -> None:
+    evidence = _contract_evidence_for_report()
+    mock_verify_result.contract_evidence = [evidence]
+
+    output = TextFormatter(use_rich=False).format_verify([mock_verify_result], 3, 1.0)
+
+    assert "Contract evidence:" in output
+    assert "[UNSUPPORTED] REQUIRES call_site/call_precondition (native): x > 0" in output
+
+
+def test_text_formatter(mock_scan_result: MagicMock) -> None:
     fmt = TextFormatter(use_rich=False)
-
-    # Static
-    out = fmt.format_static([mock_issue], 1, 0, 1.0)
-    assert "pysymex static scan" in out
-    assert "DIVISION_BY_ZERO" in out
-
-    # Pipeline
-    out = fmt.format_pipeline({}, [("test.py", mock_issue)], 1, 1.0)
-    assert "pysymex pipeline scan" in out
-    assert "test.py:10" in out
-
-    # Symbolic
     out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
     assert "pysymex - formal verification report" in out
     assert "DIVISION_BY_ZERO" in out
+    assert "Trigger:" in out
 
 
-def test_markdown_formatter(mock_issue: MagicMock, mock_scan_result: MagicMock) -> None:
+def test_text_formatter_omits_empty_trigger(mock_scan_result: MagicMock) -> None:
+    mock_scan_result.issues[0]["counterexample"] = {}
+
+    out = TextFormatter(use_rich=False).format_symbolic([mock_scan_result], 1, 1.5)
+
+    assert "Trigger:" not in out
+
+
+def test_rich_text_formatter_omits_empty_trigger(mock_scan_result: MagicMock) -> None:
+    pytest.importorskip("rich")
+    mock_scan_result.issues[0]["counterexample"] = {}
+
+    out = TextFormatter(use_rich=True).format_symbolic([mock_scan_result], 1, 1.5)
+
+    assert "Trigger:" not in out
+
+
+def test_markdown_formatter(mock_scan_result: MagicMock) -> None:
     fmt = MarkdownFormatter()
-
-    # Static
-    out = fmt.format_static([mock_issue], 1, 0, 1.0)
-    assert "# pysymex static analysis report" in out
-    assert "DIVISION_BY_ZERO" in out
-
-    # Pipeline
-    out = fmt.format_pipeline({}, [("test.py", mock_issue)], 1, 1.0)
-    assert "# pysymex pipeline scan report" in out
-    assert "test.py:10" in out
-
-    # Symbolic
     out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
     assert "# pysymex symbolic execution report" in out
     assert "DIVISION_BY_ZERO" in out
+    assert "Triggering Input" in out
 
 
-def test_html_formatter(mock_issue: MagicMock, mock_scan_result: MagicMock) -> None:
+def test_markdown_formatter_omits_empty_triggering_input(mock_scan_result: MagicMock) -> None:
+    mock_scan_result.issues[0]["counterexample"] = {}
+
+    out = MarkdownFormatter().format_symbolic([mock_scan_result], 1, 1.5)
+
+    assert "Triggering Input" not in out
+
+
+def test_html_formatter(mock_scan_result: MagicMock) -> None:
     fmt = HtmlFormatter()
 
-    with patch("pysymex.cli.formatters.html_fmt.generate_html_report") as mock_gen:
+    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
         mock_gen.return_value = "<html></html>"
-
-        # Static
-        out = fmt.format_static([mock_issue], 1, 0, 1.0)
-        assert out == "<html></html>"
-
-        # Pipeline
-        out = fmt.format_pipeline({}, [("test.py", mock_issue)], 1, 1.0)
-        assert out == "<html></html>"
-
-        # Symbolic
         out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
         assert out == "<html></html>"
 
 
-def test_sarif_formatter(mock_issue: MagicMock, mock_scan_result: MagicMock) -> None:
+def test_html_formatter_normalizes_empty_triggering_input(mock_scan_result: MagicMock) -> None:
+    mock_scan_result.issues[0]["counterexample"] = {}
+    fmt = HtmlFormatter()
+
+    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
+        mock_gen.return_value = "<html></html>"
+
+        out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
+
+    assert out == "<html></html>"
+    report = mock_gen.call_args.args[0]
+    assert report.issues[0].triggering_input is None
+
+
+def test_html_verify_formatter_uses_normalized_verify_records(
+    mock_verify_result: MagicMock,
+) -> None:
+    fmt = HtmlFormatter()
+
+    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
+        mock_gen.return_value = "<html></html>"
+
+        out = fmt.format_verify([mock_verify_result], 3, 1.0)
+
+    assert out == "<html></html>"
+    report = mock_gen.call_args.args[0]
+    assert [issue.issue_type for issue in report.issues] == ["RUNTIME", "CONTRACT", "ARITHMETIC"]
+    assert [issue.message for issue in report.issues] == [
+        "runtime failed",
+        "contract failed",
+        "arithmetic failed",
+    ]
+    assert [issue.line_number for issue in report.issues] == [7, 11, 13]
+
+
+def test_sarif_formatter(mock_scan_result: MagicMock) -> None:
     fmt = SarifFormatter()
 
     with patch("pysymex.reporting.sarif.SARIFGenerator") as mock_gen_sym:
-        with patch("pysymex.reporting.sarif.generate_sarif") as mock_gen_static:
-            mock_sarif = MagicMock()
-            mock_sarif.to_json.return_value = "{}"
-            mock_gen_sym.return_value.generate.return_value = mock_sarif
-            mock_gen_static.return_value.to_json.return_value = "{}"
+        mock_sarif = MagicMock()
+        mock_sarif.to_json.return_value = "{}"
+        mock_gen_sym.return_value.generate.return_value = mock_sarif
 
-            # Static
-            out = fmt.format_static([mock_issue], 1, 0, 1.0)
-            assert out == "{}"
+        out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
+        assert out == "{}"
+        symbolic_call = mock_gen_sym.return_value.generate.call_args.kwargs
+        assert symbolic_call["execution_successful"] is True
+        assert symbolic_call["analysis_errors"] is None
 
-            # Symbolic
-            out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
-            assert out == "{}"
+
+def test_sarif_symbolic_formatter_records_scan_failures(mock_scan_result: MagicMock) -> None:
+    mock_scan_result.error = "Syntax Error: invalid syntax"
+
+    payload = json.loads(SarifFormatter().format_symbolic([mock_scan_result], 1, 1.0))
+    invocation = payload["runs"][0]["invocations"][0]
+
+    assert invocation["executionSuccessful"] is False
+    assert invocation["properties"]["analysisErrors"] == ["test.py: Syntax Error: invalid syntax"]
+
+
+def test_sarif_verify_formatter_uses_normalized_verify_records(
+    mock_verify_result: MagicMock,
+) -> None:
+    fmt = SarifFormatter()
+    evidence = _contract_evidence_for_report()
+    mock_verify_result.contract_issues[0].evidence = evidence
+
+    with patch("pysymex.reporting.sarif.SARIFGenerator") as mock_generator:
+        mock_sarif = MagicMock()
+        mock_sarif.to_json.return_value = "{}"
+        mock_generator.return_value.generate.return_value = mock_sarif
+
+        out = fmt.format_verify([mock_verify_result], 3, 1.0)
+
+    assert out == "{}"
+    issues = mock_generator.return_value.generate.call_args.kwargs["issues"]
+    assert [issue["type"] for issue in issues] == ["RUNTIME", "CONTRACT", "ARITHMETIC"]
+    assert issues[1]["properties"]["contractEvidence"]["solver_status"] == "unsupported"
+
+
+def test_sarif_verify_formatter_projects_contract_evidence_properties(
+    mock_verify_result: MagicMock,
+) -> None:
+    evidence = _contract_evidence_for_report()
+    mock_verify_result.contract_issues[0].evidence = evidence
+
+    payload = json.loads(SarifFormatter().format_verify([mock_verify_result], 3, 1.0))
+
+    contract_result = payload["runs"][0]["results"][1]
+    assert contract_result["properties"]["contractEvidence"]["status"] == "UNSUPPORTED"

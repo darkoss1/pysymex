@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,12 +16,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Runtime exception detectors package.
+
+Aggregates detectors for runtime Python exceptions, such as division by zero, type/attribute/key errors,
+index errors, assertions, resource leaks, overflows, and unbound variables.
+
+Bug Class Detected:
+    Runtime exceptions.
+
+Required Evidence:
+    Satisfiable execution states violating safety assertions.
+
+Issue Kinds:
+    IssueKind.DIVISION_BY_ZERO, IssueKind.NULL_DEREFERENCE, IssueKind.KEY_ERROR,
+    IssueKind.INDEX_ERROR, IssueKind.TYPE_ERROR, IssueKind.ATTRIBUTE_ERROR,
+    IssueKind.ASSERTION_ERROR, IssueKind.RESOURCE_LEAK, IssueKind.OVERFLOW,
+    IssueKind.UNBOUND_VARIABLE, IssueKind.NAME_ERROR
+"""
+
 from .division_by_zero import DivisionByZeroDetector
-from .assertion_error import AssertionErrorDetector
-from .index_error import IndexErrorDetector
-from .key_error import KeyErrorDetector
-from .type_error import TypeErrorDetector
-from .attribute_error import AttributeErrorDetector
+from .errors.assertion import AssertionErrorDetector
+from .index_error.detector import IndexErrorDetector
+from .errors.key import KeyErrorDetector
+from .errors.type import TypeErrorDetector
+from .errors.attribute import AttributeErrorDetector
 from .overflow import OverflowDetector
 from .resource_leak import ResourceLeakDetector
 from .value_error import ValueErrorDetector

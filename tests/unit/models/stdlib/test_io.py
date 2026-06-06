@@ -1,25 +1,40 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType
+from typing import cast
 
-from pysymex.core.state import VMState
-from pysymex.core.types.containers import SymbolicList
-from pysymex.core.types.scalars import SymbolicNone, SymbolicString, SymbolicValue
+import z3
 
-
-def _load_io_models() -> ModuleType:
-    module_path = Path(__file__).resolve().parents[4] / "pysymex" / "models" / "stdlib" / "io.py"
-    spec = importlib.util.spec_from_file_location("pysymex_models_stdlib_io", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load stdlib io models module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-io_models = _load_io_models()
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.models.builtins.results import is_potential_exception_effect
+from pysymex.models.stdlib.models.bisect import (
+    BisectLeftModel,
+    BisectModel,
+    BisectRightModel,
+    InsortLeftModel,
+    InsortModel,
+    InsortRightModel,
+)
+from pysymex.models.stdlib.models.copy import CopyModel, DeepcopyModel
+from pysymex.models.stdlib.models.heapq import (
+    HeapifyModel,
+    HeappopModel,
+    HeappushModel,
+    HeappushpopModel,
+    HeapreplaceModel,
+    NlargestModel,
+    NsmallestModel,
+)
+from pysymex.models.stdlib.models.io_stream import (
+    BytesIOModel,
+    IOGetvalueModel,
+    IOReadModel,
+    IOWriteModel,
+    StringIOModel,
+)
 
 
 def _state() -> VMState:
@@ -27,217 +42,255 @@ def _state() -> VMState:
 
 
 class TestCopyModel:
-    """Test suite for pysymex.models.stdlib.io.CopyModel."""
+    """Test suite for pysymex.models.stdlib.models.CopyModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.CopyModel().apply([7], {}, _state())
+        result = CopyModel().apply([7], {}, _state())
         assert result.value == 7
 
     def test_error_path(self) -> None:
-        io_models.CopyModel().apply([], {}, _state())
+        CopyModel().apply([], {}, _state())
 
 
 class TestDeepcopyModel:
-    """Test suite for pysymex.models.stdlib.io.DeepcopyModel."""
+    """Test suite for pysymex.models.stdlib.models.DeepcopyModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.DeepcopyModel().apply([1], {}, _state())
+        DeepcopyModel().apply([1], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.DeepcopyModel().apply([], {}, _state())
+        DeepcopyModel().apply([], {}, _state())
 
 
 class TestStringIOModel:
-    """Test suite for pysymex.models.stdlib.io.StringIOModel."""
+    """Test suite for pysymex.models.stdlib.models.StringIOModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.StringIOModel().apply([], {}, _state())
+        StringIOModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.StringIOModel().apply(["x"], {}, _state())
+        StringIOModel().apply(["x"], {}, _state())
 
 
 class TestBytesIOModel:
-    """Test suite for pysymex.models.stdlib.io.BytesIOModel."""
+    """Test suite for pysymex.models.stdlib.models.BytesIOModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.BytesIOModel().apply([], {}, _state())
+        BytesIOModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.BytesIOModel().apply([b"x"], {}, _state())
+        BytesIOModel().apply([b"x"], {}, _state())
 
 
 class TestIOReadModel:
-    """Test suite for pysymex.models.stdlib.io.IOReadModel."""
+    """Test suite for pysymex.models.stdlib.models.IOReadModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.IOReadModel().apply([], {}, _state())
+        IOReadModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.IOReadModel().apply([1], {}, _state())
+        IOReadModel().apply([1], {}, _state())
 
 
 class TestIOWriteModel:
-    """Test suite for pysymex.models.stdlib.io.IOWriteModel."""
+    """Test suite for pysymex.models.stdlib.models.IOWriteModel."""
 
     def test_faithfulness(self) -> None:
         sym = SymbolicString.from_const("abc")
-        result = io_models.IOWriteModel().apply([sym], {}, _state())
+        result = IOWriteModel().apply([sym], {}, _state())
         assert isinstance(result.value, SymbolicValue)
 
     def test_error_path(self) -> None:
-        io_models.IOWriteModel().apply([], {}, _state())
+        IOWriteModel().apply([], {}, _state())
 
 
 class TestIOGetvalueModel:
-    """Test suite for pysymex.models.stdlib.io.IOGetvalueModel."""
+    """Test suite for pysymex.models.stdlib.models.IOGetvalueModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.IOGetvalueModel().apply([], {}, _state())
+        IOGetvalueModel().apply([], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.IOGetvalueModel().apply([1], {}, _state())
+        IOGetvalueModel().apply([1], {}, _state())
 
 
 class TestHeappushModel:
-    """Test suite for pysymex.models.stdlib.io.HeappushModel."""
+    """Test suite for pysymex.models.stdlib.models.HeappushModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.HeappushModel().apply([[], 1], {}, _state())
+        result = HeappushModel().apply([[], 1], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
     def test_error_path(self) -> None:
-        result = io_models.HeappushModel().apply([], {}, _state())
+        result = HeappushModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)
+
+    def test_symbolic_heap_tracks_added_item(self) -> None:
+        heap = SymbolicList.empty("heap")
+        result = HeappushModel().apply([heap, SymbolicValue.from_const(7)], {}, _state())
+        mutation = cast("dict[str, object]", result.side_effects["list_mutation"])
+        updated = cast("SymbolicList", mutation["updated_list"])
+        assert z3.simplify(updated.z3_len).as_long() == 1
 
 
 class TestHeappopModel:
-    """Test suite for pysymex.models.stdlib.io.HeappopModel."""
+    """Test suite for pysymex.models.stdlib.models.HeappopModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.HeappopModel().apply([[]], {}, _state())
+        HeappopModel().apply([[]], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.HeappopModel().apply([], {}, _state())
+        HeappopModel().apply([], {}, _state())
+
+    def test_symbolic_heap_reports_index_error_and_removes_item(self) -> None:
+        heap = SymbolicList.from_const([7])
+        result = HeappopModel().apply([heap], {}, _state())
+        effect = result.side_effects.get("potential_exception")
+        assert is_potential_exception_effect(effect)
+        assert effect["type"] == "IndexError"
+        assert effect["message"] == "index out of range"
+        mutation = cast("dict[str, object]", result.side_effects["list_mutation"])
+        updated = cast("SymbolicList", mutation["updated_list"])
+        assert z3.simplify(updated.z3_len).as_long() == 0
 
 
 class TestHeapifyModel:
-    """Test suite for pysymex.models.stdlib.io.HeapifyModel."""
+    """Test suite for pysymex.models.stdlib.models.HeapifyModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.HeapifyModel().apply([[]], {}, _state())
+        result = HeapifyModel().apply([[]], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
     def test_error_path(self) -> None:
-        result = io_models.HeapifyModel().apply([], {}, _state())
+        result = HeapifyModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
 
 class TestHeapreplaceModel:
-    """Test suite for pysymex.models.stdlib.io.HeapreplaceModel."""
+    """Test suite for pysymex.models.stdlib.models.HeapreplaceModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.HeapreplaceModel().apply([[1], 2], {}, _state())
+        HeapreplaceModel().apply([[1], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.HeapreplaceModel().apply([], {}, _state())
+        HeapreplaceModel().apply([], {}, _state())
 
 
 class TestHeappushpopModel:
-    """Test suite for pysymex.models.stdlib.io.HeappushpopModel."""
+    """Test suite for pysymex.models.stdlib.models.HeappushpopModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.HeappushpopModel().apply([[1], 2], {}, _state())
+        HeappushpopModel().apply([[1], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.HeappushpopModel().apply([], {}, _state())
+        HeappushpopModel().apply([], {}, _state())
 
 
 class TestNlargestModel:
-    """Test suite for pysymex.models.stdlib.io.NlargestModel."""
+    """Test suite for pysymex.models.stdlib.models.NlargestModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.NlargestModel().apply([2, [1, 2, 3]], {}, _state())
+        result = NlargestModel().apply([2, [1, 2, 3]], {}, _state())
         assert isinstance(result.value, SymbolicList)
 
     def test_error_path(self) -> None:
-        result = io_models.NlargestModel().apply([], {}, _state())
+        result = NlargestModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicList)
 
 
 class TestNsmallestModel:
-    """Test suite for pysymex.models.stdlib.io.NsmallestModel."""
+    """Test suite for pysymex.models.stdlib.models.NsmallestModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.NsmallestModel().apply([2, [1, 2, 3]], {}, _state())
+        result = NsmallestModel().apply([2, [1, 2, 3]], {}, _state())
         assert isinstance(result.value, SymbolicList)
 
     def test_error_path(self) -> None:
-        result = io_models.NsmallestModel().apply([], {}, _state())
+        result = NsmallestModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicList)
 
 
 class TestBisectLeftModel:
-    """Test suite for pysymex.models.stdlib.io.BisectLeftModel."""
+    """Test suite for pysymex.models.stdlib.models.BisectLeftModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.BisectLeftModel().apply([[1, 2, 3], 2], {}, _state())
+        BisectLeftModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.BisectLeftModel().apply([], {}, _state())
+        BisectLeftModel().apply([], {}, _state())
+
+    def test_concrete_integer_list_links_end_position_to_needle(self) -> None:
+        values = SymbolicList.from_const([10, 20, 30])
+        needle, type_constraint = SymbolicValue.symbolic_int("needle")
+        result = BisectLeftModel().apply([values, needle], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(type_constraint, *result.constraints, needle.z3_int == 31)
+        solver.add(result.value.z3_int != 3)
+        assert solver.check() == z3.unsat
 
 
 class TestBisectRightModel:
-    """Test suite for pysymex.models.stdlib.io.BisectRightModel."""
+    """Test suite for pysymex.models.stdlib.models.BisectRightModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.BisectRightModel().apply([[1, 2, 3], 2], {}, _state())
+        BisectRightModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.BisectRightModel().apply([], {}, _state())
+        BisectRightModel().apply([], {}, _state())
+
+    def test_concrete_integer_list_places_equal_value_after_existing_entry(self) -> None:
+        values = SymbolicList.from_const([10, 20, 30])
+        needle, type_constraint = SymbolicValue.symbolic_int("needle")
+        result = BisectRightModel().apply([values, needle], {}, _state())
+        assert isinstance(result.value, SymbolicValue)
+        solver = z3.Solver()
+        solver.add(type_constraint, *result.constraints, needle.z3_int == 20)
+        solver.add(result.value.z3_int != 2)
+        assert solver.check() == z3.unsat
 
 
 class TestBisectModel:
-    """Test suite for pysymex.models.stdlib.io.BisectModel."""
+    """Test suite for pysymex.models.stdlib.models.BisectModel."""
 
     def test_faithfulness(self) -> None:
-        io_models.BisectModel().apply([[1, 2, 3], 2], {}, _state())
+        BisectModel().apply([[1, 2, 3], 2], {}, _state())
 
     def test_error_path(self) -> None:
-        io_models.BisectModel().apply([], {}, _state())
+        BisectModel().apply([], {}, _state())
 
 
 class TestInsortLeftModel:
-    """Test suite for pysymex.models.stdlib.io.InsortLeftModel."""
+    """Test suite for pysymex.models.stdlib.models.InsortLeftModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.InsortLeftModel().apply([[1, 2], 3], {}, _state())
+        result = InsortLeftModel().apply([[1, 2], 3], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
     def test_error_path(self) -> None:
-        result = io_models.InsortLeftModel().apply([], {}, _state())
+        result = InsortLeftModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
 
 class TestInsortRightModel:
-    """Test suite for pysymex.models.stdlib.io.InsortRightModel."""
+    """Test suite for pysymex.models.stdlib.models.InsortRightModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.InsortRightModel().apply([[1, 2], 3], {}, _state())
+        result = InsortRightModel().apply([[1, 2], 3], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
     def test_error_path(self) -> None:
-        result = io_models.InsortRightModel().apply([], {}, _state())
+        result = InsortRightModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
 
 class TestInsortModel:
-    """Test suite for pysymex.models.stdlib.io.InsortModel."""
+    """Test suite for pysymex.models.stdlib.models.InsortModel."""
 
     def test_faithfulness(self) -> None:
-        result = io_models.InsortModel().apply([[1, 2], 3], {}, _state())
+        result = InsortModel().apply([[1, 2], 3], {}, _state())
         assert isinstance(result.value, SymbolicNone)
 
     def test_error_path(self) -> None:
-        result = io_models.InsortModel().apply([], {}, _state())
+        result = InsortModel().apply([], {}, _state())
         assert isinstance(result.value, SymbolicNone)

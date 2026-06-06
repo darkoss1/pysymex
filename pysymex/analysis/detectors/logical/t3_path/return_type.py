@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,13 +16,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Return type contradiction logical contradiction rule.
+
+Detects contradictions where return or result variables are constrained to incompatible types
+or conflicting concrete values along a path.
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 from pysymex.analysis.detectors.logical.utils import (
     extract_bool_assignments,
     extract_var_const_equalities,
     get_variable_names_all,
 )
-from pysymex.core.solver.engine import is_satisfiable
+from pysymex.core.solver.engine.queries import check_sat_result
 
 
 _TYPE_MARKERS = {
@@ -38,6 +44,15 @@ _TYPE_MARKERS = {
 
 
 def _return_type_marker(name: str) -> tuple[str, str] | None:
+    """Parse a variable name to check if it represents a return type indicator.
+
+    Args:
+        name: The variable name string.
+
+    Returns:
+        A tuple of (stem_name, type_suffix) if the variable is a return value type marker,
+        otherwise None.
+    """
     lname = name.lower()
     if "ret" not in lname and "return" not in lname and "result" not in lname:
         return None
@@ -48,10 +63,21 @@ def _return_type_marker(name: str) -> tuple[str, str] | None:
 
 
 class ReturnTypeContradictionRule(LogicRule):
+    """Rule that matches contradictions involving conflicting return/result types or values."""
+
     name = "Return Type Contradiction"
     tier = 3
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a return type contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains return/result variables with conflicting type markers or values
+            whose conjunction is unsatisfiable, otherwise False.
+        """
         names = get_variable_names_all(ctx.core)
         lower_names = {name.lower() for name in names}
         has_return_signal = any(
@@ -75,7 +101,7 @@ class ReturnTypeContradictionRule(LogicRule):
             true_type_markers.setdefault(stem, set()).add(ty)
 
         if any(len(types) > 1 for types in true_type_markers.values()):
-            return not is_satisfiable(ctx.core)
+            return check_sat_result(ctx.core).is_unsat
 
         equalities = extract_var_const_equalities(ctx.core)
         for name, values in equalities.items():

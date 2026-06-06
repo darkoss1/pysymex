@@ -1,25 +1,20 @@
 from unittest.mock import Mock
 
-from pysymex.analysis.detectors.types import (
-    DetectionContext,
-    IssueKind,
-    Severity,
-    Issue,
-    StaticDetector,
+import z3
+
+from pysymex.analysis.detectors.types import DetectionContext, IssueKind
+from pysymex.analysis.detectors.detector.types import CounterexampleExtractor, Issue, Severity
+from pysymex.analysis.static.patterns import (
+    FunctionPatternInfo,
+    PatternMatcher,
+    PatternKind,
+    PatternMatch,
 )
-from pysymex.analysis.type_inference import PyType, TypeKind, TypeEnvironment
-
-
-class DummyStaticDetector(StaticDetector):
-    def issue_kind(self) -> IssueKind:
-        return IssueKind.UNKNOWN
-
-    def check(self, ctx: DetectionContext) -> Issue | None:
-        return self.create_issue(ctx, "test msg")
+from pysymex.analysis.static.types import PyType, TypeKind, TypeEnvironment
 
 
 class TestIssueKind:
-    """Test suite for pysymex.analysis.detectors.types.IssueKind."""
+    """Test suite for pysymex.analysis.detectors.detector.types.IssueKind."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -27,7 +22,7 @@ class TestIssueKind:
 
 
 class TestSeverity:
-    """Test suite for pysymex.analysis.detectors.types.Severity."""
+    """Test suite for pysymex.analysis.detectors.detector.types.Severity."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -39,20 +34,64 @@ class TestIssue:
 
     def test_is_suppressed(self) -> None:
         """Test is_suppressed behavior."""
-        issue = Issue(IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg")
+        issue = Issue(
+            kind=IssueKind.UNKNOWN, severity=Severity.HIGH, file="f.py", line=10, message="msg"
+        )
         assert issue.is_suppressed() is False
         suppressed = Issue(
-            IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg", suppression_reason="reason"
+            kind=IssueKind.UNKNOWN,
+            severity=Severity.HIGH,
+            file="f.py",
+            line=10,
+            message="msg",
+            suppression_reason="reason",
         )
         assert suppressed.is_suppressed() is True
 
     def test_format(self) -> None:
         """Test format behavior."""
-        issue = Issue(IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg")
+        issue = Issue(
+            kind=IssueKind.UNKNOWN, severity=Severity.HIGH, file="f.py", line=10, message="msg"
+        )
         fmt = issue.format()
         assert "[high] unknown" in fmt
         assert "f.py:10" in fmt
         assert "msg" in fmt
+
+    def test_counterexample_prefers_active_string_slot(self) -> None:
+        """Scenario: union value model has inactive bool slot; expected string counterexample."""
+        query_str = z3.String("query_str")
+        query_bool = z3.Bool("query_bool")
+        query_is_str = z3.Bool("query_is_str")
+        query_is_bool = z3.Bool("query_is_bool")
+        solver = z3.Solver()
+        solver.add(query_str == "admin", query_bool == z3.BoolVal(False))
+        solver.add(query_is_str == z3.BoolVal(True), query_is_bool == z3.BoolVal(False))
+        assert solver.check() == z3.sat
+
+        counterexample = CounterexampleExtractor(solver.model(), []).extract()
+
+        assert counterexample["query"] == "admin"
+
+    def test_counterexample_derived_lengths_are_bounded_for_large_arithmetic_expr(
+        self,
+    ) -> None:
+        """Counterexample extraction must not recursively walk huge arithmetic trees."""
+        value = z3.Int("counterexample_deep_x")
+        expression = value
+        for _ in range(512):
+            expression = expression + 1
+
+        solver = z3.Solver()
+        solver.add(value == 1)
+        assert solver.check() == z3.sat
+
+        counterexample = CounterexampleExtractor(
+            solver.model(),
+            [expression > 0],
+        ).extract()
+
+        assert counterexample["counterexample_deep_x"] == 1
 
 
 class TestDetectionContext:
@@ -83,48 +122,26 @@ class TestDetectionContext:
         ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
         assert ctx.is_in_try_block("Exception") is False
 
+    def test_is_in_try_block_uses_pattern_result_snapshot(self) -> None:
+        """Scenario: matcher cache cleared after analysis; expected snapshot still applies."""
+        matcher = PatternMatcher()
+        match = PatternMatch(
+            PatternKind.TRY_EXCEPT_PATTERN,
+            0.9,
+            10,
+            20,
+            variables={"caught_exceptions": {"ValueError"}},
+        )
+        pattern_info = FunctionPatternInfo(patterns=[match], matcher=matcher)
+        matcher.clear_cache()
+        ctx = DetectionContext(
+            Mock(),
+            [],
+            15,
+            Mock(),
+            10,
+            TypeEnvironment(),
+            pattern_info=pattern_info,
+        )
 
-class TestStaticDetector:
-    """Test suite for pysymex.analysis.detectors.types.StaticDetector."""
-
-    def test_issue_kind(self) -> None:
-        """Test issue_kind behavior."""
-        d = DummyStaticDetector()
-        assert d.issue_kind().name == "UNKNOWN"
-
-    def test_check(self) -> None:
-        """Test check behavior."""
-        d = DummyStaticDetector()
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
-        issue = d.check(ctx)
-        assert issue is not None
-        assert issue.message == "test msg"
-
-    def test_should_check(self) -> None:
-        """Test should_check behavior."""
-        d = DummyStaticDetector()
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
-        assert d.should_check(ctx) is True
-
-    def test_get_severity(self) -> None:
-        """Test get_severity behavior."""
-        d = DummyStaticDetector()
-        assert d.get_severity(0.99) == Severity.ERROR
-        assert d.get_severity(0.8) == Severity.WARNING
-        assert d.get_severity(0.6) == Severity.INFO
-        assert d.get_severity(0.1) == Severity.HINT
-
-    def test_create_issue(self) -> None:
-        """Test create_issue behavior."""
-        d = DummyStaticDetector()
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment(), file_path="t.py")
-        issue = d.create_issue(ctx, "test", 0.9)
-        assert issue.severity == Severity.WARNING
-        assert issue.file == "t.py"
-
-    def test_suppress_issue(self) -> None:
-        """Test suppress_issue behavior."""
-        d = DummyStaticDetector()
-        issue = Issue(IssueKind.UNKNOWN, Severity.HIGH, "f.py", 10, "msg")
-        sup = d.suppress_issue(issue, "reason")
-        assert sup.suppression_reason == "reason"
+        assert ctx.is_in_try_block("ValueError") is True

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-import pytest
+from typing import cast
+
 import z3
 
-from pysymex._typing import StackValue
-from pysymex.core.objects.oop import EnhancedClass, EnhancedObject
-from pysymex.core.objects.types import SymbolicClass, SymbolicObject as OOPSymbolicObject
-from pysymex.core.state import VMState
-from pysymex.core.types.containers import SymbolicList, SymbolicObject
-from pysymex.core.types.scalars import SymbolicString, SymbolicValue
+from pysymex.core.state.record import VMState
+from pysymex.core.types.containers.dicts import SymbolicDict
+from pysymex.core.types.containers.sequences import SymbolicIterator
+from pysymex.core.types.containers.lists import SymbolicList
+from pysymex.core.types.containers.objects import SymbolicObject
+from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex.core.types.scalars.values import SymbolicValue
 from pysymex.models.builtins.base import is_raised_exception_effect, is_sink_event_effect
-from pysymex.models.builtins import extended
+from pysymex.models.builtins.core.iterator_items import concrete_iterable_items
+from pysymex.models.objects import SymbolicClass, class_registry
+from pysymex.typing import StackValue
+import pysymex.models.builtins as extended
 
 
 def _state() -> VMState:
@@ -31,13 +36,12 @@ def _to_python_int(value: StackValue) -> int:
     raise TypeError("value is not concretely int")
 
 
-def _symbolic_enhanced_instance() -> SymbolicValue:
+def _symbolic_modeled_instance() -> SymbolicValue:
     cls = SymbolicClass("Box")
-    enhanced_class = EnhancedClass(cls)
-    instance = EnhancedObject(OOPSymbolicObject(cls), enhanced_class)
+    instance = class_registry.create_instance(cls)
     instance.set_attribute("value", 4)
     symbolic, _constraint = SymbolicValue.symbolic("box")
-    symbolic.attach_enhanced_object(instance)
+    symbolic.attach_modeled_object(instance)
     return symbolic
 
 
@@ -57,8 +61,34 @@ def test_reversed_faithfulness() -> None:
     """Faithfulness: reversed model matches Python reversed for concrete input."""
     values: list[StackValue] = [1, 2, 3]
     args: list[StackValue] = [values]
-    result = extended.ReversedModel().apply(args, {}, _state())
-    assert result.value == list(reversed(values))
+    vm_state = _state()
+    result = extended.ReversedModel().apply(args, {}, vm_state)
+    assert isinstance(result.value, SymbolicIterator)
+    assert result.value.iterable is values
+    assert result.value.reverse is True
+    assert concrete_iterable_items(result.value, vm_state) == list(reversed(values))
+
+
+def test_reversed_heap_backed_symbolic_items_are_preserved() -> None:
+    """reversed(heap-backed-list) should keep concrete-backed symbolic items."""
+    value, value_constraint = SymbolicValue.symbolic_int("value")
+    source = SymbolicList.from_const([value])
+    handle = SymbolicObject("items", 101, z3.IntVal(101), {101})
+    state = _state().store_heap(101, source)
+
+    result = extended.ReversedModel().apply([handle], {}, state)
+
+    assert isinstance(result.value, SymbolicIterator)
+    assert result.value.iterable is source
+    assert result.value.reverse is True
+    assert concrete_iterable_items(result.value, state) == [value]
+
+    solver = z3.Solver()
+    reversed_items = concrete_iterable_items(result.value, state)
+    assert reversed_items is not None
+    reversed_item = cast("SymbolicValue", reversed_items[0])
+    solver.add(value_constraint, reversed_item.z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
 
 
 def test_ord_chr_faithfulness() -> None:
@@ -82,6 +112,35 @@ def test_pow_round_divmod_faithfulness() -> None:
     assert isinstance(divmod_result.value, tuple)
 
 
+def test_divmod_concrete_failures_are_modeled_exceptions() -> None:
+    zero_divisor = extended.DivmodModel().apply([5, 0], {}, _state())
+    invalid_operands = extended.DivmodModel().apply(["5", 2], {}, _state())
+
+    zero_effect = zero_divisor.side_effects.get("raised_exception")
+    invalid_effect = invalid_operands.side_effects.get("raised_exception")
+    assert is_raised_exception_effect(zero_effect)
+    assert zero_effect["exception_type"] == "ZeroDivisionError"
+    assert zero_effect["message"] == "integer division or modulo by zero"
+    assert is_raised_exception_effect(invalid_effect)
+    assert invalid_effect["exception_type"] == "TypeError"
+
+
+def test_integer_representation_builtins_are_concrete_and_reject_float_inputs() -> None:
+    cases = [
+        (extended.BinModel(), bin),
+        (extended.OctModel(), oct),
+        (extended.HexModel(), hex),
+    ]
+    for model, formatter in cases:
+        valid = model.apply([10], {}, _state())
+        invalid = model.apply([1.5], {}, _state())
+        assert isinstance(valid.value, SymbolicString)
+        assert valid.value.z3_str.as_string() == formatter(10)
+        effect = invalid.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(effect)
+        assert effect["exception_type"] == "TypeError"
+
+
 def test_bytearray_constructor_preserves_symbolic_list_length() -> None:
     """bytearray(symbolic-list) preserves the iterable length relation."""
     source, source_constraint = SymbolicList.symbolic("source_bytes")
@@ -97,6 +156,56 @@ def test_bytearray_constructor_preserves_symbolic_list_length() -> None:
     assert solver.check() == z3.unsat
 
 
+def test_dict_constructor_rejects_definite_non_iterable() -> None:
+    result = extended.DictModel().apply([1], {}, _state())
+    effect = result.side_effects.get("raised_exception")
+
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
+
+
+def test_dict_constructor_copies_symbolic_dict_without_aliasing() -> None:
+    source = SymbolicDict.from_const({"k": 1})
+
+    result = extended.DictModel().apply([source], {}, _state())
+
+    assert isinstance(result.value, SymbolicDict)
+    has_value, value = result.value.concrete_value_for_key("k")
+    assert has_value is True
+    assert value == 1
+
+    updated_copy = result.value.__delitem__("k")
+    source_has_value, source_value = source.concrete_value_for_key("k")
+    copy_has_value, _copy_value = updated_copy.concrete_value_for_key("k")
+    assert source_has_value is True
+    assert source_value == 1
+    assert copy_has_value is False
+
+
+def test_issubclass_single_class_form_is_exact_and_invalid_subject_fails() -> None:
+    valid = extended.IssubclassModel().apply([bool, int], {}, _state())
+    invalid = extended.IssubclassModel().apply([1, int], {}, _state())
+
+    assert isinstance(valid.value, SymbolicValue)
+    assert valid.value.value is True
+    effect = invalid.side_effects.get("raised_exception")
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
+
+
+def test_vars_primitive_failure_and_ascii_scalar_value_are_modeled() -> None:
+    invalid = extended.VarsModel().apply([1], {}, _state())
+    ascii_result = extended.AsciiModel().apply(
+        ["\N{LATIN SMALL LETTER E WITH ACUTE}"], {}, _state()
+    )
+
+    effect = invalid.side_effects.get("raised_exception")
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "TypeError"
+    assert isinstance(ascii_result.value, SymbolicString)
+    assert ascii_result.value.z3_str.as_string() == ascii("\N{LATIN SMALL LETTER E WITH ACUTE}")
+
+
 def test_hasattr_getattr_faithfulness() -> None:
     """Faithfulness for attribute builtins on concrete path."""
     target: object = "abc"
@@ -108,18 +217,65 @@ def test_hasattr_getattr_faithfulness() -> None:
 
 def test_extended_error_and_edge_paths() -> None:
     """Error and edge paths for representative models."""
-    assert extended.AllModel().apply([], {}, _state()).value is not None
-    assert extended.AnyModel().apply([], {}, _state()).value is not None
+    all_raised = extended.AllModel().apply([], {}, _state()).side_effects.get("raised_exception")
+    any_raised = extended.AnyModel().apply([], {}, _state()).side_effects.get("raised_exception")
+    assert is_raised_exception_effect(all_raised)
+    assert is_raised_exception_effect(any_raised)
 
-    with pytest.raises(Exception):
-        invalid: list[StackValue] = [0x110000]
-        result = extended.ChrModel().apply(invalid, {}, _state())
-        assert str(result.value) == chr(0x110000)
+    two_args: list[StackValue] = [[True], [False]]
+    assert is_raised_exception_effect(
+        extended.AllModel().apply(two_args, {}, _state()).side_effects.get("raised_exception")
+    )
+    assert is_raised_exception_effect(
+        extended.AnyModel().apply(two_args, {}, _state()).side_effects.get("raised_exception")
+    )
+
+    invalid_chr: list[StackValue] = [0x110000]
+    chr_effect = (
+        extended.ChrModel().apply(invalid_chr, {}, _state()).side_effects.get("raised_exception")
+    )
+    ord_effect = (
+        extended.OrdModel().apply(["AB"], {}, _state()).side_effects.get("raised_exception")
+    )
+    assert is_raised_exception_effect(chr_effect)
+    assert chr_effect["exception_type"] == "ValueError"
+    assert is_raised_exception_effect(ord_effect)
+    assert ord_effect["exception_type"] == "TypeError"
+
+
+def test_truth_and_iterator_builtins_reject_definite_non_iterables() -> None:
+    results = [
+        extended.AllModel().apply([1], {}, _state()),
+        extended.AnyModel().apply([1], {}, _state()),
+        extended.ReversedModel().apply([1], {}, _state()),
+        extended.NextModel().apply([1], {}, _state()),
+    ]
+
+    for result in results:
+        effect = result.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(effect)
+        assert effect["exception_type"] == "TypeError"
+
+
+def test_identity_format_and_attribute_builtins_report_definite_failures() -> None:
+    cases = [
+        (extended.HashModel().apply([[]], {}, _state()), "TypeError"),
+        (extended.FormatModel().apply([1, "bad"], {}, _state()), "ValueError"),
+        (extended.FormatModel().apply([1, 1], {}, _state()), "TypeError"),
+        (extended.HasattrModel().apply([1, 2], {}, _state()), "TypeError"),
+        (extended.GetattrModel().apply([1, 2], {}, _state()), "TypeError"),
+        (extended.SetattrModel().apply([1, 2, 3], {}, _state()), "TypeError"),
+        (extended.DelattrModel().apply([1, 2], {}, _state()), "TypeError"),
+    ]
+    for result, exception_type in cases:
+        effect = result.side_effects.get("raised_exception")
+        assert is_raised_exception_effect(effect)
+        assert effect["exception_type"] == exception_type
 
 
 def test_delattr_apply() -> None:
     """Test delattr model apply behavior."""
-    from pysymex.core.types.scalars import SymbolicNone
+    from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
 
     target: object = "test"
     args: list[StackValue] = [target, "attr"]
@@ -127,20 +283,9 @@ def test_delattr_apply() -> None:
     assert isinstance(result.value, SymbolicNone)
     assert result.side_effects is not None
     assert "mutates_arg" in result.side_effects
-
-
-def test_aiter_apply() -> None:
-    """Test aiter model apply behavior."""
-    result = extended.AiterModel().apply([], {}, _state())
-    assert isinstance(result.value, SymbolicValue)
-    assert result.value.name.startswith("aiter_")
-
-
-def test_anext_apply() -> None:
-    """Test anext model apply behavior."""
-    result = extended.AnextModel().apply([], {}, _state())
-    assert isinstance(result.value, SymbolicValue)
-    assert result.value.name.startswith("anext_")
+    effect = result.side_effects.get("raised_exception")
+    assert is_raised_exception_effect(effect)
+    assert effect["exception_type"] == "AttributeError"
 
 
 def test_getattr_missing_attribute_emits_raised_exception_side_effect() -> None:
@@ -163,6 +308,9 @@ def test_getattr_with_default_omits_raised_exception_side_effect() -> None:
     """getattr with default returns default and does not emit raised_exception side effect."""
     result = extended.GetattrModel().apply(["abc", "missing_attr", 99], {}, _state())
     assert "raised_exception" not in result.side_effects
+    none_default = extended.GetattrModel().apply(["abc", "missing_attr", None], {}, _state())
+    assert none_default.value is None
+    assert "raised_exception" not in none_default.side_effects
 
 
 def test_iter_on_int_emits_type_error_side_effect() -> None:
@@ -202,20 +350,59 @@ def test_next_nonempty_concrete_iterator_returns_first_item() -> None:
     assert result.value == 3
 
 
-def test_getattr_symbolic_enhanced_existing_attribute_returns_value() -> None:
-    """getattr on a known enhanced instance attribute is not a possible AttributeError."""
-    result = extended.GetattrModel().apply([_symbolic_enhanced_instance(), "value"], {}, _state())
+def test_iter_next_advances_symbolic_iterator_state() -> None:
+    """next(iter([value])) should advance the explicit iterator object."""
+    iterator_result = extended.IterModel().apply([[3]], {}, _state())
+    iterator = iterator_result.value
+    assert isinstance(iterator, SymbolicIterator)
+
+    first = extended.NextModel().apply([iterator], {}, _state())
+
+    assert first.value == 3
+    mutation = cast("dict[str, object]", first.side_effects.get("iterator_mutation"))
+    assert isinstance(mutation, dict)
+    updated = mutation["updated_iterator"]
+    assert isinstance(updated, SymbolicIterator)
+    assert updated.index == 1
+
+
+def test_next_exhausted_symbolic_iterator_uses_default_or_stop_iteration() -> None:
+    """Exhausted explicit iterators should return defaults or raise StopIteration."""
+    iterator = SymbolicIterator("items", [1], index=1)
+
+    default_result = extended.NextModel().apply([iterator, 7], {}, _state())
+    raised_result = extended.NextModel().apply([iterator], {}, _state())
+
+    assert default_result.value == 7
+    raised_effect = raised_result.side_effects.get("raised_exception")
+    assert is_raised_exception_effect(raised_effect)
+    assert raised_effect["exception_type"] == "StopIteration"
+
+
+def test_getattr_symbolic_modeled_existing_attribute_returns_value() -> None:
+    """getattr on a known modeled instance attribute is not a possible AttributeError."""
+    result = extended.GetattrModel().apply([_symbolic_modeled_instance(), "value"], {}, _state())
 
     assert result.value == 4
     assert "raised_exception" not in result.side_effects
 
 
-def test_getattr_symbolic_enhanced_missing_attribute_emits_raised_exception() -> None:
-    """getattr on a known missing enhanced instance attribute remains an AttributeError."""
-    result = extended.GetattrModel().apply([_symbolic_enhanced_instance(), "missing"], {}, _state())
+def test_getattr_symbolic_modeled_missing_attribute_emits_raised_exception() -> None:
+    """getattr on a known missing modeled instance attribute remains an AttributeError."""
+    result = extended.GetattrModel().apply([_symbolic_modeled_instance(), "missing"], {}, _state())
 
     raised_effect = result.side_effects.get("raised_exception")
     assert is_raised_exception_effect(raised_effect)
+
+
+def test_getattr_unknown_symbolic_receiver_does_not_emit_definite_attribute_error() -> None:
+    """Unknown symbolic receivers produce unknown values, not definite AttributeError reports."""
+    receiver, _constraint = SymbolicValue.symbolic("unknown_getattr_receiver")
+
+    result = extended.GetattrModel().apply([receiver, "missing"], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    assert "raised_exception" not in result.side_effects
 
 
 def test_setattr_none_emits_raised_exception_side_effect() -> None:

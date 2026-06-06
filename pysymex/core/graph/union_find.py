@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,34 +16,39 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Dict, Generic, Hashable, List, TypeVar
+"""Shared disjoint-set implementation used by core graph consumers."""
+
+from collections.abc import Hashable
+from typing import Generic, TypeVar
 
 T = TypeVar("T", bound=Hashable)
 
 
 class UnionFind(Generic[T]):
-    """
-    Highly optimized Union-Find (Disjoint Set) data structure.
-    Implements path compression and union by rank for amortized O(alpha(n)) time complexity.
-    Designed for constraint independence optimization and dynamic clustering in pysymex v2.
+    """Maintain disjoint groups with path compression and union by rank.
+
+    Items must be registered with :meth:`make_set` before direct
+    :meth:`find` calls; :meth:`union` registers either missing endpoint.
     """
 
     __slots__ = ("_parent", "_rank")
 
     def __init__(self) -> None:
-        self._parent: Dict[T, T] = {}
-        self._rank: Dict[T, int] = {}
+        """Initialize an empty parent and rank mapping."""
+        self._parent: dict[T, T] = {}
+        self._rank: dict[T, int] = {}
 
     def make_set(self, x: T) -> None:
-        """Initializes a new isolated set for element x."""
+        """Register ``x`` as an isolated element when it is not already known."""
         if x not in self._parent:
             self._parent[x] = x
             self._rank[x] = 0
 
     def find(self, x: T) -> T:
-        """
-        Finds the representative of the set containing x with path compression.
-        Raises KeyError if x is not in any set.
+        """Return ``x``'s representative while compressing its parent path.
+
+        Raises:
+            KeyError: If ``x`` has not been registered.
         """
         # Find root
         root = x
@@ -60,10 +65,13 @@ class UnionFind(Generic[T]):
         return root
 
     def union(self, x: T, y: T) -> bool:
-        """
-        Unites the sets containing x and y using union by rank.
-        Returns True if a new union was formed, False if they were already in the same set.
-        Automatically creates sets for x or y if they don't exist.
+        """Join the groups containing ``x`` and ``y`` using rank.
+
+        Returns:
+            ``True`` if groups were joined, or ``False`` if already connected.
+
+        Side Effects:
+            Registers either missing endpoint before performing the union.
         """
         self.make_set(x)
         self.make_set(y)
@@ -84,9 +92,25 @@ class UnionFind(Generic[T]):
 
         return True
 
-    def get_components(self) -> List[List[T]]:
-        """Returns a list of all disjoint sets (components)."""
-        components: Dict[T, List[T]] = {}
+    def connected(self, x: T, y: T) -> bool:
+        """Return whether two registered elements have the same representative.
+
+        Raises:
+            KeyError: If either element has not been registered.
+        """
+        return self.find(x) == self.find(y)
+
+    def groups(self) -> dict[T, set[T]]:
+        """Return disjoint sets keyed by representative, compressing paths."""
+        groups: dict[T, set[T]] = {}
+        for x in self._parent:
+            root = self.find(x)
+            groups.setdefault(root, set()).add(x)
+        return groups
+
+    def get_components(self) -> list[list[T]]:
+        """Return disjoint groups as element lists, compressing paths."""
+        components: dict[T, list[T]] = {}
         for x in self._parent:
             root = self.find(x)
             if root not in components:
@@ -95,6 +119,9 @@ class UnionFind(Generic[T]):
         return list(components.values())
 
     def clear(self) -> None:
-        """Clears all sets."""
+        """Remove all registered elements and rank metadata."""
         self._parent.clear()
         self._rank.clear()
+
+
+__all__ = ["UnionFind"]

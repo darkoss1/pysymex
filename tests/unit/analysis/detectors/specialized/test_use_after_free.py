@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import dis
+from typing import cast
 
 import z3
 
-from pysymex._typing import StackValue
+from pysymex.typing import StackValue
 from pysymex.analysis.detectors.specialized.use_after_free import UseAfterFreeDetector
-from pysymex.core.state import VMState
+from pysymex.core.state.record import VMState
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:
@@ -49,6 +50,12 @@ class _NamedValue:
 
     def __call__(self) -> object:
         return None
+
+
+class _NonStringNamedValue:
+    """Object whose name-shaped attribute is not a detector target name."""
+
+    name = property(lambda self: "computed")
 
 
 class TestUseAfterFreeDetector:
@@ -109,6 +116,24 @@ class TestUseAfterFreeDetector:
 
         assert "my_file" not in state.freed_vars
 
+    def test_check_ignores_qualified_close_call_with_extra_argument(self) -> None:
+        """Do not record closures for bound close calls CPython rejects as TypeError."""
+        detector = UseAfterFreeDetector()
+        instruction = _make_instruction("CALL", arg=1)
+        receiver = _NamedValue("my_file")
+        extra = _NamedValue("extra")
+
+        class _CloseCallable:
+            __name__ = "my_file.close"
+
+            def __call__(self, unexpected: object) -> object:
+                return unexpected
+
+        state = VMState(stack=_stack(receiver, _CloseCallable(), extra), path_constraints=[], pc=1)
+        detector.check(state, instruction, _always_sat)
+
+        assert "my_file" not in state.freed_vars
+
     def test_check_ignores_call_with_insufficient_stack(self) -> None:
         """Do not record any closures if the stack is shorter than expected."""
         detector = UseAfterFreeDetector()
@@ -124,6 +149,24 @@ class TestUseAfterFreeDetector:
         detector.check(state, instruction, _always_sat)
 
         assert "my_file" not in state.freed_vars
+
+    def test_check_ignores_non_string_name_candidate(self) -> None:
+        """Detector name filters should ignore non-string name attributes."""
+        detector = UseAfterFreeDetector()
+        instruction = _make_instruction("CALL", arg=0)
+
+        state = VMState(
+            stack=_stack(
+                cast("StackValue", _NonStringNamedValue()),
+                cast("StackValue", object()),
+            ),
+            path_constraints=[],
+            pc=1,
+        )
+        issue = detector.check(state, instruction, _always_sat)
+
+        assert issue is None
+        assert not state.freed_vars
 
     def test_check_reports_issue_when_loading_freed_resource(self) -> None:
         """Report ATTRIBUTE_ERROR when accessing an attribute/method of a freed resource."""

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,8 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# pyright: reportUnsupportedDunderAll=false
 
 """
 Extended Standard Library Models for pysymex v1.2.
@@ -33,10 +35,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pysymex.models.builtins.base import FunctionModel
+from pysymex.logger import get_logger
 from pysymex.models.stdlib.regex import (
     ReCompileModel,
     ReEscapeModel,
     ReFindallModel,
+    ReFullmatchModel,
     ReMatchModel,
     ReSearchModel,
     ReSplitModel,
@@ -66,22 +70,37 @@ from pysymex.models.stdlib.data import (
 from pysymex.models.stdlib.math import (
     math_models,
 )
-from pysymex.models.stdlib.system import (
-    datetime_models,
-    json_models,
-    ospath_models,
-    random_models,
-    types_models,
-)
-from pysymex.models.containers.strings import STRING_MODELS
+from pysymex.models.stdlib.models.datetime import datetime_models
+from pysymex.models.stdlib.models.ast import ast_models
+from pysymex.models.stdlib.models.json import json_models
+from pysymex.models.stdlib.models.ospath import ospath_models
+from pysymex.models.stdlib.models.random import random_models
+from pysymex.models.stdlib.models.types import types_models
+from pysymex.models.stdlib.collections.defaultdict import DEFAULTDICT_MODELS
+from pysymex.models.stdlib.collections.deque import DEQUE_MODELS
+from pysymex.models.stdlib.contextlib.managers import ContextManagerModel
+from pysymex.models.stdlib.contextlib.stacks import ExitStackConstructorModel
+from pysymex.models.stdlib.itertools.sequences import AccumulateModel, ChainModel
+from pysymex.models.stdlib.functools.core import PartialConstructorModel, ReduceModel
+from pysymex.models.containers.strings.registry import STRING_MODELS
+from pysymex.models.stdlib.sys import sys_models
+from pysymex.models.stdlib.os import os_models
+from pysymex.models.stdlib.exports import STDLIB_ALL
 
-collections_models: list[FunctionModel] = []
-itertools_models: list[FunctionModel] = []
-functools_models: list[FunctionModel] = []
+logger = get_logger(__name__)
+
+collections_models: list[FunctionModel] = [*DEFAULTDICT_MODELS, *DEQUE_MODELS]
+contextlib_function_models: list[FunctionModel] = [
+    ContextManagerModel(),
+    ExitStackConstructorModel(),
+]
+itertools_models: list[FunctionModel] = [AccumulateModel(), ChainModel()]
+functools_models: list[FunctionModel] = [PartialConstructorModel(), ReduceModel()]
 
 re_models = [
     ReMatchModel(),
     ReSearchModel(),
+    ReFullmatchModel(),
     ReFindallModel(),
     ReSubModel(),
     ReSplitModel(),
@@ -100,21 +119,23 @@ class ExtendedStdlibRegistry:
 
     def _register_all(self) -> None:
         """Register all stdlib models."""
-        from pysymex.models.stdlib.io import (
-            bisect_models,
-            copy_models,
-            heapq_models,
-            io_models,
-        )
-        from pysymex.models.stdlib.pathlib import PATHLIB_MODELS
-        from pysymex.models.containers.sets import SET_MODELS
+        from pysymex.models.stdlib.models.bisect import bisect_models
+        from pysymex.models.stdlib.models.copy import copy_models
+        from pysymex.models.stdlib.models.heapq import heapq_models
+        from pysymex.models.stdlib.models.io_stream import io_models
+        from pysymex.models.stdlib.pathlib.registry import PATHLIB_MODELS
+        from pysymex.models.containers.sets.registry import SET_MODELS
 
         all_models = (
             math_models
+            + sys_models
+            + os_models
+            + contextlib_function_models
             + collections_models
             + itertools_models
             + functools_models
             + ospath_models
+            + ast_models
             + json_models
             + re_models
             + random_models
@@ -138,10 +159,15 @@ class ExtendedStdlibRegistry:
         """Register a model."""
         self._models[model.name] = model
         self._models[model.qualname] = model
+        if logger.state.trace_enabled:
+            logger.trace("registered stdlib model name=%s qualname=%s", model.name, model.qualname)
 
     def get(self, name: str) -> FunctionModel | None:
         """Get a model by name."""
-        return self._models.get(name)
+        model = self._models.get(name)
+        if logger.state.trace_enabled and model is None:
+            logger.trace("no stdlib model for %s", name)
+        return model
 
     def list_models(self) -> list[str]:
         """List all registered model names."""
@@ -163,6 +189,10 @@ class ExtendedStdlibRegistry:
 
 
 extended_stdlib_registry = ExtendedStdlibRegistry()
+logger.verbose(
+    "Initialized stdlib model registry with %d models",
+    len(extended_stdlib_registry.list_models()),
+)
 
 
 def get_stdlib_model(name: str) -> FunctionModel | None:
@@ -180,35 +210,4 @@ def list_stdlib_modules() -> dict[str, list[str]]:
     return extended_stdlib_registry.list_modules()
 
 
-__all__ = [
-    "DATACLASSES_MODELS",
-    "ExtendedStdlibRegistry",
-    "FieldInfo",
-    "PatternCompiler",
-    "REGEX_MODELS",
-    "ReCompileModel",
-    "ReEscapeModel",
-    "ReFindallModel",
-    "ReMatchModel",
-    "ReSearchModel",
-    "ReSplitModel",
-    "ReSubModel",
-    "asdict_model",
-    "astuple_model",
-    "collections_models",
-    "compile_pattern",
-    "dataclass_model",
-    "extended_stdlib_registry",
-    "field_model",
-    "fields_model",
-    "functools_models",
-    "get_dataclasses_model",
-    "get_stdlib_model",
-    "is_dataclass_model",
-    "itertools_models",
-    "list_stdlib_models",
-    "list_stdlib_modules",
-    "make_dataclass_model",
-    "re_models",
-    "replace_model",
-]
+__all__ = STDLIB_ALL

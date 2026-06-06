@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -35,53 +35,41 @@ Usage::
 
 Security Model:
     - Code executes in a separate process (not just exec())
-    - Complete network isolation (namespaces / Job Objects)
+    - Network isolation when a strong backend is active (Linux namespaces,
+      Windows AppContainer, or WASI)
     - Filesystem jailed to ephemeral temp directory
     - Strict resource limits (CPU, memory, processes)
-    - Syscall filtering where supported (Linux seccomp-bpf)
-    - Hardened harness with modern MetaPathFinder, restricted builtins,
-      sys.modules scrubbing, and AST pre-screening
+    - Syscall filtering where supported (Linux seccomp-bpf on x86_64)
 """
 
 from __future__ import annotations
 
 from .errors import (
+    ExecutionTimeout,
     ResourceExhaustedError,
+    ResourceLimitError,
     SandboxCleanupError,
     SandboxError,
+    SandboxExecutionError,
+    SandboxProtocolError,
+    SandboxResourceError,
+    SandboxSecurityError,
     SandboxSetupError,
     SandboxTimeoutError,
+    SecurityError,
     SecurityViolationError,
 )
 from .types import (
     ExecutionStatus,
     ResourceLimits,
     SandboxBackend,
+    SandboxBackendStrength,
     SandboxConfig,
     SandboxResult,
     SecurityCapabilities,
 )
 
 
-from .execution import (
-    ExecutionTimeout,
-    ResourceLimitError,
-    SecurityError,
-    create_sandbox_namespace,
-    get_hardened_builtins,
-    get_safe_builtins,
-    hardened_exec,
-    make_restricted_import,
-    resource_limits,
-    safe_exec,
-    timeout_context,
-)
-from .execution import (
-    ResourceLimitError as ExecutionResourceLimitError,
-)
-from .execution import (
-    SecurityError as ExecutionSecurityError,
-)
 from .runner import SandboxRunner, SecureSandbox
 from .validation import (
     PathTraversalError,
@@ -93,8 +81,6 @@ from .validation import (
 )
 
 __all__ = [
-    "ExecutionResourceLimitError",
-    "ExecutionSecurityError",
     "ExecutionStatus",
     "ExecutionTimeout",
     "PathTraversalError",
@@ -102,9 +88,14 @@ __all__ = [
     "ResourceLimitError",
     "ResourceLimits",
     "SandboxBackend",
+    "SandboxBackendStrength",
     "SandboxCleanupError",
     "SandboxConfig",
     "SandboxError",
+    "SandboxExecutionError",
+    "SandboxProtocolError",
+    "SandboxResourceError",
+    "SandboxSecurityError",
     "SandboxResult",
     "SandboxRunner",
     "SandboxSetupError",
@@ -114,15 +105,7 @@ __all__ = [
     "SecurityConfig",
     "SecurityError",
     "SecurityViolationError",
-    "create_sandbox_namespace",
-    "get_hardened_builtins",
-    "get_safe_builtins",
-    "hardened_exec",
-    "make_restricted_import",
-    "resource_limits",
-    "safe_exec",
     "sanitize_function_name",
-    "timeout_context",
     "validate_bounds",
     "validate_config",
     "validate_path",

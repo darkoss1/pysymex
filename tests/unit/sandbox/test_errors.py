@@ -2,10 +2,16 @@ import pytest
 
 from pysymex.sandbox.errors import (
     ResourceExhaustedError,
+    ResourceLimitError,
     SandboxCleanupError,
     SandboxError,
+    SandboxExecutionError,
+    SandboxProtocolError,
+    SandboxResourceError,
+    SandboxSecurityError,
     SandboxSetupError,
     SandboxTimeoutError,
+    SecurityError,
     SecurityViolationError,
 )
 
@@ -32,6 +38,46 @@ class TestSandboxSetupError:
         assert str(err) == "setup failed"
 
 
+class TestSandboxExecutionError:
+    """Test suite for pysymex.sandbox.errors.SandboxExecutionError."""
+
+    @pytest.mark.timeout(30)
+    def test_initialization(self) -> None:
+        err = SandboxExecutionError("runtime failed")
+        assert isinstance(err, SandboxError)
+        assert str(err) == "runtime failed"
+
+
+class TestSandboxProtocolError:
+    """Test suite for pysymex.sandbox.errors.SandboxProtocolError."""
+
+    @pytest.mark.timeout(30)
+    def test_initialization(self) -> None:
+        err = SandboxProtocolError("bad payload")
+        assert isinstance(err, SandboxError)
+        assert str(err) == "bad payload"
+
+
+class TestSandboxResourceError:
+    """Test suite for pysymex.sandbox.errors.SandboxResourceError."""
+
+    @pytest.mark.timeout(30)
+    def test_initialization(self) -> None:
+        err = SandboxResourceError("output limit")
+        assert isinstance(err, SandboxError)
+        assert str(err) == "output limit"
+
+
+class TestSandboxSecurityError:
+    """Test suite for pysymex.sandbox.errors.SandboxSecurityError."""
+
+    @pytest.mark.timeout(30)
+    def test_initialization(self) -> None:
+        err = SandboxSecurityError("network denied")
+        assert isinstance(err, SandboxError)
+        assert str(err) == "network denied"
+
+
 class TestSandboxTimeoutError:
     """Test suite for pysymex.sandbox.errors.SandboxTimeoutError."""
 
@@ -39,7 +85,7 @@ class TestSandboxTimeoutError:
     def test_initialization(self) -> None:
         """Test basic initialization."""
         err = SandboxTimeoutError(2.5)
-        assert isinstance(err, SandboxError)
+        assert isinstance(err, SandboxResourceError)
         assert err.timeout_seconds == 2.5
         assert str(err) == "Sandbox execution timed out after 2.5s"
 
@@ -58,7 +104,7 @@ class TestSecurityViolationError:
     def test_initialization(self) -> None:
         """Test basic initialization."""
         err = SecurityViolationError("network access")
-        assert isinstance(err, SandboxError)
+        assert isinstance(err, SandboxSecurityError)
         assert err.operation == "network access"
         assert err.details is None
         assert str(err) == "Security violation: attempted network access"
@@ -79,7 +125,7 @@ class TestResourceExhaustedError:
     def test_initialization(self) -> None:
         """Test basic initialization."""
         err = ResourceExhaustedError("memory", 256, "MB")
-        assert isinstance(err, SandboxError)
+        assert isinstance(err, SandboxResourceError)
         assert err.resource == "memory"
         assert err.limit == 256
         assert err.unit == "MB"
@@ -95,3 +141,13 @@ class TestSandboxCleanupError:
         err = SandboxCleanupError("cleanup failed")
         assert isinstance(err, SandboxError)
         assert str(err) == "cleanup failed"
+
+
+class TestExecutionSandboxErrors:
+    """Test execution sandbox errors owned by pysymex.sandbox.errors."""
+
+    @pytest.mark.timeout(30)
+    def test_resource_limit_error_keeps_execution_security_base(self) -> None:
+        err = ResourceLimitError("limit exceeded")
+        assert isinstance(err, SecurityError)
+        assert str(err) == "limit exceeded"

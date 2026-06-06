@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -15,6 +15,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Statistics collection package for pysymex.
+
+Provides a global registry for registering metric collectors and sinks,
+and functions for emitting events and managing the background flushing thread.
+"""
 
 from __future__ import annotations
 
@@ -40,6 +46,8 @@ _STATS_REGISTRY.register_collector(SmtCollector())
 
 def enable_console_sink() -> None:
     """Register the Rich-powered ConsoleSink for live streaming stats."""
+    if any(isinstance(sink, ConsoleSink) for sink in _STATS_REGISTRY.sinks):
+        return
     _STATS_REGISTRY.register_sink(ConsoleSink())
 
 

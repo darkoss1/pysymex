@@ -3,9 +3,9 @@ from __future__ import annotations
 import dis
 
 
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
-from pysymex.execution.dispatcher import OpcodeDispatcher
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
 from pysymex.execution.opcodes.py311 import exceptions
 
 
@@ -146,4 +146,7 @@ def test_handle_raise_varargs() -> None:
 def test_handle_return_generator() -> None:
     """Test handle_return_generator behavior."""
     state = VMState(pc=0)
-    exceptions.handle_return_generator(_instr("RETURN_GENERATOR"), state, OpcodeDispatcher())
+    result = exceptions.handle_return_generator(
+        _instr("RETURN_GENERATOR"), state, OpcodeDispatcher()
+    )
+    assert result is not None

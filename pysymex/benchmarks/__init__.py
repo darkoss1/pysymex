@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -27,15 +27,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex._lazy import lazy_dir, lazy_getattr
+from pysymex.lazy import lazy_dir, lazy_getattr
 
 if TYPE_CHECKING:
     from pysymex.benchmarks.suite import (
         Benchmark as Benchmark,
         BenchmarkCategory as BenchmarkCategory,
         BenchmarkComparator as BenchmarkComparator,
+        BenchmarkEvent as BenchmarkEvent,
+        BenchmarkMode as BenchmarkMode,
         BenchmarkReporter as BenchmarkReporter,
         BenchmarkResult as BenchmarkResult,
+        BenchmarkStatus as BenchmarkStatus,
         BenchmarkSuite as BenchmarkSuite,
         RegressionResult as RegressionResult,
         benchmark as benchmark,
@@ -47,8 +50,11 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "Benchmark": ("pysymex.benchmarks.suite", "Benchmark"),
     "BenchmarkCategory": ("pysymex.benchmarks.suite", "BenchmarkCategory"),
     "BenchmarkComparator": ("pysymex.benchmarks.suite", "BenchmarkComparator"),
+    "BenchmarkEvent": ("pysymex.benchmarks.suite", "BenchmarkEvent"),
+    "BenchmarkMode": ("pysymex.benchmarks.suite", "BenchmarkMode"),
     "BenchmarkReporter": ("pysymex.benchmarks.suite", "BenchmarkReporter"),
     "BenchmarkResult": ("pysymex.benchmarks.suite", "BenchmarkResult"),
+    "BenchmarkStatus": ("pysymex.benchmarks.suite", "BenchmarkStatus"),
     "BenchmarkSuite": ("pysymex.benchmarks.suite", "BenchmarkSuite"),
     "RegressionResult": ("pysymex.benchmarks.suite", "RegressionResult"),
     "benchmark": ("pysymex.benchmarks.suite", "benchmark"),
@@ -71,8 +77,11 @@ __all__: list[str] = [
     "Benchmark",
     "BenchmarkCategory",
     "BenchmarkComparator",
+    "BenchmarkEvent",
+    "BenchmarkMode",
     "BenchmarkReporter",
     "BenchmarkResult",
+    "BenchmarkStatus",
     "BenchmarkSuite",
     "RegressionResult",
     "benchmark",

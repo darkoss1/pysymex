@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,6 +16,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Parity contradiction logical contradiction rule.
+
+Detects contradictions where a single variable has conflicting parity assertions (even and odd).
+"""
+
 from pysymex.analysis.detectors.logical.base import LogicRule, ContradictionContext
 import z3
 from pysymex.analysis.detectors.logical.utils import (
@@ -26,10 +31,21 @@ from pysymex.analysis.detectors.logical.utils import (
 
 
 class ParityContradictionRule(LogicRule):
+    """Rule that matches contradictions involving a single variable and conflicting parity remainders."""
+
     name = "Parity Contradiction"
     tier = 1
 
     def matches(self, ctx: ContradictionContext) -> bool:
+        """Check if the contradiction context represents a parity contradiction.
+
+        Args:
+            ctx: The contradiction context to test.
+
+        Returns:
+            True if the core contains only 1 variable, has modulo/remainder operators,
+            and contains conflicting even/odd remainders for that variable, otherwise False.
+        """
         if count_variables(ctx.core) != 1:
             return False
         if not core_has_operator(ctx.core, {z3.Z3_OP_MOD, z3.Z3_OP_REM}):

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import dis
+import time
 
 from pysymex.analysis.detectors.runtime.overflow import OverflowDetector
-from pysymex.core.state import VMState
-from pysymex.core.types.scalars import SymbolicValue
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex.core.state.record import VMState
+from pysymex.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -30,7 +33,11 @@ def _make_instruction(
 
 
 class TestOverflowDetector:
-    """Test suite for pysymex.analysis.detectors.base.OverflowDetector."""
+    """Test suite for pysymex.analysis.detectors.detector.OverflowDetector."""
+
+    def test_description_identifies_bounded_width_policy(self) -> None:
+        """Keep the user-visible detector metadata honest about its numeric model."""
+        assert OverflowDetector.description == "Detects bounded-width integer overflow"
 
     def test_check_reports_addition_overflow_for_32bit_bounds(self) -> None:
         """Report OVERFLOW when 32-bit addition can exceed max bound."""
@@ -56,4 +63,24 @@ class TestOverflowDetector:
         instruction = _make_instruction("BINARY_OP", argrepr="/")
         state = VMState(stack=[1, 2], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
+        assert issue is None
+
+    def test_check_does_not_report_definite_issue_on_solver_unknown(self) -> None:
+        """Solver UNKNOWN must not become a definite overflow issue."""
+        detector = OverflowDetector(bound_type="32bit")
+        instruction = _make_instruction("BINARY_OP", argrepr="+")
+        left, left_constraint = SymbolicValue.symbolic_int("unknown_overflow_left")
+        right = SymbolicValue.from_const(1)
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            issue = detector.check(
+                VMState(stack=[left, right], path_constraints=[left_constraint], pc=1),
+                instruction,
+                lambda _constraints: True,
+            )
+        finally:
+            active_incremental_solver.reset(token)
+
         assert issue is None

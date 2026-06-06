@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,11 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Execution VM entry points.
-
-The bytecode VM loop is implemented by SymbolicExecutor. This module provides
-an explicit blueprint-level VM access surface under execution/vm.py.
-"""
+"""Convenience entry points delegating VM execution to ``SymbolicExecutor``."""
 
 from __future__ import annotations
 
@@ -28,11 +24,12 @@ from collections.abc import Callable
 from types import CodeType
 
 from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.types import ExecutionConfig, ExecutionResult
+from pysymex.execution.config.settings import ExecutionConfig
+from pysymex.execution.results.result import ExecutionResult
 
 
 def _create_executor(config: ExecutionConfig | None = None) -> SymbolicExecutor:
-    """Helper to create a SymbolicExecutor with optional config."""
+    """Return a new executor configured with ``config``."""
     return SymbolicExecutor(config=config)
 
 
@@ -41,7 +38,7 @@ def execute_function(
     symbolic_args: dict[str, str],
     config: ExecutionConfig | None = None,
 ) -> ExecutionResult:
-    """Execute a Python callable symbolically through the VM engine."""
+    """Delegate symbolic callable execution to a fresh ``SymbolicExecutor``."""
     executor = _create_executor(config)
     return executor.execute_function(function, symbolic_args)
 
@@ -52,6 +49,6 @@ def execute_code(
     initial_globals: dict[str, object] | None = None,
     config: ExecutionConfig | None = None,
 ) -> ExecutionResult:
-    """Execute a code object symbolically through the VM engine."""
+    """Delegate symbolic code-object execution to a fresh ``SymbolicExecutor``."""
     executor = _create_executor(config)
     return executor.execute_code(code, symbolic_vars, initial_globals)

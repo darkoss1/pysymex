@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors.base import Issue
-from pysymex.core.solver.engine import IncrementalSolver
+from pysymex.analysis.detectors.detector.types import Issue
+from pysymex.core.solver.engine.incremental import IncrementalSolver
 
 
 class TestExecutionContext:
@@ -14,11 +14,11 @@ class TestExecutionContext:
 
         class ContextLike:
             def __init__(self) -> None:
-                self._instructions: list[dis.Instruction] = []
+                self.instructions: list[dis.Instruction] = []
                 self.solver: IncrementalSolver = IncrementalSolver()
                 self._paths_explored: int = 0
                 self._coverage: set[int] = set()
-                self._issues: list[Issue] = []
+                self.issues: list[Issue] = []
                 self.hooks: dict[str, object] = {}
 
             def register_hook(self, hook_name: str, handler: object) -> None:

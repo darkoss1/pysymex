@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,27 +16,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Command-line interface for pysymex.
-Provides two modes:
-1. Single function analysis: pysymex file.py -f function_name
-2. Full file/directory scan: pysymex scan path/to/code
-"""
+"""Command-line interface for pysymex."""
 
 from __future__ import annotations
 
-import argparse
 import io
-import logging
 import sys
-from typing import Protocol, TypeGuard, cast, runtime_checkable
+from pathlib import Path
+from typing import cast
 
-from pysymex._deps import ensure_z3_ready
-from pysymex._lazy import lazy_dir, lazy_getattr
-
-logger = logging.getLogger(__name__)
-
+from pysymex.logger import LogLevel, configure_logging, get_logger, setup_python_logging
+from pysymex.deps import ensure_z3_ready
+from pysymex.lazy import lazy_dir, lazy_getattr
+from pysymex.cli.entry_helpers import normalize_argv
 from pysymex.config import VERSION
 
+logger = get_logger(__name__)
 __version__ = VERSION
 
 _EXPORTS: dict[str, tuple[str, str]] = {
@@ -46,7 +41,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "cmd_analyze": ("pysymex.cli.commands", "cmd_analyze"),
     "cmd_benchmark": ("pysymex.cli.commands", "cmd_benchmark"),
     "cmd_check": ("pysymex.cli.commands", "cmd_check"),
-    "cmd_concolic": ("pysymex.cli.commands", "cmd_concolic"),
     "cmd_verify": ("pysymex.cli.commands", "cmd_verify"),
     "generate_completion": ("pysymex.cli.commands", "generate_completion"),
 }
@@ -62,75 +56,11 @@ def __dir__() -> list[str]:
     return lazy_dir(_EXPORTS, globals(), extra=("main", "__version__"))
 
 
-_Namespace = argparse.Namespace
-
-
-@runtime_checkable
-class _IssueLike(Protocol):
-    def to_dict(self) -> dict[str, object]: ...
-
-
-@runtime_checkable
-class _SymbolicResultLike(Protocol):
-    issues: list[_IssueLike]
-
-    def to_dict(self) -> dict[str, object]: ...
-
-
-def _is_issue_like_list(value: object) -> TypeGuard[list[_IssueLike]]:
-    """Return whether value is a list of issue-like objects."""
-    if not isinstance(value, list):
-        return False
-    issue_items: list[object] = list(value)  # type: ignore[arg-type]  # value is list[Unknown] after isinstance check
-    return all(isinstance(item, _IssueLike) for item in issue_items)
-
-
-_SUBCOMMANDS = frozenset(
-    {
-        "scan",
-        "analyze",
-        "verify",
-        "concolic",
-        "benchmark",
-        "check",
-    }
-)
-
-
-def _normalize_argv(argv: list[str]) -> list[str]:
-    """Translate legacy analyze syntax into modern subcommand form.
-
-    Legacy form:
-        pysymex file.py -f function_name
-
-    Modern form:
-        pysymex analyze file.py -f function_name
-    """
-    if not argv:
-        return argv
-
-    first = argv[0]
-    if first.startswith("-") or first in _SUBCOMMANDS:
-        return argv
-
-    tail = argv[1:]
-    if "-f" not in tail and "--function" not in tail:
-        return argv
-
-    return ["analyze", first, *tail]
-
-
-IssueLike = _IssueLike
-SymbolicResultLike = _SymbolicResultLike
-is_issue_like_list = _is_issue_like_list
-normalize_argv = _normalize_argv
-
-
 def main(argv: list[str] | None = None) -> int:
     """Main CLI entry point.
 
-    Normalises legacy ``pysymex file.py -f func`` invocations, ensures Z3
-    is available, then dispatches to the appropriate sub-command handler.
+    Requires explicit subcommands. Ensures Z3 is available, then dispatches to
+    the sub-command handler.
 
     Args:
         argv: Command-line arguments.  Defaults to ``sys.argv[1:]``.
@@ -160,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = create_parser()
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    args = parser.parse_args(_normalize_argv(raw_argv))
+    args = parser.parse_args(normalize_argv(raw_argv))
+    configure_cli_diagnostics(args)
 
     if hasattr(args, "generate_completion") and args.generate_completion:
         from pysymex.cli.commands import generate_completion
@@ -185,10 +116,6 @@ def main(argv: list[str] | None = None) -> int:
         from pysymex.cli.commands import cmd_verify
 
         return cmd_verify(args)
-    elif args.command == "concolic":
-        from pysymex.cli.commands import cmd_concolic
-
-        return cmd_concolic(args)
     elif args.command == "benchmark":
         from pysymex.cli.commands import cmd_benchmark
 
@@ -200,6 +127,44 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 0
+
+
+def configure_cli_diagnostics(args: object) -> None:
+    """Configure pysymex diagnostics after parsing CLI flags."""
+    level = LogLevel.NORMAL
+    if bool(getattr(args, "quiet", False)):
+        level = LogLevel.QUIET
+    elif bool(getattr(args, "diagnostic_trace", False)):
+        level = LogLevel.TRACE
+    elif bool(getattr(args, "debug", False)):
+        level = LogLevel.DEBUG
+    elif bool(getattr(args, "verbose", False)):
+        level = LogLevel.VERBOSE
+
+    raw_categories: object = getattr(args, "log_category", None)
+    categories: set[str] | None = None
+    if isinstance(raw_categories, list):
+        category_values: list[str] = []
+        for raw_category in cast("list[object]", raw_categories):
+            if isinstance(raw_category, str):
+                category_values.append(raw_category)
+        categories = set(category_values)
+    jsonl_raw = getattr(args, "log_jsonl", None)
+    jsonl_path = Path(jsonl_raw) if isinstance(jsonl_raw, str) else None
+    raw_history = getattr(args, "log_history", 0)
+    history_capacity = raw_history if isinstance(raw_history, int) and raw_history > 0 else 0
+    output_format = getattr(args, "format", None)
+    diagnostic_stream = (
+        sys.stderr if output_format in {"json", "sarif", "html", "markdown"} else None
+    )
+    configure_logging(
+        level=level,
+        categories=categories,
+        jsonl_path=jsonl_path,
+        history_capacity=history_capacity,
+        stream=diagnostic_stream,
+    )
+    setup_python_logging()
 
 
 if __name__ == "__main__":

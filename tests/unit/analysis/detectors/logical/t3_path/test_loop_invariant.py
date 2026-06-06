@@ -1,9 +1,13 @@
 """Tests for pysymex/analysis/detectors/logical/t3_path/loop_invariant.py."""
 
 import dis
+import time
+
 import z3
 from pysymex.analysis.detectors.logical.base import ContradictionContext
 from pysymex.analysis.detectors.logical.t3_path.loop_invariant import LoopInvariantViolationRule
+from pysymex.core.solver.engine.context import active_incremental_solver
+from pysymex.core.solver.engine.incremental import IncrementalSolver
 
 
 def MockInstr(
@@ -46,3 +50,18 @@ class TestLoopInvariantViolationRule:
         core = [loop_i == 2 * loop_i]
         ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
         assert not LoopInvariantViolationRule().matches(ctx)
+
+    def test_does_not_match_self_reference_when_solver_unknown(self) -> None:
+        """Solver UNKNOWN must not prove a loop invariant violation."""
+        loop_i = z3.Int("unknown_loop_i")
+        core = [loop_i == loop_i + 1]
+        ctx = ContradictionContext(core=core, branch_cond=core[-1], path_constraints=[])
+        solver = IncrementalSolver(timeout_ms=1000)
+        solver.set_deadline(time.perf_counter() - 1.0)
+        token = active_incremental_solver.set(solver)
+        try:
+            matched = LoopInvariantViolationRule().matches(ctx)
+        finally:
+            active_incremental_solver.reset(token)
+
+        assert matched is False

@@ -1,4 +1,4 @@
-# pysymex: Python Symbolic Execution & Formal Verification
+# pysymex: python symbolic execution & formal verification
 # Upstream Repository: https://github.com/darkoss1/pysymex
 #
 # Copyright (C) 2026 pysymex Team
@@ -16,11 +16,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Tier 2 Multi-Variable Logical Contradiction Rules.
+
+Contains logic rules checking for contradictions involving relationships among
+multiple variables, such as antisymmetry, triangle inequality, bounding sum, product sign,
+and GCD impossibility.
+"""
+
 from .antisymmetry import AntisymmetryRule
 from .triangle import TriangleImpossibilityRule
-from .sum_impossibility import SumImpossibilityRule
+from .impossibility.sum import SumImpossibilityRule
 from .product_sign import ProductSignContradictionRule
-from .gcd_impossibility import GcdImpossibilityRule
+from .impossibility.gcd import GcdImpossibilityRule
 
 __all__ = [
     "AntisymmetryRule",
