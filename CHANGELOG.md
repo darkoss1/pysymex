@@ -4,6 +4,22 @@ All notable public changes to pysymex are documented here.
 
 ## Unreleased
 
+## v0.1.1a0 > v0.1.1a1 - 2026-06-06
+
+This alpha patch release restores Linux namespace sandbox behavior for the
+scanner's sandboxed bytecode extraction path.
+
+### Sandbox
+
+- Fixed Linux root-jail runtime mounting so the chroot can resolve `/bin`,
+  `/lib`, and `/lib64` through trusted symlinks while keeping the mounted host
+  runtime narrow and read-only.
+- Added Python stdlib and multiarch library mounts needed by isolated
+  interpreter startup on Linux distributions and hosted toolcache runtimes.
+- Verified `python -m pysymex scan <file> --stats` under WSL Linux with the
+  `LinuxNamespaceBackend`, filesystem jail, network blocking, and seccomp
+  capabilities active.
+
 ## v0.1.0a5 > v0.1.1a0 - 2026-06-03
 
 This release advances PySyMex across engine architecture, CPython-compatible

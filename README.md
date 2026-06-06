@@ -8,7 +8,7 @@ Bytecode-level path exploration for supported Python programs, backed by Z3 and 
 unknown, unsupported, inconclusive, and blocked states when a definite answer is not justified.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-2563eb.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-alpha_0.1.1a0-f59e0b.svg)](https://github.com/darkoss1/pysymex)
+[![Status](https://img.shields.io/badge/status-alpha_0.1.1a1-f59e0b.svg)](https://github.com/darkoss1/pysymex)
 [![Solver](https://img.shields.io/badge/solver-Z3-7c3aed.svg)](https://github.com/Z3Prover/z3)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-111827.svg)](LICENSE)
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Final
 
-VERSION: Final = "0.1.1a0"
+VERSION: Final = "0.1.1a1"
 
 CONFIG_FILE_NAMES: Final = (
     ".pysymex.toml",

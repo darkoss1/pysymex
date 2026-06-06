@@ -1939,7 +1939,7 @@ wheels = [
 
 [[package]]
 name = "pysymex"
-version = "0.1.1a0"
+version = "0.1.1a1"
 source = { editable = "." }
 dependencies = [
     { name = "immutables" },

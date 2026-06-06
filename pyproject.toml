@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pysymex"
-version = "0.1.1a0"
+version = "0.1.1a1"
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
 license = "AGPL-3.0-only"

@@ -8,7 +8,7 @@ from pysymex.resources.mapping import resource_limits_from_analysis_limits
 
 
 def test_public_config_exports_canonical_defaults() -> None:
-    assert config.VERSION == "0.1.1a0"
+    assert config.VERSION == "0.1.1a1"
     assert config.DEFAULT_SCAN_MAX_PATHS == 5000
     assert config.DEFAULT_TRACE_OUTPUT_DIR == ".pysymex/traces"
     assert config.SCAN_OUTPUT_FORMAT_CHOICES == (
