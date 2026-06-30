@@ -7,23 +7,31 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pysymex.core.state.factory import create_initial_state
-from pysymex.models.builtins import ModelRegistry
-from pysymex.models.builtins.base import FunctionModel, ModelResult, is_raised_exception_effect
-from pysymex.models.builtins.core.collections import TupleModel as CoreTupleModel
-from pysymex.models.builtins.extended.namespace import SetModel as ExtendedSetModel
-from pysymex.models.builtins.extended.numeric.format import HexModel
-from pysymex.models.builtins.extended.registry import EXTENDED_MODELS
-from pysymex.models.builtins.registry.defaults import default_builtin_models
-from pysymex.models.containers.sets.constructor import SetModel as ContainerSetModel
-from pysymex.models.containers.tuples.construction import TupleModel as ContainerTupleModel
-from pysymex.models.numeric.complex import ComplexConjugateModel
-from pysymex.models.numeric.float import FloatHexModel
-from pysymex.models.numeric.properties import ComplexImagModel, ComplexRealModel
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.models.builtins.numeric.format import HexModel
+from pysymex._internal.models.builtins.registry.builtin_models import builtin_models
+from pysymex._internal.models.builtins.registry.defaults import default_builtin_models
+from pysymex._internal.models.builtins.registry.models import ModelRegistry
+from pysymex._internal.models.builtins.types.containers.sets.constructor import SetConstructorModel
+from pysymex._internal.models.builtins.types.containers.tuples.construction import (
+    TupleConstructorModel,
+)
+from pysymex._internal.models.builtins.types.numeric.complex import ComplexConjugateModel
+from pysymex._internal.models.builtins.types.numeric.float import FloatHexModel
+from pysymex._internal.models.builtins.types.numeric.properties import (
+    ComplexImagModel,
+    ComplexRealModel,
+)
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import ModelResult, SideEffects
 
 if TYPE_CHECKING:
-    from pysymex.typing import StackValue
-    from pysymex.core.state.record import VMState
+    from pysymex._internal.typing.protocols import StackValue
+
+
+def create_initial_state() -> VMState:
+    """Create the minimal root state needed by builtin registry tests."""
+    return VMState(global_vars={"__name__": "__main__"})
 
 
 class DummyFunctionModel(FunctionModel):
@@ -48,8 +56,8 @@ class TestModelRegistry:
 
         models = registry.list_models()
         assert len(models) > 0
-        assert "int" in models
-        assert "float" in models
+        assert "builtins.int" in models
+        assert "builtins.float" in models
         assert registry.get("int") is not None
 
     def test_model_registry_register_stores_model(self) -> None:
@@ -72,23 +80,27 @@ class TestModelRegistry:
         assert registry.get("test_get") is model
         assert registry.get("missing_key") is None
 
-    def test_model_registry_apply_with_func_name(self) -> None:
-        """Verify apply() uses the function's __name__ attribute for routing."""
+    def test_model_registry_apply_resolves_verified_builtin(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Concrete dispatch accepts a callable owned by the builtins module."""
         registry = ModelRegistry()
-        model = DummyFunctionModel(name="my_func", qualname="my_func")
+        model = DummyFunctionModel(name="pysymex_dummy", qualname="builtins.pysymex_dummy")
         registry.register(model)
         state = create_initial_state()
 
-        class FuncWithDunderName:
-            __name__ = "my_func"
+        def pysymex_dummy() -> None:
+            return None
 
-        result = registry.apply(FuncWithDunderName(), [], {}, state)
+        monkeypatch.setattr(builtins, "pysymex_dummy", pysymex_dummy, raising=False)
+
+        result = registry.apply(pysymex_dummy, [], {}, state)
 
         assert result is not None
         assert result.value == 42
 
-    def test_model_registry_apply_with_str_fallback(self) -> None:
-        """Verify apply() falls back to str() when __name__ is absent."""
+    def test_model_registry_apply_rejects_string_representation_fallback(self) -> None:
+        """Arbitrary objects cannot acquire builtin semantics through their string form."""
         registry = ModelRegistry()
         model = DummyFunctionModel(name="string_representation", qualname="string_representation")
         registry.register(model)
@@ -100,8 +112,7 @@ class TestModelRegistry:
 
         result = registry.apply(FuncWithStr(), [], {}, state)
 
-        assert result is not None
-        assert result.value == 42
+        assert result is None
 
     def test_model_registry_apply_returns_none_for_missing(self) -> None:
         """Verify apply() returns None when no mapped model exists."""
@@ -116,7 +127,7 @@ class TestModelRegistry:
         assert result is None
 
     def test_model_registry_list_models(self) -> None:
-        """Verify list_models() returns deduplicated model names."""
+        """Verify list_models() returns deduplicated model qualnames."""
         registry = ModelRegistry()
         model1 = DummyFunctionModel(name="list1", qualname="list1_qual")
         model2 = DummyFunctionModel(name="list2", qualname="list2_qual")
@@ -125,18 +136,25 @@ class TestModelRegistry:
         registry.register(model2)
 
         models = registry.list_models()
-        assert "list1" in models
-        assert "list2" in models
-        assert "list1_qual" not in models
+        assert "list1_qual" in models
+        assert "list2_qual" in models
+        assert "list1" not in models
+
+    def test_model_registry_rejects_duplicate_exact_keys(self) -> None:
+        registry = ModelRegistry()
+        registry.register(DummyFunctionModel(name="first", qualname="custom.same"))
+
+        with pytest.raises(ValueError, match="duplicate builtin model key"):
+            registry.register(DummyFunctionModel(name="second", qualname="custom.same"))
 
     def test_model_registry_uses_canonical_overlapping_model_owners(self) -> None:
         """Overlapping public models resolve to the runtime-owned implementation."""
         registry = ModelRegistry()
 
-        assert type(registry.get("tuple")) is ContainerTupleModel
-        assert type(registry.get("builtins.tuple")) is ContainerTupleModel
-        assert type(registry.get("set")) is ContainerSetModel
-        assert type(registry.get("builtins.set")) is ContainerSetModel
+        assert type(registry.get("tuple")) is TupleConstructorModel
+        assert type(registry.get("builtins.tuple")) is TupleConstructorModel
+        assert type(registry.get("set")) is SetConstructorModel
+        assert type(registry.get("builtins.set")) is SetConstructorModel
         assert type(registry.get("complex.real")) is ComplexRealModel
         assert type(registry.get("complex.imag")) is ComplexImagModel
         assert type(registry.get("complex.conjugate")) is ComplexConjugateModel
@@ -160,8 +178,8 @@ class TestModelRegistry:
         assert quit_result is not None
         exit_effect = exit_result.side_effects.get("raised_exception")
         quit_effect = quit_result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(exit_effect)
-        assert is_raised_exception_effect(quit_effect)
+        assert SideEffects.is_raised_exception(exit_effect)
+        assert SideEffects.is_raised_exception(quit_effect)
         assert exit_effect["exception_type"] == "SystemExit"
         assert quit_effect["exception_type"] == "SystemExit"
 
@@ -207,7 +225,7 @@ class TestModelRegistry:
 
         assert isinstance(result, ModelResult)
         effect = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     @pytest.mark.parametrize(
@@ -234,14 +252,14 @@ class TestModelRegistry:
 
         assert isinstance(result, ModelResult)
         effect = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     def test_default_assembly_registers_each_extended_owner_once(self) -> None:
         """Default assembly must not add parallel runtime registrations."""
         models = default_builtin_models()
 
-        for owner in EXTENDED_MODELS:
+        for owner in builtin_models():
             matching = [
                 model
                 for model in models
@@ -250,6 +268,3 @@ class TestModelRegistry:
                 and model.qualname == owner.qualname
             ]
             assert len(matching) == 1
-
-        assert not any(type(model) is CoreTupleModel for model in models)
-        assert not any(type(model) is ExtendedSetModel for model in models)

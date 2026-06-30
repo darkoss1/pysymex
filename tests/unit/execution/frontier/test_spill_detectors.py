@@ -5,13 +5,21 @@ from typing import cast
 import pytest
 import z3
 
-from pysymex.analysis.detectors import Issue, IssueKind, Severity
-from pysymex.core.state.deferred import DeferredStateIssue
-from pysymex.execution.detectors import DeferredDetectorIssue
-from pysymex.execution.frontier.spill.detectors import (
-    SpillDetectorDecodeError,
-    decode_detector_issues,
-    detector_issues_payload,
+from pysymex._internal.analysis.detectors.detector.types import Issue, Severity
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.deferred import DeferredStateIssue
+from pysymex._internal.execution.detectors.records import DeferredDetectorIssue
+from pysymex._internal.execution.frontier.spill.detector.decoding import decode_detector_issues
+from pysymex._internal.execution.frontier.spill.detector.decoding import (
+    decode_detector_issues as direct_decode_detector_issues,
+)
+from pysymex._internal.execution.frontier.spill.detector.payloads import detector_issues_payload
+from pysymex._internal.execution.frontier.spill.detector.payloads import (
+    detector_issues_payload as direct_detector_issues_payload,
+)
+from pysymex._internal.execution.frontier.spill.detector.types import SpillDetectorDecodeError
+from pysymex._internal.execution.frontier.spill.detector.types import (
+    SpillDetectorDecodeError as DirectSpillDetectorDecodeError,
 )
 
 
@@ -50,6 +58,12 @@ def _payload() -> dict[str, object]:
     payload = payloads[0]
     assert isinstance(payload, dict)
     return cast("dict[str, object]", payload)
+
+
+def test_detector_spill_exports_use_direct_owners() -> None:
+    assert SpillDetectorDecodeError is DirectSpillDetectorDecodeError
+    assert decode_detector_issues is direct_decode_detector_issues
+    assert detector_issues_payload is direct_detector_issues_payload
 
 
 def test_detector_spill_payload_round_trips_model_free_issue_metadata() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
@@ -78,6 +78,38 @@ def test_scan_file_str_encode_preserves_nonzero_head(tmp_path: Path) -> None:
     assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
 
 
+def test_scan_file_truthy_str_encode_preserves_indexability(tmp_path: Path) -> None:
+    target = tmp_path / "str_encode_truth_guard.py"
+    target.write_text(
+        "def target(text: str) -> int:\n"
+        "    if text:\n"
+        "        data = text.encode()\n"
+        "        return data[0]\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not _has_issue_kind(result, "target", "INDEX_ERROR")
+
+
+def test_scan_file_str_encode_ignore_can_report_empty_index(tmp_path: Path) -> None:
+    target = tmp_path / "str_encode_ignore_empty_index.py"
+    target.write_text(
+        "def target(text: str) -> int:\n"
+        "    if text:\n"
+        "        data = text.encode('ascii', 'ignore')\n"
+        "        return data[0]\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "INDEX_ERROR")
+
+
 def test_scan_file_str_encode_reports_empty_index(tmp_path: Path) -> None:
     target = tmp_path / "str_encode_empty.py"
     target.write_text(
@@ -102,10 +134,42 @@ def test_scan_file_bytes_decode_preserves_nonzero_length(tmp_path: Path) -> None
     assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
 
 
+def test_scan_file_truthy_bytes_decode_preserves_nonzero_length(tmp_path: Path) -> None:
+    target = tmp_path / "bytes_decode_truth_guard.py"
+    target.write_text(
+        "def target(value: bytes) -> int:\n"
+        "    if value:\n"
+        "        text = value.decode()\n"
+        "        return 10 // len(text)\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+
+
 def test_scan_file_bytes_decode_reports_empty_length_division(tmp_path: Path) -> None:
     target = tmp_path / "bytes_decode_empty.py"
     target.write_text(
         "def target() -> int:\n    text = b''.decode()\n    return 10 // len(text)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+
+
+def test_scan_file_empty_bytes_decode_reports_length_division(tmp_path: Path) -> None:
+    target = tmp_path / "bytes_decode_empty_guard.py"
+    target.write_text(
+        "def target(value: bytes) -> int:\n"
+        "    if not value:\n"
+        "        text = value.decode()\n"
+        "        return 10 // len(text)\n"
+        "    return 1\n",
         encoding="utf-8",
     )
 
@@ -126,6 +190,18 @@ def test_scan_file_str_encode_reports_bad_encoding_type(tmp_path: Path) -> None:
     assert _has_issue_kind(result, "target", "TYPE_ERROR")
 
 
+def test_scan_file_symbolic_str_encode_reports_bad_encoding_type(tmp_path: Path) -> None:
+    target = tmp_path / "str_encode_symbolic_bad_encoding.py"
+    target.write_text(
+        "def target(text: str) -> bytes:\n    return text.encode(1)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "TYPE_ERROR")
+
+
 def test_scan_file_bytes_decode_reports_bad_encoding_type(tmp_path: Path) -> None:
     target = tmp_path / "bytes_decode_bad_encoding.py"
     target.write_text(
@@ -136,3 +212,35 @@ def test_scan_file_bytes_decode_reports_bad_encoding_type(tmp_path: Path) -> Non
     result = scan_file(target, use_sandbox=False)
 
     assert _has_issue_kind(result, "target", "TYPE_ERROR")
+
+
+def test_scan_file_str_join_symbolic_parts_preserves_length_relation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "str_join_symbolic_parts_nonempty.py"
+    target.write_text(
+        "def target(a: str, b: str) -> int:\n"
+        "    text = ''.join([a, b])\n"
+        "    if len(a) > 0:\n"
+        "        return 10 // len(text)\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+
+
+def test_scan_file_str_join_symbolic_part_with_concrete_tail_is_nonempty(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "str_join_symbolic_part_concrete_tail.py"
+    target.write_text(
+        "def target(a: str) -> int:\n    text = '/'.join([a, 'x'])\n    return 10 // len(text)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")

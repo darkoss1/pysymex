@@ -2,20 +2,35 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import dis
+from collections.abc import Callable
 from typing import cast
 
-from pysymex.core.graph.cig import ConstraintInteractionGraph
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.state.record import VMState
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.engine import resolve_line_number, start_path_exploration
-from pysymex.execution.engine.worklist import WorklistLoopContext, drain_worklist
-from pysymex.execution.scheduling.telemetry import SchedulerEvent
-from pysymex.execution.scheduling import create_path_manager
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.execution.strategies.manager.path import AdaptivePathManager
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.graph.cig import ConstraintInteractionGraph
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.engine.exploration import start_path_exploration
+from pysymex._internal.execution.engine.exploration import (
+    start_path_exploration as direct_start_path_exploration,
+)
+from pysymex._internal.execution.engine.finalization import finalize_execution_result
+from pysymex._internal.execution.engine.finalization import (
+    finalize_execution_result as direct_finalize_execution_result,
+)
+from pysymex._internal.execution.engine.line.resolution import resolve_line_number
+from pysymex._internal.execution.engine.line.resolution import (
+    resolve_line_number as direct_resolve_line_number,
+)
+from pysymex._internal.execution.engine.seeding import seed_function_execution_context
+from pysymex._internal.execution.engine.seeding import (
+    seed_function_execution_context as direct_seed_function_execution_context,
+)
+from pysymex._internal.execution.engine.worklist import WorklistLoopContext, drain_worklist
+from pysymex._internal.execution.scheduling.factory import create_path_manager
+from pysymex._internal.execution.scheduling.telemetry import SchedulerEvent
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.strategies.manager.path import AdaptivePathManager
 from tests.unit.execution.executors.core_executor_helpers import IncrementalSensitiveSolver
 
 
@@ -32,7 +47,6 @@ def _loop_context(
         solver=solver,
         resource_tracker=None,
         execute_step=execute_step,
-        record_degraded_passes=session.record_degraded_passes,
     )
 
 
@@ -41,6 +55,13 @@ def _scheduler_observer_count(worklist: object) -> int:
     if not isinstance(observers, list):
         return 0
     return len(cast("list[object]", observers))
+
+
+def test_engine_public_exports_use_direct_owners() -> None:
+    assert resolve_line_number is direct_resolve_line_number
+    assert start_path_exploration is direct_start_path_exploration
+    assert seed_function_execution_context is direct_seed_function_execution_context
+    assert finalize_execution_result is direct_finalize_execution_result
 
 
 def test_drain_worklist_restores_outer_active_solver_context() -> None:
@@ -54,7 +75,7 @@ def test_drain_worklist_restores_outer_active_solver_context() -> None:
     def execute_step(_state: VMState) -> None:
         raise AssertionError("empty worklist should not execute a step")
 
-    token = active_incremental_solver.set(outer_solver)
+    token = SolverContext.active.set(outer_solver)
     try:
         drain_worklist(
             _loop_context(
@@ -64,11 +85,39 @@ def test_drain_worklist_restores_outer_active_solver_context() -> None:
                 execute_step=execute_step,
             )
         )
-        active_solver = active_incremental_solver.get()
+        active_solver = SolverContext.active.get()
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert active_solver is outer_solver
+
+
+def test_drain_worklist_automatic_mode_sets_no_total_deadline() -> None:
+    """Automatic host exploration must not synthesize a wall-clock stop."""
+
+    class RecordingSolver(IncrementalSensitiveSolver):
+        def __init__(self) -> None:
+            super().__init__()
+            self.deadlines: list[float | None] = []
+
+        def set_deadline(self, deadline_time: float | None) -> None:
+            self.deadlines.append(deadline_time)
+
+    config = ExecutionConfig()
+    session = ExecutionSession()
+    session.worklist = create_path_manager(config.strategy)
+    solver = RecordingSolver()
+
+    drain_worklist(
+        _loop_context(
+            session=session,
+            config=config,
+            solver=solver,
+            execute_step=lambda _state: None,
+        )
+    )
+
+    assert solver.deadlines == [None, None]
 
 
 def test_resolve_line_number_uses_root_session_mapping() -> None:
@@ -89,13 +138,9 @@ def test_resolve_line_number_uses_root_session_mapping() -> None:
 
 
 def test_drain_worklist_records_step_timing_count_and_scheduler_reward() -> None:
-    config = ExecutionConfig(max_paths=2, max_iterations=20, deterministic_mode=True)
+    config = ExecutionConfig(max_paths=2, max_iterations=20)
     session = ExecutionSession()
-    worklist = create_path_manager(
-        config.strategy,
-        deterministic=config.deterministic_mode,
-        random_seed=config.random_seed,
-    )
+    worklist = create_path_manager(config.strategy)
     assert isinstance(worklist, AdaptivePathManager)
     session.worklist = worklist
     state = VMState(pc=0)

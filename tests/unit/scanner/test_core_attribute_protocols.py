@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.execution.opcodes.common.functions.attribute.fallbacks import (
+from pysymex._internal.execution.opcodes.common.functions.attribute.fallbacks import (
     UNSUPPORTED_ATTRIBUTE_PROTOCOL,
 )
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_executes_safe_custom_getattr_result(tmp_path: Path) -> None:
@@ -229,6 +229,74 @@ def test_scan_file_executes_getattr_default_primary_to_getattr_chaining(
 
     assert "unsupported_attribute_protocol" not in result.degraded_passes
     assert not any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+
+
+def test_scan_file_executes_getattr_after_getattribute_attribute_error(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "builtin_custom_getattribute_getattr_no_default_bug.py"
+    target.write_text(
+        "class Data:\n"
+        "    def __getattribute__(self, name: str) -> int:\n"
+        "        raise AttributeError(name)\n\n"
+        "    def __getattr__(self, name: str) -> int:\n"
+        "        return 10 // 0\n\n"
+        "def target() -> int:\n"
+        "    return getattr(Data(), 'missing')\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert "unsupported_attribute_protocol" not in result.degraded_passes
+    assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNHANDLED_EXCEPTION" for issue in result.issues)
+
+
+def test_scan_file_executes_direct_getattr_after_getattribute_attribute_error(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "direct_custom_getattribute_getattr_no_default_bug.py"
+    target.write_text(
+        "class Data:\n"
+        "    def __getattribute__(self, name: str) -> int:\n"
+        "        raise AttributeError(name)\n\n"
+        "    def __getattr__(self, name: str) -> int:\n"
+        "        return 10 // 0\n\n"
+        "def target() -> int:\n"
+        "    return Data().missing\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert "unsupported_attribute_protocol" not in result.degraded_passes
+    assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNHANDLED_EXCEPTION" for issue in result.issues)
+
+
+def test_scan_file_executes_getattr_after_descriptor_attribute_error(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "direct_descriptor_getattr_fallback_bug.py"
+    target.write_text(
+        "class Slot:\n"
+        "    def __get__(self, instance: object, owner: object) -> int:\n"
+        "        raise AttributeError('value')\n\n"
+        "class Data:\n"
+        "    value = Slot()\n"
+        "    def __getattr__(self, name: str) -> int:\n"
+        "        return 10 // 0\n\n"
+        "def target() -> int:\n"
+        "    return Data().value\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert "unsupported_attribute_protocol" not in result.degraded_passes
+    assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNHANDLED_EXCEPTION" for issue in result.issues)
 
 
 def test_scan_file_uses_default_after_both_custom_lookup_hooks_raise(

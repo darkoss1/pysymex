@@ -1,32 +1,6 @@
-"""Tests for pysymex/analysis/detectors/__init__.py."""
+"""Tests for pysymex/_internal/analysis/detectors/__init__.py."""
 
-import dis
-from pysymex.analysis.detectors import __all__, default_registry
-
-
-def MockInstr(
-    opname: str, argval: object = None, argrepr: str = "", arg: int = 0, offset: int = 10
-) -> dis.Instruction:
-    import dis
-
-    def _dummy() -> None:
-        pass
-
-    template = next(dis.get_instructions(_dummy))
-    return template._replace(
-        opname=opname,
-        opcode=dis.opmap.get(opname, 0),
-        arg=arg,
-        argval=argval,
-        argrepr=argrepr,
-        offset=offset,
-    )
-
-
-def test_exports() -> None:
-    """Test module exports."""
-    assert len(__all__) >= 0
-    assert isinstance(__all__, list)
+from pysymex._internal.analysis.detectors.defaults import default_registry
 
 
 def test_default_registry_excludes_runtime_unreachable_detector() -> None:

@@ -29,8 +29,8 @@ flowchart TD
 | UNKNOWN | The engine did not establish SAT or UNSAT. Malformed input, Z3 unknown, deadlines, and query failures land here. |
 
 Callers that need evidence use structured APIs such as `check_sat_result`, `get_model_result`, and
-`prove_result`. Boolean helpers are compatibility conveniences and must not be used when
-inconclusive states matter.
+direct `IncrementalSolver` checks. Boolean shortcuts must not be used when inconclusive states
+matter.
 
 ## Caches And Context
 
@@ -43,15 +43,16 @@ expression checks to prevent unrelated constraints from sharing SAT or UNSAT evi
 
 ## Proof Claims
 
-`prove` returns true only when the encoded negation is UNSAT. A false result includes both
-counterexamples and inconclusive checks. Use structured proof results when the distinction matters.
+Proof-style callers must check the negated obligation through structured solver results. A SAT
+negation is a counterexample, UNSAT proves the encoded obligation, and UNKNOWN remains
+inconclusive.
 
 ## Evidence In Source
 
-- Solver results: `pysymex/core/solver/engine/results.py`
-- Incremental solver: `pysymex/core/solver/engine/incremental.py`
-- Query helpers: `pysymex/core/solver/engine/queries.py`
-- SAT and cache logic: `pysymex/core/solver/engine`
+- Solver results: `pysymex/_internal/core/solver/engine/results.py`
+- Incremental solver: `pysymex/_internal/core/solver/engine/incremental.py`
+- Query helpers: `pysymex/_internal/core/solver/engine/queries.py`
+- SAT and cache logic: `pysymex/_internal/core/solver/engine`
 - Tests: `tests/unit/core/solver`
 
 ## Limits

@@ -5,12 +5,13 @@ from typing import cast
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.truthiness import get_truthy_expr
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.control.match import (
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.types.truthiness import get_truthy_expr
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.control.match.handlers import (
     handle_common_match_keys,
     handle_common_match_mapping,
     handle_common_match_sequence,
@@ -52,5 +53,16 @@ def test_handle_common_match_predicates_are_truthy_bool_carriers() -> None:
     assert isinstance(sequence_predicate, SymbolicValue)
     assert mapping_predicate.affinity_type == "bool"
     assert sequence_predicate.affinity_type == "bool"
-    assert z3.is_true(z3.simplify(get_truthy_expr(mapping_predicate)))
-    assert z3.is_true(z3.simplify(get_truthy_expr(sequence_predicate)))
+    assert z3.is_true(simplify_expr(get_truthy_expr(mapping_predicate)))
+    assert z3.is_true(simplify_expr(get_truthy_expr(sequence_predicate)))
+
+
+def test_handle_common_match_sequence_accepts_symbolic_tuple_payload() -> None:
+    """Concrete tuple payloads retained in scalar carriers still match sequence patterns."""
+    state = VMState(stack=[SymbolicValue.from_const((1, 2))], pc=6)
+
+    result = handle_common_match_sequence(_instr("MATCH_SEQUENCE"), state, OpcodeDispatcher())
+
+    predicate = result.new_states[0].peek()
+    assert isinstance(predicate, SymbolicValue)
+    assert z3.is_true(simplify_expr(get_truthy_expr(predicate)))

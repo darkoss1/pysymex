@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-
-from pysymex.models.stdlib.pathlib.core import (
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.models.stdlib.pathlib.core import (
     PathIsAbsoluteModel,
     PathJoinpathModel,
     PathModel,
@@ -13,22 +11,26 @@ from pysymex.models.stdlib.pathlib.core import (
     PathStemModel,
     PathSuffixModel,
     PathTruedivModel,
-    PurePosixPathModel,
     PurePathModel,
+    PurePosixPathModel,
 )
-from pysymex.models.stdlib.pathlib.io import (
-    PathExistsModel,
-    PathGlobModel,
-    PathIsDirModel,
-    PathIsFileModel,
-    PathMkdirModel,
+from pysymex._internal.models.stdlib.pathlib.file_io import (
     PathReadBytesModel,
     PathReadTextModel,
+    PathWriteBytesModel,
+    PathWriteTextModel,
+)
+from pysymex._internal.models.stdlib.pathlib.filesystem import (
+    PathGlobModel,
+    PathMkdirModel,
     PathResolveModel,
     PathRglobModel,
     PathUnlinkModel,
-    PathWriteBytesModel,
-    PathWriteTextModel,
+)
+from pysymex._internal.models.stdlib.pathlib.status import (
+    PathExistsModel,
+    PathIsDirModel,
+    PathIsFileModel,
 )
 
 
@@ -43,7 +45,7 @@ def _assert_result(fn: object) -> None:
 
 
 class TestPathModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathModel."""
 
     def test_faithfulness(self) -> None:
         result = PathModel().apply(["a/b"], {}, _state())
@@ -55,7 +57,7 @@ class TestPathModel:
 
 
 class TestPurePathModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PurePathModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PurePathModel."""
 
     def test_faithfulness(self) -> None:
         result = PurePathModel().apply(["a/b"], {}, _state())
@@ -67,7 +69,7 @@ class TestPurePathModel:
 
 
 class TestPurePosixPathModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PurePosixPathModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PurePosixPathModel."""
 
     def test_faithfulness(self) -> None:
         result = PurePosixPathModel().apply(["a/b"], {}, _state())
@@ -79,7 +81,7 @@ class TestPurePosixPathModel:
 
 
 class TestPathExistsModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathExistsModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathExistsModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathExistsModel().apply([], {}, _state()))
@@ -89,7 +91,7 @@ class TestPathExistsModel:
 
 
 class TestPathIsFileModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathIsFileModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathIsFileModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathIsFileModel().apply([], {}, _state()))
@@ -99,7 +101,7 @@ class TestPathIsFileModel:
 
 
 class TestPathIsDirModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathIsDirModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathIsDirModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathIsDirModel().apply([], {}, _state()))
@@ -109,7 +111,7 @@ class TestPathIsDirModel:
 
 
 class TestPathIsAbsoluteModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathIsAbsoluteModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathIsAbsoluteModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathIsAbsoluteModel().apply([], {}, _state()))
@@ -119,7 +121,7 @@ class TestPathIsAbsoluteModel:
 
 
 class TestPathNameModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathNameModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathNameModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathNameModel().apply([], {}, _state()))
@@ -129,7 +131,7 @@ class TestPathNameModel:
 
 
 class TestPathStemModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathStemModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathStemModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathStemModel().apply([], {}, _state()))
@@ -139,7 +141,7 @@ class TestPathStemModel:
 
 
 class TestPathSuffixModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathSuffixModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathSuffixModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathSuffixModel().apply([], {}, _state()))
@@ -149,7 +151,7 @@ class TestPathSuffixModel:
 
 
 class TestPathParentModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathParentModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathParentModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathParentModel().apply([], {}, _state()))
@@ -159,7 +161,7 @@ class TestPathParentModel:
 
 
 class TestPathJoinpathModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathJoinpathModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathJoinpathModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathJoinpathModel().apply([], {}, _state()))
@@ -169,7 +171,7 @@ class TestPathJoinpathModel:
 
 
 class TestPathTruedivModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathTruedivModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathTruedivModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathTruedivModel().apply([], {}, _state()))
@@ -179,7 +181,7 @@ class TestPathTruedivModel:
 
 
 class TestPathReadTextModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathReadTextModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathReadTextModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathReadTextModel().apply([], {}, _state()))
@@ -189,7 +191,7 @@ class TestPathReadTextModel:
 
 
 class TestPathReadBytesModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathReadBytesModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathReadBytesModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathReadBytesModel().apply([], {}, _state()))
@@ -199,7 +201,7 @@ class TestPathReadBytesModel:
 
 
 class TestPathWriteTextModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathWriteTextModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathWriteTextModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathWriteTextModel().apply([], {}, _state()))
@@ -209,7 +211,7 @@ class TestPathWriteTextModel:
 
 
 class TestPathWriteBytesModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathWriteBytesModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathWriteBytesModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathWriteBytesModel().apply([], {}, _state()))
@@ -219,7 +221,7 @@ class TestPathWriteBytesModel:
 
 
 class TestPathResolveModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathResolveModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathResolveModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathResolveModel().apply([], {}, _state()))
@@ -229,7 +231,7 @@ class TestPathResolveModel:
 
 
 class TestPathMkdirModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathMkdirModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathMkdirModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathMkdirModel().apply([], {}, _state()))
@@ -239,7 +241,7 @@ class TestPathMkdirModel:
 
 
 class TestPathUnlinkModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathUnlinkModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathUnlinkModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathUnlinkModel().apply([], {}, _state()))
@@ -249,7 +251,7 @@ class TestPathUnlinkModel:
 
 
 class TestPathGlobModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathGlobModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathGlobModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathGlobModel().apply([], {}, _state()))
@@ -259,7 +261,7 @@ class TestPathGlobModel:
 
 
 class TestPathRglobModel:
-    """Test suite for pysymex.models.stdlib.pathlib.PathRglobModel."""
+    """Test suite for pysymex._internal.models.stdlib.pathlib.PathRglobModel."""
 
     def test_faithfulness(self) -> None:
         _assert_result(lambda: PathRglobModel().apply([], {}, _state()))

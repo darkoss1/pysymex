@@ -2,11 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.sandbox.validation import MAX_FILE_SIZE
-from pysymex.sandbox.errors import ResourceLimitError, SecurityError
-from pysymex.sandbox.validation import (
+from pysymex._internal.sandbox.errors import ResourceLimitError, SecurityError
+from pysymex._internal.sandbox.validation import (
+    MAX_FILE_SIZE,
     PathTraversalError,
-    SecurityConfig,
     sanitize_function_name,
     validate_bounds,
     validate_config,
@@ -15,7 +14,7 @@ from pysymex.sandbox.validation import (
 
 
 class TestPathTraversalError:
-    """Test suite for pysymex.sandbox.validation.PathTraversalError."""
+    """Test suite for pysymex._internal.sandbox.validation.PathTraversalError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -25,33 +24,8 @@ class TestPathTraversalError:
         assert str(err) == "blocked traversal"
 
 
-class TestSecurityConfig:
-    """Test suite for pysymex.sandbox.validation.SecurityConfig."""
-
-    @pytest.mark.timeout(30)
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        cfg = SecurityConfig()
-        assert cfg.allow_absolute_paths is True
-        assert cfg.allow_symlinks is False
-        assert cfg.allowed_directories is None
-        assert cfg.max_memory_mb == 512
-        assert cfg.max_cpu_seconds == 60
-        assert cfg.sandbox_builtins is True
-        assert cfg.allow_file_io is False
-        assert cfg.allow_network is False
-
-    @pytest.mark.timeout(30)
-    def test_initialization_with_custom_limits(self) -> None:
-        """Custom security config should preserve explicitly provided policy knobs."""
-        cfg = SecurityConfig(max_memory_mb=128, max_cpu_seconds=5, allow_file_io=True)
-        assert cfg.max_memory_mb == 128
-        assert cfg.max_cpu_seconds == 5
-        assert cfg.allow_file_io is True
-
-
 class TestValidatePath:
-    """Test suite for pysymex.sandbox.validation.validate_path."""
+    """Test suite for pysymex._internal.sandbox.validation.validate_path."""
 
     @pytest.mark.timeout(30)
     def test_validate_path_permitted_file_succeeds(self, tmp_path: Path) -> None:
@@ -115,7 +89,7 @@ class TestValidatePath:
 
 
 class TestValidateBounds:
-    """Test suite for pysymex.sandbox.validation.validate_bounds."""
+    """Test suite for pysymex._internal.sandbox.validation.validate_bounds."""
 
     @pytest.mark.timeout(30)
     def test_validate_bounds_permitted_value_succeeds(self) -> None:
@@ -136,7 +110,7 @@ class TestValidateBounds:
 
 
 class TestValidateConfig:
-    """Test suite for pysymex.sandbox.validation.validate_config."""
+    """Test suite for pysymex._internal.sandbox.validation.validate_config."""
 
     @pytest.mark.timeout(30)
     def test_validate_config_permitted_values_succeed(self) -> None:
@@ -154,17 +128,28 @@ class TestValidateConfig:
             validate_config(max_paths=0)
 
     @pytest.mark.timeout(30)
-    def test_validate_config_timeout_is_clamped(self) -> None:
-        """Timeout must be clamped into safe operational bounds."""
-        low = validate_config(timeout=0.0)
-        high = validate_config(timeout=999999.0)
-        assert low["timeout"] == 0.1
-        assert isinstance(high["timeout"], float)
-        assert high["timeout"] >= 0.1
+    def test_validate_config_preserves_automatic_limits(self) -> None:
+        """Omitted host limits must not be replaced by sandbox-owned caps."""
+        cfg = validate_config()
+
+        assert cfg == {
+            "max_paths": None,
+            "max_depth": None,
+            "max_iterations": None,
+            "timeout": None,
+        }
+
+    @pytest.mark.timeout(30)
+    def test_validate_config_rejects_nonpositive_timeout_without_upper_clamp(self) -> None:
+        """Explicit timeout limits stay positive but have no internal host maximum."""
+        with pytest.raises(ValueError):
+            validate_config(timeout=0.0)
+
+        assert validate_config(timeout=999999.0)["timeout"] == 999999.0
 
 
 class TestSanitizeFunctionName:
-    """Test suite for pysymex.sandbox.validation.sanitize_function_name."""
+    """Test suite for pysymex._internal.sandbox.validation.sanitize_function_name."""
 
     @pytest.mark.timeout(30)
     def test_sanitize_function_name_valid_name_succeeds(self) -> None:

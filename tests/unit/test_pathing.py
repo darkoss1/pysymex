@@ -1,11 +1,11 @@
-"""Tests for pysymex.pathing helpers."""
+"""Tests for pysymex._internal.pathing helpers."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from pysymex.pathing import normalize_input_path
+from pysymex._internal.pathing import normalize_input_path
 
 
 def test_normalize_input_path_resolves_current_dir_windows_prefix(tmp_path: Path) -> None:
@@ -46,7 +46,7 @@ def test_normalize_input_path_converts_backslash_segments(tmp_path: Path) -> Non
 
 def test_ensure_pysymex_gitignore_creates_in_root(tmp_path: Path) -> None:
     """ensure_pysymex_gitignore generates .gitignore in the root .pysymex directory."""
-    from pysymex.pathing import ensure_pysymex_gitignore
+    from pysymex._internal.pathing import ensure_pysymex_gitignore
 
     pysymex_dir = tmp_path / ".pysymex"
     pysymex_dir.mkdir()
@@ -61,7 +61,7 @@ def test_ensure_pysymex_gitignore_creates_in_root(tmp_path: Path) -> None:
 
 def test_ensure_pysymex_gitignore_only_in_pysymex_root(tmp_path: Path) -> None:
     """ensure_pysymex_gitignore places .gitignore in .pysymex root, not in subdirectories."""
-    from pysymex.pathing import ensure_pysymex_gitignore
+    from pysymex._internal.pathing import ensure_pysymex_gitignore
 
     pysymex_dir = tmp_path / ".pysymex"
     repro_dir = pysymex_dir / "reproduction"
@@ -81,7 +81,7 @@ def test_ensure_pysymex_gitignore_only_in_pysymex_root(tmp_path: Path) -> None:
 
 def test_ensure_pysymex_gitignore_does_not_overwrite(tmp_path: Path) -> None:
     """ensure_pysymex_gitignore does not overwrite an already existing .gitignore."""
-    from pysymex.pathing import ensure_pysymex_gitignore
+    from pysymex._internal.pathing import ensure_pysymex_gitignore
 
     pysymex_dir = tmp_path / ".pysymex"
     pysymex_dir.mkdir()

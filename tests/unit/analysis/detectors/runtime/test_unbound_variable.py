@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/unbound_variable.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/unbound/variable.py."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.unbound_variable import UnboundVariableDetector
-from pysymex.analysis.detectors.detector.types import IssueKind
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import UNBOUND
+from pysymex._internal.analysis.detectors.runtime.unbound.variable import UnboundVariableDetector
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import UNBOUND
 
 
 def _make_instruction(
@@ -36,7 +36,7 @@ def _make_instruction(
 
 
 class TestUnboundVariableDetector:
-    """Test suite for pysymex.analysis.detectors.detector.UnboundVariableDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.UnboundVariableDetector."""
 
     def test_check_reports_unbound_load_fast(self) -> None:
         """Report UNBOUND_VARIABLE for LOAD_FAST when local is UNBOUND."""
@@ -72,6 +72,17 @@ class TestUnboundVariableDetector:
         instruction = _make_instruction("LOAD_FAST_CHECK", "len")
         state = VMState(stack=[], path_constraints=[], pc=1)
         state.set_local("len", UNBOUND)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is not None
+        assert issue.kind is IssueKind.UNBOUND_VARIABLE
+
+    def test_check_reports_missing_load_fast_check(self) -> None:
+        """LOAD_FAST_CHECK raises UnboundLocalError when a fast local was never assigned."""
+        detector = UnboundVariableDetector()
+        instruction = _make_instruction("LOAD_FAST_CHECK", "late")
+        state = VMState(stack=[], path_constraints=[], pc=1)
 
         issue = detector.check(state, instruction, lambda _constraints: True)
 
@@ -123,10 +134,10 @@ class TestUnboundVariableDetector:
         state.set_local("x", UNBOUND)
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(state, instruction, lambda _constraints: True)
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None

@@ -6,10 +6,12 @@ from typing import ClassVar
 import pytest
 
 import tests.docker.execution as execution_module
-from tests.docker.execution import DOCKER_PYTEST_BASETEMP
-from tests.docker.execution import DOCKER_PYTEST_CACHE_DIR
-from tests.docker.execution import DOCKER_PYTHONPYCACHEPREFIX
-from tests.docker.execution import DockerExecutionMixin
+from tests.docker.execution import (
+    DOCKER_PYTEST_BASETEMP,
+    DOCKER_PYTEST_CACHE_DIR,
+    DOCKER_PYTHONPYCACHEPREFIX,
+    DockerExecutionMixin,
+)
 from tests.docker.models import TestResult as DockerTestResult
 from tests.docker.models import TestStatus as DockerTestStatus
 

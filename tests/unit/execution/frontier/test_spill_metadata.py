@@ -4,18 +4,31 @@ from typing import cast
 
 import pytest
 
-from pysymex.core.effects.events import WriteEvent, WriteKind
-from pysymex.core.state.types import BlockInfo, LoopCounterKey
-from pysymex.execution.frontier.spill.metadata import (
-    SpillMetadataDecodeError,
+from pysymex._internal.core.effects.events import WriteEvent, WriteKind
+from pysymex._internal.core.state.types import BlockInfo
+from pysymex._internal.execution.frontier.spill.metadata.blocks import (
     block_stack_payload,
     decode_block_stack,
+)
+from pysymex._internal.execution.frontier.spill.metadata.blocks import (
+    block_stack_payload as block_stack_payload_owner,
+)
+from pysymex._internal.execution.frontier.spill.metadata.loops import (
     decode_loop_counters,
     decode_loop_iterations,
-    decode_write_events,
     loop_counters_payload,
     loop_iterations_payload,
+)
+from pysymex._internal.execution.frontier.spill.metadata.loops import (
+    loop_counters_payload as loop_counters_payload_owner,
+)
+from pysymex._internal.execution.frontier.spill.metadata.types import SpillMetadataDecodeError
+from pysymex._internal.execution.frontier.spill.metadata.writes import (
+    decode_write_events,
     write_events_payload,
+)
+from pysymex._internal.execution.frontier.spill.metadata.writes import (
+    write_events_payload as write_events_payload_owner,
 )
 
 
@@ -35,6 +48,13 @@ def _write_event_payload() -> dict[str, object]:
     payload = payloads[0]
     assert isinstance(payload, dict)
     return cast("dict[str, object]", payload)
+
+
+def test_spill_metadata_public_exports_point_to_family_owners() -> None:
+    """Package-level metadata exports stay wired to direct family owners."""
+    assert block_stack_payload is block_stack_payload_owner
+    assert write_events_payload is write_events_payload_owner
+    assert loop_counters_payload is loop_counters_payload_owner
 
 
 def test_spill_metadata_round_trips_blocks_and_write_events() -> None:
@@ -145,9 +165,12 @@ def test_decode_loop_counters_rejects_malformed_payloads(counters: object) -> No
 
 def test_loop_metadata_payload_rejects_bool_keys_and_counts() -> None:
     """Loop metadata encoding rejects bools masquerading as integers."""
-    bool_key = cast("tuple[tuple[LoopCounterKey, int], ...]", ((True, 1),))
-    bool_count = cast("tuple[tuple[LoopCounterKey, int], ...]", ((1, True),))
-    bool_tuple_key = cast("tuple[tuple[LoopCounterKey, int], ...]", ((((1, True), 1),)))
+    bool_key = cast("tuple[tuple[int | tuple[int, int], int], ...]", ((True, 1),))
+    bool_count = cast("tuple[tuple[int | tuple[int, int], int], ...]", ((1, True),))
+    bool_tuple_key = cast(
+        "tuple[tuple[int | tuple[int, int], int], ...]",
+        ((((1, True), 1),)),
+    )
     bool_counter_key = cast("tuple[tuple[int, int], ...]", ((True, 1),))
     bool_counter_count = cast("tuple[tuple[int, int], ...]", ((1, True),))
 

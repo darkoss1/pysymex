@@ -4,12 +4,13 @@ from types import CodeType
 
 import pytest
 
-from pysymex.sandbox.bridge.types import BytecodeBlob, ConcreteResult, create_bytecode_payload
+from pysymex._internal.sandbox.bridge.blobs import BytecodeBlob, ConcreteResult
+from pysymex._internal.sandbox.bridge.serialization import create_bytecode_payload
 from tests.unit.sandbox.bridge_test_helpers import create_bridge_payload, is_object_mapping
 
 
 class TestConcreteResult:
-    """Test suite for pysymex.sandbox.bridge.ConcreteResult."""
+    """Test suite for pysymex._internal.sandbox.bridge.ConcreteResult."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -30,7 +31,7 @@ class TestConcreteResult:
 
 
 class TestBytecodeBlob:
-    """Test suite for pysymex.sandbox.bridge.BytecodeBlob."""
+    """Test suite for pysymex._internal.sandbox.bridge.BytecodeBlob."""
 
     def _create_mock_json_payload(self, code_obj: CodeType, filename: str = "target.py") -> bytes:
         return create_bridge_payload(code_obj, filename)

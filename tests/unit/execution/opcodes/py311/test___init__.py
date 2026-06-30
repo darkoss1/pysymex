@@ -1,45 +1,30 @@
 from __future__ import annotations
 
-from pysymex.execution.opcodes import py311
-from pysymex.execution.opcodes.py311 import (
-    arithmetic,
-    async_ops,
-    collections,
-    compare,
-    control,
-    exceptions,
-    functions,
-    formatting,
-    locals,
-    stack,
-)
+from types import ModuleType
+
+import pysymex._internal.execution.opcodes.py311.arithmetic as arithmetic
+import pysymex._internal.execution.opcodes.py311.async_generators as async_ops
+import pysymex._internal.execution.opcodes.py311.collections as collections
+import pysymex._internal.execution.opcodes.py311.compare as compare
+import pysymex._internal.execution.opcodes.py311.control as control
+import pysymex._internal.execution.opcodes.py311.exceptions as exceptions
+import pysymex._internal.execution.opcodes.py311.formatting as formatting
+import pysymex._internal.execution.opcodes.py311.functions as functions
+import pysymex._internal.execution.opcodes.py311.locals as locals
+import pysymex._internal.execution.opcodes.py311.stack as stack
 
 
-def test_py311_exports_all_base_opcode_groups() -> None:
-    exported = set(py311.__all__)
-
-    assert exported == {
-        "arithmetic",
-        "async_ops",
-        "collections",
-        "compare",
-        "control",
-        "exceptions",
-        "functions",
-        "formatting",
-        "locals",
-        "stack",
-    }
-
-
-def test_py311_routes_to_base_modules() -> None:
-    assert py311.arithmetic is arithmetic
-    assert py311.async_ops is async_ops
-    assert py311.collections is collections
-    assert py311.compare is compare
-    assert py311.control is control
-    assert py311.exceptions is exceptions
-    assert py311.functions is functions
-    assert py311.formatting is formatting
-    assert py311.locals is locals
-    assert py311.stack is stack
+def test_py311_opcode_modules_import_directly() -> None:
+    modules = (
+        arithmetic,
+        async_ops,
+        collections,
+        compare,
+        control,
+        exceptions,
+        functions,
+        formatting,
+        locals,
+        stack,
+    )
+    assert all(isinstance(module, ModuleType) for module in modules)

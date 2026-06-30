@@ -1,20 +1,12 @@
-from unittest.mock import Mock
-
 import z3
 
-from pysymex.analysis.detectors.types import DetectionContext, IssueKind
-from pysymex.analysis.detectors.detector.types import CounterexampleExtractor, Issue, Severity
-from pysymex.analysis.static.patterns import (
-    FunctionPatternInfo,
-    PatternMatcher,
-    PatternKind,
-    PatternMatch,
-)
-from pysymex.analysis.static.types import PyType, TypeKind, TypeEnvironment
+from pysymex._internal.analysis.detectors.detector.counterexample import CounterexampleExtractor
+from pysymex._internal.analysis.detectors.detector.types import Issue, Severity
+from pysymex._internal.core.outcome import IssueKind
 
 
 class TestIssueKind:
-    """Test suite for pysymex.analysis.detectors.detector.types.IssueKind."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.types.IssueKind."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -22,7 +14,7 @@ class TestIssueKind:
 
 
 class TestSeverity:
-    """Test suite for pysymex.analysis.detectors.detector.types.Severity."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.types.Severity."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -30,7 +22,7 @@ class TestSeverity:
 
 
 class TestIssue:
-    """Test suite for pysymex.analysis.detectors.types.Issue."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.types.Issue."""
 
     def test_is_suppressed(self) -> None:
         """Test is_suppressed behavior."""
@@ -92,56 +84,3 @@ class TestIssue:
         ).extract()
 
         assert counterexample["counterexample_deep_x"] == 1
-
-
-class TestDetectionContext:
-    """Test suite for pysymex.analysis.detectors.types.DetectionContext."""
-
-    def test_get_type(self) -> None:
-        """Test get_type behavior."""
-        env = TypeEnvironment()
-        env.set_type("x", PyType.int_())
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, env)
-        assert ctx.get_type("x").kind == TypeKind.INT
-
-    def test_is_definitely_type(self) -> None:
-        """Test is_definitely_type behavior."""
-        env = TypeEnvironment()
-        env.set_type("x", PyType.int_())
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, env)
-        assert ctx.is_definitely_type("x", TypeKind.INT) is True
-        assert ctx.is_definitely_type("x", TypeKind.STR) is False
-
-    def test_can_pattern_suppress(self) -> None:
-        """Test can_pattern_suppress behavior."""
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
-        assert ctx.can_pattern_suppress("Any") is False
-
-    def test_is_in_try_block(self) -> None:
-        """Test is_in_try_block behavior."""
-        ctx = DetectionContext(Mock(), [], 0, Mock(), 10, TypeEnvironment())
-        assert ctx.is_in_try_block("Exception") is False
-
-    def test_is_in_try_block_uses_pattern_result_snapshot(self) -> None:
-        """Scenario: matcher cache cleared after analysis; expected snapshot still applies."""
-        matcher = PatternMatcher()
-        match = PatternMatch(
-            PatternKind.TRY_EXCEPT_PATTERN,
-            0.9,
-            10,
-            20,
-            variables={"caught_exceptions": {"ValueError"}},
-        )
-        pattern_info = FunctionPatternInfo(patterns=[match], matcher=matcher)
-        matcher.clear_cache()
-        ctx = DetectionContext(
-            Mock(),
-            [],
-            15,
-            Mock(),
-            10,
-            TypeEnvironment(),
-            pattern_info=pattern_info,
-        )
-
-        assert ctx.is_in_try_block("ValueError") is True

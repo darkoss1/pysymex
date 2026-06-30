@@ -1,0 +1,34 @@
+[pytest]
+minversion = "9.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+cache_dir = ".tmp/pytest/cache"
+norecursedirs = [
+    ".hypothesis", ".pytest_runtime", ".tmp", "_tmp_rt_*", "__pycache__",
+    ".git", ".venv", "tests_backup", "benchmarks", "docs",
+    "docker", "examples", "scripts",
+]
+addopts = [
+    "-v",
+    "--tb=short",
+    "-n",
+    "auto",
+    "--import-mode=importlib",
+    "-m",
+    "not slow",
+    "--basetemp=.tmp/pytest/tmp",
+    "--benchmark-disable",
+    "--durations=25",
+    "--durations-min=2.0",
+]
+asyncio_mode = "auto"
+timeout = "120"
+timeout_method = "thread"
+
+markers = [
+    "timeout: per-test timeout override (provided by pytest-timeout)",
+    "slow: slow regression/stress tests excluded from the default suite; run with '-m slow'",
+    "bench: benchmark tier tests",
+    "repro: regression reproduction tests",
+]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_property_setter_mutation_updates_closed_instance_before_getter(

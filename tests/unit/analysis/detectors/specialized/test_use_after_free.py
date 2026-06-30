@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/specialized/use_after_free.py."""
+"""Tests for pysymex/_internal/analysis/detectors/specialized/resources.py."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import cast
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.analysis.detectors.specialized.use_after_free import UseAfterFreeDetector
-from pysymex.core.state.record import VMState
+from pysymex._internal.analysis.detectors.specialized.resources import UseAfterFreeDetector
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:
@@ -181,6 +181,33 @@ class TestUseAfterFreeDetector:
 
         assert issue is not None
         assert issue.kind.name == "ATTRIBUTE_ERROR"
+
+    def test_check_reports_issue_for_method_form_load_attr_on_freed_resource(self) -> None:
+        """Report closed-resource use for Python 3.13 method-form LOAD_ATTR."""
+        detector = UseAfterFreeDetector()
+        instruction = _make_instruction("LOAD_ATTR", arg=1, argrepr="read + NULL|self")
+        receiver = _NamedValue("my_file")
+
+        state = VMState(stack=_stack(receiver), path_constraints=[], pc=1)
+        state.freed_vars.add("my_file")
+
+        issue = detector.check(state, instruction, _always_sat)
+
+        assert issue is not None
+        assert issue.kind.name == "ATTRIBUTE_ERROR"
+
+    def test_check_ignores_data_form_load_attr_on_freed_resource(self) -> None:
+        """A data-attribute read on a closed wrapper is not itself resource use."""
+        detector = UseAfterFreeDetector()
+        instruction = _make_instruction("LOAD_ATTR", arg=0, argrepr="events")
+        receiver = _NamedValue("my_file")
+
+        state = VMState(stack=_stack(receiver), path_constraints=[], pc=1)
+        state.freed_vars.add("my_file")
+
+        issue = detector.check(state, instruction, _always_sat)
+
+        assert issue is None
 
     def test_check_returns_none_when_loading_active_resource(self) -> None:
         """Return None when accessing an attribute/method of a valid active resource."""

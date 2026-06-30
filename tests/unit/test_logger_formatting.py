@@ -2,11 +2,13 @@ import os
 from io import StringIO
 from unittest.mock import patch
 
-from pysymex.logger import Colors, LogEntry, LogLevel, supports_color
+from pysymex._internal.logging.entry import LogEntry
+from pysymex._internal.logging.formatting import Colors, supports_color
+from pysymex._internal.logging.levels import LogLevel
 
 
 class TestLogLevel:
-    """Test suite for pysymex.logger.LogLevel."""
+    """Test suite for pysymex._internal.logging.LogLevel."""
 
     def test_values(self) -> None:
         """Test LogLevel values."""
@@ -18,7 +20,7 @@ class TestLogLevel:
 
 
 class TestColors:
-    """Test suite for pysymex.logger.Colors."""
+    """Test suite for pysymex._internal.logging.Colors."""
 
     def test_constants(self) -> None:
         """Test basic initialization of color codes."""
@@ -62,7 +64,7 @@ def test_supports_color_isatty_true_win32() -> None:
 
 
 class TestLogEntry:
-    """Test suite for pysymex.logger.LogEntry."""
+    """Test suite for pysymex._internal.logging.LogEntry."""
 
     def test_format_with_color_and_time(self) -> None:
         """Test format behavior with color and time."""

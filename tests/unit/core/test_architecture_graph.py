@@ -6,23 +6,16 @@ import ast
 from collections.abc import Iterable
 from pathlib import Path
 
-
-_CORE_ROOT_EXPORT = Path("pysymex/core/__init__.py")
-_REMOVED_INTERNAL_ROUTES = {
-    "pysymex.core.memory.addressing",
-    "pysymex.core.memory.cow.chains",
-    "pysymex.core.types.floats.analysis",
-}
+_CORE_ROOT_EXPORT = Path("pysymex/_internal/core/__init__.py")
 _FORBIDDEN_CORE_UPPER_LAYER_IMPORTS = {
-    "pysymex.analysis",
-    "pysymex.api",
-    "pysymex.cli",
+    "pysymex._internal.analysis",
+    "pysymex._internal.cli",
     "pysymex.contracts",
-    "pysymex.execution",
-    "pysymex.models",
-    "pysymex.reporting",
-    "pysymex.sandbox",
-    "pysymex.scanner",
+    "pysymex._internal.execution",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.scanner",
 }
 
 
@@ -90,7 +83,7 @@ def _import_targets(import_node: ast.Import | ast.ImportFrom, importer: str) -> 
 
 
 def _core_python_files() -> list[Path]:
-    return sorted((_repo_root() / "pysymex" / "core").rglob("*.py"))
+    return sorted((_repo_root() / "pysymex" / "_internal" / "core").rglob("*.py"))
 
 
 def _core_top_level_runtime_edges() -> set[tuple[str, str]]:
@@ -101,14 +94,14 @@ def _core_top_level_runtime_edges() -> set[tuple[str, str]]:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for import_node in _runtime_imports(tree):
             for target in _import_targets(import_node, importer):
-                if not target.startswith("pysymex.core."):
+                if not target.startswith("pysymex._internal.core."):
                     continue
                 importer_parts = importer.split(".")
                 target_parts = target.split(".")
-                if len(importer_parts) < 3 or len(target_parts) < 3:
+                if len(importer_parts) < 4 or len(target_parts) < 4:
                     continue
-                source = importer_parts[2]
-                destination = target_parts[2]
+                source = importer_parts[3]
+                destination = target_parts[3]
                 if source != destination and source != "__init__":
                     edges.add((source, destination))
     return edges
@@ -180,20 +173,5 @@ def test_core_source_does_not_import_upper_layers_even_for_typing() -> None:
                     for forbidden in _FORBIDDEN_CORE_UPPER_LAYER_IMPORTS
                 ):
                     offenders.append(f"{path.relative_to(root)} imports {target}")
-
-    assert offenders == []
-
-
-def test_removed_internal_routes_are_not_imported_by_source_or_tests() -> None:
-    root = _repo_root()
-    offenders: list[str] = []
-    for base in (root / "pysymex", root / "tests"):
-        for path in sorted(base.rglob("*.py")):
-            importer = _module_name(root, path)
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            for import_node in _runtime_imports(tree):
-                for target in _import_targets(import_node, importer):
-                    if target in _REMOVED_INTERNAL_ROUTES:
-                        offenders.append(f"{path.relative_to(root)} imports {target}")
 
     assert offenders == []

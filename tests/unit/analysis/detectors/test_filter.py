@@ -1,14 +1,19 @@
-from pysymex.analysis.detectors.detector.types import Issue, IssueKind
-from pysymex.analysis.detectors.filter.confidence import calculate_confidence
-from pysymex.analysis.detectors.filter.core import (
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.analysis.detectors.filter.confidence import calculate_confidence
+from pysymex._internal.analysis.detectors.filter.core import (
     detect_assertion_context,
     filter_issue,
     filter_issues,
     is_type_checking_block_issue,
     is_typing_false_positive,
 )
-from pysymex.analysis.detectors.filter.dedup import deduplicate_issues
-from pysymex.analysis.detectors.filter.types import AssertionContext, Confidence, FilterResult
+from pysymex._internal.analysis.detectors.filter.dedup import deduplicate_issues
+from pysymex._internal.analysis.detectors.filter.types import (
+    AssertionContext,
+    Confidence,
+    FilterResult,
+)
+from pysymex._internal.core.outcome import IssueKind
 
 
 class MockIssue:
@@ -63,8 +68,8 @@ class BrokenModel:
         raise RuntimeError("model declarations unavailable")
 
 
-class TestIssueLike:
-    """Test suite for pysymex.analysis.detectors.filter.IssueLike."""
+class TestFilterIssueLike:
+    """Test suite for the detector-filter issue protocol."""
 
     def test_kind(self) -> None:
         """Test kind behavior."""
@@ -98,7 +103,7 @@ class TestIssueLike:
 
 
 class TestConfidence:
-    """Test suite for pysymex.analysis.detectors.filter.Confidence."""
+    """Test suite for pysymex._internal.analysis.detectors.filter.Confidence."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -106,7 +111,7 @@ class TestConfidence:
 
 
 class TestAssertionContext:
-    """Test suite for pysymex.analysis.detectors.filter.AssertionContext."""
+    """Test suite for pysymex._internal.analysis.detectors.filter.AssertionContext."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -114,7 +119,7 @@ class TestAssertionContext:
 
 
 class TestFilterResult:
-    """Test suite for pysymex.analysis.detectors.filter.FilterResult."""
+    """Test suite for pysymex._internal.analysis.detectors.filter.FilterResult."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -287,6 +292,72 @@ def test_deduplicate_suppresses_type_error_after_same_line_unbound_variable() ->
 
     assert [issue.kind for issue in dedup] == [IssueKind.UNBOUND_VARIABLE, IssueKind.TYPE_ERROR]
     assert dedup[1].line_number == 11
+
+
+def test_deduplicate_suppresses_generic_unhandled_unbound_exception() -> None:
+    issues = [
+        MockIssue(
+            IssueKind.UNBOUND_VARIABLE,
+            "Variable 'late' may be unbound",
+            function_name="target",
+            line_number=45,
+            pc=12,
+        ),
+        MockIssue(
+            IssueKind.UNHANDLED_EXCEPTION,
+            "Path raises unhandled exception: UnboundLocalError: cannot access local variable",
+            function_name="target",
+            line_number=45,
+            pc=11,
+        ),
+        MockIssue(
+            IssueKind.NAME_ERROR,
+            "Variable 'missing' may be unbound",
+            function_name="target",
+            line_number=47,
+            pc=19,
+        ),
+        MockIssue(
+            IssueKind.UNHANDLED_EXCEPTION,
+            "Path raises unhandled exception: NameError: name 'missing' is not defined",
+            function_name="target",
+            line_number=47,
+            pc=18,
+        ),
+    ]
+
+    dedup = deduplicate_issues(issues)
+
+    assert [issue.kind for issue in dedup] == [
+        IssueKind.UNBOUND_VARIABLE,
+        IssueKind.NAME_ERROR,
+    ]
+
+
+def test_deduplicate_keeps_unrelated_unhandled_exception_on_name_error_line() -> None:
+    issues = [
+        MockIssue(
+            IssueKind.NAME_ERROR,
+            "Variable 'missing' may be unbound",
+            function_name="target",
+            line_number=47,
+            pc=18,
+        ),
+        MockIssue(
+            IssueKind.UNHANDLED_EXCEPTION,
+            "Path raises unhandled exception: RuntimeError: cleanup failed",
+            function_name="target",
+            line_number=47,
+            pc=20,
+        ),
+    ]
+
+    dedup = deduplicate_issues(issues)
+
+    assert [issue.kind for issue in dedup] == [
+        IssueKind.NAME_ERROR,
+        IssueKind.UNHANDLED_EXCEPTION,
+    ]
 
 
 def test_deduplicate_merges_unbound_variable_path_variants() -> None:

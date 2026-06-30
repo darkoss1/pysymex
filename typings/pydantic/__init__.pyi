@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar, Generic, TypeVar, TypedDict, overload
+from typing import ClassVar, Generic, TypedDict, TypeVar, overload
 
 _T = TypeVar("_T")
 

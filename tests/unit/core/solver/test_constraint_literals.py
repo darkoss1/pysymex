@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
-import z3
 import pytest
+import z3
 
-from pysymex.core.solver.constraints import hashing
-from pysymex.core.solver.constraints import literals
-from pysymex.core.solver.constraints.literals import clear_exact_bool_literal_cache
-from pysymex.core.solver.constraints.literals import exact_bool_literal
-from pysymex.core.solver.engine.incremental import IncrementalSolver
+import pysymex._internal.core.solver.constraints.hashing as hashing
+import pysymex._internal.core.solver.constraints.literals as literals
+from pysymex._internal.core.solver.constraints.exact.literal.cache import (
+    clear_exact_bool_literal_cache,
+)
+from pysymex._internal.core.solver.constraints.literals import exact_bool_literal
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
 
 
 def test_exact_bool_literal_classifies_constant_integer_comparisons() -> None:
@@ -111,6 +113,7 @@ def test_check_sat_result_drops_constant_true_comparison(
 ) -> None:
     """May-SAT checks drop syntactic constant truths before solver dispatch."""
     x = z3.Int("literal_true_comparison_x")
+    y = z3.Int("literal_true_comparison_y")
     solver = IncrementalSolver()
     seen_assumptions: list[z3.BoolRef] = []
     solver_check = solver.solver.check
@@ -121,11 +124,12 @@ def test_check_sat_result_drops_constant_true_comparison(
 
     monkeypatch.setattr(solver.solver, "check", recording_check)
 
-    result = solver.check_sat_result([z3.IntVal(2) < z3.IntVal(3), x == 1])
+    unsupported_constraint = x + y == 1
+    result = solver.check_sat_result([z3.IntVal(2) < z3.IntVal(3), unsupported_constraint])
 
     assert result.is_sat
     assert len(seen_assumptions) == 1
-    assert z3.eq(seen_assumptions[0], x == 1)
+    assert z3.eq(seen_assumptions[0], unsupported_constraint)
 
 
 def test_check_sat_result_short_circuits_constant_false_before_cache_key(
@@ -159,14 +163,14 @@ def test_check_sat_result_adjusts_known_prefix_after_dropping_true_literals(
     monkeypatch.setattr(solver, "_sync_path", record_sync_path)
 
     result = solver.check_sat_result(
-        [z3.IntVal(1) == z3.IntVal(1), x == 1, x < 3],
+        [z3.IntVal(1) == z3.IntVal(1), x >= 0, x < 3],
         known_sat_prefix_len=2,
     )
 
     assert result.is_sat
     assert len(synced_prefixes) == 1
     assert len(synced_prefixes[0]) == 1
-    assert z3.eq(synced_prefixes[0][0], x == 1)
+    assert z3.eq(synced_prefixes[0][0], x >= 0)
 
 
 def test_check_sat_result_uses_temporary_assumptions_for_suffix(

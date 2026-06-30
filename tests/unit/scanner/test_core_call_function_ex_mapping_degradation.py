@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.execution.opcodes.common.collections.mapping_protocol import (
+from pysymex._internal.core.classes.mapping_protocol.extraction import (
     UNSUPPORTED_MAPPING_PROTOCOL,
 )
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_degrades_unrecognized_modeled_mapping_protocol(tmp_path: Path) -> None:

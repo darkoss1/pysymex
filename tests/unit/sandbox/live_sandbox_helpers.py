@@ -1,9 +1,9 @@
 import sys
 from functools import lru_cache
 
-from pysymex.config.sandbox_bridge import make_sandbox_config
-from pysymex.sandbox import SecureSandbox
-from pysymex.sandbox.errors import SandboxSetupError
+from pysymex._internal.config.sandbox.bridge import make_sandbox_config
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.runner import SecureSandbox
 
 
 def live_sandbox_backend_config() -> dict[str, object]:

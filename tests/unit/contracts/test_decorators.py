@@ -5,19 +5,19 @@ from typing import cast
 
 import pytest
 
-from pysymex.contracts.decorator_registry import get_or_create_contract
-from pysymex.contracts.decorators import (
+from pysymex._internal.contracts.decorator.registry import ContractRegistry, function_contracts
+from pysymex._internal.contracts.decorators import (
     assigns,
     assumes,
     ensures,
-    function_contracts,
-    get_function_contract,
     invariant,
     loop_invariant,
     pure,
     requires,
 )
-from pysymex.contracts.types import ContractKind, EffectKind, FunctionContract
+from pysymex._internal.contracts.enums import EffectKind
+from pysymex._internal.contracts.types import FunctionContract
+from pysymex.contracts import ContractKind
 
 
 class TestDecorators:
@@ -30,7 +30,7 @@ class TestDecorators:
         def my_func(x: int) -> int:
             return x
 
-        contract = get_function_contract(my_func)
+        contract = ContractRegistry.get(my_func)
         assert contract is not None
         assert len(contract.preconditions) == 1
         assert contract.preconditions[0].kind == ContractKind.REQUIRES
@@ -42,7 +42,7 @@ class TestDecorators:
         def my_func2(x: int) -> int:
             return x + 1
 
-        contract = get_function_contract(my_func2)
+        contract = ContractRegistry.get(my_func2)
         assert contract is not None
         assert len(contract.postconditions) == 1
         assert contract.postconditions[0].kind == ContractKind.ENSURES
@@ -66,7 +66,7 @@ class TestDecorators:
         def my_func3() -> None:
             pass
 
-        contract = get_function_contract(my_func3)
+        contract = ContractRegistry.get(my_func3)
         assert contract is not None
         assert len(contract.assumptions) == 1
         assert contract.assumptions[0].kind == ContractKind.ASSUMES
@@ -78,20 +78,22 @@ class TestDecorators:
         def my_func4() -> None:
             pass
 
-        contract = get_function_contract(my_func4)
+        contract = ContractRegistry.get(my_func4)
         assert contract is not None
         assert contract.assigns_set == frozenset({"self.x", "self.y"})
 
     def test_pure_decorator(self) -> None:
-        """Verify that pure decorator sets effect type to PURE."""
+        """Verify that pure remains distinct from the assigns frame condition."""
 
         @pure
         def my_func5() -> int:
             return 1
 
-        contract = get_function_contract(my_func5)
+        contract = ContractRegistry.get(my_func5)
         assert contract is not None
         assert contract.effect_type == EffectKind.PURE
+        assert contract.assigns_declared is False
+        assert contract.assigns_set == frozenset()
 
     def test_loop_invariant_helper(self) -> None:
         """Verify that loop_invariant returns a Contract object."""
@@ -99,7 +101,7 @@ class TestDecorators:
         assert contract.kind == ContractKind.LOOP_INVARIANT
 
     def test_get_function_contract(self) -> None:
-        """Verify that get_function_contract retrieves the contract."""
+        """Verify that ContractRegistry.get retrieves the contract."""
 
         def undecorated() -> None:
             pass
@@ -108,8 +110,8 @@ class TestDecorators:
         def decorated() -> None:
             pass
 
-        assert get_function_contract(undecorated) is None
-        assert get_function_contract(decorated) is not None
+        assert ContractRegistry.get(undecorated) is None
+        assert ContractRegistry.get(decorated) is not None
 
     def test_get_or_create_contract_preserves_registry_entry(self) -> None:
         """Losing the function attribute must not drop the keyed registry contract."""
@@ -118,12 +120,12 @@ class TestDecorators:
         def decorated(x: int) -> int:
             return x
 
-        original = get_function_contract(decorated)
+        original = ContractRegistry.get(decorated)
         assert original is not None
         assert len(original.preconditions) == 1
 
         delattr(decorated, "__contract__")
-        recovered = get_or_create_contract(decorated)
+        recovered = ContractRegistry.get_or_create(decorated)
 
         assert recovered is original
         assert len(recovered.preconditions) == 1
@@ -140,8 +142,8 @@ class TestDecorators:
 
         first = make_function("x > 0")
         second = make_function("x < 0")
-        first_contract = get_function_contract(cast(Callable[..., object], first))
-        second_contract = get_function_contract(cast(Callable[..., object], second))
+        first_contract = ContractRegistry.get(cast(Callable[..., object], first))
+        second_contract = ContractRegistry.get(cast(Callable[..., object], second))
 
         assert first_contract is not None
         assert second_contract is not None
@@ -157,7 +159,7 @@ class TestDecorators:
             )
 
     def test_contract_verifier_package_export_is_lazy(self) -> None:
-        """Verify the public package export works without eager solver import cycles."""
-        from pysymex.contracts import ContractVerifier
+        """Verify the verifier module works without eager solver import cycles."""
+        from pysymex._internal.contracts.verifier import ContractVerifier
 
         assert ContractVerifier.__name__ == "ContractVerifier"

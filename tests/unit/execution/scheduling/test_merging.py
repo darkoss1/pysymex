@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.scheduling.merging import offer_state_to_merger
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.execution.strategies.merger.state import StateMerger
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.scheduling.merging import offer_state_to_merger
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.strategies.merger.state import StateMerger
 
 
 class _MergerDouble:

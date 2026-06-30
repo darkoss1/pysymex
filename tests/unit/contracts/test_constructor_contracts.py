@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pysymex.contracts import ensures, requires
-from pysymex.contracts.types import ContractKind, VerificationResult
-from pysymex.execution.executors.verified.api import verify
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex._internal.execution.executors.verified.api import verify
+from pysymex.contracts import ContractKind, ensures, requires
 
 
 def test_constructor_precondition_is_checked_through_class_call() -> None:
@@ -208,12 +208,12 @@ def test_constructor_property_setter_contract_is_checked() -> None:
             self.value = value
 
         @property
-        def value(self) -> int:
+        def value(self) -> int:  # pyright: ignore[reportRedeclaration]
             return self._value
 
         @value.setter
         @requires("value >= 0")
-        def value(self, value: int) -> None:
+        def value(self, value: int) -> None:  # pyright: ignore[reportRedeclaration]
             self._value = value
 
     def caller(x: int) -> int:

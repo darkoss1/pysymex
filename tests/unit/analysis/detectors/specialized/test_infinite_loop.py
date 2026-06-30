@@ -1,13 +1,14 @@
-"""Tests for pysymex/analysis/detectors/specialized/infinite_loop.py."""
+"""Tests for pysymex/_internal/analysis/detectors/specialized/loops.py."""
 
 from __future__ import annotations
 
 import dis
+
 import z3
 
-from pysymex.analysis.detectors.specialized.infinite_loop import InfiniteLoopDetector
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.specialized.loops import InfiniteLoopDetector
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:
@@ -39,26 +40,12 @@ def _make_instruction(
 class TestInfiniteLoopDetector:
     """Test suite for specialized InfiniteLoopDetector behavior."""
 
-    def test_check_reports_issue_when_backward_jump_exceeds_max_iterations(self) -> None:
-        """Report INFINITE_LOOP when JUMP_BACKWARD counter strictly exceeds max allowed."""
+    def test_check_does_not_infer_infinite_loop_from_iteration_count(self) -> None:
+        """Do not turn a large finite iteration count into an infinite-loop issue."""
         detector = InfiniteLoopDetector()
-        detector.max_iterations = 2
         instruction = _make_instruction("JUMP_BACKWARD")
         state = VMState(stack=[], path_constraints=[], pc=10)
-        state.loop_counters[10] = 2  # next hit makes it 3 > 2
-
-        issue = detector.check(state, instruction, _always_sat)
-
-        assert issue is not None
-        assert issue.kind.name == "INFINITE_LOOP"
-
-    def test_check_returns_none_when_backward_jump_under_max_iterations(self) -> None:
-        """Return None when JUMP_BACKWARD counter is under or equal to max iterations."""
-        detector = InfiniteLoopDetector()
-        detector.max_iterations = 2
-        instruction = _make_instruction("JUMP_BACKWARD")
-        state = VMState(stack=[], path_constraints=[], pc=10)
-        state.loop_counters[10] = 1  # next hit makes it 2 <= 2
+        state.loop_counters[10] = 1_000_000
 
         issue = detector.check(state, instruction, _always_sat)
 

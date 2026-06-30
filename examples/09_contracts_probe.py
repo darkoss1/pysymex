@@ -1,8 +1,8 @@
-"""Contract verification probe — mixed scenarios for manual ``pysymex verify`` runs.
+"""Contract verification probe — mixed scenarios for manual ``pysymex contracts`` runs.
 
 Run one function:
 
-    python -m pysymex verify examples/09_contracts_probe.py -f transfer \\
+    python -m pysymex contracts examples/09_contracts_probe.py -f transfer \\
         --args balance:int amount:int
 
 Or run the bundled harness:
@@ -66,7 +66,7 @@ def identity_no_writes(x: int) -> int:
 
 
 def _run_harness() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     cases: list[tuple[str, object, dict[str, str]]] = [
         ("transfer", transfer, {"balance": "int", "amount": "int"}),

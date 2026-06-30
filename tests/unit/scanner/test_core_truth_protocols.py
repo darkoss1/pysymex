@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_respects_custom_zero_length_guard(tmp_path: Path) -> None:

@@ -4,12 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxProtocolError
-from pysymex.sandbox.bridge.cache import clear_module_extraction_cache, module_cache_key
-from pysymex.sandbox.bridge.module import extract_module
-from pysymex.sandbox.bridge.module.worker import build_module_worker
-from pysymex.sandbox.bridge.types import FunctionBlob, ModuleBlob, create_function_payload
-from pysymex.utils.hashing import stable_digest_hex
+from pysymex._internal.sandbox.bridge.blobs import FunctionBlob, ModuleBlob
+from pysymex._internal.sandbox.bridge.cache import clear_module_extraction_cache, module_cache_key
+from pysymex._internal.sandbox.bridge.module.extract import extract_module
+from pysymex._internal.sandbox.bridge.module.worker import build_module_worker
+from pysymex._internal.sandbox.bridge.serialization import create_function_payload
+from pysymex._internal.sandbox.errors import SandboxProtocolError
+from pysymex._internal.utils.hashing import stable_digest_hex
 from tests.unit.sandbox.bridge_test_helpers import (
     create_module_payload,
     is_object_mapping,
@@ -73,7 +74,10 @@ def test_extract_module_reconstructs_sanitized_function_payload() -> None:
         assert "harness_blocked_modules" not in sandbox_cfg
         return ({"ok": True, "payload": json.loads(payload.decode("utf-8"))}, "", "")
 
-    with patch("pysymex.sandbox.bridge.module._run_json_worker", side_effect=mock_run_json_worker):
+    with patch(
+        "pysymex._internal.sandbox.bridge.module.extract._run_json_worker",
+        side_effect=mock_run_json_worker,
+    ):
         module_blob = extract_module(b"raise RuntimeError('host must not execute this')", filename)
         blob = module_blob.get_function_blob("target")
 
@@ -116,7 +120,10 @@ def test_extract_module_returns_reusable_function_payloads() -> None:
         return ({"ok": True, "payload": json.loads(module_payload.decode("utf-8"))}, "", "")
 
     clear_module_extraction_cache()
-    with patch("pysymex.sandbox.bridge.module._run_json_worker", side_effect=mock_run_json_worker):
+    with patch(
+        "pysymex._internal.sandbox.bridge.module.extract._run_json_worker",
+        side_effect=mock_run_json_worker,
+    ):
         blob = extract_module(b"raise RuntimeError('host must not execute')", filename)
 
     assert isinstance(blob, ModuleBlob)
@@ -149,7 +156,10 @@ def test_extract_module_cache_prevents_repeated_sandbox_worker_for_same_file() -
         return ({"ok": True, "payload": json.loads(module_payload.decode("utf-8"))}, "", "")
 
     clear_module_extraction_cache()
-    with patch("pysymex.sandbox.bridge.module._run_json_worker", side_effect=mock_run_json_worker):
+    with patch(
+        "pysymex._internal.sandbox.bridge.module.extract._run_json_worker",
+        side_effect=mock_run_json_worker,
+    ):
         first_blob = extract_module(source, filename)
         second_blob = extract_module(source, filename)
 
@@ -189,6 +199,24 @@ def test_extract_module_runs_real_sandbox_worker_with_explicit_backend() -> None
 
 
 @pytest.mark.timeout(30)
+def test_extract_module_preserves_same_module_helper_globals_with_explicit_backend() -> None:
+    """Focused function extraction keeps same-module helper functions callable."""
+    clear_module_extraction_cache()
+    blob = extract_module(
+        b"def helper(x: int) -> int:\n"
+        b"    return x + 1\n"
+        b"def target(x: int) -> int:\n"
+        b"    return helper(x)\n",
+        "target.py",
+        sandbox_config=_real_worker_sandbox_config(),
+        use_cache=False,
+    )
+
+    assert blob.function_names() == ("helper", "target")
+    assert blob.get_function("target")(4) == 5
+
+
+@pytest.mark.timeout(30)
 def test_extract_module_reports_unserialized_requested_target() -> None:
     """Unsupported target metadata remains visible instead of looking absent."""
     clear_module_extraction_cache()
@@ -213,7 +241,8 @@ def test_extract_module_reports_unserialized_requested_target() -> None:
 def test_extract_module_rejects_missing_payload_as_protocol_error() -> None:
     clear_module_extraction_cache()
     with patch(
-        "pysymex.sandbox.bridge.module._run_json_worker", return_value=({"ok": True}, "", "")
+        "pysymex._internal.sandbox.bridge.module.extract._run_json_worker",
+        return_value=({"ok": True}, "", ""),
     ):
         with pytest.raises(SandboxProtocolError, match="no module payload"):
             extract_module(
@@ -255,9 +284,9 @@ def test_extract_module_preserves_safe_contract_metadata() -> None:
 
     rebuilt = blob.reconstruct()
 
-    from pysymex.contracts.decorators import get_function_contract
+    from pysymex._internal.contracts.decorator.registry import ContractRegistry
 
-    contract = get_function_contract(rebuilt)
+    contract = ContractRegistry.get(rebuilt)
     assert contract is not None
     assert [clause.condition for clause in contract.preconditions] == ["x > 0"]
     assert [clause.condition for clause in contract.postconditions] == ["__result__ > 0"]
@@ -296,9 +325,9 @@ def test_function_blob_marks_callable_contracts_unknown_without_host_execution()
 
     rebuilt = blob.reconstruct()
 
-    from pysymex.contracts.decorators import get_function_contract
+    from pysymex._internal.contracts.decorator.registry import ContractRegistry
 
-    contract = get_function_contract(rebuilt)
+    contract = ContractRegistry.get(rebuilt)
     assert contract is not None
     assert contract.preconditions[0].condition == "unsafe_predicate"
     with pytest.raises(TypeError, match="callable or string"):

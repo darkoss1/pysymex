@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import dis
 
-
-from pysymex.core.state.types import UNBOUND
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py313 import locals
+import pysymex._internal.execution.opcodes.py313.locals as locals
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import UNBOUND
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, arg: int = 0) -> dis.Instruction:
@@ -88,6 +88,20 @@ def test_handle_load_fast_check() -> None:
     state = VMState(local_vars={"x": 7}, pc=0)
     locals.handle_load_fast_check(_instr("LOAD_FAST_CHECK", "x"), state, OpcodeDispatcher())
     assert state.peek() == 7
+
+
+def test_handle_load_fast_check_unbound_is_terminal_unbound_issue() -> None:
+    state = VMState(pc=3)
+
+    result = locals.handle_load_fast_check(
+        _instr("LOAD_FAST_CHECK", "missing"), state, OpcodeDispatcher()
+    )
+
+    assert result.terminal is True
+    assert result.new_states == []
+    assert [issue.kind for issue in result.issues] == [IssueKind.UNBOUND_VARIABLE]
+    assert state.get_local("missing") is UNBOUND
+    assert state.stack == []
 
 
 def test_handle_store_global() -> None:

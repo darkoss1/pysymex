@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.scanner.file import scan_file
-from pysymex.analysis.scan.loading import scoped_package_import_path
+from pysymex._internal.analysis.scan.loading.package.context import scoped_package_import_path
+from pysymex._internal.scanner.file import scan_file
 
 
 def _package_target(tmp_path: Path) -> Path:
@@ -36,7 +36,9 @@ def test_scan_file_restores_package_import_path_after_analysis_failure(tmp_path:
     target = _package_target(tmp_path)
     root_text = str(tmp_path)
 
-    with patch("pysymex.scanner.file.build_module_globals", side_effect=RuntimeError("stop")):
+    with patch(
+        "pysymex._internal.scanner.file.build_module_globals", side_effect=RuntimeError("stop")
+    ):
         result = scan_file(target, use_sandbox=False)
 
     assert result.error == "Analysis Error: stop"

@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.scheduling import (
-    FrontierRuntimeMode,
-    calculate_path_reward,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.scheduling.factory import create_path_manager
+from pysymex._internal.execution.scheduling.rewards import calculate_path_reward
+from pysymex._internal.execution.scheduling.stats import (
     collect_state_merger_stats,
     collect_worklist_stats,
-    create_path_manager,
 )
-from pysymex.execution.strategies.manager.types import ExplorationStrategy, PathManager
-from pysymex.execution.strategies.merger.state import StateMerger
+from pysymex._internal.execution.strategies.manager.types import ExplorationStrategy, PathManager
+from pysymex._internal.execution.strategies.merger.state import StateMerger
 
 
 class _StatsWorklist(PathManager[VMState]):
@@ -118,8 +118,4 @@ def test_frontier_runtime_mode_constructs_runtime_manager() -> None:
 def test_frontier_runtime_mode_certificate_pruning_gate_is_explicit() -> None:
     assert FrontierRuntimeMode.POLAR_CEGIS_SHADOW.certificate_pruning_enabled is False
     assert FrontierRuntimeMode.POLAR_CEGIS_RUNTIME.certificate_pruning_enabled is True
-    assert (
-        FrontierRuntimeMode.POLAR_CEGIS_RUNTIME.runtime_replacement_enabled
-        is FrontierRuntimeMode.POLAR_CEGIS_RUNTIME.certificate_pruning_enabled
-    )
     assert FrontierRuntimeMode.POLAR_CEGIS_RUNTIME.compact_queueing_enabled is False

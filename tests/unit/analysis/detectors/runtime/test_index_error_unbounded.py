@@ -1,4 +1,4 @@
-"""Tests for IndexErrorDetector fallback unbounded-index checks."""
+"""Tests for inconclusive unknown-container index checks."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors.runtime.index_error.detector import IndexErrorDetector
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.indexing.detector import IndexErrorDetector
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(opname: str) -> dis.Instruction:
@@ -19,8 +19,8 @@ def _make_instruction(opname: str) -> dis.Instruction:
     return template._replace(opname=opname, opcode=dis.opmap.get(opname, 0))
 
 
-def test_unbounded_index_skips_solver_for_concrete_small_index() -> None:
-    """Concrete small integers cannot satisfy the unbounded-index fallback."""
+def test_unknown_container_length_skips_solver_for_concrete_index() -> None:
+    """A concrete index alone cannot establish bounds without container length."""
     detector = IndexErrorDetector()
     container, container_constraint = SymbolicValue.symbolic("unknown_container")
     index = SymbolicValue.from_const(5)

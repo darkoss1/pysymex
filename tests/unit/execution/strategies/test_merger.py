@@ -4,21 +4,20 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.detectors import DeferredDetectorIssue
-from pysymex.execution.strategies.merger.factory import create_state_merger
-from pysymex.execution.strategies.merger.state import StateMerger
-from pysymex.execution.strategies.merger.types import (
-    AbstractVarInfo,
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.detectors.records import DeferredDetectorIssue
+from pysymex._internal.execution.strategies.merger.state import StateMerger
+from pysymex._internal.execution.strategies.merger.types import (
     MergePolicy,
     MergeStatistics,
 )
 
 
 class TestMergePolicy:
-    """Test suite for pysymex.execution.strategies.merger.MergePolicy."""
+    """Test suite for pysymex._internal.execution.strategies.merger.MergePolicy."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -29,7 +28,7 @@ class TestMergePolicy:
 
 
 class TestMergeStatistics:
-    """Test suite for pysymex.execution.strategies.merger.MergeStatistics."""
+    """Test suite for pysymex._internal.execution.strategies.merger.MergeStatistics."""
 
     def test_reduction_ratio(self) -> None:
         """Test reduction_ratio behavior."""
@@ -37,19 +36,8 @@ class TestMergeStatistics:
         assert abs(stats.reduction_ratio - 0.6) < 1e-9
 
 
-class TestAbstractVarInfo:
-    """Test suite for pysymex.execution.strategies.merger.AbstractVarInfo."""
-
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        info = AbstractVarInfo(interval_lo=0, interval_hi=10, may_be_none=False, must_be_type="int")
-        assert info.interval_lo == 0
-        assert info.interval_hi == 10
-        assert info.must_be_type == "int"
-
-
 class TestStateMerger:
-    """Test suite for pysymex.execution.strategies.merger.StateMerger."""
+    """Test suite for pysymex._internal.execution.strategies.merger.StateMerger."""
 
     def test_detect_join_points(self) -> None:
         """Test detect_join_points behavior."""
@@ -115,7 +103,7 @@ class TestStateMerger:
         assert pending.hash_value() != ordinary.hash_value()
 
     def test_retained_caller_stack_changes_suspended_state_identity(self) -> None:
-        from pysymex.core.state.types import CallFrame, wrap_cow_dict
+        from pysymex._internal.core.state.types import CallFrame, wrap_cow_dict
 
         first = VMState(
             pc=7,
@@ -149,88 +137,80 @@ class TestStateMerger:
         assert merger.stats.states_before_merge == 0
 
 
-def test_create_state_merger() -> None:
-    """Test create_state_merger behavior."""
-    merger = create_state_merger(policy="aggressive", max_constraints=11, similarity_threshold=0.8)
-    assert isinstance(merger, StateMerger)
-    assert merger.policy is MergePolicy.AGGRESSIVE
-    assert merger.max_constraints_for_merge == 11
-
-
 class TestMergerHelpers:
-    """Test suite for pysymex.execution.strategies.merger helper functions."""
+    """Test suite for pysymex._internal.execution.strategies.merger helper functions."""
 
     def test_is_any_symbolic_with_symbolic_value(self) -> None:
         """Test that _is_any_symbolic returns True for SymbolicValue."""
-        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
 
         val = SymbolicValue.from_const(42)
-        from pysymex.execution.strategies.merger.helpers import is_any_symbolic
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        assert is_any_symbolic(val) is True
+        assert MergeGuards.is_symbolic(val) is True
 
     def test_is_any_symbolic_with_non_symbolic(self) -> None:
         """Test that _is_any_symbolic returns False for non-symbolic types."""
-        from pysymex.execution.strategies.merger.helpers import is_any_symbolic
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        assert is_any_symbolic(42) is False
-        assert is_any_symbolic("string") is False
-        assert is_any_symbolic(None) is False
+        assert MergeGuards.is_symbolic(42) is False
+        assert MergeGuards.is_symbolic("string") is False
+        assert MergeGuards.is_symbolic(None) is False
 
     def test_is_conditional_mergeable_with_callable(self) -> None:
         """Test that _is_conditional_mergeable returns True for callable conditional_merge."""
-        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
 
         val = SymbolicValue.from_const(42)
-        from pysymex.execution.strategies.merger.helpers import is_conditional_mergeable
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        assert is_conditional_mergeable(val) is True
+        assert MergeGuards.is_mergeable(val) is True
 
     def test_is_conditional_mergeable_without_callable(self) -> None:
         """Test that _is_conditional_mergeable returns False for non-callable."""
-        from pysymex.execution.strategies.merger.helpers import is_conditional_mergeable
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        assert is_conditional_mergeable(42) is False
-        assert is_conditional_mergeable("string") is False
+        assert MergeGuards.is_mergeable(42) is False
+        assert MergeGuards.is_mergeable("string") is False
 
     def test_is_stack_value_with_valid_types(self) -> None:
         """Test that _is_stack_value returns True for valid stack value types."""
-        from pysymex.execution.strategies.merger.helpers import is_stack_value
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        assert is_stack_value(None) is True
-        assert is_stack_value(42) is True
-        assert is_stack_value(True) is True
-        assert is_stack_value("string") is True
-        assert is_stack_value(3.14) is True
-        assert is_stack_value(b"bytes") is True
-        assert is_stack_value(int) is True
-        assert is_stack_value([1, 2, 3]) is True
-        assert is_stack_value((1, 2, 3)) is True
-        assert is_stack_value({"key": "value"}) is True
-        assert is_stack_value(lambda: None) is True
+        assert MergeGuards.is_stack_value(None) is True
+        assert MergeGuards.is_stack_value(42) is True
+        assert MergeGuards.is_stack_value(True) is True
+        assert MergeGuards.is_stack_value("string") is True
+        assert MergeGuards.is_stack_value(3.14) is True
+        assert MergeGuards.is_stack_value(b"bytes") is True
+        assert MergeGuards.is_stack_value(int) is True
+        assert MergeGuards.is_stack_value([1, 2, 3]) is True
+        assert MergeGuards.is_stack_value((1, 2, 3)) is True
+        assert MergeGuards.is_stack_value({"key": "value"}) is True
+        assert MergeGuards.is_stack_value(lambda: None) is True
 
     def test_is_stack_value_with_invalid_types(self) -> None:
         """Test that _is_stack_value returns False for invalid stack value types."""
-        from pysymex.execution.strategies.merger.helpers import is_stack_value
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
         class CustomClass:
             pass
 
-        assert is_stack_value(CustomClass()) is False
+        assert MergeGuards.is_stack_value(CustomClass()) is False
 
     def test_as_string_object_mapping_with_mapping(self) -> None:
         """Test that _as_string_object_mapping converts valid mapping to dict."""
-        from pysymex.execution.strategies.merger.helpers import as_string_object_mapping
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
         mapping: dict[str, int] = {"key": 42}
-        result = as_string_object_mapping(mapping)
+        result = MergeGuards.as_mapping(mapping)
         assert result is not None
         assert result == {"key": 42}
 
     def test_as_string_object_mapping_with_none(self) -> None:
         """Test that _as_string_object_mapping returns empty dict for None."""
-        from pysymex.execution.strategies.merger.helpers import as_string_object_mapping
+        from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
 
-        result = as_string_object_mapping(None)
+        result = MergeGuards.as_mapping(None)
         assert result is not None
         assert result == {}

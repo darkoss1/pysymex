@@ -4,15 +4,15 @@ from typing import cast
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoint.snapshot.record import FrontierStateSnapshot
+from pysymex._internal.execution.frontier.checkpoints import build_frontier_checkpoint
+from pysymex._internal.execution.frontier.entries import (
     FrontierMaterializationError,
-    FrontierStateSnapshot,
-    build_frontier_checkpoint,
     build_frontier_queue_entry,
-    materialize_frontier_queue_entry,
-    state_shadow_digest,
+    realize_frontier_queue_entry,
 )
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
 
 
 def test_frontier_queue_entry_keeps_direct_state_when_compact_mode_disabled() -> None:
@@ -26,7 +26,7 @@ def test_frontier_queue_entry_keeps_direct_state_when_compact_mode_disabled() ->
     )
 
     assert entry.is_compact is False
-    assert materialize_frontier_queue_entry(entry) is state
+    assert realize_frontier_queue_entry(entry) is state
 
 
 def test_frontier_queue_entry_reconstructs_compact_checkpoint() -> None:
@@ -39,7 +39,7 @@ def test_frontier_queue_entry_reconstructs_compact_checkpoint() -> None:
         checkpoint=checkpoint,
         compact_queueing=True,
     )
-    materialized = materialize_frontier_queue_entry(entry)
+    materialized = realize_frontier_queue_entry(entry)
 
     assert entry.is_compact is True
     assert materialized is not state
@@ -68,6 +68,6 @@ def test_frontier_queue_entry_reports_reconstruction_mismatch() -> None:
     )
 
     with pytest.raises(FrontierMaterializationError) as exc_info:
-        materialize_frontier_queue_entry(entry)
+        realize_frontier_queue_entry(entry)
 
     assert exc_info.value.capsule_id == "entry-mismatch"

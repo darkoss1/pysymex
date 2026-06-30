@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import pysymex.models as top_models
-
-from pysymex.models.stdlib import dataclasses as dc_models
-from pysymex.models.stdlib import data as data_models
+import pysymex._internal.models.stdlib.dataclasses.runtime as dc_models
 
 
 class TestFieldInfo:
-    """Test suite for pysymex.models.stdlib.dataclasses.FieldInfo."""
+    """Test suite for pysymex._internal.models.stdlib.dataclasses.FieldInfo."""
 
     def test_faithfulness(self) -> None:
         info = dc_models.FieldInfo(name="x", type=int, default=1)
@@ -83,24 +80,11 @@ def test_dataclass_fields_model() -> None:
     assert dc_models.dataclass_fields_model(X) == {"a": 1}
 
 
-def test_get_dataclasses_model() -> None:
-    assert dc_models.get_dataclasses_model("dataclass") is not None
-    assert dc_models.get_dataclasses_model("missing") is None
-
-
-def test_top_level_dataclass_exports_use_runtime_model_namespace() -> None:
-    """Top-level runtime dataclass exports resolve to the runtime-model owner."""
-    assert top_models.FieldInfo is dc_models.FieldInfo
-    assert top_models.dataclass_model is dc_models.dataclass_model
-    assert top_models.DATACLASSES_MODELS is dc_models.DATACLASSES_MODELS
-
-
-def test_symbolic_function_models_remain_in_data_namespace() -> None:
-    """Symbolic FunctionModel dataclass handlers stay separate from runtime helpers."""
-    assert data_models.DataclassModel.__module__ == "pysymex.models.stdlib.data.dataclasses"
-    assert all(
-        model.qualname.startswith("dataclasses.") for model in data_models.dataclasses_models
+def test_symbolic_function_models_share_the_dataclasses_family() -> None:
+    assert (
+        dc_models.DataclassModel.__module__ == "pysymex._internal.models.stdlib.dataclasses.models"
     )
+    assert all(model.qualname.startswith("dataclasses.") for model in dc_models.dataclasses_models)
 
 
 class TestDataclassModelHash:

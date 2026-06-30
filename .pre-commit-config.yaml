@@ -12,8 +12,20 @@ repos:
       - id: debug-statements
       - id: check-ast
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.12
+  - repo: local
     hooks:
       - id: ruff-format
-        args: ['--line-length=100']
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: import-linter
+        name: import linter architecture contracts
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false

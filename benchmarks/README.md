@@ -93,7 +93,7 @@ Covered areas:
 - sandbox setup, execution, and module extraction;
 - scanner-driven runtime detector issue production;
 - concurrency race-detection and contract verification analysis;
-- string, container, and builtin model dispatch;
+- direct isolated scalar-carrier construction plus string, container, and builtin model dispatch;
 - JSON, Markdown, HTML, and SARIF reporting-format overhead;
 - default CLI scan subprocess behavior and same-target in-process scanner behavior.
 
@@ -110,5 +110,5 @@ should be treated as directional, not proof of absolute performance.
 
 Latest local result:
 
-- `v0.1.1a0-results.md` - complete all-mode run on Windows 11, CPython 3.13.13,
+- `v0.1.1a2-results.md` - complete all-mode run on Windows 11, CPython 3.13.13,
   Z3 4.16.0.

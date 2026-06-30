@@ -1,9 +1,19 @@
 import z3
 
-from pysymex.core.state.factory import create_initial_state
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import UNBOUND, BlockInfo, CallFrame, wrap_cow_dict, wrap_cow_set
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.state.mutating.bindings import VMStateBindingMixin
+from pysymex._internal.core.state.mutating.frames import VMStateFrameMixin
+from pysymex._internal.core.state.mutating.hashing import VMStateHashingMixin
+from pysymex._internal.core.state.mutating.path import VMStatePathMixin
+from pysymex._internal.core.state.mutating.stack import VMStateStackMixin
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import (
+    UNBOUND,
+    BlockInfo,
+    CallFrame,
+    wrap_cow_dict,
+    wrap_cow_set,
+)
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 class TestHashableValue:
@@ -35,6 +45,13 @@ class TestCallFrame:
 
 
 class TestVMState:
+    def test_mutation_surface_uses_focused_direct_owners(self) -> None:
+        assert isinstance(VMState(), VMStateStackMixin)
+        assert isinstance(VMState(), VMStateBindingMixin)
+        assert isinstance(VMState(), VMStatePathMixin)
+        assert isinstance(VMState(), VMStateFrameMixin)
+        assert isinstance(VMState(), VMStateHashingMixin)
+
     def test_push(self) -> None:
         state = VMState().push(SymbolicValue.from_const(1))
         assert len(state.stack) == 1
@@ -105,10 +122,6 @@ class TestVMState:
         state = VMState().set_global("x", SymbolicValue.from_const(1))
         assert state.get_global("x") is not None
 
-    def test_locals(self) -> None:
-        state = VMState()
-        assert state.locals is state.local_vars
-
     def test_current_block(self) -> None:
         state = VMState().enter_block(BlockInfo("loop", 0, 1))
         assert state.current_block() is not None
@@ -166,8 +179,3 @@ class TestVMState:
         state = VMState()
         replaced = state.replace(pc=10)
         assert replaced.pc == 10 and replaced is not state
-
-
-def test_create_initial_state() -> None:
-    state = create_initial_state()
-    assert state.get_global("__name__") == "__main__"

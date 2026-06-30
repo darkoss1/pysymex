@@ -6,26 +6,31 @@ from typing import cast
 import pytest
 import z3
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.solver.slices import materialize_concrete_slice
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.core.types.containers.slices import (
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.solver.slices import materialize_concrete_slice
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.containers.slices import (
     SliceBounds,
     build_slice_value,
     possible_zero_step_condition,
 )
-from pysymex.execution.opcodes.common.collections.subscript import (
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.collections.read.handler import (
     handle_common_binary_subscr,
+)
+from pysymex._internal.execution.opcodes.common.collections.subscript.delete import (
     handle_common_delete_subscr,
+)
+from pysymex._internal.execution.opcodes.common.collections.subscript.store import (
     handle_common_store_subscr,
 )
-from pysymex.models.objects import SymbolicClass, class_registry
-from pysymex.typing import StackValue
+from pysymex._internal.typing.protocols import StackValue
 from tests.unit.execution.opcodes.common.collections_helpers import instr
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pysymex.core.state.record import VMState
+from pysymex._internal.core.state.record import VMState
 
 
 def make_state() -> VMState:

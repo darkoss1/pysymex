@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 class Live:
     def __init__(
         self,

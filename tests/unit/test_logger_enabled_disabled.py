@@ -4,14 +4,14 @@ from collections.abc import Iterator, Mapping
 from io import StringIO
 from unittest.mock import patch
 
-from pysymex.logger import LogCategory, LogLevel, PysymexLogger
-from pysymex.logger.entry import LogEntry
+from pysymex._internal.logging.categories import LogCategory
+from pysymex._internal.logging.entry import LogEntry
+from pysymex._internal.logging.levels import LogLevel
+from pysymex._internal.logging.logger import PysymexLogger
 
 
 class RecordingSink:
     """Test sink that records enabled entries."""
-
-    wants_exception = False
 
     def __init__(self) -> None:
         self.entries: list[LogEntry] = []
@@ -73,8 +73,8 @@ def test_category_disabled_event_does_not_resolve_message_metadata_timestamp_or_
         raise AssertionError("message should not be resolved")
 
     with (
-        patch("pysymex.logger.emit.time.time") as timestamp,
-        patch("pysymex.logger.emit.LogEntry") as log_entry,
+        patch("pysymex._internal.logging.emit.time.time") as timestamp,
+        patch("pysymex._internal.logging.emit.LogEntry") as log_entry,
     ):
         logger.trace(fail_message, category=LogCategory.OPCODE, metadata=FailingMetadata())
 
@@ -100,7 +100,7 @@ def test_enabled_structured_event_preserves_metadata_and_source() -> None:
         "sat",
         category=LogCategory.SOLVER,
         event_name="solver.check",
-        source_module="pysymex.core.solver.engine",
+        source_module="pysymex._internal.core.solver.engine",
         metadata={"path_id": 7, "elapsed_ms": 3.5},
     )
 
@@ -109,7 +109,7 @@ def test_enabled_structured_event_preserves_metadata_and_source() -> None:
     assert entry.message == "solver result sat"
     assert entry.category == "solver"
     assert entry.event_name == "solver.check"
-    assert entry.source_module == "pysymex.core.solver.engine"
+    assert entry.source_module == "pysymex._internal.core.solver.engine"
     assert entry.metadata == {"path_id": 7, "elapsed_ms": 3.5}
     assert entry.timestamp > 0.0
 
@@ -120,7 +120,7 @@ def test_disabled_timer_does_not_capture_perf_counter_or_emit() -> None:
     logger = PysymexLogger(level=LogLevel.NORMAL, stream=StringIO(), color=False)
     logger.state.sinks.append(sink)
 
-    with patch("pysymex.logger.console.time.perf_counter") as perf_counter:
+    with patch("pysymex._internal.logging.console.time.perf_counter") as perf_counter:
         with logger.timer("disabled"):
             pass
 
@@ -134,7 +134,7 @@ def test_enabled_timer_emits_elapsed_verbose_event() -> None:
     logger = PysymexLogger(level=LogLevel.VERBOSE, stream=StringIO(), color=False)
     logger.state.sinks.append(sink)
 
-    with patch("pysymex.logger.console.time.perf_counter", side_effect=[10.0, 10.125]):
+    with patch("pysymex._internal.logging.console.time.perf_counter", side_effect=[10.0, 10.125]):
         with logger.timer("enabled", category="performance"):
             pass
 

@@ -4,20 +4,31 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.execution.detectors import DeferredDetectorIssue
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.fallback import FallbackEvent, FallbackKind
-from pysymex.execution.results.routing import (
-    publish_opcode_result_fallback_events,
-    publish_opcode_result_issues,
-    route_successor_opcode_result,
-    route_terminal_opcode_result,
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.detectors.records import DeferredDetectorIssue
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.fallback.types import FallbackEvent, FallbackKind
+from pysymex._internal.execution.results.routing.fallbacks import emit_opcode_result_fallback_events
+from pysymex._internal.execution.results.routing.fallbacks import (
+    emit_opcode_result_fallback_events as direct_publish_fallback_events,
 )
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.execution.strategies.manager.types import PathManager
-from pysymex.resources.models import LimitExceeded, ResourceType
+from pysymex._internal.execution.results.routing.issues import publish_opcode_result_issues
+from pysymex._internal.execution.results.routing.issues import (
+    publish_opcode_result_issues as direct_publish_issues,
+)
+from pysymex._internal.execution.results.routing.successors import route_successor_opcode_result
+from pysymex._internal.execution.results.routing.successors import (
+    route_successor_opcode_result as direct_route_successors,
+)
+from pysymex._internal.execution.results.routing.terminal import route_terminal_opcode_result
+from pysymex._internal.execution.results.routing.terminal import (
+    route_terminal_opcode_result as direct_route_terminal,
+)
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.strategies.manager.types import PathManager
+from pysymex._internal.limits.models import LimitExceeded, ResourceType
 
 
 class _FakeWorklist(PathManager[VMState]):
@@ -41,6 +52,13 @@ class _FakeWorklist(PathManager[VMState]):
 class _RejectAdditionalPathTracker:
     def record_path(self) -> int:
         raise LimitExceeded(ResourceType.PATHS, 2, 2)
+
+
+def test_result_routing_exports_use_direct_owners() -> None:
+    assert emit_opcode_result_fallback_events is direct_publish_fallback_events
+    assert publish_opcode_result_issues is direct_publish_issues
+    assert route_successor_opcode_result is direct_route_successors
+    assert route_terminal_opcode_result is direct_route_terminal
 
 
 def test_publish_opcode_result_issues_normalizes_line_number_and_fires_hook() -> None:
@@ -96,7 +114,7 @@ def test_publish_opcode_result_fallback_events_records_event_and_degraded_label(
         reason="unit",
     )
 
-    publish_opcode_result_fallback_events(
+    emit_opcode_result_fallback_events(
         session=session,
         result=OpcodeResult(new_states=[], issues=[], fallback_events=[event]),
     )
@@ -194,7 +212,6 @@ def test_route_successor_opcode_result_queues_successors_and_fires_fork_hook() -
         result=OpcodeResult(new_states=[first, second], issues=[]),
         state=parent,
         resource_tracker=None,
-        record_degraded_passes=session.record_degraded_passes,
         record_path_explored=lambda: explored.append(None),
     )
 
@@ -220,7 +237,6 @@ def test_route_successor_opcode_result_prunes_additional_path_on_resource_limit(
         result=OpcodeResult(new_states=[first, second], issues=[]),
         state=VMState(pc=0),
         resource_tracker=_RejectAdditionalPathTracker(),
-        record_degraded_passes=session.record_degraded_passes,
         record_path_explored=lambda: None,
     )
 

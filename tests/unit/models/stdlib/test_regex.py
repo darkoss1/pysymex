@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.scalars.strings import SymbolicString
-
-from pysymex.models.stdlib import regex as regex_models
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.stdlib.regex.compiler import PatternCompiler, compile_pattern
+from pysymex._internal.models.stdlib.regex.matching import (
+    ReFullmatchModel,
+    ReMatchModel,
+    ReSearchModel,
+)
+from pysymex._internal.models.stdlib.regex.registry import ReCompileModel, ReEscapeModel
+from pysymex._internal.models.stdlib.regex.sequences import ReFindallModel, ReSplitModel, ReSubModel
 
 
 def _state() -> VMState:
@@ -21,37 +26,37 @@ def _assert_result(fn: object) -> None:
 
 
 class TestPatternCompiler:
-    """Test suite for pysymex.models.stdlib.regex.PatternCompiler."""
+    """Test suite for pysymex._internal.models.stdlib.regex.PatternCompiler."""
 
     def test_faithfulness(self) -> None:
-        compiler = regex_models.PatternCompiler()
+        compiler = PatternCompiler()
         pattern = compiler.compile(r"ab+c")
         assert isinstance(pattern, z3.ReRef)
 
     def test_error_path(self) -> None:
-        compiler = regex_models.PatternCompiler()
+        compiler = PatternCompiler()
         pattern = compiler.compile("")
         assert isinstance(pattern, z3.ReRef)
 
 
 def test_compile_pattern() -> None:
     """Test compile_pattern behavior."""
-    pattern = regex_models.compile_pattern(r"a|b")
+    pattern = compile_pattern(r"a|b")
     assert isinstance(pattern, z3.ReRef)
 
 
 class TestReMatchModel:
-    """Test suite for pysymex.models.stdlib.regex.ReMatchModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReMatchModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("abc")
-        _assert_result(lambda: regex_models.ReMatchModel().apply(["a", s], {}, _state()))
+        _assert_result(lambda: ReMatchModel().apply(["a", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReMatchModel().apply([], {}, _state()))
+        _assert_result(lambda: ReMatchModel().apply([], {}, _state()))
 
     def test_matching_result_is_truthy(self) -> None:
-        result = regex_models.ReMatchModel().apply(
+        result = ReMatchModel().apply(
             [SymbolicString.from_const("0+"), SymbolicString.from_const("00")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -60,7 +65,7 @@ class TestReMatchModel:
         assert solver.check() == z3.unsat
 
     def test_nonmatching_result_is_falsy(self) -> None:
-        result = regex_models.ReMatchModel().apply(
+        result = ReMatchModel().apply(
             [SymbolicString.from_const("0+"), SymbolicString.from_const("10")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -70,17 +75,17 @@ class TestReMatchModel:
 
 
 class TestReSearchModel:
-    """Test suite for pysymex.models.stdlib.regex.ReSearchModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReSearchModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("abc")
-        _assert_result(lambda: regex_models.ReSearchModel().apply(["b", s], {}, _state()))
+        _assert_result(lambda: ReSearchModel().apply(["b", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReSearchModel().apply([], {}, _state()))
+        _assert_result(lambda: ReSearchModel().apply([], {}, _state()))
 
     def test_matching_result_is_truthy(self) -> None:
-        result = regex_models.ReSearchModel().apply(
+        result = ReSearchModel().apply(
             [SymbolicString.from_const("0+"), SymbolicString.from_const("a0")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -89,7 +94,7 @@ class TestReSearchModel:
         assert solver.check() == z3.unsat
 
     def test_nonmatching_result_is_falsy(self) -> None:
-        result = regex_models.ReSearchModel().apply(
+        result = ReSearchModel().apply(
             [SymbolicString.from_const("0+"), SymbolicString.from_const("abc")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -99,17 +104,17 @@ class TestReSearchModel:
 
 
 class TestReFullmatchModel:
-    """Test suite for pysymex.models.stdlib.regex.ReFullmatchModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReFullmatchModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("abc")
-        _assert_result(lambda: regex_models.ReFullmatchModel().apply(["abc", s], {}, _state()))
+        _assert_result(lambda: ReFullmatchModel().apply(["abc", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReFullmatchModel().apply([], {}, _state()))
+        _assert_result(lambda: ReFullmatchModel().apply([], {}, _state()))
 
     def test_matching_result_is_truthy(self) -> None:
-        result = regex_models.ReFullmatchModel().apply(
+        result = ReFullmatchModel().apply(
             [SymbolicString.from_const("abc"), SymbolicString.from_const("abc")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -118,7 +123,7 @@ class TestReFullmatchModel:
         assert solver.check() == z3.unsat
 
     def test_nonmatching_result_is_falsy(self) -> None:
-        result = regex_models.ReFullmatchModel().apply(
+        result = ReFullmatchModel().apply(
             [SymbolicString.from_const("abc"), SymbolicString.from_const("xyz")], {}, _state()
         )
         assert isinstance(result.value, SymbolicValue)
@@ -128,54 +133,54 @@ class TestReFullmatchModel:
 
 
 class TestReFindallModel:
-    """Test suite for pysymex.models.stdlib.regex.ReFindallModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReFindallModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("abca")
-        _assert_result(lambda: regex_models.ReFindallModel().apply(["a", s], {}, _state()))
+        _assert_result(lambda: ReFindallModel().apply(["a", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReFindallModel().apply([], {}, _state()))
+        _assert_result(lambda: ReFindallModel().apply([], {}, _state()))
 
 
 class TestReSubModel:
-    """Test suite for pysymex.models.stdlib.regex.ReSubModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReSubModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("abc")
-        _assert_result(lambda: regex_models.ReSubModel().apply(["a", "x", s], {}, _state()))
+        _assert_result(lambda: ReSubModel().apply(["a", "x", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReSubModel().apply([], {}, _state()))
+        _assert_result(lambda: ReSubModel().apply([], {}, _state()))
 
 
 class TestReSplitModel:
-    """Test suite for pysymex.models.stdlib.regex.ReSplitModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReSplitModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("a,b,c")
-        _assert_result(lambda: regex_models.ReSplitModel().apply([",", s], {}, _state()))
+        _assert_result(lambda: ReSplitModel().apply([",", s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReSplitModel().apply([], {}, _state()))
+        _assert_result(lambda: ReSplitModel().apply([], {}, _state()))
 
 
 class TestReCompileModel:
-    """Test suite for pysymex.models.stdlib.regex.ReCompileModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReCompileModel."""
 
     def test_faithfulness(self) -> None:
-        _assert_result(lambda: regex_models.ReCompileModel().apply(["abc"], {}, _state()))
+        _assert_result(lambda: ReCompileModel().apply(["abc"], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReCompileModel().apply([], {}, _state()))
+        _assert_result(lambda: ReCompileModel().apply([], {}, _state()))
 
 
 class TestReEscapeModel:
-    """Test suite for pysymex.models.stdlib.regex.ReEscapeModel."""
+    """Test suite for pysymex._internal.models.stdlib.regex.ReEscapeModel."""
 
     def test_faithfulness(self) -> None:
         s = SymbolicString.from_const("a+b")
-        _assert_result(lambda: regex_models.ReEscapeModel().apply([s], {}, _state()))
+        _assert_result(lambda: ReEscapeModel().apply([s], {}, _state()))
 
     def test_error_path(self) -> None:
-        _assert_result(lambda: regex_models.ReEscapeModel().apply([], {}, _state()))
+        _assert_result(lambda: ReEscapeModel().apply([], {}, _state()))

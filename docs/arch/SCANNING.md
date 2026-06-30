@@ -18,6 +18,11 @@ Directory scans choose sequential or parallel execution from the requested worke
 trace settings, and sandbox mode. On Windows, sequential scans can reuse a scoped sandbox bytecode
 session so repeated extraction does not repeatedly set up the backend.
 
+Scanner entry points do not own console presentation. Verbose progress and summaries are emitted
+only through a caller-supplied `pysymex._internal.scanner.protocols.ScanReporter`, such as the CLI reporter.
+Library callers that omit a reporter receive structured results without scanner-owned stdout/stderr
+output.
+
 ## Compile-Only Globals
 
 The loading layer binds top-level classes and functions, discovers package context, and populates a
@@ -45,11 +50,13 @@ degraded passes, and solver statistics. A result with no issues but with `error`
 
 ## Evidence In Source
 
-- Single-file scan: `pysymex/scanner/file.py`
-- Directory scan: `pysymex/scanner/directory`
-- Compile-only loading: `pysymex/analysis/scan/loading`
-- Bytecode bridge: `pysymex/sandbox/bridge`
-- Issue sink and result types: `pysymex/scanner/issue_sink.py`, `pysymex/scanner/types.py`
+- Single-file scan: `pysymex/_internal/scanner/file.py`
+- Directory scan: `pysymex/_internal/scanner/directory`
+- Compile-only loading: `pysymex/_internal/analysis/scan/loading`
+- Bytecode bridge: `pysymex/_internal/sandbox/bridge`
+- Scanner callbacks, issue sink, and result types:
+  `pysymex/_internal/scanner/protocols.py`, `pysymex/_internal/scanner/issues.py`,
+  `pysymex/_internal/scanner/types.py`
 - Tests: `tests/unit/scanner`, `tests/unit/sandbox/test_bridge_bytecode.py`
 
 ## Limits

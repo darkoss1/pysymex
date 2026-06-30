@@ -4,18 +4,16 @@ import os
 
 from pydantic import TypeAdapter
 
-from pysymex.tracing.schemas import (
-    ConstraintEntry,
+from pysymex._internal.config.tracing.settings import TracerConfig
+from pysymex._internal.tracing.schemas.events import (
     DetectorQueryTraceEvent,
     FallbackTraceEvent,
     PathFeasibilityTraceEvent,
     SchedulerTraceEvent,
     StepDeltaEvent,
     TraceEvent,
-    TracerConfig,
 )
-from pysymex.config.tracing import TracerConfig as CanonicalTracerConfig
-from pysymex.tracing.schemas.events import StepDeltaEvent as CanonicalStepDeltaEvent
+from pysymex._internal.tracing.schemas.primitives import ConstraintEntry
 
 
 def test_tracer_config_from_env_truthy() -> None:
@@ -166,7 +164,3 @@ def test_trace_event_union_round_trip_for_scheduler_event() -> None:
     assert parsed.decision_source == "polar_native"
     assert parsed.priority == 42.5
 
-
-def test_schema_facade_reexports_canonical_models() -> None:
-    assert TracerConfig is CanonicalTracerConfig
-    assert StepDeltaEvent is CanonicalStepDeltaEvent

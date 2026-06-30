@@ -15,10 +15,8 @@ flowchart TD
     Runner --> Select["backend selection"]
     Select --> Linux["Linux namespaces"]
     Select --> Windows["Windows AppContainer"]
-    Select --> Wasm["WASM/WASI"]
     Linux --> Blob["validated bytecode payload"]
     Windows --> Blob
-    Wasm --> Blob
     Blob --> Scan
     Direct --> Scan
 ```
@@ -33,11 +31,9 @@ If a backend does not satisfy required capabilities after setup, sandbox setup f
 | --- | --- |
 | Linux namespaces | Uses trusted `unshare`, user/mount/pid/net/ipc namespaces, a root jail when supported, optional seccomp, and process limits. |
 | Windows AppContainer | Builds or reuses an AppContainer profile, stages a Python runtime, grants jail ACLs, creates a Job Object, and runs self-checks. |
-| WASM/WASI | Uses `wasmtime` with a configured or discoverable WASI Python module, fuel, and memory limits. |
 
-Auto-selection is platform-dependent. Linux prefers namespaces. Windows prefers AppContainer and
-can fall back to WASM when automatic AppContainer setup fails and WASM is available. Other
-platforms use WASM when configured. If no strong backend is available, setup fails.
+Auto-selection is platform-dependent. Linux prefers namespaces. Windows prefers AppContainer. If
+no native strong backend is available, setup fails.
 
 ## Capability Contract
 
@@ -74,11 +70,11 @@ writable files, or reused capabilities can affect later runs.
 
 ## Evidence In Source
 
-- Runner and capability checks: `pysymex/sandbox/runner.py`, `pysymex/sandbox/backend_selection.py`
-- Result and config types: `pysymex/sandbox/types.py`
-- Path policy: `pysymex/sandbox/path_policy.py`
-- Bytecode bridge: `pysymex/sandbox/bridge`
-- Backends: `pysymex/sandbox/isolation`
+- Runner and capability checks: `pysymex/_internal/sandbox/runner.py`, `pysymex/_internal/sandbox/backends.py`
+- Result and config types: `pysymex/_internal/sandbox/types.py`
+- Path policy: `pysymex/_internal/sandbox/paths.py`
+- Bytecode bridge: `pysymex/_internal/sandbox/bridge`
+- Backends: `pysymex/_internal/sandbox/isolation`
 - Tests: `tests/unit/sandbox`
 
 ## Limits

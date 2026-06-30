@@ -5,16 +5,10 @@ from collections.abc import Callable
 import pytest
 import z3
 
-from pysymex.contracts.compiler import (
-    And_,
-    Implies_,
-    Not_,
-    Or_,
-    FormulaCache,
-    ContractCompiler,
-    formula_cache,
-)
-from pysymex.contracts.binding import old_symbol_name
+from pysymex._internal.contracts.binding.snapshots import old_symbol_name
+from pysymex._internal.contracts.combinators import And_, Implies_, Not_, Or_
+from pysymex._internal.contracts.compiler import ContractCompiler
+from pysymex._internal.contracts.formula.cache import FormulaCache, formula_cache
 
 
 class TestAndCombinator:
@@ -243,6 +237,38 @@ class TestContractCompiler:
         assert z3.eq(first, symbols["z"] > 0)
         assert z3.eq(second, symbols["z"] > 10)
 
+    def test_trace_callable_uses_default_parameter_values(self) -> None:
+        """Callable predicate defaults are omitted with normal Python binding."""
+        symbols = {"value": z3.Int("value")}
+
+        def predicate(value: z3.ArithRef, minimum: int = 3) -> z3.BoolRef:
+            return value > minimum
+
+        result = ContractCompiler.trace_callable(predicate, symbols)
+
+        assert z3.eq(result, symbols["value"] > 3)
+
+    def test_trace_callable_supports_keyword_only_symbol_parameters(self) -> None:
+        """Keyword-only predicate parameters bind by name instead of position."""
+        symbols = {"value": z3.Int("value")}
+
+        def predicate(*, value: z3.ArithRef) -> z3.BoolRef:
+            return value >= 0
+
+        result = ContractCompiler.trace_callable(predicate, symbols)
+
+        assert z3.eq(result, symbols["value"] >= 0)
+
+    def test_trace_callable_rejects_variadic_parameters(self) -> None:
+        """Variadic predicate parameters are unsupported rather than guessed."""
+        symbols = {"value": z3.Int("value")}
+
+        def predicate(*values: z3.ArithRef) -> z3.BoolRef:
+            return values[0] > 0
+
+        with pytest.raises(ValueError, match="Variadic callable contract parameters"):
+            ContractCompiler.trace_callable(predicate, symbols)
+
     def test_trace_callable_rejects_unbound_parameter(self) -> None:
         symbols = {"x": z3.Int("x")}
 
@@ -273,7 +299,7 @@ class TestContractCompiler:
 
     def test_trace_callable_rejects_real_arithmetic(self) -> None:
         def contains_real_term(value: z3.ArithRef) -> z3.BoolRef:
-            return value > z3.RealVal("0.1")
+            return value > 0
 
         with pytest.raises(ValueError, match="real or floating-point terms are unsupported"):
             ContractCompiler.trace_callable(contains_real_term, {"value": z3.Real("value")})
@@ -282,15 +308,27 @@ class TestContractCompiler:
         def runtime_type_check(value: object) -> bool:
             return isinstance(value, int)
 
-        with pytest.raises(ValueError, match="returning Python bool are unsupported"):
+        with pytest.raises(ValueError, match="host-runtime effect opcode CALL"):
             ContractCompiler.trace_callable(runtime_type_check, {"value": z3.Int("value")})
+
+    def test_trace_callable_rejects_nullary_concrete_bool(self) -> None:
+        calls: list[str] = []
+
+        def host_state_check() -> bool:
+            calls.append("called")
+            return True
+
+        with pytest.raises(ValueError, match="without bound symbolic parameters"):
+            ContractCompiler.trace_callable(host_state_check, {})
+        assert calls == []
 
     def test_trace_callable_reports_exception(self) -> None:
         """Verify tracing exceptions are explicit instead of weakening to True."""
         symbols = {"z": z3.Int("z")}
+        tracing_error = ValueError("Tracing failed")
 
         def pred(z: z3.ArithRef) -> z3.BoolRef:
-            raise ValueError("Tracing failed")
+            raise tracing_error
 
         with pytest.raises(ValueError, match="could not be symbolically traced"):
             ContractCompiler.trace_callable(pred, symbols)

@@ -18,14 +18,15 @@
 
 from __future__ import annotations
 
-from pysymex.benchmarks.suite.core import (
+from pysymex._internal.benchmarks.suite.core import (
     Benchmark,
     BenchmarkSuite,
-    benchmark,
 )
-from pysymex.benchmarks.suite.types import BenchmarkCategory
-from pysymex.benchmarks.suite.types import BenchmarkMode
-from pysymex.benchmarks.suite.types import BenchmarkStatus
+from pysymex._internal.benchmarks.suite.types import (
+    BenchmarkCategory,
+    BenchmarkMode,
+    BenchmarkStatus,
+)
 
 
 def test_benchmark_run_collects_result_metrics() -> None:
@@ -125,20 +126,22 @@ def test_suite_run_all_mode_none_runs_every_registered_case() -> None:
     assert [result.name for result in results] == ["quick_solver", "stress_solver"]
 
 
-def test_suite_select_accepts_benchmark_alias() -> None:
+def test_suite_select_uses_current_benchmark_name_only() -> None:
     suite = BenchmarkSuite("s")
     suite.add(
         Benchmark(
             "short_case",
             func=lambda: {},
             category=BenchmarkCategory.SOLVING,
-            aliases=("long_case_name",),
         )
     )
 
     selected = suite.select(mode=None, case_name="long_case_name")
 
-    assert [benchmark.name for benchmark in selected] == ["short_case"]
+    assert selected == []
+    assert [benchmark.name for benchmark in suite.select(mode=None, case_name="short_case")] == [
+        "short_case"
+    ]
 
 
 def test_benchmark_run_reports_failure_status() -> None:
@@ -150,13 +153,3 @@ def test_benchmark_run_reports_failure_status() -> None:
     assert result.status is BenchmarkStatus.FAILED
     assert result.failure is not None
     assert "boom" in result.failure
-
-
-def test_benchmark_decorator_registers_benchmark_metadata() -> None:
-    @benchmark(name="decorated", category=BenchmarkCategory.ANALYSIS)
-    def task() -> dict[str, int]:
-        return {"instructions": 1, "paths": 1, "solver_calls": 1}
-
-    bench_obj = getattr(task, "_benchmark")
-    assert isinstance(bench_obj, Benchmark)
-    assert bench_obj.name == "decorated"

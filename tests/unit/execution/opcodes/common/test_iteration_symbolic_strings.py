@@ -4,11 +4,13 @@ import dis
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.control.flow import handle_common_for_iter
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.control.iteration.handlers import (
+    handle_common_for_iter,
+)
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:

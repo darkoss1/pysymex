@@ -40,10 +40,10 @@ complete safety proof.
 
 ## Evidence In Source
 
-- Worklist loop: `pysymex/execution/engine/worklist.py`
-- Path manager creation: `pysymex/execution/scheduling`
-- POLAR path manager: `pysymex/execution/strategies/manager`
-- Resource handling: `pysymex/execution/resources`, `pysymex/resources`
+- Worklist loop: `pysymex/_internal/execution/engine/worklist.py`
+- Path manager creation: `pysymex/_internal/execution/scheduling`
+- POLAR path manager: `pysymex/_internal/execution/strategies/manager`
+- Resource handling: `pysymex/_internal/execution/resources`, `pysymex/_internal/limits`
 - Tests: `tests/unit/execution/strategies`, `tests/unit/execution/scheduling`
 
 ## Limits

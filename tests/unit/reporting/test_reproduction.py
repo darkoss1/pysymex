@@ -4,8 +4,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.reporting.reproduction import ReproductionGenerator
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.reporting.reproduction.generation import ReproductionGenerator
 
 
 def _issue(

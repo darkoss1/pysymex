@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import dis
+from collections.abc import Callable
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import VMStateError
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.execution.step.pipeline import StepExecutionContext, execute_one_step
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import VMStateError
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.step.context import StepExecutionContext
+from pysymex._internal.execution.step.pipeline import execute_one_step
 
 
 def _instructions(source: str) -> list[dis.Instruction]:

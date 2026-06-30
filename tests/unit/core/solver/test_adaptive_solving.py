@@ -1,11 +1,12 @@
-import z3
 import pytest
-from pysymex.execution.opcodes.common.control.feasibility import (
-    is_complex_smt_theory,
-    is_bitvector_smt_theory,
+import z3
+
+from pysymex._internal.core.solver.constraints.theory import (
     constraints_include_bitvector_smt_theory,
-    branch_feasible,
+    is_bitvector_smt_theory,
+    is_complex_smt_theory,
 )
+from pysymex._internal.execution.opcodes.common.control.feasibility.branching import branch_feasible
 
 
 def test_is_complex_smt_theory_simple() -> None:
@@ -77,11 +78,11 @@ def test_branch_feasible_does_not_trust_path_prefix_as_prechecked(
         constraints: list[z3.BoolRef],
         known_sat_prefix_len: int | None = None,
     ) -> bool:
-        calls.append((constraints, known_sat_prefix_len))
+        calls.append((list(constraints), known_sat_prefix_len))
         return True
 
     monkeypatch.setattr(
-        "pysymex.core.solver.engine.policies.path_may_be_feasible",
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
         capture_path_query,
     )
     x = z3.Int("branch_full_prefix_x")
@@ -103,11 +104,11 @@ def test_branch_feasible_forwards_known_sat_prefix_len(
         constraints: list[z3.BoolRef],
         known_sat_prefix_len: int | None = None,
     ) -> bool:
-        calls.append((constraints, known_sat_prefix_len))
+        calls.append((list(constraints), known_sat_prefix_len))
         return True
 
     monkeypatch.setattr(
-        "pysymex.core.solver.engine.policies.path_may_be_feasible",
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
         capture_path_query,
     )
     x = z3.Int("branch_known_prefix_x")
@@ -133,7 +134,7 @@ def test_branch_feasible_skips_solver_for_bitvector_path_prefix(
         raise AssertionError("bit-vector path prefixes should bypass branch SMT pruning")
 
     monkeypatch.setattr(
-        "pysymex.core.solver.engine.policies.path_may_be_feasible",
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
         fail_path_query,
     )
     x = z3.Int("branch_bitvector_prefix_x")
@@ -166,3 +167,52 @@ def test_branch_feasible_long_path_keeps_satisfiable_branch() -> None:
     constraints = [z3.Int(f"q{i}") == i for i in range(24)]
 
     assert branch_feasible(constraints, z3.And(x > 0, x < 5)) is True
+
+
+def test_branch_feasible_skips_solver_for_sequence_linear_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sequence-linear branch queries use cheap optimistic pruning instead of SMT."""
+
+    def fail_path_query(
+        _constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> bool:
+        _ = known_sat_prefix_len
+        raise AssertionError("sequence-linear branch should bypass SMT pruning")
+
+    monkeypatch.setattr(
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
+        fail_path_query,
+    )
+    text = z3.String("branch_sequence_text")
+    position = z3.Int("branch_sequence_position")
+    constraints = [
+        z3.PrefixOf(z3.StringVal("ab"), text),
+        position >= -1,
+        position < z3.Length(text),
+    ]
+
+    assert branch_feasible(constraints, position == -1) is True
+
+
+def test_branch_feasible_rejects_sequence_linear_syntactic_contradiction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cheap sequence-linear bypass still prunes simplifiable contradictions."""
+
+    def fail_path_query(
+        _constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> bool:
+        _ = known_sat_prefix_len
+        raise AssertionError("simplifiable sequence contradiction should bypass SMT")
+
+    monkeypatch.setattr(
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
+        fail_path_query,
+    )
+    text = z3.String("branch_sequence_contradiction_text")
+    starts_ab = z3.PrefixOf(z3.StringVal("ab"), text)
+
+    assert branch_feasible([starts_ab], z3.Not(starts_ab)) is False

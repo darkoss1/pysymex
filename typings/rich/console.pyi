@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Generic, IO, Literal, TypeVar, overload
+from typing import IO, Generic, Literal, TypeVar, overload
 
 _FileT = TypeVar("_FileT", bound=IO[str], default=IO[str])
 

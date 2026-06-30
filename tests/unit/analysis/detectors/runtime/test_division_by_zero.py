@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/division_by_zero.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/division/zero.py."""
 
 from __future__ import annotations
 
@@ -8,14 +8,17 @@ import time
 import pytest
 import z3
 
-from pysymex.analysis.detectors.runtime.division_by_zero import (
-    DivisionByZeroDetector,
+from pysymex._internal.analysis.detectors.runtime.division.evidence import (
     pure_check_division_by_zero,
 )
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.division.zero import (
+    DivisionByZeroDetector,
+)
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 class _RecordingZ3Checker:
@@ -249,16 +252,33 @@ def test_pure_check_division_by_zero_reports_symbolic_bool_false() -> None:
     assert issue is not None
 
 
+def test_pure_check_division_by_zero_caps_havoc_divisor_confidence() -> None:
+    """Havoc-backed zero evidence is precision loss, not ordinary symbolic certainty."""
+    divisor, constraint = HavocValue.havoc("havoc_divisor")
+
+    issue = pure_check_division_by_zero(
+        divisor=divisor,
+        dividend=10,
+        path_constraints=[constraint],
+        pc=5,
+    )
+
+    assert issue is not None
+    assert issue.kind.name == "DIVISION_BY_ZERO"
+    assert issue.confidence == 0.5
+    assert issue.likelihood == 0.5
+
+
 def test_pure_check_division_by_zero_does_not_report_definite_issue_on_solver_unknown() -> None:
     """Direct pure-helper use must not turn solver UNKNOWN into a definite issue."""
     divisor, type_constraint = SymbolicValue.symbolic("unknown_direct_divisor")
     solver = IncrementalSolver(timeout_ms=1000)
     solver.set_deadline(time.perf_counter() - 1.0)
-    token = active_incremental_solver.set(solver)
+    token = SolverContext.active.set(solver)
     try:
         issue = pure_check_division_by_zero(divisor, 10, [type_constraint], pc=5)
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert issue is None
 
@@ -316,11 +336,31 @@ def test_pure_check_division_by_zero_ignores_guarded_nonzero_symbolic_int_prefix
     assert issue is None
 
 
+def test_pure_check_division_by_zero_uses_local_unsat_before_inconclusive_report() -> None:
+    """A locally impossible zero-divisor query must not inherit path inconclusiveness."""
+    left = z3.Int("locally_safe_left")
+    right = z3.Int("locally_safe_right")
+    divisor = SymbolicValue.from_z3(left - right, "left-right")
+    path_constraints = [left != right]
+
+    issue = pure_check_division_by_zero(
+        divisor=divisor,
+        dividend=10,
+        path_constraints=path_constraints,
+        pc=5,
+        is_satisfiable_fn=lambda _constraints: True,
+        get_model_fn=lambda _constraints: None,
+        last_inconclusive_feasibility_len=len(path_constraints),
+    )
+
+    assert issue is None
+
+
 def test_pure_check_concrete_zero_does_not_report_definite_issue_on_solver_unknown() -> None:
     """Concrete zero still requires a model-backed feasible path."""
     solver = IncrementalSolver(timeout_ms=1000)
     solver.set_deadline(time.perf_counter() - 1.0)
-    token = active_incremental_solver.set(solver)
+    token = SolverContext.active.set(solver)
     try:
         issue = pure_check_division_by_zero(
             divisor=0,
@@ -330,6 +370,6 @@ def test_pure_check_concrete_zero_does_not_report_definite_issue_on_solver_unkno
             is_satisfiable_fn=lambda _constraints: True,
         )
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert issue is None

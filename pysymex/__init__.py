@@ -16,134 +16,81 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""pysymex package exports (lazy-loaded)."""
+"""Flat public API surface for pysymex.
+
+Engine implementation remains under :mod:`pysymex._internal` and is not a
+supported import surface for users.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex.deps import ensure_z3_ready
-from pysymex.lazy import lazy_dir, lazy_getattr
+from pysymex._internal.config.defaults import VERSION
+
+__version__ = VERSION
+
+Z3_AVAILABLE: bool
+
+_z3_checked = False
+_z3_import_error: RuntimeError | None = None
 
 if TYPE_CHECKING:
-    from pysymex.api import (
-        ExecutionConfig as ExecutionConfig,
-        ExecutionResult as ExecutionResult,
-        IncrementalSolver as IncrementalSolver,
-        Issue as Issue,
-        IssueKind as IssueKind,
-        LogLevel as LogLevel,
-        PysymexConfig as PysymexConfig,
-        SymbolicDict as SymbolicDict,
-        SymbolicExecutor as SymbolicExecutor,
-        SymbolicList as SymbolicList,
-        SymbolicNone as SymbolicNone,
-        SymbolicObject as SymbolicObject,
-        SymbolicString as SymbolicString,
-        SymbolicValue as SymbolicValue,
-        VMState as VMState,
-        VerifiedExecutionConfig as VerifiedExecutionConfig,
-        VerifiedExecutionResult as VerifiedExecutionResult,
-        VerifiedExecutor as VerifiedExecutor,
-        analyze as analyze,
-        analyze_code as analyze_code,
-        analyze_file as analyze_file,
-        check_arithmetic as check_arithmetic,
-        check_assertions as check_assertions,
-        check_contracts as check_contracts,
-        check_division_by_zero as check_division_by_zero,
-        check_index_errors as check_index_errors,
-        configure_logging as configure_logging,
-        format_issues as format_issues,
-        format_result as format_result,
-        get_logger as get_logger,
-        load_config as load_config,
-        prove_termination as prove_termination,
-        quick_check as quick_check,
-        scan_directory as scan_directory,
-        scan_file as scan_file,
-        verify as verify,
-    )
-
-from pysymex.config import VERSION as _VERSION
-
-__version__ = _VERSION
-
-try:
-    ensure_z3_ready()
-    avail = True
-    err = None
-except RuntimeError as exc:
-    avail = False
-    err = exc
-
-Z3_AVAILABLE: bool = avail
-_Z3_IMPORT_ERROR: RuntimeError | None = err
-
-_EXPORTS: dict[str, tuple[str, str]] = {
-    "analyze": ("pysymex.api.runtime", "analyze"),
-    "analyze_file": ("pysymex.api.runtime", "analyze_file"),
-    "analyze_code": ("pysymex.api.runtime", "analyze_code"),
-    "quick_check": ("pysymex.api.runtime", "quick_check"),
-    "check_division_by_zero": ("pysymex.api.runtime", "check_division_by_zero"),
-    "check_assertions": ("pysymex.api.runtime", "check_assertions"),
-    "check_index_errors": ("pysymex.api.runtime", "check_index_errors"),
-    "format_issues": ("pysymex.api.runtime", "format_issues"),
-    "SymbolicExecutor": ("pysymex.api.symbolic", "SymbolicExecutor"),
-    "ExecutionConfig": ("pysymex.execution.config.settings", "ExecutionConfig"),
-    "ExecutionResult": ("pysymex.execution.results.result", "ExecutionResult"),
-    "SymbolicValue": ("pysymex.api.symbolic", "SymbolicValue"),
-    "SymbolicString": ("pysymex.api.symbolic", "SymbolicString"),
-    "SymbolicList": ("pysymex.api.symbolic", "SymbolicList"),
-    "SymbolicDict": ("pysymex.api.symbolic", "SymbolicDict"),
-    "SymbolicObject": ("pysymex.api.symbolic", "SymbolicObject"),
-    "SymbolicNone": ("pysymex.api.symbolic", "SymbolicNone"),
-    "VMState": ("pysymex.api.symbolic", "VMState"),
-    "IncrementalSolver": ("pysymex.api.symbolic", "IncrementalSolver"),
-    "Issue": ("pysymex.api.results", "Issue"),
-    "IssueKind": ("pysymex.api.results", "IssueKind"),
-    "PysymexConfig": ("pysymex.config", "PysymexConfig"),
-    "load_config": ("pysymex.config", "load_config"),
-    "configure_logging": ("pysymex.api.logging", "configure_logging"),
-    "get_logger": ("pysymex.api.logging", "get_logger"),
-    "LogLevel": ("pysymex.api.logging", "LogLevel"),
-    "format_result": ("pysymex.api.formatting", "format_result"),
-    "VerifiedExecutor": ("pysymex.api.verification", "VerifiedExecutor"),
-    "VerifiedExecutionConfig": ("pysymex.api.verification", "VerifiedExecutionConfig"),
-    "VerifiedExecutionResult": ("pysymex.api.results", "VerifiedExecutionResult"),
-    "verify": ("pysymex.api.verification", "verify"),
-    "check_contracts": ("pysymex.api.verification", "check_contracts"),
-    "check_arithmetic": ("pysymex.api.verification", "check_arithmetic"),
-    "prove_termination": ("pysymex.api.verification", "prove_termination"),
-    "scan_file": ("pysymex.api.scanning", "scan_file"),
-    "scan_directory": ("pysymex.api.runtime", "scan_directory"),
-}
-
-_NON_Z3_EXPORTS = {
-    "PysymexConfig",
-    "load_config",
-    "configure_logging",
-    "get_logger",
-    "LogLevel",
-    "Z3_AVAILABLE",
-}
+    from pysymex import contracts
+    from pysymex import diagnostics
+    from pysymex import issues
+    from pysymex import reports
+    from pysymex import results
+    from pysymex import scan
+    from pysymex import verify
 
 
 def __getattr__(name: str) -> object:
-    """Lazy-load package exports to avoid startup side effects."""
+    """Resolve lazy attributes."""
     if name == "Z3_AVAILABLE":
-        return Z3_AVAILABLE
+        return _z3_available()
+    if name in (
+        "contracts",
+        "diagnostics",
+        "issues",
+        "reports",
+        "results",
+        "scan",
+        "verify",
+    ):
+        import importlib
 
-    target = _EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
-    if _Z3_IMPORT_ERROR is not None and name not in _NON_Z3_EXPORTS:
-        raise RuntimeError(str(_Z3_IMPORT_ERROR)) from _Z3_IMPORT_ERROR
-
-    return lazy_getattr(name, __name__, _EXPORTS, globals())
+        return importlib.import_module(f"pysymex.{name}")
+    msg = f"module '{__name__}' has no attribute '{name}'"
+    raise AttributeError(msg)
 
 
-def __dir__() -> list[str]:
-    """Dir."""
-    return lazy_dir(_EXPORTS, globals(), extra=("Z3_AVAILABLE",))
+def _z3_available() -> bool:
+    global _z3_checked, _z3_import_error
+    if _z3_import_error is not None:
+        return False
+    if _z3_checked:
+        return True
+    from pysymex._internal.deps import ensure_z3_ready
+
+    try:
+        ensure_z3_ready()
+    except RuntimeError as exc:
+        _z3_import_error = exc
+        _z3_checked = True
+        return False
+    _z3_checked = True
+    return True
+
+
+__all__ = [
+    "Z3_AVAILABLE",
+    "__version__",
+    "contracts",
+    "diagnostics",
+    "issues",
+    "reports",
+    "results",
+    "scan",
+    "verify",
+]

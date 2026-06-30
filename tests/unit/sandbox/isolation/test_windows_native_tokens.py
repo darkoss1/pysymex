@@ -1,16 +1,22 @@
 import ctypes
+from collections.abc import Callable
 from ctypes import wintypes
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.windows.native.last_error import set_windows_last_error
-from pysymex.sandbox.isolation.windows.native.shared import (
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.windows.native.shared import (
     ERROR_INVALID_PARAMETER,
     TOKEN_IS_LESS_PRIVILEGED_APPCONTAINER,
 )
-from pysymex.sandbox.isolation.windows.native.tokens import WindowsNativeTokenMixin
+from pysymex._internal.sandbox.isolation.windows.native.tokens import NativeTokenMixin
+
+
+def _set_ctypes_last_error(error: int) -> None:
+    setter = getattr(ctypes, "set_last_error", None)
+    assert callable(setter)
+    cast(Callable[[int], None], setter)(error)
 
 
 class _FakeAdvapi32:
@@ -32,7 +38,7 @@ class _FakeAdvapi32:
         assert token_information_length == ctypes.sizeof(wintypes.DWORD)
         self.requested_classes.append(token_information_class)
         if not self.query_supported:
-            set_windows_last_error(ERROR_INVALID_PARAMETER)
+            _set_ctypes_last_error(ERROR_INVALID_PARAMETER)
             return 0
         ctypes.cast(token_information, ctypes.POINTER(wintypes.DWORD)).contents.value = self.is_lpac
         ctypes.cast(return_length, ctypes.POINTER(wintypes.DWORD)).contents.value = ctypes.sizeof(
@@ -41,7 +47,7 @@ class _FakeAdvapi32:
         return 1
 
 
-class _TokenVerifierForTest(WindowsNativeTokenMixin):
+class _TokenVerifierForTest(NativeTokenMixin):
     def __init__(self, *, is_lpac: int, query_supported: bool = True) -> None:
         self.advapi32 = _FakeAdvapi32(is_lpac=is_lpac, query_supported=query_supported)
 

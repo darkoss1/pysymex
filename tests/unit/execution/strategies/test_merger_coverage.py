@@ -1,4 +1,4 @@
-"""Tests for pysymex.execution.strategies.merger — StateMerger, helper functions, MergeStatistics."""
+"""Tests for pysymex._internal.execution.strategies.merger — StateMerger, helper functions, MergeStatistics."""
 
 from __future__ import annotations
 
@@ -6,18 +6,53 @@ import dis
 
 import z3
 
-from pysymex.execution.strategies.merger.factory import create_state_merger
-from pysymex.execution.strategies.merger.helpers import (
-    as_string_object_mapping,
-    is_any_symbolic,
-    is_conditional_mergeable,
-    is_stack_value,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame, wrap_cow_dict
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.strategies.merger.equality.mixin import StateMergerEqualityMixin
+from pysymex._internal.execution.strategies.merger.equality.mixin import (
+    StateMergerEqualityMixin as StateMergerEqualityMixinOwner,
 )
-from pysymex.execution.strategies.merger.state import StateMerger
-from pysymex.execution.strategies.merger.types import (
-    MergePolicy,
-    MergeStatistics,
+from pysymex._internal.execution.strategies.merger.merge_guards import MergeGuards
+from pysymex._internal.execution.strategies.merger.state import StateMerger
+from pysymex._internal.execution.strategies.merger.symbolic.mixin import (
+    StateMergerSymbolicMixin as StateMergerSymbolicMixinExport,
 )
+from pysymex._internal.execution.strategies.merger.symbolic.mixin import (
+    StateMergerSymbolicMixin as StateMergerSymbolicMixinOwner,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.frames import (
+    merge_call_stack as merge_call_stack_export,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.frames import (
+    merge_call_stack as merge_call_stack_owner,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.memory import (
+    merge_memory as merge_memory_export,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.memory import (
+    merge_memory as merge_memory_owner,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_global_vars as merge_global_vars_export,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_global_vars as merge_global_vars_owner,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_local_vars as merge_local_vars_export,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_local_vars as merge_local_vars_owner,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_stack as merge_stack_export,
+)
+from pysymex._internal.execution.strategies.merger.symbolic.regions.variables import (
+    merge_stack as merge_stack_owner,
+)
+from pysymex._internal.execution.strategies.merger.types import MergeStatistics
+from pysymex._internal.typing.protocols import StackValue
 
 
 class TestMergeStatistics:
@@ -39,37 +74,83 @@ class TestMergeStatistics:
         assert abs(stats.reduction_ratio - 1.0) < 1e-9
 
 
-class TestCreateStateMerger:
-    """Test create_state_merger factory."""
-
-    def test_default_policy(self) -> None:
-        """Default factory creates MODERATE merger."""
-        merger = create_state_merger()
-        assert merger.policy == MergePolicy.MODERATE
-
-    def test_conservative_policy(self) -> None:
-        """Policy 'conservative' maps correctly."""
-        merger = create_state_merger(policy="conservative")
-        assert merger.policy == MergePolicy.CONSERVATIVE
-
-    def test_aggressive_policy(self) -> None:
-        """Policy 'aggressive' maps correctly."""
-        merger = create_state_merger(policy="aggressive")
-        assert merger.policy == MergePolicy.AGGRESSIVE
-
-    def test_unknown_policy_defaults_to_moderate(self) -> None:
-        """Unknown policy string defaults to MODERATE."""
-        merger = create_state_merger(policy="unknown")
-        assert merger.policy == MergePolicy.MODERATE
-
-    def test_max_constraints_parameter(self) -> None:
-        """max_constraints parameter is stored."""
-        merger = create_state_merger(max_constraints=100)
-        assert merger.max_constraints_for_merge == 100
-
-
 class TestStateMerger:
     """Test StateMerger methods."""
+
+    def test_equality_public_export_points_to_direct_owner(self) -> None:
+        """The equality package exports the composed mixin owner directly."""
+        assert StateMergerEqualityMixin is StateMergerEqualityMixinOwner
+
+    def test_symbolic_public_export_points_to_direct_owner(self) -> None:
+        """The symbolic package exports the composed mixin owner directly."""
+        assert StateMergerSymbolicMixinExport is StateMergerSymbolicMixinOwner
+
+    def test_symbolic_region_public_exports_point_to_direct_owners(self) -> None:
+        """The symbolic region package exports each direct storage-region owner."""
+        assert merge_call_stack_export is merge_call_stack_owner
+        assert merge_memory_export is merge_memory_owner
+        assert merge_global_vars_export is merge_global_vars_owner
+        assert merge_local_vars_export is merge_local_vars_owner
+        assert merge_stack_export is merge_stack_owner
+
+    def test_symbolic_frame_region_merges_retained_call_frame_locals(self) -> None:
+        """Retained call-frame locals merge without changing frame identity fields."""
+        shared: StackValue = SymbolicValue.from_const(1)
+        right_only: StackValue = SymbolicValue.from_const(2)
+        state1 = VMState(
+            call_stack=[CallFrame("callee", 2, wrap_cow_dict({"shared": shared}), 1, ())],
+        )
+        state2 = VMState(
+            call_stack=[
+                CallFrame(
+                    "callee",
+                    2,
+                    wrap_cow_dict({"shared": shared, "right": right_only}),
+                    1,
+                    (),
+                )
+            ],
+        )
+        merged = VMState()
+
+        merged_ok = merge_call_stack_owner(
+            merged,
+            state1,
+            state2,
+            z3.Bool("merge_frame_region"),
+            lambda left, right: left is right,
+        )
+
+        assert merged_ok is True
+        assert len(merged.call_stack) == 1
+        assert merged.call_stack[0].function_name == "callee"
+        assert merged.call_stack[0].return_pc == 2
+        assert merged.call_stack[0].local_vars["shared"] is shared
+        assert merged.call_stack[0].local_vars["right"] is right_only
+
+    def test_symbolic_memory_region_merges_mapping_cells(self) -> None:
+        """Memory-cell mapping joins preserve shared and single-sided attributes."""
+        shared: StackValue = SymbolicValue.from_const(1)
+        right_only: StackValue = SymbolicValue.from_const(2)
+        left_memory: dict[int, StackValue] = {7: {"shared": shared}}
+        right_memory: dict[int, StackValue] = {7: {"shared": shared, "right": right_only}}
+        state1 = VMState(memory=left_memory)
+        state2 = VMState(memory=right_memory)
+        merged = VMState()
+
+        merged_ok = merge_memory_owner(
+            merged,
+            state1,
+            state2,
+            z3.Bool("merge_memory_region"),
+            lambda left, right: left is right,
+        )
+
+        assert merged_ok is True
+        merged_cell = merged.memory[7]
+        assert isinstance(merged_cell, dict)
+        assert merged_cell["shared"] is shared
+        assert merged_cell["right"] is right_only
 
     def test_detect_join_points_empty(self) -> None:
         """detect_join_points with empty instructions returns empty set."""
@@ -163,18 +244,18 @@ class TestIsAnySymbolic:
 
     def test_symbolic_value_is_symbolic(self) -> None:
         """SymbolicValue is recognized as symbolic."""
-        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
 
         v, _ = SymbolicValue.symbolic("test")
-        assert is_any_symbolic(v) is True
+        assert MergeGuards.is_symbolic(v) is True
 
     def test_int_is_not_symbolic(self) -> None:
         """int is not symbolic."""
-        assert is_any_symbolic(42) is False
+        assert MergeGuards.is_symbolic(42) is False
 
     def test_none_is_not_symbolic(self) -> None:
         """None is not symbolic."""
-        assert is_any_symbolic(None) is False
+        assert MergeGuards.is_symbolic(None) is False
 
 
 class TestIsConditionalMergeable:
@@ -182,14 +263,14 @@ class TestIsConditionalMergeable:
 
     def test_symbolic_value_is_mergeable(self) -> None:
         """SymbolicValue exposes conditional_merge and is mergeable."""
-        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
 
         v, _ = SymbolicValue.symbolic("test")
-        assert is_conditional_mergeable(v) is True
+        assert MergeGuards.is_mergeable(v) is True
 
     def test_int_is_not_mergeable(self) -> None:
         """int has no conditional_merge method."""
-        assert is_conditional_mergeable(42) is False
+        assert MergeGuards.is_mergeable(42) is False
 
 
 class TestIsStackValue:
@@ -197,42 +278,42 @@ class TestIsStackValue:
 
     def test_none_is_stack_value(self) -> None:
         """None is a valid StackValue."""
-        assert is_stack_value(None) is True
+        assert MergeGuards.is_stack_value(None) is True
 
     def test_int_is_stack_value(self) -> None:
         """int is a valid StackValue."""
-        assert is_stack_value(42) is True
+        assert MergeGuards.is_stack_value(42) is True
 
     def test_str_is_stack_value(self) -> None:
         """str is a valid StackValue."""
-        assert is_stack_value("hello") is True
+        assert MergeGuards.is_stack_value("hello") is True
 
     def test_z3_expr_is_stack_value(self) -> None:
         """Z3 expression is a valid StackValue."""
-        assert is_stack_value(z3.Int("x")) is True
+        assert MergeGuards.is_stack_value(z3.Int("x")) is True
 
     def test_list_is_stack_value(self) -> None:
         """list is a valid StackValue."""
-        assert is_stack_value([1, 2, 3]) is True
+        assert MergeGuards.is_stack_value([1, 2, 3]) is True
 
     def test_tuple_is_stack_value(self) -> None:
         """tuple is a valid StackValue."""
-        assert is_stack_value((1, 2)) is True
+        assert MergeGuards.is_stack_value((1, 2)) is True
 
     def test_dict_is_stack_value(self) -> None:
         """dict is a valid StackValue."""
-        assert is_stack_value({"a": 1}) is True
+        assert MergeGuards.is_stack_value({"a": 1}) is True
 
     def test_callable_is_stack_value(self) -> None:
         """callable is a valid StackValue."""
-        assert is_stack_value(lambda: None) is True
+        assert MergeGuards.is_stack_value(lambda: None) is True
 
     def test_symbolic_is_stack_value(self) -> None:
         """SymbolicValue is a valid StackValue."""
-        from pysymex.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
 
         v, _ = SymbolicValue.symbolic("test")
-        assert is_stack_value(v) is True
+        assert MergeGuards.is_stack_value(v) is True
 
 
 class TestAsStringObjectMapping:
@@ -240,10 +321,10 @@ class TestAsStringObjectMapping:
 
     def test_none_returns_empty_dict(self) -> None:
         """None is treated as empty mapping."""
-        result = as_string_object_mapping(None)
+        result = MergeGuards.as_mapping(None)
         assert result == {}
 
     def test_non_mapping_returns_none(self) -> None:
         """Non-mapping returns None."""
-        result = as_string_object_mapping(42)
+        result = MergeGuards.as_mapping(42)
         assert result is None

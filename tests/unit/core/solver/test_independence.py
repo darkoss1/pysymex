@@ -1,13 +1,14 @@
 import gc
+import weakref
 from typing import cast
 
-from pysymex.core.solver.independence.optimizer import ConstraintIndependenceOptimizer
-from pysymex.core.solver.independence.union_find import UnionFind
-import weakref
 import z3
 
+from pysymex._internal.core.solver.independence.optimizer import IndependenceOptimizer
+from pysymex._internal.core.solver.independence.union.find import ConstraintUnionFind
 
-class _InspectableOptimizer(ConstraintIndependenceOptimizer):
+
+class _InspectableOptimizer(IndependenceOptimizer):
     def first_slice_cache_key(self) -> int:
         return next(iter(self._slice_cache))
 
@@ -22,8 +23,6 @@ class _InspectableOptimizer(ConstraintIndependenceOptimizer):
 
     def clear_expression_caches(self) -> None:
         self._var_cache.clear()
-        self._theory_signature_cache.clear()
-        self._prefix_theory_signature_cache.clear()
 
     def lookup_slice_cache(
         self,
@@ -34,29 +33,29 @@ class _InspectableOptimizer(ConstraintIndependenceOptimizer):
         return self._lookup_slice_cache(cache_key, path_constraints, query)
 
 
-class TestUnionFind:
-    """Test suite for pysymex.core.solver.independence.union_find.UnionFind."""
+class TestConstraintUnionFind:
+    """Test suite for the solver constraint-union-find adapter."""
 
     def test_find(self) -> None:
         """Scenario: first find on unseen element; expected element as its own root."""
-        uf = UnionFind()
+        uf = ConstraintUnionFind()
         assert uf.find("a") == "a"
 
     def test_union(self) -> None:
         """Scenario: union two singleton sets; expected shared connectivity."""
-        uf = UnionFind()
+        uf = ConstraintUnionFind()
         root = uf.union("a", "b")
         assert uf.connected("a", "b") is True
         assert root == uf.find("a")
 
     def test_connected(self) -> None:
         """Scenario: elements not unioned; expected not connected."""
-        uf = UnionFind()
+        uf = ConstraintUnionFind()
         assert uf.connected("x", "y") is False
 
     def test_groups(self) -> None:
         """Scenario: one merged pair and one singleton; expected two groups."""
-        uf = UnionFind()
+        uf = ConstraintUnionFind()
         _ = uf.union("a", "b")
         _ = uf.find("c")
         assert {frozenset(group) for group in uf.groups().values()} == {
@@ -66,11 +65,11 @@ class TestUnionFind:
 
 
 class TestConstraintIndependenceOptimizer:
-    """Test suite for pysymex.core.solver.independence.optimizer.ConstraintIndependenceOptimizer."""
+    """Test suite for pysymex._internal.core.solver.independence.optimizer.ConstraintIndependenceOptimizer."""
 
     def test_reset(self) -> None:
         """Scenario: reset after registration; expected stats counters cleared."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         _ = opt.register_constraint(z3.Int("x") > 0)
         opt.reset()
         assert opt.get_stats()["total_queries"] == 0
@@ -79,13 +78,13 @@ class TestConstraintIndependenceOptimizer:
 
     def test_register_constraint(self) -> None:
         """Scenario: register x>0 constraint; expected variable set contains x."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         vars_set = opt.register_constraint(z3.Int("x") > 0)
         assert "x" in vars_set
 
     def test_get_variables(self) -> None:
         """Scenario: get variables on x+y expression; expected both names present."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         vars_set = opt.get_variables(x + y > 0)
@@ -93,7 +92,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query(self) -> None:
         """Scenario: query depends on one cluster; expected unrelated constraint sliced out."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         c1 = x > 0
@@ -105,7 +104,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_is_transitively_dependency_closed(self) -> None:
         """Scenario: x-y-z chain; expected query on z keeps all transitive constraints."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("slice_tc_x")
         y = z3.Int("slice_tc_y")
         z = z3.Int("slice_tc_z")
@@ -122,7 +121,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_keeps_uninterpreted_function_dependencies(self) -> None:
         """Scenario: zero-variable UF application; expected UF token keeps constraint."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         f = z3.Function("slice_uf_f", z3.IntSort(), z3.IntSort())
         c1 = f(0) == 1
         c2 = z3.Int("slice_uf_unrelated") > 0
@@ -136,7 +135,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_get_variables_handles_quantifiers_without_application_decl_crash(self) -> None:
         """Scenario: quantified formula; expected dependency extraction does not crash."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("slice_quantifier_x")
         y = z3.Int("slice_quantifier_y")
         quantified = z3.ForAll([x], x == x)
@@ -149,7 +148,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_tracks_array_ssa_heap_and_memory_epoch_tokens(self) -> None:
         """Scenario: array, SSA, heap, and memory-epoch symbols; expected closed slice."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         arr = z3.Array("slice_arr", z3.IntSort(), z3.IntSort())
         ssa_index = z3.Int("slice_idx_ssa_3")
         heap_obj = z3.Int("slice_heap_obj_9")
@@ -167,7 +166,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_for_query_reuses_cached_dependency_closure(self) -> None:
         """Scenario: repeated exact prefix/query; expected slice closure cache hit."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("slice_cache_x")
         y = z3.Int("slice_cache_y")
         c1 = x > 0
@@ -183,8 +182,6 @@ class TestConstraintIndependenceOptimizer:
         assert second == [c1]
         assert stats["slice_cache_hits"] == 1
         assert stats["slice_cache_misses"] == 1
-        assert stats["theory_signature_full"] == 0
-        assert stats["theory_signature_cached"] == 0
 
     def test_slice_cache_weakly_references_z3_expressions(self) -> None:
         """Scenario: cached slice expressions die; expected stale cache entry is pruned."""
@@ -215,7 +212,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_slice_cache_validates_similar_ssa_memory_queries(self) -> None:
         """Scenario: similar array queries with different epochs; expected validated reuse."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         arr_epoch_1 = z3.Array("cache_arr_epoch_1", z3.IntSort(), z3.IntSort())
         arr_epoch_2 = z3.Array("cache_arr_epoch_2", z3.IntSort(), z3.IntSort())
         idx_ssa_1 = z3.Int("cache_idx_ssa_1")
@@ -240,7 +237,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_adaptive_slicing_disablement_falls_back_to_full_prefix(self) -> None:
         """Scenario: dense unhelpful slices; expected safe full-prefix fallback."""
-        opt = ConstraintIndependenceOptimizer(
+        opt = IndependenceOptimizer(
             adaptive_disable_min_queries=2,
             adaptive_disable_min_reduction=0.5,
         )
@@ -263,7 +260,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_adaptive_slice_cache_disable_keeps_slicing_enabled(self) -> None:
         """Scenario: no slice-cache reuse; expected cache disabled but slicing retained."""
-        opt = ConstraintIndependenceOptimizer(
+        opt = IndependenceOptimizer(
             slice_cache_disable_min_attempts=2,
             slice_cache_disable_max_hit_rate=0.0,
         )
@@ -286,7 +283,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_get_stats(self) -> None:
         """Scenario: stats after one slice query; expected total_queries increments to one."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("x")
         c = x > 0
         _ = opt.register_constraint(c)
@@ -295,7 +292,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_register_constraint_tracks_temporal_indices(self) -> None:
         """Scenario: registration should advance the temporal index and record variable history."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("x")
         y = z3.Int("y")
         _ = opt.register_constraint(x + y > 0)
@@ -305,7 +302,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_sync_registered_path_reuses_prefix_and_resets_on_branch_switch(self) -> None:
         """Scenario: registered prefix sync; expected exact path dependency ownership."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("sync_path_x")
         y = z3.Int("sync_path_y")
         c1 = x > 0
@@ -326,7 +323,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_extract_variables_reuses_ast_id_cache(self) -> None:
         """Scenario: repeated extraction on the same AST should hit the variable cache."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("cache_reuse_x")
         expr = x > 0
         first = opt.get_variables(expr)
@@ -340,7 +337,7 @@ class TestConstraintIndependenceOptimizer:
 
     def test_extract_variables_keeps_distinct_asts_separate(self) -> None:
         """Scenario: different AST nodes must not share variable-extraction cache entries."""
-        opt = ConstraintIndependenceOptimizer()
+        opt = IndependenceOptimizer()
         x = z3.Int("cache_distinct_x")
         y = z3.Int("cache_distinct_y")
         assert opt.get_variables(x > 0) == frozenset({"cache_distinct_x"})

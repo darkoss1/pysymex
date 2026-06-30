@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import pathlib
 import sys
-from typing import Generator, cast
+from typing import cast
+from collections.abc import Generator
 
 import pytest
 
@@ -19,9 +20,33 @@ project_root_str = str(PROJECT_ROOT)
 if project_root_str not in sys.path:
     sys.path.insert(0, project_root_str)
 
-from pysymex.core.memory.heap.state import MemoryState
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+
+_PYTEST_RUNTIME_ROOT_NAME = ".tmp"
+_PYTEST_RUNTIME_DIR = PROJECT_ROOT / _PYTEST_RUNTIME_ROOT_NAME / "pytest"
+_PYTEST_BASETEMP_DIR = _PYTEST_RUNTIME_DIR / "tmp"
+
+
+def centralized_pytest_basetemp(raw_basetemp: object) -> pathlib.Path | None:
+    """Return the centralized basetemp for relative root ``.pytest_*`` overrides."""
+    if raw_basetemp is None:
+        return None
+    basetemp = pathlib.Path(str(raw_basetemp))
+    if basetemp.is_absolute() or not basetemp.parts:
+        return None
+    if basetemp.parts[0] == _PYTEST_RUNTIME_ROOT_NAME:
+        return None
+    if not basetemp.parts[0].startswith(".pytest_"):
+        return None
+    return _PYTEST_BASETEMP_DIR.joinpath(*basetemp.parts)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Keep relative pytest scratch directories inside ``.tmp/pytest``."""
+    centralized_basetemp = centralized_pytest_basetemp(config.option.basetemp)
+    if centralized_basetemp is not None:
+        config.option.basetemp = str(centralized_basetemp)
 
 
 @pytest.fixture(scope="session")
@@ -37,18 +62,12 @@ def fixtures_dir(project_root: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture
-def solver() -> Generator[IncrementalSolver, None, None]:
+def solver() -> Generator[IncrementalSolver]:
     """Provide a fresh IncrementalSolver instance for each test.
 
     Ensures the Z3 context is clean and properly managed between runs.
     """
     yield IncrementalSolver()
-
-
-@pytest.fixture
-def memory() -> MemoryState:
-    """Provide a fresh MemoryState instance."""
-    return MemoryState()
 
 
 @pytest.fixture
@@ -58,22 +77,23 @@ def state() -> VMState:
 
 
 @pytest.fixture(autouse=True)
-def clean_global_caches() -> Generator[None, None, None]:
+def clean_global_caches() -> Generator[None]:
     """Clean all global caches before and after each test to ensure total isolation."""
-    from pysymex.core.types.scalars.values import FROM_CONST_CACHE
-    from pysymex.core.types.scalars.values import SYMBOLIC_CACHE
-    from pysymex.core.types.scalars.values import STRING_CONST_CACHE
-    from pysymex.core.types.containers.bytes import BYTES_CONST_CACHE
-    from pysymex.core.solver.constraints.literals import clear_exact_bool_literal_cache
-    from pysymex.core.solver.constraints.theory import clear_bitvector_theory_cache
-    from pysymex.core.solver.engine.context import thread_local_solver
-    from pysymex.core.solver.engine.queries import clear_solver_caches
-    from pysymex.models.objects import class_registry
-    from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher, OpcodeHandler
-
-    global_handlers = cast(
-        "dict[str, OpcodeHandler]", getattr(OpcodeDispatcher, "_global_handlers")
+    from pysymex._internal.core.classes.registry import class_registry
+    from pysymex._internal.core.solver.constraints.exact.literal.cache import (
+        clear_exact_bool_literal_cache,
     )
+    from pysymex._internal.core.solver.constraints.theory import clear_bitvector_theory_cache
+    from pysymex._internal.core.solver.engine.context import thread_local_solver
+    from pysymex._internal.core.types.containers.bytes import BYTES_CONST_CACHE
+    from pysymex._internal.core.types.scalars.value.scalar_ops import (
+        FROM_CONST_CACHE,
+        STRING_CONST_CACHE,
+        SYMBOLIC_CACHE,
+    )
+    from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+
+    global_handlers = cast("dict[str, object]", getattr(OpcodeDispatcher, "_global_handlers"))
     opcode_handlers_snapshot = dict(global_handlers)
 
     def reset() -> None:
@@ -83,8 +103,8 @@ def clean_global_caches() -> Generator[None, None, None]:
         BYTES_CONST_CACHE.clear()
         clear_bitvector_theory_cache()
         clear_exact_bool_literal_cache()
-        clear_solver_caches()
         thread_local_solver.solver = None
+        thread_local_solver.model_solver = None
         class_registry.clear()
         global_handlers.clear()
         global_handlers.update(opcode_handlers_snapshot)

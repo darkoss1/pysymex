@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import is_raised_exception_effect
-from pysymex.models.stdlib.math import (
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.models.stdlib.math.predicates import (
     MathIsCloseModel,
     MathIsfiniteModel,
     MathIsinfModel,
@@ -60,7 +60,7 @@ class TestMathIsinfModel:
         result = MathIsinfModel().apply([], {}, make_state())
         assert isinstance(result.value, SymbolicValue)
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "TypeError"
 
     def test_concrete_inf(self) -> None:
@@ -85,7 +85,7 @@ class TestMathIsinfModel:
         result = MathIsinfModel().apply(["string"], {}, make_state())
         assert isinstance(result.value, SymbolicValue)
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "TypeError"
 
 
@@ -94,7 +94,7 @@ class TestMathIsnanModel:
         result = MathIsnanModel().apply([], {}, make_state())
         assert isinstance(result.value, SymbolicValue)
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "TypeError"
 
     def test_concrete_nan(self) -> None:

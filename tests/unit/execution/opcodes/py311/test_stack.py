@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import dis
 
-
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py311 import stack
+import pysymex._internal.execution.opcodes.py311.stack as stack
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: int | None = None) -> dis.Instruction:

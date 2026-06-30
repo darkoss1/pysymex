@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
+
+
+def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
+    issues = getattr(result, "issues")
+    return any(
+        issue.get("kind") == kind and issue.get("function_name") == function_name
+        for issue in issues
+    )
 
 
 def test_scan_file_reports_attrgetter_derived_division(tmp_path: Path) -> None:
@@ -116,6 +124,54 @@ def test_scan_file_allows_guarded_itemgetter_symbolic_index(tmp_path: Path) -> N
     )
 
 
+def test_scan_file_reports_tuple_symbolic_index_error(tmp_path: Path) -> None:
+    target = tmp_path / "tuple_index_bug.py"
+    target.write_text(
+        "def target(index: int) -> int:\n    values = (3, 5, 8)\n    return values[index]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    issue = next(
+        (
+            issue
+            for issue in result.issues
+            if issue.get("kind") == "INDEX_ERROR"
+            and issue.get("function_name") == "target"
+            and issue.get("line") == 3
+        ),
+        None,
+    )
+
+    assert issue is not None
+    counterexample_obj = issue.get("counterexample")
+    assert isinstance(counterexample_obj, dict)
+    counterexample = cast("dict[str, object]", counterexample_obj)
+    index = counterexample.get("index")
+    assert isinstance(index, int)
+    assert index < -3 or index >= 3
+
+
+def test_scan_file_allows_guarded_tuple_symbolic_index(tmp_path: Path) -> None:
+    target = tmp_path / "tuple_index_safe.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = (3, 5, 8)\n"
+        "    if -len(values) <= index < len(values):\n"
+        "        return values[index]\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "INDEX_ERROR" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+
+
 def test_scan_file_allows_range_membership_guarded_symbolic_index(tmp_path: Path) -> None:
     target = tmp_path / "range_membership_index_safe.py"
     target.write_text(
@@ -133,6 +189,74 @@ def test_scan_file_allows_range_membership_guarded_symbolic_index(tmp_path: Path
         issue.get("kind") == "INDEX_ERROR" and issue.get("function_name") == "target"
         for issue in result.issues
     )
+
+
+def test_scan_file_allows_mod_indexed_string_list_lengths(tmp_path: Path) -> None:
+    target = tmp_path / "mod_index_string_list_length_safe.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = ['a', 'bb']\n"
+        "    item = values[index % 2]\n"
+        "    return 1 // len(item)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+    assert result.degraded_passes == []
+
+
+def test_scan_file_reports_mod_indexed_string_list_equality_bug(tmp_path: Path) -> None:
+    target = tmp_path / "mod_index_string_list_equality_bug.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = ['a', 'bb']\n"
+        "    item = values[index % 2]\n"
+        "    if item == 'bb':\n"
+        "        return 1 // 0\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+    assert result.degraded_passes == []
+
+
+def test_scan_file_allows_mod_indexed_string_tuple_lengths(tmp_path: Path) -> None:
+    target = tmp_path / "mod_index_string_tuple_length_safe.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = ('a', 'bb')\n"
+        "    item = values[index % 2]\n"
+        "    return 1 // len(item)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+    assert result.degraded_passes == []
+
+
+def test_scan_file_reports_mod_indexed_string_tuple_equality_bug(tmp_path: Path) -> None:
+    target = tmp_path / "mod_index_string_tuple_equality_bug.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = ('a', 'bb')\n"
+        "    item = values[index % 2]\n"
+        "    if item == 'bb':\n"
+        "        return 1 // 0\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+    assert result.degraded_passes == []
 
 
 def test_scan_file_reports_slice_indices_stop_at_list_length(tmp_path: Path) -> None:

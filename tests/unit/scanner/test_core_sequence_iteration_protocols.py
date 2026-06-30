@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-import pysymex
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _assert_no_issue_kinds(result: object, forbidden: set[str]) -> None:
@@ -46,31 +44,6 @@ def test_scan_file_uses_getitem_sequence_iteration_fallback(tmp_path: Path) -> N
     )
 
 
-def test_analyze_code_uses_getitem_sequence_iteration_fallback() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Seq:\n"
-            "    def __getitem__(self, index: int) -> int:\n"
-            "        if index < 2:\n"
-            "            return index + 1\n"
-            "        raise IndexError\n\n"
-            "total = 0\n"
-            "for item in Seq():\n"
-            "    total += item\n"
-            "result = total\n",
-            max_paths=40,
-            max_depth=120,
-            max_iterations=2500,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(
-        result,
-        {"TYPE_ERROR", "INDEX_ERROR", "UNHANDLED_EXCEPTION", "ATTRIBUTE_ERROR"},
-    )
-
-
 def test_scan_file_still_reports_direct_unhandled_index_error(tmp_path: Path) -> None:
     target = tmp_path / "direct_index_error.py"
     target.write_text(
@@ -80,7 +53,7 @@ def test_scan_file_still_reports_direct_unhandled_index_error(tmp_path: Path) ->
 
     result = scan_file(target, use_sandbox=False)
 
-    assert any(_issue_kind(issue) == "UNHANDLED_EXCEPTION" for issue in result.issues)
+    assert any(_issue_kind(issue) == "INDEX_ERROR" for issue in result.issues)
 
 
 def test_scan_file_consumes_custom_iterator_stopiteration(tmp_path: Path) -> None:
@@ -107,30 +80,6 @@ def test_scan_file_consumes_custom_iterator_stopiteration(tmp_path: Path) -> Non
     )
 
 
-def test_analyze_code_consumes_custom_iterator_stopiteration() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Counter:\n"
-            "    def __iter__(self) -> object:\n"
-            "        return self\n"
-            "    def __next__(self) -> int:\n"
-            "        raise StopIteration\n\n"
-            "result = 0\n"
-            "for item in Counter():\n"
-            "    result = item\n",
-            max_paths=30,
-            max_depth=80,
-            max_iterations=1500,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(
-        result,
-        {"NAME_ERROR", "UNBOUND_VARIABLE", "UNHANDLED_EXCEPTION", "TYPE_ERROR"},
-    )
-
-
 def test_scan_file_still_reports_direct_unhandled_stopiteration(tmp_path: Path) -> None:
     target = tmp_path / "direct_stopiteration.py"
     target.write_text(
@@ -141,30 +90,6 @@ def test_scan_file_still_reports_direct_unhandled_stopiteration(tmp_path: Path) 
     result = scan_file(target, use_sandbox=False)
 
     assert any(_issue_kind(issue) == "UNHANDLED_EXCEPTION" for issue in result.issues)
-
-
-def test_analyze_code_iter_callable_sentinel_loop_is_exact() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "values = [1, 2, 0]\n"
-            "def next_value():\n"
-            "    return values.pop(0)\n\n"
-            "total = 0\n"
-            "for item in iter(next_value, 0):\n"
-            "    total += item\n"
-            "result = total\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2200,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(
-        result,
-        {"TYPE_ERROR", "ATTRIBUTE_ERROR", "NAME_ERROR", "UNBOUND_VARIABLE", "UNKNOWN"},
-    )
-    assert not result.degraded_passes
 
 
 def test_scan_file_iter_callable_sentinel_loop_is_exact(tmp_path: Path) -> None:
@@ -205,27 +130,6 @@ def test_scan_file_unpacks_exact_custom_iterable(tmp_path: Path) -> None:
     )
 
     result = scan_file(target, use_sandbox=False)
-
-    _assert_no_issue_kinds(
-        result,
-        {"TYPE_ERROR", "ATTRIBUTE_ERROR", "NAME_ERROR", "UNBOUND_VARIABLE"},
-    )
-
-
-def test_analyze_code_unpacks_exact_custom_iterable() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Pair:\n"
-            "    def __iter__(self):\n"
-            "        return iter([2, 3])\n\n"
-            "left, right = Pair()\n"
-            "result = left + right\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2200,
-            timeout=2.0,
-        )
-    )
 
     _assert_no_issue_kinds(
         result,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_reports_empty_deque_popleft_after_path_local_removal(tmp_path: Path) -> None:

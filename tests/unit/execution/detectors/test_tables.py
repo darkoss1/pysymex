@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors import Detector, DetectorRegistry, IsSatFn, Issue, IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.detectors.tables import build_detector_runtime_tables
+from pysymex._internal.analysis.detectors.detector.contract import Detector
+from pysymex._internal.analysis.detectors.detector.registry import DetectorRegistry
+from pysymex._internal.analysis.detectors.detector.types import IsSatFn, Issue
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.detectors.tables import build_detector_runtime_tables
 
 
 class UniversalIssueDetector(Detector):

@@ -8,11 +8,11 @@ from typing import cast
 import pytest
 import z3
 
-from pysymex.core.solver.constraints.hashing import ConstraintHasher
-from pysymex.core.solver.engine import result_cache
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.solver.engine.policies import path_may_be_feasible
-from pysymex.core.solver.engine.results import SolverResult
+import pysymex._internal.core.solver.engine.cache.unsat.subset.methods as unsat_subset_methods
+from pysymex._internal.core.solver.constraints.hashing import ConstraintHasher
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.solver.engine.policies import path_may_be_feasible
+from pysymex._internal.core.solver.engine.results import SolverResult
 from tests.unit.core.solver.engine_solver_helpers import is_sat_with_z3
 
 
@@ -282,16 +282,49 @@ class TestConstraintSolverCorrectnessValidation:
         """A cached UNSAT conjunction is enough to reject later supersets."""
         x = z3.Int("x_unsat_subset")
         y = z3.Int("y_unsat_subset")
+        total = x + y
         solver = IncrementalSolver()
 
-        first = solver.check_sat_result([x > 0, x < 0])
+        first = solver.check_sat_result([total > 0, total < 0])
         first_query_count = solver.get_stats()["queries"]
-        second = solver.check_sat_result([y == 1, x > 0, x < 0])
+        second = solver.check_sat_result([y == 1, total > 0, total < 0])
         second_query_count = solver.get_stats()["queries"]
 
         assert first.is_unsat and second.is_unsat
         assert first_query_count == second_query_count == 1
         assert solver.get_stats()["unsat_subset_cache_size"] == 1
+
+    @pytest.mark.parametrize(
+        "constraint",
+        [
+            z3.Int("x_high_level_sat_cache_int") + z3.Int("y_high_level_sat_cache_int") > 0,
+            z3.BitVec("x_high_level_sat_cache_bv", 32) == z3.BitVecVal(7, 32),
+        ],
+    )
+    def test_check_sat_result_reuses_first_high_level_cache_entry(
+        self,
+        constraint: z3.BoolRef,
+    ) -> None:
+        """The first cached SAT result should be reusable without a second Z3 check."""
+        solver = IncrementalSolver()
+        calls = 0
+        real_check = solver.solver.check
+
+        def counted_check(*assumptions: z3.BoolRef) -> z3.CheckSatResult:
+            nonlocal calls
+            calls += 1
+            return real_check(*assumptions)
+
+        solver.solver.check = counted_check
+
+        first = solver.check_sat_result([constraint])
+        second = solver.check_sat_result([constraint])
+
+        assert first.is_sat and second.is_sat
+        assert calls == 1
+        assert solver.get_stats()["queries"] == 1
+        assert solver.get_stats()["cache_hits"] == 1
+        assert solver.get_stats()["cache_size"] == 1
 
     def test_check_sat_result_unsat_subset_cache_validates_hash_collisions(
         self, monkeypatch: pytest.MonkeyPatch
@@ -299,6 +332,8 @@ class TestConstraintSolverCorrectnessValidation:
         """UNSAT subset reuse must validate exact expressions after hash prefiltering."""
         x = z3.Int("x_unsat_subset_collision")
         y = z3.Int("y_unsat_subset_collision")
+        z = z3.Int("z_unsat_subset_collision")
+        total = x + y
 
         def forced_hash(self: ConstraintHasher, expr: z3.ExprRef) -> int:
             _ = self
@@ -308,9 +343,9 @@ class TestConstraintSolverCorrectnessValidation:
         monkeypatch.setattr(ConstraintHasher, "hash_expr", forced_hash)
         solver = IncrementalSolver()
 
-        first = solver.check_sat_result([x > 0, x < 0])
+        first = solver.check_sat_result([total > 0, total < 0])
         first_query_count = solver.get_stats()["queries"]
-        second = solver.check_sat_result([y > 0])
+        second = solver.check_sat_result([y + z > 0])
         second_query_count = solver.get_stats()["queries"]
 
         assert first.is_unsat
@@ -324,9 +359,11 @@ class TestConstraintSolverCorrectnessValidation:
         """Hash counts should reject impossible subset matches before exact Z3 equality."""
         x = z3.Int("x_unsat_subset_prefilter")
         y = z3.Int("y_unsat_subset_prefilter")
+        z = z3.Int("z_unsat_subset_prefilter")
+        total = x + y
         solver = IncrementalSolver()
 
-        first = solver.check_sat_result([x > 0, x < 0])
+        first = solver.check_sat_result([total > 0, total < 0])
         first_query_count = solver.get_stats()["queries"]
 
         def fail_exact_match(
@@ -339,8 +376,8 @@ class TestConstraintSolverCorrectnessValidation:
             _ = query_buckets
             raise AssertionError("exact UNSAT subset matching should be hash-prefiltered")
 
-        monkeypatch.setattr(result_cache, "unsat_subset_matches", fail_exact_match)
-        second = solver.check_sat_result([y > 0, y < 10])
+        monkeypatch.setattr(unsat_subset_methods, "unsat_subset_matches", fail_exact_match)
+        second = solver.check_sat_result([y + z > 0])
         second_query_count = solver.get_stats()["queries"]
 
         assert first.is_unsat
@@ -424,6 +461,8 @@ class TestConstraintSolverCorrectnessValidation:
     ) -> None:
         """Duplicate inconclusive checks must not become reusable SAT/UNSAT evidence."""
         x = z3.Int("x_reused_unknown")
+        y = z3.Int("y_reused_unknown")
+        constraint = x + y > 0
         solver = IncrementalSolver(timeout_ms=1000)
         calls = 0
 
@@ -436,8 +475,8 @@ class TestConstraintSolverCorrectnessValidation:
 
         monkeypatch.setattr(solver, "check", unknown_check)
 
-        first = solver.check_sat_result([x > 0])
-        second = solver.check_sat_result([x > 0])
+        first = solver.check_sat_result([constraint])
+        second = solver.check_sat_result([constraint])
 
         assert first.is_unknown
         assert second.is_unknown
@@ -449,6 +488,8 @@ class TestConstraintSolverCorrectnessValidation:
     ) -> None:
         """Changing solver deadline must allow a formerly UNKNOWN query to run again."""
         x = z3.Int("x_unknown_deadline_clear")
+        y = z3.Int("y_unknown_deadline_clear")
+        constraint = x + y > 0
         solver = IncrementalSolver(timeout_ms=1000)
         calls = 0
 
@@ -463,9 +504,9 @@ class TestConstraintSolverCorrectnessValidation:
 
         monkeypatch.setattr(solver, "check", staged_check)
 
-        first = solver.check_sat_result([x > 0])
+        first = solver.check_sat_result([constraint])
         solver.set_deadline(None)
-        second = solver.check_sat_result([x > 0])
+        second = solver.check_sat_result([constraint])
 
         assert first.is_unknown
         assert second.is_sat
@@ -476,6 +517,7 @@ class TestConstraintSolverCorrectnessValidation:
     ) -> None:
         """Z3 cancellation during suffix checks must not become an internal engine error."""
         x = z3.Int("x_check_canceled_unknown")
+        y = z3.Int("y_check_canceled_unknown")
         solver = IncrementalSolver(timeout_ms=1000)
 
         def raise_canceled(*_assumptions: z3.BoolRef) -> z3.CheckSatResult:
@@ -483,7 +525,7 @@ class TestConstraintSolverCorrectnessValidation:
 
         monkeypatch.setattr(solver.solver, "check", raise_canceled)
 
-        result = solver.check_sat_result([x > 0])
+        result = solver.check_sat_result([x + y > 0])
 
         assert (result.is_unknown, result.is_sat, result.is_unsat) == (True, False, False)
 

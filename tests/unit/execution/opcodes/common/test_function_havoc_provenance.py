@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.havoc import HavocValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.fallback import FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.opcodes.common.functions import (
-    handle_common_call,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.fallback.types import FallbackKind, RiskLevel, SoundnessTag
+from pysymex._internal.execution.opcodes.common.functions.call import handle_common_call
+from pysymex._internal.execution.opcodes.common.functions.call_ex import (
     handle_common_call_function_ex,
 )
 

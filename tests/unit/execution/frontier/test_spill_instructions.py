@@ -5,10 +5,23 @@ from typing import cast
 
 import pytest
 
-from pysymex.execution.frontier.spill.instructions import (
-    SpillInstructionDecodeError,
-    current_instructions_payload,
+from pysymex._internal.execution.frontier.spill.instructions.decoding import (
     decode_current_instructions,
+)
+from pysymex._internal.execution.frontier.spill.instructions.decoding import (
+    decode_current_instructions as decode_current_instructions_owner,
+)
+from pysymex._internal.execution.frontier.spill.instructions.encoding import (
+    current_instructions_payload,
+)
+from pysymex._internal.execution.frontier.spill.instructions.encoding import (
+    current_instructions_payload as current_instructions_payload_owner,
+)
+from pysymex._internal.execution.frontier.spill.instructions.types import (
+    SpillInstructionDecodeError,
+)
+from pysymex._internal.execution.frontier.spill.instructions.types import (
+    SpillInstructionDecodeError as SpillInstructionDecodeErrorOwner,
 )
 
 
@@ -22,6 +35,13 @@ def _instruction_payload() -> dict[str, object]:
     payload = payloads[0]
     assert isinstance(payload, dict)
     return cast("dict[str, object]", payload)
+
+
+def test_spill_instructions_public_exports_point_to_family_owners() -> None:
+    """Package-level instruction exports stay wired to direct encode/decode owners."""
+    assert SpillInstructionDecodeError is SpillInstructionDecodeErrorOwner
+    assert current_instructions_payload is current_instructions_payload_owner
+    assert decode_current_instructions is decode_current_instructions_owner
 
 
 def test_current_instructions_payload_round_trips_dis_instructions() -> None:

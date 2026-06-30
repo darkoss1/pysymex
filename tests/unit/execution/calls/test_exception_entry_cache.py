@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pysymex.core.cache import get_exception_entries
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.executors import SymbolicExecutor
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.cache.code.exceptions import get_exception_entries
+from pysymex._internal.execution.executors.core import SymbolicExecutor
 
 
 def _cached_exception_callee(value: int) -> int:

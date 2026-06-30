@@ -3,10 +3,11 @@ from __future__ import annotations
 import types
 from pathlib import Path
 
-from pysymex.core.cache import get_instructions
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.executors import SymbolicExecutor
-from pysymex.scanner.file import scan_file
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.cache.code.instructions import get_instructions
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.scan.setup import build_scan_execution_setup
+from pysymex._internal.scanner.file import scan_file
 
 
 class ConfigObserver:
@@ -20,6 +21,41 @@ class ConfigObserver:
 
     def begin_code(self, code: types.CodeType) -> None:
         _ = code
+
+
+def test_scan_execution_config_disables_discarded_static_prepasses() -> None:
+    observer = ConfigObserver()
+
+    setup = build_scan_execution_setup(
+        max_paths=8,
+        max_depth=123,
+        timeout=5.0,
+        no_cache=False,
+        max_iterations=80,
+        enable_fp_filtering=True,
+        execution_observer=observer,
+    )
+
+    assert setup.config.enable_cross_function is False
+    assert setup.config.max_depth == 123
+    assert setup.executor.config is setup.config
+    assert observer.configs == [setup.config]
+
+
+def test_scan_execution_config_preserves_automatic_host_limits() -> None:
+    setup = build_scan_execution_setup(
+        max_paths=None,
+        max_depth=None,
+        timeout=None,
+        no_cache=False,
+        max_iterations=None,
+        enable_fp_filtering=True,
+    )
+
+    assert setup.config.max_paths is None
+    assert setup.config.max_depth is None
+    assert setup.config.max_iterations is None
+    assert setup.config.timeout_seconds is None
 
 
 def test_scan_file_no_cache_disables_executor_and_solver_caches(tmp_path: Path) -> None:

@@ -4,11 +4,13 @@ from unittest.mock import patch
 
 import z3
 
-
-from pysymex.contracts.ir.obligations import QueryKind
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.contracts.types import Contract, ContractKind, Severity, VerificationResult
-from pysymex.contracts.verifier import ContractVerifier, VerificationReport
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex._internal.contracts.ir.obligations import QueryKind
+from pysymex._internal.contracts.reports.verification import VerificationReport
+from pysymex._internal.contracts.types import Contract
+from pysymex._internal.contracts.verifier import ContractVerifier
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex.contracts import ContractKind, ContractSeverity
 
 
 class TestContractVerifier:
@@ -158,7 +160,7 @@ class TestContractVerifier:
         x = z3.Int("x")
 
         with patch(
-            "pysymex.contracts.verifier.check_contract_query",
+            "pysymex._internal.contracts.verifier.check_contract_query",
             return_value=SolverResult.unsat(),
         ) as check_query:
             result, counter = verifier.verify_assertion(x > 0, [], {"x": x})
@@ -226,10 +228,10 @@ class TestVerificationReport:
         contract = Contract(
             kind=ContractKind.ENSURES,
             predicate="x > 0",
-            severity=Severity.WARNING,
+            severity=ContractSeverity.WARNING,
         )
 
         report.add_result(contract, VerificationResult.VIOLATED)
 
-        assert report.violations[0].severity is Severity.WARNING
+        assert report.violations[0].severity is ContractSeverity.WARNING
         assert "[WARNING]" in report.violations[0].format()

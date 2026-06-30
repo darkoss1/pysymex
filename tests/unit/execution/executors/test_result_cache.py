@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors import Detector, IsSatFn, Issue, IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.executors.core import SymbolicExecutor
+from pysymex._internal.analysis.detectors.detector.contract import Detector
+from pysymex._internal.analysis.detectors.detector.types import IsSatFn, Issue
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.executors.core import SymbolicExecutor
 from tests.unit.execution.executors.core_executor_helpers import simple
 
 
@@ -18,9 +20,7 @@ def initial_value_sensitive_division(x: int) -> int:
 
 def test_result_cache_key_includes_initial_values() -> None:
     """Different concrete initial constraints must not reuse a stale result."""
-    executor = SymbolicExecutor(
-        ExecutionConfig(max_paths=4, max_iterations=40, enable_type_inference=False)
-    )
+    executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
 
     nonzero_result = executor.execute_function(
         initial_value_sensitive_division,
@@ -60,9 +60,7 @@ def test_result_cache_invalidates_after_adding_detector() -> None:
             self.seen_opcodes.append(instruction.opname)
             return None
 
-    executor = SymbolicExecutor(
-        ExecutionConfig(max_paths=4, max_iterations=40, enable_type_inference=False)
-    )
+    executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
     first = executor.execute_function(simple, {"x": "int"})
     detector = CountingDetector()
     executor.add_detector(detector)
@@ -75,9 +73,7 @@ def test_result_cache_invalidates_after_adding_detector() -> None:
 
 def test_result_cache_returns_container_isolated_results() -> None:
     """Caller mutation of one result object must not poison later cache hits."""
-    executor = SymbolicExecutor(
-        ExecutionConfig(max_paths=4, max_iterations=40, enable_type_inference=False)
-    )
+    executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
     injected_issue = Issue(IssueKind.UNKNOWN, "caller mutation")
 
     first = executor.execute_function(simple, {"x": "int"})

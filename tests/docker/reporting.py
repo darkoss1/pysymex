@@ -45,8 +45,11 @@ class DockerReportingMixin(DockerRunnerState):
             print(f"    XFailed: {result.xfailed}")
             print(f"    XPassed: {result.xpassed}")
 
-            if result.status != TestStatus.SUCCESS and result.error_output:
-                print(f"  Error: {result.error_output[:200]}")
+            if result.status != TestStatus.SUCCESS:
+                if result.error_output:
+                    print(f"  Error:\n{result.error_output}")
+                if result.output:
+                    print(f"  Output:\n{result.output}")
 
             print()
 

@@ -1,11 +1,12 @@
-"""Tests for pysymex.tracing.tracer.factory — attach_tracer factory helper."""
+"""Tests for pysymex._internal.tracing.tracer.factory — attach_tracer factory helper."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock
-from pysymex.tracing.tracer.factory import attach_tracer
-from pysymex.tracing.schemas import TracerConfig
+
+from pysymex._internal.config.tracing.settings import TracerConfig
+from pysymex._internal.tracing.tracer.factory import attach_tracer
 
 
 def test_attach_tracer_disabled() -> None:

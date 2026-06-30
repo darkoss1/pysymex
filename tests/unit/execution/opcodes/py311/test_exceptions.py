@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import dis
 
-
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py311 import exceptions
+import pysymex._internal.execution.opcodes.py311.exceptions as exceptions
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.control.fallbacks import UNSUPPORTED_GENERATOR
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
@@ -100,7 +101,11 @@ def test_handle_get_aiter() -> None:
 def test_handle_get_anext() -> None:
     """Test handle_get_anext behavior."""
     state = VMState(pc=0)
-    exceptions.handle_get_anext(_instr("GET_ANEXT"), state, OpcodeDispatcher())
+    result = exceptions.handle_get_anext(_instr("GET_ANEXT"), state, OpcodeDispatcher())
+
+    assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
+    assert len(result.fallback_events) == 1
+    assert isinstance(result.new_states[0].stack[-1], HavocValue)
 
 
 def test_handle_get_awaitable() -> None:

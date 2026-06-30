@@ -21,17 +21,20 @@
 from __future__ import annotations
 
 import dis
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.models.builtins.base import is_raised_exception_effect
-from pysymex.models.stdlib import get_stdlib_model
-from pysymex.models.stdlib.os import OsGetcwdModel
-from pysymex.models.stdlib.sys import SysExitModel
-from pysymex.execution.opcodes.common.functions.misc import handle_common_import_name
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from typing import cast
+
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.functions.setup import handle_common_import_name
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.models.stdlib.os.core import OsGetcwdModel
+from pysymex._internal.models.stdlib.registry import extended_stdlib_registry, get_stdlib_model
+from pysymex._internal.models.stdlib.sys.exit import SysExitModel
 
 
 def _state() -> VMState:
@@ -47,28 +50,28 @@ def test_sys_exit_model() -> None:
     # Test without args (SystemExit.code defaults to None and str(exc) is empty)
     res = SysExitModel().apply([], {}, _state())
     raised = res.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(raised)
+    assert SideEffects.is_raised_exception(raised)
     assert raised["exception_type"] == "SystemExit"
     assert raised["message"] == ""
 
     # Test with concrete exit status
     res = SysExitModel().apply([42], {}, _state())
     raised = res.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(raised)
+    assert SideEffects.is_raised_exception(raised)
     assert raised["exception_type"] == "SystemExit"
     assert raised["message"] == "42"
 
     # Test with string message
     res = SysExitModel().apply(["error"], {}, _state())
     raised = res.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(raised)
+    assert SideEffects.is_raised_exception(raised)
     assert raised["exception_type"] == "SystemExit"
     assert raised["message"] == "error"
 
     # Extra arguments are rejected by CPython.
     res = SysExitModel().apply([1, 2], {}, _state())
     raised = res.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(raised)
+    assert SideEffects.is_raised_exception(raised)
     assert raised["exception_type"] == "TypeError"
 
 
@@ -90,6 +93,9 @@ def test_sys_os_import_pre_population() -> None:
     assert isinstance(heap_val, dict)
     assert "argv" in heap_val
     assert isinstance(heap_val["argv"], SymbolicList)
+    assert isinstance(heap_val["path"], SymbolicList)
+    assert isinstance(heap_val["modules"], SymbolicDict)
+    assert heap_val["platform"] == __import__("sys").platform
 
     # 2. Test importing 'os' module prepopulates environ
     state2 = VMState(stack=[None, 0], pc=1)  # fromlist=None, level=0
@@ -107,6 +113,9 @@ def test_sys_os_import_pre_population() -> None:
     assert isinstance(heap_val2, dict)
     assert "environ" in heap_val2
     assert isinstance(heap_val2["environ"], SymbolicDict)
+    getcwd_value = cast("object", heap_val2["getcwd"])
+    assert isinstance(getcwd_value, SymbolicValue)
+    assert getcwd_value.model_name == "os.getcwd"
 
 
 def test_os_getcwd_model_returns_symbolic_string_without_host_lookup() -> None:
@@ -115,3 +124,7 @@ def test_os_getcwd_model_returns_symbolic_string_without_host_lookup() -> None:
     assert isinstance(result.value, SymbolicString)
     assert result.constraints
     assert isinstance(get_stdlib_model("os.getcwd"), OsGetcwdModel)
+    assert isinstance(
+        extended_stdlib_registry.resolve_callable(__import__("os").getcwd),
+        OsGetcwdModel,
+    )

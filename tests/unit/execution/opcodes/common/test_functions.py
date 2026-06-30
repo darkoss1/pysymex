@@ -8,36 +8,45 @@ from typing import cast
 import pytest
 import z3
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.typing import StackValue
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import VMStateError
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.calls.construction_fallbacks import (
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.classes.types import SymbolicMethod
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import VMStateError
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.calls.construction_fallbacks import (
     CONSTRUCTOR_ENTRY_UNAVAILABLE_REASON,
     UNSUPPORTED_CONSTRUCTION_PROTOCOL,
 )
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.fallback import FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.opcodes.common.functions import (
-    handle_common_call,
-    handle_common_call_function_ex,
-    handle_common_delete_attr,
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.fallback.types import FallbackKind, RiskLevel, SoundnessTag
+from pysymex._internal.execution.opcodes.common.functions.attribute.load.handler import (
     handle_common_load_method,
-    handle_common_load_super_variants,
+)
+from pysymex._internal.execution.opcodes.common.functions.attribute.store import (
+    handle_common_delete_attr,
     handle_common_store_attr,
 )
-from pysymex.execution.opcodes.common.functions.protocol.fallbacks import (
+from pysymex._internal.execution.opcodes.common.functions.call import handle_common_call
+from pysymex._internal.execution.opcodes.common.functions.call_ex import (
+    handle_common_call_function_ex,
+)
+from pysymex._internal.execution.opcodes.common.functions.protocol.fallbacks import (
     PROTOCOL_BUILTIN_UNAVAILABLE_REASON,
     UNSUPPORTED_CONVERSION_PROTOCOL,
     UNSUPPORTED_LENGTH_PROTOCOL,
 )
-from pysymex.execution.opcodes.common.functions.super import UNSUPPORTED_SUPER_PROTOCOL
-from pysymex.models.objects import SymbolicClass, SymbolicMethod, class_registry
-from pysymex.sandbox.errors import SecurityViolationError
+from pysymex._internal.execution.opcodes.common.functions.super import (
+    UNSUPPORTED_SUPER_PROTOCOL,
+    handle_common_load_super_variants,
+)
+from pysymex._internal.execution.opcodes.common.lowering.calls import CallLowerer
+from pysymex._internal.sandbox.errors import SecurityViolationError
+from pysymex._internal.typing.protocols import StackValue
 
 
 class ConcreteReceiver:
@@ -80,6 +89,35 @@ def _instr(opname: str, argval: object = None) -> dis.Instruction:
 def _instr_with_arg(opname: str, arg: int) -> dis.Instruction:
     base = next(iter(dis.get_instructions(compile("x = 1", "<test>", "exec"))))
     return base._replace(opname=opname, arg=arg, argval=arg)
+
+
+def test_load_attr_reads_direct_exception_group_exceptions() -> None:
+    member = SymbolicException.concrete(RuntimeError, "boom")
+    group = SymbolicException.concrete(ExceptionGroup, "group", [member])
+    state = VMState(stack=[group], pc=0)
+
+    result = handle_common_load_method(
+        _instr("LOAD_ATTR", "exceptions"),
+        state,
+        OpcodeDispatcher(),
+    )
+
+    assert result.terminal is False
+    assert result.new_states[0].stack[-1] == (member,)
+
+
+def test_load_attr_reads_direct_stopiteration_value() -> None:
+    stopped = SymbolicException.concrete(StopIteration, 13)
+    state = VMState(stack=[stopped], pc=0)
+
+    result = handle_common_load_method(
+        _instr("LOAD_ATTR", "value"),
+        state,
+        OpcodeDispatcher(),
+    )
+
+    assert result.terminal is False
+    assert result.new_states[0].stack[-1] == 13
 
 
 def _class_body_code(name: str) -> object:
@@ -179,6 +217,12 @@ def test_handle_common_call_consumes_direct_call_null_marker() -> None:
     assert result.terminal is False
     assert len(next_state.stack) == 1
     assert not isinstance(next_state.stack[0], SymbolicNone)
+
+
+def test_call_lowerer_treats_symbolic_method_as_callable() -> None:
+    method = SymbolicMethod("method", func=_receiver_method).bind_to_instance(object())
+
+    assert CallLowerer(7).is_likely_callable(method)
 
 
 def test_handle_common_call_returns_generator_without_entering_frame() -> None:
@@ -595,3 +639,48 @@ def test_handle_common_delete_attr_removes_heap_symbolic_object_attribute() -> N
 
     assert result.terminal is False
     assert result.new_states[0].memory[101] == {"y": 10}
+
+
+def test_handle_common_load_method_marks_unknown_none_receiver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pysymex._internal.execution.opcodes.common.functions.attribute.load.handler as load_ops
+    from pysymex._internal.core.solver.engine.results import SolverResult
+    from pysymex._internal.execution.opcodes.common.functions.attribute.load.handler import (
+        ATTRIBUTE_LOAD_NONE_FEASIBILITY_UNKNOWN,
+    )
+
+    receiver, constraint = SymbolicValue.symbolic("load_attr_unknown_none")
+    state = VMState(stack=[receiver], path_constraints=[constraint], pc=13)
+
+    def unknown_check(*args: object, **kwargs: object) -> SolverResult:
+        _ = args, kwargs
+        return SolverResult.unknown()
+
+    monkeypatch.setattr(load_ops, "_path_satisfiability_result", unknown_check)
+
+    result = handle_common_load_method(_instr("LOAD_ATTR", "dynamic"), state, OpcodeDispatcher())
+
+    assert result.terminal is False
+    assert ATTRIBUTE_LOAD_NONE_FEASIBILITY_UNKNOWN in result.degraded_passes
+
+
+def test_handle_common_store_attr_marks_unknown_none_receiver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pysymex._internal.execution.opcodes.common.functions.attribute.store as store_ops
+    from pysymex._internal.core.solver.engine.results import SolverResult
+
+    receiver, constraint = SymbolicValue.symbolic("store_attr_unknown_none")
+    state = VMState(stack=[1, receiver], path_constraints=[constraint], pc=14)
+
+    def unknown_check(*args: object, **kwargs: object) -> SolverResult:
+        _ = args, kwargs
+        return SolverResult.unknown()
+
+    monkeypatch.setattr(store_ops, "_path_satisfiability_result", unknown_check)
+
+    result = handle_common_store_attr(_instr("STORE_ATTR", "dynamic"), state, OpcodeDispatcher())
+
+    assert result.terminal is False
+    assert store_ops.ATTRIBUTE_NONE_FEASIBILITY_UNKNOWN in result.degraded_passes

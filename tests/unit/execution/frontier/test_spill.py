@@ -4,17 +4,30 @@ from pathlib import Path
 
 import z3
 
-from pysymex.analysis.detectors import Issue, IssueKind, Severity
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.detectors import DeferredDetectorIssue
-from pysymex.execution.frontier import (
-    FrontierRuntimeMode,
+from pysymex._internal.analysis.detectors.detector.types import Issue, Severity
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.detectors.records import DeferredDetectorIssue
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
+from pysymex._internal.execution.frontier.spill.policy import (
     FrontierSpillPolicy,
     FrontierSpillStatus,
-    FrontierWorkStore,
-    state_shadow_digest,
 )
+from pysymex._internal.execution.frontier.spill.policy import (
+    FrontierSpillPolicy as direct_spill_policy,
+)
+from pysymex._internal.execution.frontier.spill.policy import (
+    FrontierSpillPolicy as spill_export_spill_policy,
+)
+from pysymex._internal.execution.frontier.spill.policy import (
+    FrontierSpillStatus as direct_spill_status,
+)
+from pysymex._internal.execution.frontier.spill.policy import (
+    FrontierSpillStatus as spill_export_spill_status,
+)
+from pysymex._internal.execution.frontier.store.core import FrontierWorkStore
 
 
 def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:
@@ -23,6 +36,14 @@ def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:
         filesystem_spill_enabled=True,
         spill_directory=tmp_path / "frontier-spill",
     )
+
+
+def test_frontier_spill_exports_use_direct_policy_owner() -> None:
+    """Frontier and spill package exports stay wired to the policy owner."""
+    assert FrontierSpillPolicy is direct_spill_policy
+    assert FrontierSpillStatus is direct_spill_status
+    assert spill_export_spill_policy is direct_spill_policy
+    assert spill_export_spill_status is direct_spill_status
 
 
 def test_frontier_spill_policy_fails_closed_by_default() -> None:

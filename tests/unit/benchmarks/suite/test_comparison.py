@@ -18,8 +18,8 @@
 
 from __future__ import annotations
 
-from pysymex.benchmarks.suite.comparison import BenchmarkComparator
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult
+from pysymex._internal.benchmarks.suite.comparison import BenchmarkComparator
+from pysymex._internal.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult
 
 
 def test_comparator_detects_regressions() -> None:

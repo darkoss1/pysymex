@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
+    EvidenceOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
     EvidenceCertificate,
     EvidenceCertificateKind,
-    EvidenceOwner,
     EvidenceOutcome,
     EvidenceOutcomeKind,
+)
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
+    EvidenceCertificate as EvidenceCertificateOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
+    EvidenceOutcome as EvidenceOutcomeOwner,
 )
 
 
@@ -274,3 +282,9 @@ def test_non_removing_action_cannot_smuggle_removal_ids() -> None:
 
     assert outcome.valid_removed_capsule_ids == ()
     assert outcome.has_invalid_removal_attempt is True
+
+
+def test_outcomes_public_exports_point_to_direct_owners() -> None:
+    """The package import surface stays wired to the split outcome owners."""
+    assert EvidenceCertificate is EvidenceCertificateOwner
+    assert EvidenceOutcome is EvidenceOutcomeOwner

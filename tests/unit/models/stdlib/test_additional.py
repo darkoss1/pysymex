@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-
 import pytest
 
-from pysymex.models.stdlib import math as math_models
+import pysymex._internal.models.stdlib.math.registry as math_models
 
 
 @pytest.mark.parametrize(

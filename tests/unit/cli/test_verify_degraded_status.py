@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.cli.commands.verify import cmd_verify
-from pysymex.execution.executors.verified.types import VerifiedExecutionResult
+from pysymex._internal.cli.commands.verify import cmd_verify
+from pysymex._internal.execution.executors.verified.types import VerifiedExecutionResult
 
 
 def test_verify_command_returns_failure_for_degraded_analysis(tmp_path: Path) -> None:
@@ -22,8 +22,10 @@ def test_verify_command_returns_failure_for_degraded_analysis(tmp_path: Path) ->
     result = VerifiedExecutionResult(degraded_passes=["solver_unknown_detector_query"])
 
     with (
-        patch("pysymex.cli.commands.verify.load_function_for_cli", return_value=lambda: 1),
-        patch("pysymex.cli.commands.verify._run_verified_execution", return_value=result),
-        patch("pysymex.cli.commands.verify.emit_cli_output"),
+        patch(
+            "pysymex._internal.cli.commands.verify.load_function_for_cli", return_value=lambda: 1
+        ),
+        patch("pysymex._internal.cli.commands.verify._run_verified_execution", return_value=result),
+        patch("pysymex._internal.cli.commands.verify.emit_cli_output"),
     ):
         assert cmd_verify(args) == 1

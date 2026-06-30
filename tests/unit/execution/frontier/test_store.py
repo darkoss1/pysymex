@@ -2,17 +2,21 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
-    FrontierCompactionStatus,
-    FrontierRuntimeMode,
-    FrontierStateSnapshot,
-    FrontierWorkStore,
-    ObligationCapsule,
-    build_shadow_capsule,
-    materialize_frontier_queue_entry,
-    state_shadow_digest,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoint.snapshot.record import FrontierStateSnapshot
+from pysymex._internal.execution.frontier.compaction import FrontierCompactionStatus
+from pysymex._internal.execution.frontier.entries import realize_frontier_queue_entry
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.obligations.capsules import build_shadow_capsule
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
+from pysymex._internal.execution.frontier.store.core import FrontierWorkStore
+from pysymex._internal.execution.frontier.store.core import (
+    FrontierWorkStore as FrontierWorkStoreOwner,
 )
+
+
+def test_frontier_work_store_public_export_points_to_direct_owner() -> None:
+    assert FrontierWorkStore is FrontierWorkStoreOwner
 
 
 def test_frontier_work_store_records_shadow_payloads() -> None:
@@ -27,7 +31,7 @@ def test_frontier_work_store_records_shadow_payloads() -> None:
     assert tuple(store.live_state_ids) == (0,)
     assert store.capsules[0].capsule_id == "path:0"
     assert store.checkpoints == {}
-    assert materialize_frontier_queue_entry(store.entries[0]) is state
+    assert realize_frontier_queue_entry(store.entries[0]) is state
     stats = store.collect_stats()
     assert stats.enabled is True
     assert stats.compact_queueing_enabled is False
@@ -128,10 +132,7 @@ def test_frontier_work_store_counts_lazy_checkpoint_digest_mismatch() -> None:
     store = FrontierWorkStore(FrontierRuntimeMode.POLAR_CEGIS_RUNTIME)
     state = VMState(pc=2)
     store.add_state(0, state)
-    capsules = cast(
-        "dict[int, ObligationCapsule]",
-        object.__getattribute__(store, "_capsules"),
-    )
+    capsules = cast("dict[int, object]", object.__getattribute__(store, "_capsules"))
     capsules[0] = build_shadow_capsule(VMState(pc=99), capsule_id="path:0")
 
     assert store.ensure_checkpoint(0) is None

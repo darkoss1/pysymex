@@ -3,11 +3,10 @@ from __future__ import annotations
 import pytest
 import z3
 
-from pysymex.analysis.runtime.summaries.builder import SummaryBuilder
-from pysymex.core.memory.cow.collections import CowDict
-from pysymex.core.state.types import CallFrame, VMStateError
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import copy_summary_builder
+from pysymex._internal.analysis.runtime.summaries.builder import SummaryBuilder
+from pysymex._internal.core.memory.cow.dicts import CowDict
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame, VMStateError, copy_summary_builder
 
 
 class _UncopyableBuilder:
@@ -72,3 +71,36 @@ def test_vm_state_fork_does_not_share_call_frame_summary_builder() -> None:
         "x",
         "branch_only",
     ]
+
+
+def test_fork_call_stack_reuses_frames_when_no_summary_builders_are_active() -> None:
+    frame = CallFrame("callee", 3, CowDict({"x": 1}), 0)
+    call_stack = [frame]
+
+    forked = CallFrame.fork_stack(call_stack)
+
+    assert forked == [frame]
+    assert forked is not call_stack
+    assert forked[0] is frame
+
+
+def test_fork_call_stack_cow_forks_locals_when_summary_builder_is_active() -> None:
+    builder = SummaryBuilder("callee")
+    frame = CallFrame(
+        function_name="callee",
+        return_pc=3,
+        local_vars=CowDict({"x": 1}),
+        stack_depth=0,
+        summary_builder=builder,
+    )
+
+    forked = CallFrame.fork_stack([frame])
+
+    assert forked[0] is not frame
+    assert forked[0].local_vars is not frame.local_vars
+
+    forked[0].local_vars["x"] = 2
+    forked[0].local_vars["branch_only"] = 3
+
+    assert frame.local_vars["x"] == 1
+    assert "branch_only" not in frame.local_vars

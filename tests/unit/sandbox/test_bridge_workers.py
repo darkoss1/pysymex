@@ -1,21 +1,22 @@
 import json
 import re
-
-import pytest
 from unittest.mock import patch
 
-from pysymex.sandbox.errors import (
+import pytest
+
+from pysymex._internal.config.sandbox.bridge import make_sandbox_config
+from pysymex._internal.config.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.bridge.bytecode import extract_bytecode
+from pysymex._internal.sandbox.bridge.module.extract import extract_module
+from pysymex._internal.sandbox.errors import (
     SandboxExecutionError,
     SandboxProtocolError,
     SandboxResourceError,
-    SandboxSetupError,
     SandboxSecurityError,
+    SandboxSetupError,
     SandboxTimeoutError,
 )
-from pysymex.config.sandbox_bridge import make_sandbox_config
-from pysymex.sandbox.bridge.bytecode import extract_bytecode
-from pysymex.sandbox.bridge.module import extract_module
-from pysymex.sandbox.types import ExecutionStatus, SandboxConfig, SandboxResult
+from pysymex._internal.sandbox.types import ExecutionStatus, SandboxResult
 from tests.unit.sandbox.bridge_test_helpers import extract_json_worker_marker
 
 
@@ -45,8 +46,8 @@ def test_extract_module_rejects_malformed_success_output_as_protocol_error() -> 
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -64,7 +65,7 @@ def test_extract_module_rejects_malformed_success_output_as_protocol_error() -> 
             _ = extra_files
             return SandboxResult(status=ExecutionStatus.SUCCESS, exit_code=0, stdout=b"noise\n")
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(SandboxProtocolError, match="produced no result payload"):
             extract_module(
                 b"def target():\n    return 1\n",
@@ -85,8 +86,8 @@ def test_extract_module_reports_worker_payload_failure_as_execution_error() -> N
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -112,7 +113,7 @@ def test_extract_module_reports_worker_payload_failure_as_execution_error() -> N
                 stdout=(marker + payload).encode("utf-8"),
             )
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(SandboxExecutionError, match="ValueError: bad"):
             extract_module(
                 b"def target():\n    return 1\n",
@@ -144,8 +145,8 @@ def test_run_raw_worker_maps_sandbox_status_to_domain_error(
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -163,7 +164,7 @@ def test_run_raw_worker_maps_sandbox_status_to_domain_error(
             _ = extra_files
             return SandboxResult(status=status, error_message=f"{status.name} failure")
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(expected_error, match=f"{status.name} failure"):
             extract_bytecode(
                 b"value = 5\n",
@@ -184,8 +185,8 @@ def test_json_worker_rejects_duplicate_result_markers_as_protocol_error() -> Non
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -203,10 +204,10 @@ def test_json_worker_rejects_duplicate_result_markers_as_protocol_error() -> Non
             assert isinstance(code, str)
             marker = extract_json_worker_marker(code)
             payload = json.dumps({"ok": True, "payload": {}})
-            stdout = f"{marker}{payload}\n{marker}{payload}\n".encode("utf-8")
+            stdout = f"{marker}{payload}\n{marker}{payload}\n".encode()
             return SandboxResult(status=ExecutionStatus.SUCCESS, exit_code=0, stdout=stdout)
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(SandboxProtocolError, match="multiple result payloads"):
             extract_module(
                 b"def target():\n    return 1\n",
@@ -227,8 +228,8 @@ def test_json_worker_rejects_unexpected_envelope_fields_as_protocol_error() -> N
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -252,7 +253,7 @@ def test_json_worker_rejects_unexpected_envelope_fields_as_protocol_error() -> N
                 stdout=(marker + payload).encode("utf-8"),
             )
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(SandboxProtocolError, match="unexpected envelope"):
             extract_module(
                 b"def target():\n    return 1\n",
@@ -273,8 +274,8 @@ def test_json_worker_rejects_non_boolean_ok_as_protocol_error() -> None:
         def __exit__(
             self,
             exc_type: type[BaseException] | None,
-            exc_val: BaseException | None,
-            exc_tb: object,
+            _exc_val: BaseException | None,
+            _exc_tb: object,
         ) -> None:
             return None
 
@@ -298,7 +299,7 @@ def test_json_worker_rejects_non_boolean_ok_as_protocol_error() -> None:
                 stdout=(marker + payload).encode("utf-8"),
             )
 
-    with patch("pysymex.sandbox.SecureSandbox", FakeSandbox):
+    with patch("pysymex._internal.sandbox.runner.SecureSandbox", FakeSandbox):
         with pytest.raises(SandboxProtocolError, match="'ok' must be boolean"):
             extract_module(
                 b"def target():\n    return 1\n",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.stats.sinks.base import StatsSink
+from pysymex._internal.stats.sinks.base import StatsSink
 
 
 class MockSink(StatsSink):

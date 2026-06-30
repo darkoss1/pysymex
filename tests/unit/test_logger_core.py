@@ -4,15 +4,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.logger import (
-    LogCategory,
-    LogLevel,
-    PysymexLogger,
-    configure_logging,
-    get_logger,
-    reset_logging,
-    set_logger,
-)
+from pysymex._internal.logging.categories import LogCategory
+from pysymex._internal.logging.levels import LogLevel
+from pysymex._internal.logging.logger import PysymexLogger
+from pysymex._internal.logging.root import configure_logging, get_logger, reset_logging
 
 
 class ExplodingMetadata(Mapping[str, object]):
@@ -29,7 +24,7 @@ class ExplodingMetadata(Mapping[str, object]):
 
 
 class TestPysymexLogger:
-    """Test suite for pysymex.logger.PysymexLogger."""
+    """Test suite for pysymex._internal.logging.PysymexLogger."""
 
     def test_set_level(self) -> None:
         """Test set_level behavior."""
@@ -195,7 +190,7 @@ class TestPysymexLogger:
     def test_disabled_debug_does_not_capture_exception(self) -> None:
         """Disabled debug should not call sys.exc_info for exc_info=True."""
         logger = PysymexLogger(level=LogLevel.NORMAL)
-        with patch("pysymex.logger.entry.sys.exc_info") as exc_info:
+        with patch("pysymex._internal.logging.entry.sys.exc_info") as exc_info:
             logger.debug("debug", exc_info=True)
         exc_info.assert_not_called()
 
@@ -203,8 +198,8 @@ class TestPysymexLogger:
         """Disabled debug should not timestamp or construct LogEntry objects."""
         logger = PysymexLogger(level=LogLevel.NORMAL)
         with (
-            patch("pysymex.logger.emit.time.time") as timestamp,
-            patch("pysymex.logger.emit.LogEntry") as log_entry,
+            patch("pysymex._internal.logging.emit.time.time") as timestamp,
+            patch("pysymex._internal.logging.emit.LogEntry") as log_entry,
         ):
             logger.debug("debug")
         timestamp.assert_not_called()
@@ -294,15 +289,6 @@ def test_get_logger() -> None:
     assert logger1 is logger2
 
 
-def test_set_logger() -> None:
-    """Test set_logger behavior."""
-    old_logger = get_logger()
-    new_logger = PysymexLogger()
-    set_logger(new_logger)
-    assert get_logger() is new_logger
-    set_logger(old_logger)
-
-
 def test_configure_logging(tmp_path: Path) -> None:
     """Test configure_logging behavior."""
     fp = tmp_path / "conf.log"
@@ -332,6 +318,16 @@ def test_closed_configured_file_sink_is_removed_from_global_logger(tmp_path: Pat
         assert "after close" in stream.getvalue()
     finally:
         reset_logging()
+
+
+def test_closed_terminal_stream_does_not_poison_later_logging() -> None:
+    """Closed capture streams must not turn best-effort diagnostics into failures."""
+    stream = StringIO()
+    logger = PysymexLogger(level=LogLevel.NORMAL, stream=stream, color=False)
+    stream.close()
+
+    logger.warning("after close")
+    logger.progress(1, 1, "after close")
 
 
 def test_configure_logging_with_bounded_history() -> None:

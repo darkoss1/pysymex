@@ -40,10 +40,10 @@ variables. POLAR uses branch degree as a scheduling signal. The graph is not a p
 
 ## Evidence In Source
 
-- Runtime modes: `pysymex/execution/frontier/modes.py`
-- Work store and entries: `pysymex/execution/frontier`
-- Path manager: `pysymex/execution/strategies/manager/path.py`
-- Constraint interaction graph: `pysymex/core/graph/cig.py`
+- Runtime modes: `pysymex/_internal/execution/frontier/modes.py`
+- Work store and entries: `pysymex/_internal/execution/frontier`
+- Path manager: `pysymex/_internal/execution/strategies/manager/path.py`
+- Constraint interaction graph: `pysymex/_internal/core/graph/cig.py`
 - Tests: `tests/unit/execution/frontier`, `tests/unit/execution/strategies`
 
 ## Limits

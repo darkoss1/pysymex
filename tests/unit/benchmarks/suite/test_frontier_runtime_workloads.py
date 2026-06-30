@@ -6,14 +6,14 @@ from typing import cast
 
 import pytest
 
-from pysymex.benchmarks.suite.workload.frontier import runtime as frontier_runtime_mod
-from pysymex.benchmarks.suite.workload.frontier.runtime import (
+import pysymex._internal.benchmarks.suite.workload.frontier.runtime.benchmarks as frontier_runtime_mod
+from pysymex._internal.benchmarks.suite.workload.frontier.runtime.benchmarks import (
     bench_frontier_runtime_cegis_core_reuse_pruning,
     bench_frontier_runtime_cegis_dominance_pruning,
     bench_frontier_runtime_cegis_exact_pruning,
     bench_frontier_runtime_pressure_compaction,
 )
-from pysymex.execution.strategies.manager.path import AdaptivePathManager
+from pysymex._internal.execution.strategies.manager.path import AdaptivePathManager
 
 
 class _ZeroRemovalManager:
@@ -176,7 +176,7 @@ def test_frontier_runtime_cegis_apply_stops_on_zero_removal() -> None:
 def test_frontier_runtime_cegis_benchmark_tolerates_stale_empty_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pysymex.execution.strategies.manager.path as path_mod
+    import pysymex._internal.execution.strategies.manager.path as path_mod
 
     monkeypatch.setattr(path_mod, "AdaptivePathManager", _NoneSelectingManager)
     bench_frontier_runtime_cegis = cast(

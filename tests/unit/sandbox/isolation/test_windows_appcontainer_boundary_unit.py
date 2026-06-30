@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.sandbox.types import SandboxConfig
+from pysymex._internal.config.sandbox.types import SandboxConfig
 from tests.unit.sandbox.isolation.windows_appcontainer_helpers import (
     InspectableWindowsAppContainerBackend,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
@@ -50,6 +50,25 @@ def test_scan_file_dict_values_list_reports_zero_value_bug(tmp_path: Path) -> No
 
     assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
     assert not _has_issue_kind(result, "target", "INDEX_ERROR")
+    assert not _has_issue_kind(result, "target", "KEY_ERROR")
+
+
+def test_scan_file_live_dict_values_view_reflects_assignment(tmp_path: Path) -> None:
+    target = tmp_path / "dict_values_live_assignment_bug.py"
+    target.write_text(
+        "def target(a: int, b: int) -> int:\n"
+        "    data = {'den': 1, 'sentinel': 5}\n"
+        "    values = data.values()\n"
+        "    data['den'] = a - b\n"
+        "    if a == b and 0 in values:\n"
+        "        return 70 // data['den']\n"
+        "    return len(data)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
     assert not _has_issue_kind(result, "target", "KEY_ERROR")
 
 

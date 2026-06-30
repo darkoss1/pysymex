@@ -6,12 +6,16 @@ from typing import cast
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dict_views import SymbolicDictView
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import ModelResult
-from pysymex.models.containers.dicts.views import DictItemsModel, DictKeysModel, DictValuesModel
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dict_views import SymbolicDictView
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.types.containers.dicts.views import (
+    DictItemsModel,
+    DictKeysModel,
+    DictValuesModel,
+)
+from pysymex._internal.models.contracts.results import ModelResult
 
 
 def _state() -> VMState:

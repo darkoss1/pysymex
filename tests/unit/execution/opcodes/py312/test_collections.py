@@ -4,14 +4,15 @@ import dis
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py312 import collections
+import pysymex._internal.execution.opcodes.py312.collections as collections
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
@@ -68,7 +69,7 @@ def test_handle_dict_merge_update() -> None:
     )
     updated = result.new_states[0].stack[0]
     assert isinstance(updated, SymbolicDict)
-    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("b")).z3_bool))
+    assert z3.is_true(simplify_expr(updated.contains_key(SymbolicString.from_const("b")).z3_bool))
 
 
 def test_handle_dict_merge_update_writes_heap_backed_dict() -> None:
@@ -83,16 +84,21 @@ def test_handle_dict_merge_update_writes_heap_backed_dict() -> None:
     )
     updated = result.new_states[0].memory[100]
     assert isinstance(updated, SymbolicDict)
-    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
+    assert z3.is_true(simplify_expr(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
 
 
 def test_handle_collection_update_set() -> None:
     """Test handle_collection_update behavior (handles SET_UPDATE)."""
-    state = VMState(
-        stack=[SymbolicValue.from_const({1, 2}), SymbolicValue.from_const({3, 4})], pc=0
+    target = SymbolicValue.from_const(set[object]())
+    target.set_runtime_type("set")
+    state = VMState(stack=[target, [3, 4]], pc=0)
+    result = collections.handle_collection_update(
+        _instr("SET_UPDATE", 1), state, OpcodeDispatcher()
     )
-    collections.handle_collection_update(_instr("SET_UPDATE", 1), state, OpcodeDispatcher())
-    assert state.pc == 1
+    assert result.new_states[0].pc == 1
+    updated = result.new_states[0].stack[0]
+    assert isinstance(updated, SymbolicValue)
+    assert updated.value == {3, 4}
 
 
 def test_handle_build_string() -> None:
@@ -136,9 +142,14 @@ def test_handle_list_append() -> None:
 
 def test_handle_set_add() -> None:
     """Test handle_set_add behavior."""
-    state = VMState(stack=[1], pc=0)
+    target = SymbolicValue.from_const(set[object]())
+    target.set_runtime_type("set")
+    state = VMState(stack=[target, 1], pc=0)
     result = collections.handle_set_add(_instr("SET_ADD", 1), state, OpcodeDispatcher())
     assert result.new_states[0].pc == 1
+    updated = result.new_states[0].stack[0]
+    assert isinstance(updated, SymbolicValue)
+    assert updated.value == {1}
 
 
 def test_handle_map_add() -> None:
@@ -161,7 +172,7 @@ def test_handle_map_add_writes_heap_backed_dict() -> None:
     result = collections.handle_map_add(_instr("MAP_ADD", 1), state, OpcodeDispatcher())
     updated = result.new_states[0].memory[101]
     assert isinstance(updated, SymbolicDict)
-    assert z3.is_true(z3.simplify(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
+    assert z3.is_true(simplify_expr(updated.contains_key(SymbolicString.from_const("k")).z3_bool))
 
 
 def test_handle_binary_subscr() -> None:

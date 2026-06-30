@@ -4,21 +4,28 @@ import dis
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import CallFrame, VMStateError, wrap_cow_dict
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.locals import (
-    handle_common_delete_name,
-    handle_common_load_const,
-    handle_common_load_global,
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame, VMStateError, wrap_cow_dict
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.locals.closure import (
     handle_common_load_from_dict_or_deref,
     handle_common_load_from_dict_or_globals,
     handle_common_store_deref,
+)
+from pysymex._internal.execution.opcodes.common.locals.constants import handle_common_load_const
+from pysymex._internal.execution.opcodes.common.locals.fast import (
     handle_common_store_fast,
     handle_common_store_fast_maybe_null,
+)
+from pysymex._internal.execution.opcodes.common.locals.globals import (
+    handle_common_load_global,
     handle_common_store_global,
+)
+from pysymex._internal.execution.opcodes.common.locals.names import (
+    handle_common_delete_name,
     handle_common_store_name,
 )
 
@@ -43,6 +50,21 @@ def test_handle_common_load_global_pushes_null_below_callable() -> None:
     assert isinstance(next_state.stack[0], SymbolicNone)
     assert isinstance(next_state.stack[1], SymbolicValue)
     assert getattr(next_state.stack[1], "model_name") == "range"
+
+
+def test_handle_common_load_global_missing_user_name_is_terminal_name_error() -> None:
+    state = VMState(pc=19)
+
+    result = handle_common_load_global(
+        _instr("LOAD_GLOBAL", "missing_global_name", arg=0),
+        state,
+        OpcodeDispatcher(),
+    )
+
+    assert result.terminal is True
+    assert result.new_states == []
+    assert [issue.kind for issue in result.issues] == [IssueKind.NAME_ERROR]
+    assert state.stack == []
 
 
 def test_handle_common_load_const_preserves_literal_tuple_for_pattern_consumers() -> None:

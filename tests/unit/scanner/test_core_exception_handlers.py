@@ -1,20 +1,8 @@
 """Scanner regressions for exception-handler execution paths."""
 
-import asyncio
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
-import pysymex
-from pysymex.scanner.file import scan_file
-
-
-def _issue_kind(issue: object) -> object:
-    if isinstance(issue, dict):
-        issue_map = cast("Mapping[str, object]", issue)
-        return issue_map.get("kind")
-    raw_kind = getattr(issue, "kind", None)
-    return getattr(raw_kind, "name", raw_kind)
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_modeled_method_call_in_handler_does_not_corrupt_cleanup_stack(tmp_path: Path) -> None:
@@ -32,13 +20,137 @@ def test_modeled_method_call_in_handler_does_not_corrupt_cleanup_stack(tmp_path:
         encoding="utf-8",
     )
 
-    result = scan_file(target, use_sandbox=False)
+    result = scan_file(target, use_sandbox=False, auto_tune=False)
 
     assert "unsupported_vm_state" not in result.degraded_passes
     assert not any(
         issue.get("kind") == "UNKNOWN"
         and isinstance(message := issue.get("message"), str)
         and "COPY" in message
+        for issue in result.issues
+    )
+
+
+def test_for_loop_inside_with_cleanup_preserves_return_stack(tmp_path: Path) -> None:
+    """CPython 3.12+ ``END_FOR; POP_TOP`` cleanup must not consume ``with`` stack items."""
+    target = tmp_path / "with_loop_return_cleanup.py"
+    target.write_text(
+        "class Scope:\n"
+        "    def __enter__(self):\n"
+        "        self.events = [1]\n"
+        "        return self\n"
+        "\n"
+        "    def __exit__(self, exc_type, exc, tb):\n"
+        "        self.events.append(len(self.events))\n"
+        "        return False\n"
+        "\n"
+        "\n"
+        "def target(a: int, b: int, c: int, d: int, e: int) -> int:\n"
+        "    total = 0\n"
+        "    with Scope() as scope:\n"
+        "        for value in (a, b, c):\n"
+        "            if value > 0:\n"
+        "                total += value\n"
+        "            else:\n"
+        "                total -= value\n"
+        "        return total + 100 // 0\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        max_paths=120,
+        max_iterations=5000,
+        timeout=5,
+        no_cache=True,
+    )
+
+    assert "unsupported_vm_state" not in result.degraded_passes
+    assert not any(
+        issue.get("kind") == "UNKNOWN"
+        and isinstance(message := issue.get("message"), str)
+        and ("SWAP" in message or "POP_TOP" in message or "END_FOR" in message)
+        for issue in result.issues
+    )
+
+
+def test_subscript_exception_inside_with_enters_handler_with_exception_stack(
+    tmp_path: Path,
+) -> None:
+    """Handled ``BINARY_SUBSCR`` errors must populate CPython exception stack items."""
+    target = tmp_path / "with_subscript_exception_stack.py"
+    target.write_text(
+        "class Scope:\n"
+        "    def __enter__(self):\n"
+        "        return self\n"
+        "\n"
+        "    def __exit__(self, exc_type, exc, tb):\n"
+        "        return False\n"
+        "\n"
+        "\n"
+        "def target(key: str) -> int:\n"
+        "    data = {'present': 1}\n"
+        "    with Scope():\n"
+        "        return data[key]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        max_paths=80,
+        max_iterations=5000,
+        timeout=8,
+        no_cache=True,
+    )
+
+    assert any(issue.get("kind") == "KEY_ERROR" for issue in result.issues)
+    assert "unsupported_vm_state" not in result.degraded_passes
+    assert not any(
+        issue.get("kind") == "UNKNOWN"
+        and isinstance(message := issue.get("message"), str)
+        and ("COPY" in message or "POP_TOP" in message or "PUSH_EXC_INFO" in message)
+        for issue in result.issues
+    )
+
+
+def test_compare_exception_inside_with_enters_handler_with_exception_stack(
+    tmp_path: Path,
+) -> None:
+    """Handled ``COMPARE_OP`` TypeError paths must not jump to handlers bare."""
+    target = tmp_path / "with_compare_exception_stack.py"
+    target.write_text(
+        "class Scope:\n"
+        "    def __enter__(self):\n"
+        "        return self\n"
+        "\n"
+        "    def __exit__(self, exc_type, exc, tb):\n"
+        "        return False\n"
+        "\n"
+        "\n"
+        "def target(value: object) -> int:\n"
+        "    with Scope():\n"
+        "        if value > 0:\n"
+        "            return 1\n"
+        "        return 2\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        max_paths=80,
+        max_iterations=5000,
+        timeout=8,
+        no_cache=True,
+    )
+
+    assert "unsupported_vm_state" not in result.degraded_passes
+    assert not any(
+        issue.get("kind") == "UNKNOWN"
+        and isinstance(message := issue.get("message"), str)
+        and ("COPY" in message or "POP_TOP" in message or "PUSH_EXC_INFO" in message)
         for issue in result.issues
     )
 
@@ -60,82 +172,6 @@ def test_scan_file_reports_bare_reraise_of_caught_zero_division(tmp_path: Path) 
         issue.get("kind") == "UNHANDLED_EXCEPTION"
         and "ZeroDivisionError" in str(issue.get("message"))
         and issue.get("function_name") == "target"
-        for issue in result.issues
-    )
-
-
-def test_analyze_code_caught_zero_division_does_not_report_builtin_exception_name() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "try:\n    result = 10 // y\nexcept ZeroDivisionError:\n    result = x + 1\n",
-            symbolic_vars={"x": "int", "y": "int"},
-            max_paths=30,
-            max_depth=60,
-            max_iterations=1500,
-            timeout=1.0,
-        )
-    )
-
-    assert not any(
-        _issue_kind(issue)
-        in {"DIVISION_BY_ZERO", "UNHANDLED_EXCEPTION", "NAME_ERROR", "UNBOUND_VARIABLE"}
-        for issue in result.issues
-    )
-
-
-def test_analyze_code_caught_runtime_error_constructor_is_handled() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "try:\n"
-            "    if flag:\n"
-            "        raise RuntimeError('caught fuzz raise')\n"
-            "    result = 1\n"
-            "except RuntimeError:\n"
-            "    result = 0\n",
-            symbolic_vars={"flag": "bool"},
-            max_paths=30,
-            max_depth=60,
-            max_iterations=1500,
-            timeout=1.0,
-        )
-    )
-
-    assert "unmodeled_call_abstraction" not in result.degraded_passes
-    assert not any(
-        _issue_kind(issue) in {"UNHANDLED_EXCEPTION", "NAME_ERROR", "UNBOUND_VARIABLE"}
-        for issue in result.issues
-    )
-
-
-def test_analyze_code_uncaught_runtime_error_constructor_is_reported() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "if flag:\n    raise RuntimeError('uncaught branch raise')\nresult = 1\n",
-            symbolic_vars={"flag": "bool"},
-            max_paths=30,
-            max_depth=60,
-            max_iterations=1500,
-            timeout=1.0,
-        )
-    )
-
-    assert "unmodeled_call_abstraction" not in result.degraded_passes
-    assert any(_issue_kind(issue) == "UNHANDLED_EXCEPTION" for issue in result.issues)
-
-
-def test_analyze_code_key_error_class_is_caught_by_lookup_error() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "try:\n    raise KeyError\nexcept LookupError:\n    result = 5\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2000,
-            timeout=2.0,
-        )
-    )
-
-    assert not any(
-        _issue_kind(issue) in {"UNHANDLED_EXCEPTION", "UNBOUND_VARIABLE", "NAME_ERROR"}
         for issue in result.issues
     )
 
@@ -203,5 +239,89 @@ def test_scan_file_mismatched_local_custom_exception_is_reported(tmp_path: Path)
 
     assert any(
         issue.get("kind") == "UNHANDLED_EXCEPTION" and "OtherError" in str(issue.get("message", ""))
+        for issue in result.issues
+    )
+
+
+def test_scan_file_explicit_value_error_is_specific_issue_kind(tmp_path: Path) -> None:
+    target = tmp_path / "explicit_value_error_method.py"
+    target.write_text(
+        "class Handle:\n"
+        "    def __init__(self) -> None:\n"
+        "        self.closed = False\n"
+        "\n"
+        "    def close(self) -> None:\n"
+        "        self.closed = True\n"
+        "\n"
+        "    def read(self) -> int:\n"
+        "        if self.closed:\n"
+        "            raise ValueError('closed handle')\n"
+        "        return 3\n"
+        "\n"
+        "\n"
+        "def target(mode: int) -> int:\n"
+        "    handle = Handle()\n"
+        "    if mode == 1:\n"
+        "        handle.close()\n"
+        "        return handle.read()\n"
+        "    return handle.read()\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        no_cache=True,
+        max_paths=80,
+        max_depth=300,
+        max_iterations=5000,
+        timeout=8,
+    )
+
+    assert any(
+        issue.get("kind") == "VALUE_ERROR" and "closed handle" in str(issue.get("message", ""))
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "UNHANDLED_EXCEPTION" and "ValueError" in str(issue.get("message", ""))
+        for issue in result.issues
+    )
+
+
+def test_scan_file_explicit_attribute_error_is_specific_issue_kind(tmp_path: Path) -> None:
+    target = tmp_path / "explicit_attribute_error_getattr.py"
+    target.write_text(
+        "class Node:\n"
+        "    def __getattr__(self, name: str) -> int:\n"
+        "        if name == 'soft':\n"
+        "            return 3\n"
+        "        raise AttributeError(name)\n"
+        "\n"
+        "\n"
+        "def target(mode: int) -> int:\n"
+        "    node = Node()\n"
+        "    if mode == 1:\n"
+        "        return node.missing_hard\n"
+        "    return node.soft\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        no_cache=True,
+        max_paths=80,
+        max_depth=300,
+        max_iterations=5000,
+        timeout=8,
+    )
+
+    assert any(
+        issue.get("kind") == "ATTRIBUTE_ERROR" and "missing_hard" in str(issue.get("message", ""))
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "UNHANDLED_EXCEPTION"
+        and "AttributeError" in str(issue.get("message", ""))
         for issue in result.issues
     )

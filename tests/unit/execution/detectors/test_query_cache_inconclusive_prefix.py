@@ -2,15 +2,75 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.detectors import (
-    DetectorQueryContext,
-    DetectorQueryEvent,
-    SOLVER_UNKNOWN_DETECTOR_QUERY_DEGRADED_PASS,
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.execution.detectors.finalization import filter_final_issues
+from pysymex._internal.execution.detectors.query.cache.decisions import DetectorQueryDecision
+from pysymex._internal.execution.detectors.query.cache.policy import detector_query_is_sat
+from pysymex._internal.execution.detectors.query.cache.policy import (
+    detector_query_is_sat as detector_query_is_sat_owner,
 )
-from pysymex.execution.detectors.query.cache import detector_query_is_sat
-from pysymex.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.detectors.query.cache.publication import (
+    publish_detector_query_decision,
+)
+from pysymex._internal.execution.detectors.records import (
+    DeferredDetectorIssue,
+    DetectorQueryCacheEntry,
+)
+from pysymex._internal.execution.detectors.telemetry import DetectorQueryContext, DetectorQueryEvent
+from pysymex._internal.execution.detectors.unknown import (
+    SOLVER_UNKNOWN_DETECTOR_QUERY_DEGRADED_PASS,
+    record_detector_query_unknown,
+)
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.session.state.core import ExecutionSession
 from tests.unit.execution.executors.core_executor_helpers import UnknownSolver
+
+
+def test_detector_query_cache_public_export_points_to_direct_owner() -> None:
+    assert detector_query_is_sat is detector_query_is_sat_owner
+
+
+def test_detector_package_exports_point_to_direct_owners() -> None:
+    assert DeferredDetectorIssue is DeferredDetectorIssue
+    assert DetectorQueryCacheEntry is DetectorQueryCacheEntry
+    assert filter_final_issues is filter_final_issues
+    assert record_detector_query_unknown is record_detector_query_unknown
+    assert (
+        SOLVER_UNKNOWN_DETECTOR_QUERY_DEGRADED_PASS == SOLVER_UNKNOWN_DETECTOR_QUERY_DEGRADED_PASS
+    )
+
+
+def test_detector_query_publication_records_unknown_without_cache_write() -> None:
+    """Detector-query publication owns telemetry and unknown fallback side effects."""
+    session = ExecutionSession()
+    observed: list[DetectorQueryEvent] = []
+    constraints = [z3.Bool("detector_query_publication_unknown")]
+    session.add_detector_query_event_observer(observed.append)
+
+    publish_detector_query_decision(
+        session=session,
+        cache_key=123,
+        cached_entries=None,
+        constraints=constraints,
+        raw_constraints_count=1,
+        inconclusive_prefix_len=None,
+        query_context=DetectorQueryContext(detector_name="unit", issue_kind="UNKNOWN"),
+        decision=DetectorQueryDecision(
+            result=False,
+            result_source="solver_unknown",
+            witness_used=False,
+            cacheable=False,
+            unknown_reason="unit unknown",
+        ),
+    )
+
+    assert session.detector_query_cache == {}
+    assert session.degraded_passes == [SOLVER_UNKNOWN_DETECTOR_QUERY_DEGRADED_PASS]
+    assert session.fallback_events[-1].reason == "unit unknown"
+    assert len(observed) == 1
+    assert observed[0].detector_name == "unit"
+    assert observed[0].result_source == "solver_unknown"
+    assert observed[0].constraint_excerpt == tuple(constraints)
 
 
 def test_detector_feasibility_skips_solver_for_exact_inconclusive_path_prefix() -> None:
@@ -78,6 +138,44 @@ def test_detector_feasibility_accepts_witness_for_inconclusive_path_prefix() -> 
     assert result is True
     assert unknown_solver.prefix_args == []
     assert executor.session.degraded_passes == []
+
+
+def test_detector_feasibility_passes_matching_known_sat_path_prefix_to_solver() -> None:
+    """A detector query may reuse only a prefix already proved SAT by execution."""
+    executor = SymbolicExecutor(ExecutionConfig(max_paths=2, max_iterations=20))
+    unknown_solver = UnknownSolver()
+    executor.solver = unknown_solver
+    prefix = z3.Bool("detector_known_prefix")
+    extra = z3.Bool("detector_known_extra")
+
+    result = detector_query_is_sat(
+        session=executor.session,
+        solver=executor.solver,
+        constraints=[z3.BoolVal(True), prefix, extra],
+        known_sat_path_prefix=(z3.BoolVal(True), prefix),
+    )
+
+    assert result is False
+    assert unknown_solver.prefix_args == [1]
+
+
+def test_detector_feasibility_rejects_mismatched_known_sat_path_prefix() -> None:
+    """Prefix proof is ignored when the detector query does not start with that path."""
+    executor = SymbolicExecutor(ExecutionConfig(max_paths=2, max_iterations=20))
+    unknown_solver = UnknownSolver()
+    executor.solver = unknown_solver
+    prefix = z3.Bool("detector_mismatched_prefix")
+    extra = z3.Bool("detector_mismatched_extra")
+
+    result = detector_query_is_sat(
+        session=executor.session,
+        solver=executor.solver,
+        constraints=[extra],
+        known_sat_path_prefix=(prefix,),
+    )
+
+    assert result is False
+    assert unknown_solver.prefix_args == [None]
 
 
 def test_detector_feasibility_emits_bounded_unknown_query_telemetry() -> None:

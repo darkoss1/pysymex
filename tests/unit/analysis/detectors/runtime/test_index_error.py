@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/index_error.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/index_error.py."""
 
 from __future__ import annotations
 
@@ -7,24 +7,24 @@ import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.index_error.bounds import (
+from pysymex._internal.analysis.detectors.runtime.indexing.bounds.core import (
     pure_check_index_bounds,
 )
-from pysymex.analysis.detectors.runtime.index_error.bounds import (
+from pysymex._internal.analysis.detectors.runtime.indexing.bounds.core import (
     pure_check_index_bounds as canonical_pure_check_index_bounds,
 )
-from pysymex.analysis.detectors.runtime.index_error.detector import (
+from pysymex._internal.analysis.detectors.runtime.indexing.detector import (
     IndexErrorDetector,
 )
-from pysymex.analysis.detectors.runtime.index_error.detector import (
+from pysymex._internal.analysis.detectors.runtime.indexing.detector import (
     IndexErrorDetector as CanonicalIndexErrorDetector,
 )
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 class _RecordingZ3Checker:
@@ -63,7 +63,7 @@ def _make_instruction(
 
 
 class TestIndexErrorDetector:
-    """Test suite for pysymex.analysis.detectors.detector.IndexErrorDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.IndexErrorDetector."""
 
     def test_check_ignores_non_subscript_opcode(self) -> None:
         """Return None when instruction is not BINARY_SUBSCR."""
@@ -83,8 +83,8 @@ class TestIndexErrorDetector:
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is None
 
-    def test_check_reports_unbounded_symbolic_index(self) -> None:
-        """Report INDEX_ERROR when symbolic index can be arbitrarily large."""
+    def test_check_keeps_unknown_container_bounds_inconclusive(self) -> None:
+        """Do not infer INDEX_ERROR from index magnitude without a container length."""
         detector = IndexErrorDetector()
         instruction = _make_instruction("BINARY_SUBSCR")
         container, container_constraint = SymbolicValue.symbolic("runtime_container")
@@ -96,8 +96,8 @@ class TestIndexErrorDetector:
         )
         checker = _RecordingZ3Checker()
         issue = detector.check(state, instruction, checker)
-        assert issue is not None
-        assert len(checker.calls) == 1
+        assert issue is None
+        assert checker.calls == []
 
     def test_check_reports_out_of_bounds_for_list_pop_call(self) -> None:
         """Report INDEX_ERROR for list.pop(symbolic_index) call pattern."""
@@ -311,7 +311,7 @@ class TestIndexErrorDetector:
         index, index_constraint = SymbolicValue.symbolic_int("unknown_bounds_index")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(stack=[[1, 2, 3], index], path_constraints=[index_constraint], pc=1),
@@ -319,7 +319,7 @@ class TestIndexErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is not None
         assert "Path feasibility inconclusive" in issue.message
@@ -336,7 +336,7 @@ class TestIndexErrorDetector:
         index, index_constraint = SymbolicValue.symbolic_int("unknown_large_index")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(
@@ -348,7 +348,7 @@ class TestIndexErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None
 

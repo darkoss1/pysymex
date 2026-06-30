@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/none_dereference.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/none/dereference.py."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.none_dereference import (
+from pysymex._internal.analysis.detectors.runtime.none.dereference import (
     NoneDereferenceDetector,
     pure_check_none_deref,
 )
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 class _RecordingZ3Checker:
@@ -52,7 +52,7 @@ def _make_instruction(
 
 
 class TestNoneDereferenceDetector:
-    """Test suite for pysymex.analysis.detectors.detector.NoneDereferenceDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.NoneDereferenceDetector."""
 
     def test_check_reports_concrete_none_dereference(self) -> None:
         """Report NULL_DEREFERENCE when concrete None is dereferenced."""
@@ -156,10 +156,10 @@ def test_pure_check_none_deref_does_not_report_definite_issue_on_solver_unknown(
     obj, type_constraint = SymbolicValue.symbolic("unknown_none_deref_obj")
     solver = IncrementalSolver(timeout_ms=1000)
     solver.set_deadline(time.perf_counter() - 1.0)
-    token = active_incremental_solver.set(solver)
+    token = SolverContext.active.set(solver)
     try:
         issue = pure_check_none_deref(obj, "missing", [type_constraint], pc=5)
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert issue is None

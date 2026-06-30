@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/resource_leak.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/resource/leak.py."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from typing import cast
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.analysis.detectors.runtime.resource_leak import ResourceLeakDetector
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.types import CallFrame, wrap_cow_dict
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.resource.leak import ResourceLeakDetector
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame, wrap_cow_dict
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _make_instruction(
@@ -40,7 +40,7 @@ def _make_instruction(
 
 
 class TestResourceLeakDetector:
-    """Test suite for pysymex.analysis.detectors.runtime.ResourceLeakDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.runtime.ResourceLeakDetector."""
 
     def test_check_tracks_open_and_reports_on_return(self) -> None:
         """Report RESOURCE_LEAK when an opened resource is not closed before return."""
@@ -189,11 +189,11 @@ class TestResourceLeakDetector:
         state.open_resources = 1
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(state, return_instr, lambda _constraints: True)
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None
         assert state.open_resources == 1

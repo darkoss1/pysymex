@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins import FormatModel, OrdModel
-from pysymex.models.builtins.base import is_raised_exception_effect
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.reflection.identity import FormatModel
+from pysymex._internal.models.builtins.text.codepoints import OrdModel
+from pysymex._internal.models.contracts.results import SideEffects
 
 
 def _state() -> VMState:
@@ -20,7 +22,7 @@ def test_ord_decodes_literal_symbolic_string_and_reports_invalid_length() -> Non
 
     assert isinstance(valid.value, SymbolicValue)
     assert valid.value.value == ord("A")
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -31,8 +33,8 @@ def test_ord_preserves_symbolic_single_character_codepoint_relation() -> None:
     result = OrdModel().apply([character], {}, _state())
 
     assert isinstance(result.value, SymbolicValue)
-    assert z3.is_true(z3.simplify(result.value.is_int))
-    assert z3.is_false(z3.simplify(result.value.is_bool))
+    assert z3.is_true(simplify_expr(result.value.is_int))
+    assert z3.is_false(simplify_expr(result.value.is_bool))
     solver = z3.Solver()
     solver.add(*result.constraints, source_constraint)
     solver.add(result.value.z3_int != z3.StrToCode(character.z3_str))

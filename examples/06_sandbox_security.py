@@ -16,7 +16,7 @@ def unsafe_file_leak(filepath: str) -> str:
     The sandbox will block this operation, preventing unauthorized read access.
     """
     # The 'open' builtin is disabled/restricted inside the sandbox
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return f.read()
 
 

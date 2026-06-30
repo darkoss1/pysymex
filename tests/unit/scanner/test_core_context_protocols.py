@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_executes_safe_custom_enter_result(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_scan_file_reports_uncaught_replacement_from_custom_exit(tmp_path: Path)
 
     assert not any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
     assert any(
-        issue.get("kind") == "UNHANDLED_EXCEPTION" and "ValueError" in str(issue.get("message", ""))
+        issue.get("kind") == "VALUE_ERROR" and "replacement" in str(issue.get("message", ""))
         for issue in result.issues
     )
 

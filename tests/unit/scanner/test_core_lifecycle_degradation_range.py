@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.execution.calls.construction_fallbacks import (
+from pysymex._internal.execution.calls.construction_fallbacks import (
     UNSUPPORTED_CONSTRUCTION_PROTOCOL,
 )
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_suppresses_range_warning_after_construction_degradation(

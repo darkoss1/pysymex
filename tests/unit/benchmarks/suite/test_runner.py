@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _pytest.capture import CaptureFixture
 from pytest import MonkeyPatch
 
-from pysymex.benchmarks.suite import runner as runner_mod
-from pysymex.benchmarks.suite.core import Benchmark, BenchmarkSuite
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkMode
+import pysymex._internal.benchmarks.suite.runner as runner_mod
+from pysymex._internal.benchmarks.suite.core import Benchmark, BenchmarkSuite
+from pysymex._internal.benchmarks.suite.types import BenchmarkCategory, BenchmarkMode
 
 
 def _small_suite() -> BenchmarkSuite:
@@ -18,7 +17,6 @@ def _small_suite() -> BenchmarkSuite:
             func=lambda: {"instructions": 1},
             category=BenchmarkCategory.SOLVING,
             modes=frozenset((BenchmarkMode.QUICK,)),
-            aliases=("legacy_quick_case",),
         )
     )
     suite.add(
@@ -34,76 +32,60 @@ def _small_suite() -> BenchmarkSuite:
 
 def test_run_benchmarks_all_mode_lists_every_case(
     monkeypatch: MonkeyPatch,
-    capsys: CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(runner_mod, "create_builtin_benchmarks", _small_suite)
 
-    status = runner_mod.run_benchmarks(mode="all", list_cases=True)
-    captured = capsys.readouterr()
+    result = runner_mod.run_benchmarks(mode="all", list_cases=True)
 
-    assert status == 0
-    assert "quick_case" in captured.out
-    assert "stress_case" in captured.out
+    assert result.exit_code == 0
+    assert result.inventory == ["quick_case", "stress_case"]
 
 
 def test_run_benchmarks_default_list_remains_quick_only(
     monkeypatch: MonkeyPatch,
-    capsys: CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(runner_mod, "create_builtin_benchmarks", _small_suite)
 
-    status = runner_mod.run_benchmarks(list_cases=True)
-    captured = capsys.readouterr()
+    result = runner_mod.run_benchmarks(list_cases=True)
 
-    assert status == 0
-    assert "quick_case" in captured.out
-    assert "stress_case" not in captured.out
+    assert result.exit_code == 0
+    assert result.inventory == ["quick_case"]
 
 
-def test_run_benchmarks_writes_requested_markdown_format(
+def test_run_benchmarks_returns_selected_results(
     monkeypatch: MonkeyPatch,
-    capsys: CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(runner_mod, "create_builtin_benchmarks", _small_suite)
-    output_path = tmp_path / "bench.md"
 
-    status = runner_mod.run_benchmarks(
-        output_path=output_path,
-        format="markdown",
+    result = runner_mod.run_benchmarks(
         iterations=1,
         warmup=0,
         mode="quick",
     )
-    captured = capsys.readouterr()
 
-    assert status == 0
-    assert "| quick_case |" in output_path.read_text(encoding="utf-8")
-    assert output_path.read_text(encoding="utf-8").startswith("| Benchmark |")
-    assert "| quick_case |" in captured.out
+    assert result.exit_code == 0
+    assert [item.name for item in result.results] == ["quick_case"]
+    assert result.inventory == ["quick_case"]
 
 
-def test_run_benchmarks_normalizes_legacy_baseline_alias(
+def test_run_benchmarks_compares_baseline_current_names_only(
     monkeypatch: MonkeyPatch,
-    capsys: CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(runner_mod, "create_builtin_benchmarks", _small_suite)
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
-        '[{"name":"legacy_quick_case","category":"SOLVING","mean_seconds":0.000000001}]',
+        '[{"name":"quick_case","category":"SOLVING","mean_seconds":0.000000001}]',
         encoding="utf-8",
     )
 
-    status = runner_mod.run_benchmarks(
+    result = runner_mod.run_benchmarks(
         baseline_path=baseline_path,
         iterations=1,
         warmup=0,
         mode="quick",
         threshold_percent=0,
     )
-    captured = capsys.readouterr()
 
-    assert status == 1
-    assert "**quick_case**" in captured.out
-    assert "legacy_quick_case" not in captured.out
+    assert result.exit_code == 1
+    assert [regression.benchmark_name for regression in result.regressions] == ["quick_case"]

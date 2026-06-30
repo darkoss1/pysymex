@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pysymex.contracts import ensures
-from pysymex.contracts.types import ContractKind, VerificationResult
-from pysymex.execution.executors.verified.api import check_arithmetic, verify
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex._internal.execution.executors.verified.api import check_arithmetic, verify
+from pysymex.contracts import ContractKind, ensures
 
 
 def test_verify_does_not_report_fixed_width_overflow_for_python_int_addition() -> None:

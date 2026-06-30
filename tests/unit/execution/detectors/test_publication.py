@@ -3,9 +3,18 @@ from __future__ import annotations
 import dis
 from collections.abc import Callable
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.detectors.publication import should_defer_dynamic_with_issue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.detectors.publication.context.manager import (
+    should_defer_dynamic_with_issue,
+    should_replace_dynamic_exit_issue,
+)
+from pysymex._internal.execution.detectors.publication.context.manager import (
+    should_defer_dynamic_with_issue as direct_should_defer_dynamic_with_issue,
+)
+from pysymex._internal.execution.detectors.publication.context.manager import (
+    should_replace_dynamic_exit_issue as direct_should_replace_dynamic_exit_issue,
+)
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _dispatcher_for(
@@ -16,6 +25,11 @@ def _dispatcher_for(
     dispatcher.set_instructions(instructions)
     dispatcher.set_exception_entries(list(getattr(dis.Bytecode(function), "exception_entries", ())))
     return dispatcher, instructions
+
+
+def test_publication_exports_use_direct_context_owner() -> None:
+    assert should_defer_dynamic_with_issue is direct_should_defer_dynamic_with_issue
+    assert should_replace_dynamic_exit_issue is direct_should_replace_dynamic_exit_issue
 
 
 def test_raise_inside_with_body_defers_to_context_manager_exit() -> None:

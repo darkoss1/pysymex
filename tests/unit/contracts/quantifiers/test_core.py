@@ -1,26 +1,19 @@
 import ast
-from unittest.mock import patch
 
 import pytest
 import z3
-from pysymex.contracts.quantifiers.extraction import (
-    extract_quantifiers,
-    replace_quantifiers_with_z3,
-)
-from pysymex.contracts.quantifiers.factories import (
+
+from pysymex._internal.contracts.quantifiers.factories import (
     exists,
     exists_unique,
     forall,
 )
-from pysymex.contracts.quantifiers.instantiation import QuantifierInstantiator
-from pysymex.contracts.quantifiers.parser import QuantifierParser
-from pysymex.contracts.quantifiers.translator import (
+from pysymex._internal.contracts.quantifiers.parser import QuantifierParser
+from pysymex._internal.contracts.quantifiers.translator import (
     ConditionTranslator,
     parse_condition_to_z3,
 )
-from pysymex.contracts.quantifiers.types import Quantifier, QuantifierKind
-from pysymex.contracts.quantifiers.verification import QuantifierVerifier
-from pysymex.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.contracts.quantifiers.types import Quantifier, QuantifierKind
 
 
 class TestQuantifierParser:
@@ -161,98 +154,6 @@ def test_exists_unique() -> None:
     assert q.kind == QuantifierKind.UNIQUE
 
 
-class TestQuantifierInstantiator:
-    """Test suite for QuantifierInstantiator."""
-
-    def test_instantiate_bounded(self) -> None:
-        """Test instantiate_bounded behavior."""
-        q = forall("i", (0, 2), "i >= 0")
-        inst = QuantifierInstantiator()
-        solver = IncrementalSolver()
-        instances = inst.instantiate_bounded(q, solver)
-        assert len(instances) == 2
-
-    def test_add_triggers(self) -> None:
-        """Test add_triggers behavior."""
-        q = forall("i", (0, 2), "i >= 0")
-        inst = QuantifierInstantiator()
-        f = z3.Function("f", z3.IntSort(), z3.IntSort())
-        z3_var = q.variables[0].z3_var
-        assert z3_var is not None
-        res = inst.add_triggers(q, [f(z3_var)])
-        assert z3.is_bool(res)
-
-    def test_instantiate_bounded_respects_inclusive_endpoints(self) -> None:
-        parser = QuantifierParser()
-        q = parser.parse("forall(i, 0 < i <= 2, i == 2)")
-        assert q is not None
-
-        instances = QuantifierInstantiator().instantiate_bounded(q)
-        assert len(instances) == 2
-        assert z3.is_false(z3.simplify(instances[0]))
-        assert z3.is_true(z3.simplify(instances[1]))
-
-
-class TestQuantifierVerifier:
-    """Test suite for QuantifierVerifier."""
-
-    def test_verify_forall(self) -> None:
-        """Test verify_forall behavior."""
-        v = QuantifierVerifier(timeout_ms=100)
-        q = forall("i", (0, 10), "i >= 0")
-        valid, counterexample = v.verify_forall(q)
-        assert valid is True
-        assert counterexample is None
-
-    def test_verify_exists(self) -> None:
-        """Test verify_exists behavior."""
-        v = QuantifierVerifier(timeout_ms=100)
-        q = exists("i", (0, 10), "i == 5")
-        sat, witness = v.verify_exists(q)
-        assert sat is True
-        assert witness == {"i": 5}
-
-    def test_verify_forall_returns_counterexample_assignment(self) -> None:
-        verifier = QuantifierVerifier(timeout_ms=100)
-        valid, counterexample = verifier.verify_forall(forall("i", (0, 10), "i > 0"))
-
-        assert valid is False
-        assert counterexample == {"i": 0}
-
-    def test_existential_witness_is_not_captured_by_same_named_outer_symbol(self) -> None:
-        verifier = QuantifierVerifier(timeout_ms=100)
-        outer_i = z3.Int("i")
-
-        sat, witness = verifier.verify_exists(exists("i", (0, 10), "i == 5"), [outer_i == 7])
-
-        assert sat is True
-        assert witness == {"i": 5}
-
-    def test_wrong_quantifier_kind_is_rejected(self) -> None:
-        verifier = QuantifierVerifier(timeout_ms=100)
-        with pytest.raises(ValueError, match="FORALL"):
-            verifier.verify_forall(exists("i", (0, 1), "i == 0"))
-        with pytest.raises(ValueError, match="EXISTS"):
-            verifier.verify_exists(forall("i", (0, 1), "i == 0"))
-
-    def test_solver_failure_is_inconclusive(self) -> None:
-        verifier = QuantifierVerifier(timeout_ms=100)
-        quantifier = forall("i", (0, 1), "i >= 0")
-        with patch(
-            "pysymex.contracts.quantifiers.verification.IncrementalSolver.check",
-            side_effect=RuntimeError("solver failed"),
-        ):
-            assert verifier.verify_forall(quantifier) == (None, None)
-
-
-def test_extract_quantifiers() -> None:
-    """Test extract_quantifiers behavior."""
-    text = "forall(i, 0 <= i < 5, i > 0) and foo"
-    qs = extract_quantifiers(text)
-    assert len(qs) == 1
-    assert qs[0].kind == QuantifierKind.FORALL
-
-
 def test_quantifier_factories_reject_callable_bodies_explicitly() -> None:
     with pytest.raises(TypeError, match="must be string predicates"):
         forall("i", (0, 1), lambda i: i == 0)  # type: ignore[arg-type]
@@ -261,37 +162,6 @@ def test_quantifier_factories_reject_callable_bodies_explicitly() -> None:
 def test_quantifier_factory_accepts_signed_integer_bounds() -> None:
     quantifier = forall("i", (-2, 2), "i >= -2")
     assert z3.is_bool(quantifier.to_z3())
-
-
-def test_extract_quantifiers_accepts_keyword_whitespace() -> None:
-    """Extraction accepts the same whitespace form as QuantifierParser."""
-    qs = extract_quantifiers("forall (i, 0 <= i < 1, i >= 0)")
-    assert len(qs) == 1
-    assert qs[0].kind == QuantifierKind.FORALL
-
-
-def test_replace_quantifiers_with_z3() -> None:
-    """Test replace_quantifiers_with_z3 behavior."""
-    text = "forall(i, 0 <= i < 5, i > 0) and x > 0"
-    res = replace_quantifiers_with_z3(text, {"x": z3.Int("x")})
-    assert z3.is_bool(res)
-
-
-def test_replace_quantifiers_preserves_or_and_not() -> None:
-    """Boolean composition around quantified clauses must be retained exactly."""
-    x = z3.Int("x")
-    formula = replace_quantifiers_with_z3(
-        "forall(i, 0 <= i < 1, i < 0) or x > 0",
-        {"x": x},
-    )
-    solver = z3.Solver()
-    solver.add(x == 1, z3.Not(formula))
-    assert solver.check() == z3.unsat
-
-    negated = replace_quantifiers_with_z3("not forall(i, 0 <= i < 1, i >= 0)", {})
-    solver = z3.Solver()
-    solver.add(negated)
-    assert solver.check() == z3.unsat
 
 
 def test_float_constant_is_rejected_without_ieee_model() -> None:

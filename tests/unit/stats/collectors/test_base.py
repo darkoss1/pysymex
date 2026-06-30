@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.stats.collectors.base import MetricCollector
-from pysymex.stats.types import Event
+from pysymex._internal.stats.collectors.base import MetricCollector
+from pysymex._internal.stats.types import Event
 
 
 class MockCollector(MetricCollector):

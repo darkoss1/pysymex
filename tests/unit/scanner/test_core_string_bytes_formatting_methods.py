@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
@@ -115,3 +115,27 @@ def test_scan_file_bytes_center_reports_nonbytes_fill(tmp_path: Path) -> None:
     result = scan_file(target, use_sandbox=False)
 
     assert _has_issue_kind(result, "target", "TYPE_ERROR")
+
+
+def test_scan_file_str_padding_reports_bad_width_for_symbolic_receiver(tmp_path: Path) -> None:
+    target = tmp_path / "str_padding_symbolic_bad_width.py"
+    target.write_text(
+        "def target(value: str) -> str:\n    return value.center('3')\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "TYPE_ERROR")
+
+
+def test_scan_file_bytes_padding_preserves_valid_symbolic_receiver(tmp_path: Path) -> None:
+    target = tmp_path / "bytes_padding_symbolic_valid.py"
+    target.write_text(
+        "def target(value: bytes) -> bytes:\n    return value.ljust(3, b'x')\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not _has_issue_kind(result, "target", "TYPE_ERROR")

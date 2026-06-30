@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import dis
+
 import z3
 
-from pysymex.analysis.detectors.runtime.overflow import OverflowDetector
-from pysymex.core.state.record import VMState
+from pysymex._internal.analysis.detectors.runtime.overflow import OverflowDetector
+from pysymex._internal.core.state.record import VMState
 
 
 def _always_sat(constraints: list[z3.BoolRef]) -> bool:

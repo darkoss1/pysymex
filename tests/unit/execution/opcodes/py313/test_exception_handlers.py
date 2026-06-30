@@ -5,20 +5,25 @@ import sys
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.fallback import FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.opcodes.common.control_fallbacks import (
+import pysymex._internal.execution.opcodes.py313.exceptions as exceptions
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.exceptions.policy import ModeledRuntimeException as ModeledException
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.fallback.types import FallbackKind, RiskLevel, SoundnessTag
+from pysymex._internal.execution.opcodes.common.control.fallbacks import (
     UNSUPPORTED_CONTEXT_MANAGER_PROTOCOL,
     UNSUPPORTED_GENERATOR,
 )
-from pysymex.execution.opcodes.py313 import exceptions
-from pysymex.models.objects import SymbolicClass, class_registry
-from pysymex.models.builtins.exceptions import ExceptionTypeModel
+from pysymex._internal.models.builtins.exceptions.models import ExceptionTypeModel
+from pysymex._internal.models.stdlib.contextlib.stubs import Suppress
 from tests.unit.execution.opcodes.py313.exception_helpers import instr
 
 pytestmark = pytest.mark.skipif(
@@ -109,6 +114,22 @@ def test_handle_with_except_start() -> None:
     exceptions.handle_with_except_start(instr("WITH_EXCEPT_START"), state, OpcodeDispatcher())
 
 
+def test_handle_with_except_start_uses_active_exception_below_lasti_for_suppression() -> None:
+    """Modeled exceptions below lasti metadata should drive ``__exit__`` suppression."""
+    suppressor = Suppress(ZeroDivisionError)
+    exc = ModeledException("ZeroDivisionError", raised_at=4)
+    lasti = SymbolicValue.from_const(28)
+    state = VMState(
+        stack=[suppressor.__exit__, exc, SymbolicNone("old_exc"), lasti],
+        active_exception=exc,
+        pc=0,
+    )
+
+    exceptions.handle_with_except_start(instr("WITH_EXCEPT_START"), state, OpcodeDispatcher())
+
+    assert state.stack[-1] is True
+
+
 def test_handle_before_with() -> None:
     """Test handle_before_with behavior."""
     state = VMState(stack=[1], pc=0)
@@ -152,6 +173,22 @@ def test_handle_end_async_for() -> None:
     assert state.stack == []
 
 
+def test_handle_end_async_for_marks_incomplete_async_state_unsupported() -> None:
+    """Incomplete async-iteration modeling should degrade instead of raising VMStateError."""
+    state = VMState(stack=["aiter"], pc=0)
+
+    result = exceptions.handle_end_async_for(
+        instr("END_ASYNC_FOR"),
+        state,
+        OpcodeDispatcher(),
+    )
+
+    assert result.terminal is False
+    assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
+    assert len(result.fallback_events) == 1
+    assert state.stack == []
+
+
 def test_handle_get_aiter() -> None:
     """Test handle_get_aiter behavior."""
     state = VMState(stack=[1], pc=0)
@@ -161,7 +198,11 @@ def test_handle_get_aiter() -> None:
 def test_handle_get_anext() -> None:
     """Test handle_get_anext behavior."""
     state = VMState(pc=0)
-    exceptions.handle_get_anext(instr("GET_ANEXT"), state, OpcodeDispatcher())
+    result = exceptions.handle_get_anext(instr("GET_ANEXT"), state, OpcodeDispatcher())
+
+    assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
+    assert len(result.fallback_events) == 1
+    assert isinstance(result.new_states[0].stack[-1], HavocValue)
 
 
 def test_handle_get_awaitable() -> None:
@@ -173,7 +214,11 @@ def test_handle_get_awaitable() -> None:
 def test_handle_send() -> None:
     """Test handle_send behavior."""
     state = VMState(stack=[1, 2], pc=0)
-    exceptions.handle_send(instr("SEND"), state, OpcodeDispatcher())
+    result = exceptions.handle_send(instr("SEND"), state, OpcodeDispatcher())
+
+    assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
+    assert len(result.fallback_events) == 1
+    assert all(isinstance(next_state.stack[-1], HavocValue) for next_state in result.new_states)
 
 
 def test_handle_yield_value() -> None:
@@ -192,7 +237,13 @@ def test_handle_end_send() -> None:
 def test_handle_get_yield_from_iter() -> None:
     """Test handle_get_yield_from_iter behavior."""
     state = VMState(stack=[1], pc=0)
-    exceptions.handle_get_yield_from_iter(instr("GET_YIELD_FROM_ITER"), state, OpcodeDispatcher())
+    result = exceptions.handle_get_yield_from_iter(
+        instr("GET_YIELD_FROM_ITER"), state, OpcodeDispatcher()
+    )
+
+    assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
+    assert len(result.fallback_events) == 1
+    assert isinstance(result.new_states[0].stack[-1], HavocValue)
 
 
 def test_handle_check_eg_match() -> None:
@@ -222,6 +273,88 @@ def test_handle_check_eg_match_resolves_fully_known_unmatched_group() -> None:
     exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
 
     assert state.stack[-2] is group
+    assert isinstance(state.stack[-1], SymbolicNone)
+
+
+def test_handle_check_eg_match_keeps_none_remainder_unmatched() -> None:
+    state = VMState(stack=[SymbolicNone("eg_rest"), TypeError], pc=0)
+
+    exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
+
+    assert isinstance(state.stack[-2], SymbolicNone)
+    assert isinstance(state.stack[-1], SymbolicNone)
+
+
+def test_handle_check_eg_match_splits_fully_known_partial_group() -> None:
+    value_member = ExceptionTypeModel(ValueError).apply(["bad"], {}, VMState()).value
+    type_member = ExceptionTypeModel(TypeError).apply(["bad"], {}, VMState()).value
+    group = (
+        ExceptionTypeModel(ExceptionGroup)
+        .apply(
+            ["group", [value_member, type_member]],
+            {},
+            VMState(),
+        )
+        .value
+    )
+    state = VMState(stack=[group, ValueError], pc=0)
+
+    exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
+
+    rest_payload = getattr(state.stack[-2], "_modeled_object", None)
+    match_payload = getattr(state.stack[-1], "_modeled_object", None)
+    assert isinstance(rest_payload, SymbolicException)
+    assert isinstance(match_payload, SymbolicException)
+    assert rest_payload.args[1] == [type_member]
+    assert match_payload.args[1] == [value_member]
+
+
+def test_handle_check_eg_match_preserves_except_star_reraise_list_layout() -> None:
+    value_member = ExceptionTypeModel(ValueError).apply(["bad"], {}, VMState()).value
+    runtime_member = ExceptionTypeModel(RuntimeError).apply(["boom"], {}, VMState()).value
+    group = (
+        ExceptionTypeModel(ExceptionGroup)
+        .apply(
+            ["group", [value_member, runtime_member]],
+            {},
+            VMState(),
+        )
+        .value
+    )
+    reraised_list = SymbolicList.empty("reraised")
+    state = VMState(stack=[group, reraised_list, group, ValueError], pc=0)
+
+    exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
+
+    rest_payload = getattr(state.stack[-3], "_modeled_object", None)
+    match_payload = getattr(state.stack[-1], "_modeled_object", None)
+    assert state.stack[-2] is reraised_list
+    assert isinstance(rest_payload, SymbolicException)
+    assert isinstance(match_payload, SymbolicException)
+    assert rest_payload.args[1] == [runtime_member]
+    assert match_payload.args[1] == [value_member]
+
+
+def test_handle_check_eg_match_wraps_direct_modeled_exception() -> None:
+    direct = SymbolicException.concrete(RuntimeError, "boom", raised_at=17)
+    state = VMState(stack=[direct, RuntimeError], pc=0)
+
+    exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
+
+    match_payload = getattr(state.stack[-1], "_modeled_object", None)
+    assert isinstance(state.stack[-2], SymbolicNone)
+    assert isinstance(match_payload, SymbolicException)
+    assert match_payload.exc_type is ExceptionGroup
+    assert match_payload.args[1] == [direct]
+
+
+def test_handle_check_eg_match_keeps_string_typed_direct_exception_unmatched() -> None:
+    direct = ModeledException("ZeroDivisionError", message="division by zero", raised_at=17)
+    state = VMState(stack=[direct, ValueError], pc=0)
+
+    exceptions.handle_check_eg_match(instr("CHECK_EG_MATCH"), state, OpcodeDispatcher())
+
+    assert state.stack[-2] is direct
     assert isinstance(state.stack[-1], SymbolicNone)
 
 
@@ -259,6 +392,7 @@ def test_handle_return_generator() -> None:
         instr("RETURN_GENERATOR"), state, OpcodeDispatcher()
     )
     assert result is not None
+    assert isinstance(result.new_states[0].stack[-1], HavocValue)
     assert result.degraded_passes == [UNSUPPORTED_GENERATOR]
     assert len(result.fallback_events) == 1
     event = result.fallback_events[0]

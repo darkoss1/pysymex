@@ -7,15 +7,19 @@ import time
 import pytest
 import z3
 
-from pysymex.analysis.detectors.runtime.index_error.bounds import (
-    IndexBoundsCheckStatus,
+from pysymex._internal.analysis.detectors.runtime.indexing.bounds.core import (
     pure_check_index_bounds,
     pure_check_index_bounds_result,
 )
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.indexing.bounds.types import (
+    IndexBoundsCheckStatus,
+)
+from pysymex._internal.core.solver.constraints.values import ConstraintValues
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.value.scalar_ops import ScalarValueOps
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _is_sat(constraints: list[z3.BoolRef]) -> bool:
@@ -93,6 +97,89 @@ def test_pure_check_index_bounds_simplifies_definite_in_bounds_index() -> None:
     assert result.issue is None
 
 
+def test_pure_check_index_bounds_skips_solver_for_positive_modulo_index() -> None:
+    """Modulo by a positive divisor has a CPython-compatible nonnegative range."""
+    pivot = z3.Int("modulo_index_pivot")
+    container = SymbolicList.from_const([1, 2, 3, 4, 5])
+    index = SymbolicValue.from_z3(pivot % 5, "pivot%5")
+
+    def fail_if_called(_constraints: list[z3.BoolRef]) -> bool:
+        raise AssertionError("positive modulo range should prove the index in-bounds")
+
+    result = pure_check_index_bounds_result(
+        container,
+        index,
+        [],
+        9,
+        is_satisfiable_fn=fail_if_called,
+    )
+
+    assert result.status is IndexBoundsCheckStatus.IN_BOUNDS
+    assert result.reason == "definitely_in_bounds"
+    assert result.issue is None
+
+
+def test_pure_check_index_bounds_skips_solver_for_shifted_positive_modulo_index() -> None:
+    pivot = z3.Int("shifted_modulo_index_pivot")
+    container = SymbolicList.from_const([1, 2, 3, 4, 5])
+    index = SymbolicValue.from_z3((pivot % 3) + 2, "pivot%3+2")
+
+    def fail_if_called(_constraints: list[z3.BoolRef]) -> bool:
+        raise AssertionError("shifted positive modulo range should prove the index in-bounds")
+
+    result = pure_check_index_bounds_result(
+        container,
+        index,
+        [],
+        10,
+        is_satisfiable_fn=fail_if_called,
+    )
+
+    assert result.status is IndexBoundsCheckStatus.IN_BOUNDS
+    assert result.reason == "definitely_in_bounds"
+    assert result.issue is None
+
+
+def test_pure_check_index_bounds_skips_solver_for_pysymex_python_modulo_encoding() -> None:
+    pivot = z3.Int("python_modulo_index_pivot")
+    container = SymbolicList.from_const([1, 2, 3, 4, 5])
+    index = SymbolicValue.from_z3(
+        ScalarValueOps.py_mod(pivot, ConstraintValues.int(5)), "py_mod_pivot_5"
+    )
+
+    def fail_if_called(_constraints: list[z3.BoolRef]) -> bool:
+        raise AssertionError("Python modulo encoding should prove the index in-bounds")
+
+    result = pure_check_index_bounds_result(
+        container,
+        index,
+        [],
+        10,
+        is_satisfiable_fn=fail_if_called,
+    )
+
+    assert result.status is IndexBoundsCheckStatus.IN_BOUNDS
+    assert result.reason == "definitely_in_bounds"
+    assert result.issue is None
+
+
+def test_pure_check_index_bounds_reports_shifted_modulo_that_can_escape_bounds() -> None:
+    pivot = z3.Int("escaping_modulo_index_pivot")
+    container = SymbolicList.from_const([1, 2, 3, 4, 5])
+    index = SymbolicValue.from_z3((pivot % 3) + 4, "pivot%3+4")
+
+    result = pure_check_index_bounds_result(
+        container,
+        index,
+        [],
+        10,
+        is_satisfiable_fn=_is_sat,
+    )
+
+    assert result.status is IndexBoundsCheckStatus.OUT_OF_BOUNDS
+    assert result.issue is not None
+
+
 def test_pure_check_index_bounds_result_reports_out_of_bounds() -> None:
     container = SymbolicList.from_const([1, 2, 3])
     index = SymbolicValue.from_const(5)
@@ -120,7 +207,7 @@ def test_pure_check_index_bounds_result_reports_no_oob_evidence() -> None:
     )
 
     assert result.status is IndexBoundsCheckStatus.NO_OUT_OF_BOUNDS_EVIDENCE
-    assert result.reason == "sat_callback_returned_false"
+    assert result.reason == "dependency_slice_proves_in_bounds"
     assert result.issue is None
 
 
@@ -129,7 +216,7 @@ def test_pure_check_index_bounds_result_reports_solver_unknown() -> None:
     index, index_constraint = SymbolicValue.symbolic_int("unknown_bounds_result_index")
     solver = IncrementalSolver(timeout_ms=1000)
     solver.set_deadline(time.perf_counter() - 1.0)
-    token = active_incremental_solver.set(solver)
+    token = SolverContext.active.set(solver)
     try:
         result = pure_check_index_bounds_result(
             container,
@@ -139,7 +226,7 @@ def test_pure_check_index_bounds_result_reports_solver_unknown() -> None:
             is_satisfiable_fn=lambda _constraints: True,
         )
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert result.status is IndexBoundsCheckStatus.INCONCLUSIVE
     assert result.reason == "model_result_unknown"

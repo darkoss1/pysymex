@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins import IsinstanceModel, TypeModel
-from pysymex.typing import StackValue
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.reflection.type_checks import IsinstanceModel, TypeModel
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:

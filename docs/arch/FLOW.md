@@ -50,12 +50,12 @@ feasible paths were explored, and an empty issue list is not global safety evide
 
 ## Evidence In Source
 
-- Executor assembly: `pysymex/execution/executors/core.py`
-- Worklist loop: `pysymex/execution/engine/worklist.py`
-- Run setup and result finalization: `pysymex/execution/engine`
-- VM state: `pysymex/core/state`
-- Opcode handlers: `pysymex/execution/opcodes`
-- Result type: `pysymex/execution/results/result.py`
+- Executor assembly: `pysymex/_internal/execution/executors/core.py`
+- Worklist loop: `pysymex/_internal/execution/engine/worklist.py`
+- Run setup and result finalization: `pysymex/_internal/execution/engine`
+- VM state: `pysymex/_internal/core/state`
+- Opcode handlers: `pysymex/_internal/execution/opcodes`
+- Result type: `pysymex/_internal/execution/results/result.py`
 - Tests: `tests/unit/execution`, `tests/unit/scanner`
 
 ## Limits

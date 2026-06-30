@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins import BinModel, HexModel, OctModel
-from pysymex.models.containers.strings.search.counts import StrCountModel
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.numeric.format import BinModel, HexModel, OctModel
+from pysymex._internal.models.builtins.types.containers.strings.search.counts import StrCountModel
 
 
 def test_symbolic_bin_count_one_zero_implies_zero_integer() -> None:

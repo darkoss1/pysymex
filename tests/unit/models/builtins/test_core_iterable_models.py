@@ -4,35 +4,39 @@ from typing import cast
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.containers.iterator_sources import (
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.iterator_sources import (
     EnumerateIteratorSource,
     FilterIteratorSource,
     ZipIteratorSource,
 )
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.core.collections import ListModel, TupleModel
-from pysymex.models.builtins.core.conversions.numeric import ComplexModel, SliceModel
-from pysymex.models.builtins.core.iterables import (
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.constructors.collections import ListModel
+from pysymex._internal.models.builtins.conversions.numeric import ComplexModel, SliceModel
+from pysymex._internal.models.builtins.iteration.aggregates import (
     EnumerateModel,
-    FilterModel,
-    MapModel,
     SortedModel,
     SumModel,
     ZipModel,
 )
-from pysymex.models.builtins.core.iterator_items import concrete_iterable_items
-from pysymex.models.builtins.core.type_checks import IsinstanceModel, PrintModel, TypeModel
-from pysymex.models.builtins.base import is_raised_exception_effect
+from pysymex._internal.models.builtins.iteration.lazy import FilterModel, MapModel
+from pysymex._internal.models.builtins.iteration.sources import IterationSources
+from pysymex._internal.models.builtins.reflection.type_checks import (
+    IsinstanceModel,
+    PrintModel,
+    TypeModel,
+)
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 from tests.unit.models.builtins.core_model_helpers import state
 
 
 class TestPrintModel:
-    """Test suite for pysymex.models.builtins.core.PrintModel."""
+    """Test suite for pysymex._internal.models.builtins.core.PrintModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -43,23 +47,23 @@ class TestPrintModel:
         kwargs: dict[str, StackValue] = {"sep": "-", "end": ""}
         assert "raised_exception" not in PrintModel().apply(["x"], kwargs, state()).side_effects
         invalid = PrintModel().apply(["x"], {"unknown": True}, state())
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_rejects_definite_invalid_separator_and_terminator(self) -> None:
         invalid_keywords: list[dict[str, StackValue]] = [{"sep": 1}, {"end": 1}]
         for kwargs in invalid_keywords:
             result = PrintModel().apply(["x"], kwargs, state())
 
-            assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+            assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
 
 class TestTypeModel:
-    """Test suite for pysymex.models.builtins.core.TypeModel."""
+    """Test suite for pysymex._internal.models.builtins.core.TypeModel."""
 
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """type() raises TypeError in CPython."""
         result = TypeModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_one_arg_is_supported(self) -> None:
         """type(value) remains a modeled call path."""
@@ -70,43 +74,52 @@ class TestTypeModel:
     def test_invalid_three_argument_construction_emits_type_error(self) -> None:
         invalid = TypeModel().apply([1, (), {}], {}, state())
 
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
 
 class TestIsinstanceModel:
-    """Test suite for pysymex.models.builtins.core.IsinstanceModel."""
+    """Test suite for pysymex._internal.models.builtins.core.IsinstanceModel."""
 
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """isinstance() raises TypeError in CPython."""
         result = IsinstanceModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_concrete_single_type_is_exact_and_invalid_type_fails(self) -> None:
         valid = IsinstanceModel().apply([1, int], {}, state())
         invalid = IsinstanceModel().apply([1, 1], {}, state())
 
         assert valid.value is True
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
+
+    def test_isinstance_on_heap_allocated_symbolic_list(self) -> None:
+        value, _ = SymbolicValue.symbolic_int("value")
+        source = SymbolicList.from_const([value])
+        handle = SymbolicObject("items", 101, z3.IntVal(101), {101})
+        vm_state = state().store_heap(101, source)
+
+        result = IsinstanceModel().apply([handle, list], {}, vm_state)
+        assert result.value is True
 
 
 class TestSortedModel:
-    """Test suite for pysymex.models.builtins.core.SortedModel."""
+    """Test suite for pysymex._internal.models.builtins.core.SortedModel."""
 
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """sorted() raises TypeError in CPython."""
         result = SortedModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_with_extra_arg_emits_type_error_side_effect(self) -> None:
         """sorted(iterable, positional_extra) raises TypeError in CPython."""
         result = SortedModel().apply([[1], [2]], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_keyword_options_are_accepted_but_unknown_keywords_are_rejected(self) -> None:
         kwargs: dict[str, StackValue] = {"reverse": True}
         assert "raised_exception" not in SortedModel().apply([[2, 1]], kwargs, state()).side_effects
         invalid = SortedModel().apply([[2, 1]], {"unknown": True}, state())
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_concrete_values_are_sorted_and_non_iterables_fail(self) -> None:
         result = SortedModel().apply([[2, 1]], {}, state())
@@ -114,7 +127,7 @@ class TestSortedModel:
 
         assert isinstance(result.value, SymbolicList)
         assert result.value.concrete_items == [1, 2]
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_single_heap_backed_symbolic_item_is_preserved(self) -> None:
         value, value_constraint = SymbolicValue.symbolic_int("value")
@@ -144,11 +157,11 @@ class TestSortedModel:
         concrete_items = result.value.concrete_items
         assert concrete_items is not None
         assert [getattr(item, "value", None) for item in concrete_items] == [1, 2, 3]
-        assert z3.is_true(z3.simplify(result.value.z3_len == 3))
+        assert z3.is_true(simplify_expr(result.value.z3_len == 3))
 
 
 class TestSumModel:
-    """Test suite for pysymex.models.builtins.core.SumModel."""
+    """Test suite for pysymex._internal.models.builtins.core.SumModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -159,23 +172,23 @@ class TestSumModel:
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """sum() raises TypeError in CPython."""
         result = SumModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_with_too_many_args_emits_type_error_side_effect(self) -> None:
         """sum(iterable, start, extra) raises TypeError in CPython."""
         result = SumModel().apply([[1], 0, 1], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_named_start_is_applied_and_duplicate_binding_is_rejected(self) -> None:
         kwargs: dict[str, StackValue] = {"start": 3}
         assert SumModel().apply([[1, 2]], kwargs, state()).value == 6
         invalid = SumModel().apply([[1, 2], 3], kwargs, state())
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_text_elements_emit_type_error_side_effect(self) -> None:
         invalid = SumModel().apply([["a"]], {}, state())
 
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_symbolic_int_items_constrain_sum_result(self) -> None:
         value, value_constraint = SymbolicValue.symbolic_int("value")
@@ -203,7 +216,7 @@ class TestSumModel:
 
 
 class TestEnumerateModel:
-    """Test suite for pysymex.models.builtins.core.EnumerateModel."""
+    """Test suite for pysymex._internal.models.builtins.core.EnumerateModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -215,7 +228,7 @@ class TestEnumerateModel:
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """enumerate() raises TypeError in CPython."""
         result = EnumerateModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_preserves_concrete_items(self) -> None:
         """Concrete enumerate inputs materialize exact pairs when consumed."""
@@ -226,7 +239,7 @@ class TestEnumerateModel:
 
         assert isinstance(result.value, SymbolicIterator)
         assert isinstance(result.value.iterable, EnumerateIteratorSource)
-        assert concrete_iterable_items(result.value, vm_state) == [(0, 10), (1, 20)]
+        assert IterationSources.iterable_items(result.value, vm_state) == [(0, 10), (1, 20)]
 
     def test_apply_resolves_heap_backed_concrete_list(self) -> None:
         """Concrete lists lowered to heap handles materialize exact pairs when consumed."""
@@ -239,7 +252,7 @@ class TestEnumerateModel:
 
         assert isinstance(result.value, SymbolicIterator)
         assert isinstance(result.value.iterable, EnumerateIteratorSource)
-        assert concrete_iterable_items(result.value, vm_state) == [(0, 10), (1, 20)]
+        assert IterationSources.iterable_items(result.value, vm_state) == [(0, 10), (1, 20)]
 
     def test_named_iterable_and_start_preserve_concrete_pairs(self) -> None:
         kwargs: dict[str, StackValue] = {"iterable": [10, 20], "start": 5}
@@ -248,17 +261,17 @@ class TestEnumerateModel:
 
         assert isinstance(result.value, SymbolicIterator)
         assert isinstance(result.value.iterable, EnumerateIteratorSource)
-        assert concrete_iterable_items(result.value, vm_state) == [(5, 10), (6, 20)]
+        assert IterationSources.iterable_items(result.value, vm_state) == [(5, 10), (6, 20)]
 
     def test_duplicate_or_unknown_keyword_binding_emits_type_error(self) -> None:
         duplicate = EnumerateModel().apply([[1], 2], {"start": 3}, state())
         unknown = EnumerateModel().apply([[1]], {"unknown": 3}, state())
-        assert is_raised_exception_effect(duplicate.side_effects.get("raised_exception"))
-        assert is_raised_exception_effect(unknown.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(duplicate.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(unknown.side_effects.get("raised_exception"))
 
 
 class TestZipModel:
-    """Test suite for pysymex.models.builtins.core.ZipModel."""
+    """Test suite for pysymex._internal.models.builtins.core.ZipModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -278,7 +291,7 @@ class TestZipModel:
 
         assert isinstance(result.value, SymbolicIterator)
         assert isinstance(result.value.iterable, ZipIteratorSource)
-        assert concrete_iterable_items(result.value, vm_state) == [(1, 4)]
+        assert IterationSources.iterable_items(result.value, vm_state) == [(1, 4)]
 
     def test_strict_false_is_accepted_and_unknown_keyword_is_rejected(self) -> None:
         strict_kwargs: dict[str, StackValue] = {"strict": False}
@@ -288,8 +301,8 @@ class TestZipModel:
 
         assert isinstance(result.value, SymbolicIterator)
         assert isinstance(result.value.iterable, ZipIteratorSource)
-        assert concrete_iterable_items(result.value, vm_state) == [(1, 2)]
-        assert is_raised_exception_effect(invalid.side_effects.get("raised_exception"))
+        assert IterationSources.iterable_items(result.value, vm_state) == [(1, 2)]
+        assert SideEffects.is_raised_exception(invalid.side_effects.get("raised_exception"))
 
     def test_strict_true_reports_known_length_mismatch(self) -> None:
         valid = ZipModel().apply([[1], [2]], {"strict": True}, state())
@@ -298,12 +311,12 @@ class TestZipModel:
         assert isinstance(valid.value, SymbolicIterator)
         assert valid.value.iterable == [(1, 2)]
         effect = invalid.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "ValueError"
 
 
 class TestMapModel:
-    """Test suite for pysymex.models.builtins.core.MapModel."""
+    """Test suite for pysymex._internal.models.builtins.core.MapModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -315,11 +328,11 @@ class TestMapModel:
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """map() raises TypeError in CPython."""
         result = MapModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
 
 class TestFilterModel:
-    """Test suite for pysymex.models.builtins.core.FilterModel."""
+    """Test suite for pysymex._internal.models.builtins.core.FilterModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -331,7 +344,7 @@ class TestFilterModel:
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """filter() raises TypeError in CPython."""
         result = FilterModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_filter_none_single_symbolic_item_constrains_length(self) -> None:
         value, value_constraint = SymbolicValue.symbolic_int("value")
@@ -368,7 +381,7 @@ class TestFilterModel:
 
 
 class TestListModel:
-    """Test suite for pysymex.models.builtins.core.ListModel."""
+    """Test suite for pysymex._internal.models.builtins.core.ListModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -379,7 +392,7 @@ class TestListModel:
     def test_definite_non_iterable_emits_type_error_side_effect(self) -> None:
         result = ListModel().apply([1], {}, state())
 
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_copies_heap_backed_symbolic_list_elements(self) -> None:
         """list(heap-backed-list) should preserve elements without aliasing the source."""
@@ -417,18 +430,8 @@ class TestListModel:
         assert solver.check() == z3.unsat
 
 
-class TestTupleModel:
-    """Test suite for pysymex.models.builtins.core.TupleModel."""
-
-    def test_apply(self) -> None:
-        """Test apply behavior."""
-        value: list[StackValue] = [1, 2]
-        args: list[StackValue] = [value]
-        assert TupleModel().apply(args, {}, state()).value == tuple(value)
-
-
 class TestComplexModel:
-    """Test suite for pysymex.models.builtins.core.ComplexModel."""
+    """Test suite for pysymex._internal.models.builtins.core.ComplexModel."""
 
     def test_apply_no_args(self) -> None:
         """Test apply behavior with no args."""
@@ -443,12 +446,12 @@ class TestComplexModel:
 
 
 class TestSliceModel:
-    """Test suite for pysymex.models.builtins.core.SliceModel."""
+    """Test suite for pysymex._internal.models.builtins.core.SliceModel."""
 
     def test_apply_no_args_emits_type_error_side_effect(self) -> None:
         """slice() raises TypeError in CPython."""
         result = SliceModel().apply([], {}, state())
-        assert is_raised_exception_effect(result.side_effects.get("raised_exception"))
+        assert SideEffects.is_raised_exception(result.side_effects.get("raised_exception"))
 
     def test_apply_with_args(self) -> None:
         """Test apply behavior with args."""

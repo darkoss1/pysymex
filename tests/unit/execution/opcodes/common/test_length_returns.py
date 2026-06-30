@@ -7,14 +7,16 @@ from unittest.mock import patch
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import CallFrame, wrap_cow_dict
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.opcodes.common.control.length_returns import (
-    fork_feasible_negative_symbolic_length,
-    normalize_length_protocol_return,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame, wrap_cow_dict
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.control.protocol.returns.core import (
+    ProtocolReturns,
 )
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.control.returns.length import (
+    fork_feasible_negative_symbolic_length,
+)
 
 
 def _length_frame(protocol_method: str = "__len__") -> CallFrame:
@@ -41,10 +43,10 @@ def test_normalize_length_protocol_return_proves_positive_mod_sum_without_solver
     )
 
     with patch(
-        "pysymex.core.solver.engine.queries.check_sat_result",
+        "pysymex._internal.core.solver.engine.queries.check_sat_result",
         side_effect=AssertionError("syntactic nonnegative length should not query solver"),
     ):
-        result = normalize_length_protocol_return(
+        result = ProtocolReturns.length(
             _length_frame(),
             return_value,
             VMState(),
@@ -73,7 +75,7 @@ def test_negative_length_fork_skips_positive_mod_sum_without_solver() -> None:
     )
 
     with patch(
-        "pysymex.core.solver.engine.queries.check_sat_result",
+        "pysymex._internal.core.solver.engine.queries.check_sat_result",
         side_effect=AssertionError("syntactic nonnegative length should not query solver"),
     ):
         result = fork_feasible_negative_symbolic_length(

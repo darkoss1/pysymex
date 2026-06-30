@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import dis
 
+import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py313 import stack
+import pysymex._internal.execution.opcodes.py313.stack as stack
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: int | None = None) -> dis.Instruction:
@@ -59,7 +60,8 @@ def test_handle_cache() -> None:
 
 
 def test_handle_instrumented() -> None:
-    """Test handle_instrumented behavior."""
+    """Instrumented pseudo-opcodes must not be pass-through no-ops."""
     state = VMState(pc=15)
-    stack.handle_instrumented(_instr("INSTRUMENTED_CALL"), state, OpcodeDispatcher())
-    assert state.pc == 16
+    with pytest.raises(RuntimeError, match="Unsupported instrumented pseudo-opcode"):
+        stack.handle_instrumented(_instr("INSTRUMENTED_CALL"), state, OpcodeDispatcher())
+    assert state.pc == 15

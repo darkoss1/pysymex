@@ -4,18 +4,20 @@ from typing import cast
 
 import z3
 
-from pysymex.contracts.decorators import get_function_contract, requires
-from pysymex.contracts.ir.evidence import SolverStatus, TheoryFeature, UnsupportedReason
-from pysymex.contracts.ir.obligations import ObligationHook, QueryKind
-from pysymex.contracts.obligations import build_contract_evidence
-from pysymex.contracts.reports.evidence import (
+from pysymex._internal.contracts.decorator.registry import ContractRegistry
+from pysymex._internal.contracts.decorators import requires
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex._internal.contracts.ir.evidence import SolverStatus, TheoryFeature, UnsupportedReason
+from pysymex._internal.contracts.ir.obligations import ObligationHook, QueryKind
+from pysymex._internal.contracts.obligations.evidence import build_contract_evidence
+from pysymex._internal.contracts.reports.evidence import (
     EVIDENCE_REPORT_SCHEMA,
     contract_evidence_to_dict,
     not_verified_reasons_for_result,
     verified_results_evidence_report,
 )
-from pysymex.contracts.types import Contract, VerificationResult
-from pysymex.execution.executors.verified.types import VerifiedExecutionResult
+from pysymex._internal.contracts.types import Contract
+from pysymex._internal.execution.executors.verified.types import VerifiedExecutionResult
 
 
 @requires("x > 0")
@@ -24,7 +26,7 @@ def _requires_positive_for_report(x: int) -> int:
 
 
 def _first_clause() -> Contract:
-    contract = get_function_contract(_requires_positive_for_report)
+    contract = ContractRegistry.get(_requires_positive_for_report)
     assert contract is not None
     return contract.preconditions[0]
 

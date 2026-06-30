@@ -5,48 +5,50 @@ from importlib import import_module
 from types import ModuleType
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.models.builtins.base import FunctionModel, ModelResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import ModelResult
+from pysymex._internal.typing.protocols import StackValue
 
 CONTAINER_MODEL_MODULES: tuple[ModuleType, ...] = tuple(
     import_module(name)
     for name in (
-        "pysymex.models.containers.lists.items",
-        "pysymex.models.containers.lists.mutations.growth",
-        "pysymex.models.containers.lists.mutations.ordering",
-        "pysymex.models.containers.lists.mutations.removal",
-        "pysymex.models.containers.lists.operators",
-        "pysymex.models.containers.lists.queries",
-        "pysymex.models.containers.dicts.access",
-        "pysymex.models.containers.dicts.constructors",
-        "pysymex.models.containers.dicts.mutations.bulk",
-        "pysymex.models.containers.dicts.mutations.items",
-        "pysymex.models.containers.dicts.mutations.pop",
-        "pysymex.models.containers.dicts.operators",
-        "pysymex.models.containers.dicts.views",
-        "pysymex.models.containers.bytes.bytearray.growth",
-        "pysymex.models.containers.bytes.bytearray.misc",
-        "pysymex.models.containers.bytes.bytearray.removal",
-        "pysymex.models.containers.bytes.classification",
-        "pysymex.models.containers.bytes.decoding",
-        "pysymex.models.containers.bytes.formatting",
-        "pysymex.models.containers.bytes.search.affixes",
-        "pysymex.models.containers.bytes.search.counts",
-        "pysymex.models.containers.bytes.search.indexing",
-        "pysymex.models.containers.bytes.splitting",
-        "pysymex.models.containers.bytes.transforms.case",
-        "pysymex.models.containers.bytes.transforms.replace",
-        "pysymex.models.containers.bytes.transforms.trimming",
-        "pysymex.models.containers.bytes.translation",
-        "pysymex.models.containers.frozensets.operations",
-        "pysymex.models.containers.frozensets.queries",
-        "pysymex.models.containers.frozensets.relations",
-        "pysymex.models.containers.sets",
-        "pysymex.models.containers.strings",
-        "pysymex.models.containers.tuples",
+        "pysymex._internal.models.builtins.types.containers.lists.items",
+        "pysymex._internal.models.builtins.types.containers.lists.mutations.growth",
+        "pysymex._internal.models.builtins.types.containers.lists.mutations.ordering",
+        "pysymex._internal.models.builtins.types.containers.lists.mutations.removal",
+        "pysymex._internal.models.builtins.types.containers.lists.operators",
+        "pysymex._internal.models.builtins.types.containers.lists.queries",
+        "pysymex._internal.models.builtins.types.containers.dicts.access",
+        "pysymex._internal.models.builtins.types.containers.dicts.constructors",
+        "pysymex._internal.models.builtins.types.containers.dicts.mutations.bulk",
+        "pysymex._internal.models.builtins.types.containers.dicts.mutations.items",
+        "pysymex._internal.models.builtins.types.containers.dicts.mutations.pop",
+        "pysymex._internal.models.builtins.types.containers.dicts.operators",
+        "pysymex._internal.models.builtins.types.containers.dicts.views",
+        "pysymex._internal.models.builtins.types.containers.bytes.bytearray.growth",
+        "pysymex._internal.models.builtins.types.containers.bytes.bytearray.ordering",
+        "pysymex._internal.models.builtins.types.containers.bytes.bytearray.removal",
+        "pysymex._internal.models.builtins.types.containers.bytes.classification",
+        "pysymex._internal.models.builtins.types.containers.bytes.decoding",
+        "pysymex._internal.models.builtins.types.containers.bytes.formatting",
+        "pysymex._internal.models.builtins.types.containers.bytes.search.affixes",
+        "pysymex._internal.models.builtins.types.containers.bytes.search.counts",
+        "pysymex._internal.models.builtins.types.containers.bytes.search.indexing",
+        "pysymex._internal.models.builtins.types.containers.bytes.splitting",
+        "pysymex._internal.models.builtins.types.containers.bytes.transforms.case",
+        "pysymex._internal.models.builtins.types.containers.bytes.transforms.replace",
+        "pysymex._internal.models.builtins.types.containers.bytes.transforms.trimming",
+        "pysymex._internal.models.builtins.types.containers.bytes.translation",
+        "pysymex._internal.models.builtins.types.containers.frozensets.operations",
+        "pysymex._internal.models.builtins.types.containers.frozensets.queries",
+        "pysymex._internal.models.builtins.types.containers.frozensets.relations",
+        "pysymex._internal.models.builtins.types.containers.sets",
+        "pysymex._internal.models.builtins.types.containers.strings",
+        "pysymex._internal.models.builtins.types.containers.tuples",
     )
 )
 

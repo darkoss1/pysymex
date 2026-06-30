@@ -2,24 +2,26 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import build_frontier_checkpoint
-from pysymex.execution.frontier.modes import FrontierRuntimeMode
-from pysymex.execution.scheduling import create_path_manager
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoints import build_frontier_checkpoint
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.scheduling.cegis.application import plan_evidence_application
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
+    EvidenceOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.solver import solver_unsat_core_outcome
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
     EvidenceCertificate,
     EvidenceCertificateKind,
     EvidenceOutcome,
     EvidenceOutcomeKind,
-    EvidenceOwner,
-    plan_evidence_application,
-    solver_unsat_core_outcome,
 )
-from pysymex.execution.strategies.manager.types import ExplorationStrategy
+from pysymex._internal.execution.scheduling.factory import create_path_manager
+from pysymex._internal.execution.strategies.manager.types import ExplorationStrategy
 
 
 def _solver_action(capsule_id: str) -> EvidenceAction:

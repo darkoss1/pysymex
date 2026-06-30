@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_lru_cache_decorator_preserves_nested_division_reachability(tmp_path: Path) -> None:

@@ -2,90 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from unittest.mock import patch
-
 import z3
 
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.core.state.record import VMState
-from pysymex.execution.feasibility import (
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.feasibility.events import (
     SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS,
-    check_path_feasibility,
+)
+from pysymex._internal.execution.feasibility.pending import (
     record_pending_constraints_checked,
     should_check_pending_constraints,
 )
-from pysymex.execution import feasibility as execution_feasibility
-from pysymex.execution.feasibility.telemetry import PathFeasibilityEvent
-from pysymex.execution.session.state import ExecutionSession
-
-
-class RecordingSolver:
-    """Solver double for execution-facing path feasibility tests."""
-
-    def __init__(self, *, feasible: bool, result: SolverResult | None = None) -> None:
-        self.result = result or (SolverResult.sat(None) if feasible else SolverResult.unsat())
-        self.prefix_args: list[int | None] = []
-        self.checked_constraints: list[list[z3.BoolRef]] = []
-        self.added_constraints: list[z3.BoolRef] = []
-
-    def check(
-        self,
-        *assumptions: z3.BoolRef,
-        need_model: bool = True,
-    ) -> SolverResult | z3.CheckSatResult:
-        _ = assumptions
-        _ = need_model
-        return self.result
-
-    def push(self) -> None:
-        return None
-
-    def pop(self) -> None:
-        return None
-
-    def add(self, *constraints: z3.BoolRef) -> None:
-        self.added_constraints.extend(constraints)
-
-    def reset(self) -> None:
-        self.prefix_args = []
-        self.checked_constraints = []
-        self.added_constraints = []
-
-    def path_may_be_feasible(
-        self,
-        constraints: Iterable[z3.BoolRef],
-        known_sat_prefix_len: int | None = None,
-    ) -> bool:
-        _ = list(constraints)
-        self.prefix_args.append(known_sat_prefix_len)
-        return not self.result.is_unsat
-
-    def check_sat_result(
-        self,
-        constraints: Iterable[z3.BoolRef],
-        known_sat_prefix_len: int | None = None,
-    ) -> SolverResult:
-        self.checked_constraints.append(list(constraints))
-        self.prefix_args.append(known_sat_prefix_len)
-        return self.result
-
-    def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
-        _ = constraints
-        return None
-
-    def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
-        _ = constraints
-        return self.result
-
-    def get_stats(self) -> dict[str, object]:
-        return {}
-
-    def constraint_optimizer(self) -> object:
-        return self
-
-    def set_deadline(self, deadline_time: float | None) -> None:
-        _ = deadline_time
+from pysymex._internal.execution.feasibility.policy import check_path_feasibility
+from pysymex._internal.execution.feasibility.policy import (
+    check_path_feasibility as check_path_feasibility_export,
+)
+from pysymex._internal.execution.feasibility.policy import (
+    check_path_feasibility as check_path_feasibility_owner,
+)
+from pysymex._internal.execution.feasibility.telemetry import PathFeasibilityEvent
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from tests.unit.execution.feasibility.solver_doubles import RecordingSolver
 
 
 def test_should_check_pending_constraints_requires_positive_pending_count() -> None:
@@ -98,6 +35,10 @@ def test_should_check_pending_constraints_requires_positive_pending_count() -> N
         )
         is False
     )
+
+
+def test_check_path_feasibility_public_export_points_to_direct_owner() -> None:
+    assert check_path_feasibility_export is check_path_feasibility_owner
 
 
 def test_should_check_pending_constraints_uses_lazy_threshold() -> None:
@@ -306,201 +247,3 @@ def test_check_path_feasibility_keeps_unknown_pending_and_records_degraded() -> 
     assert session.degraded_passes == [SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS]
     assert session.fallback_events[0].label == SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS
     assert session.fallback_events[0].pc == 42
-
-
-def test_check_path_feasibility_skips_large_bitvector_query_as_degraded_unknown() -> None:
-    session = ExecutionSession()
-    observed: list[PathFeasibilityEvent] = []
-    session.add_path_feasibility_event_observer(observed.append)
-    solver = RecordingSolver(feasible=False)
-    x = z3.Int("owner_feasibility_hard_x")
-    bits = z3.BitVec("owner_feasibility_hard_bits", 8)
-    constraints = [x > -100 + index for index in range(29)]
-    constraints.append(z3.BV2Int(bits & z3.BitVecVal(1, 8), is_signed=False) == 1)
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=99)
-
-    with (
-        patch.object(
-            execution_feasibility,
-            "constraints_include_bitvector_smt_theory",
-            side_effect=AssertionError("ConstraintChain summary should avoid path rescans"),
-        ),
-        patch.object(
-            execution_feasibility,
-            "hard_theory_witness_model",
-            side_effect=AssertionError("large hard queries should skip witness probing"),
-        ),
-    ):
-        result = check_path_feasibility(
-            session=session,
-            solver=solver,
-            hook_owner=object(),
-            hooks={},
-            state=state,
-        )
-
-    assert result is True
-    assert solver.checked_constraints == []
-    assert solver.added_constraints == []
-    assert state.pending_constraint_count == len(constraints)
-    assert state.last_inconclusive_feasibility_len == len(state.path_constraints)
-    assert session.paths_pruned == 0
-    assert session.degraded_passes == [SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS]
-    assert session.fallback_events[0].pc == 99
-    assert "skipped hard SMT-theory" in session.fallback_events[0].reason
-    assert len(observed) == 1
-    assert observed[0].result == "inconclusive"
-    assert observed[0].result_source == "hard_theory_skipped"
-    assert observed[0].solver_called is False
-    assert observed[0].hard_theory_skipped is True
-    assert 1 <= len(observed[0].query_constraint_excerpt) <= 8
-    assert any(
-        z3.eq(constraint, constraints[-1]) for constraint in observed[0].query_constraint_excerpt
-    )
-
-
-def test_check_path_feasibility_accepts_hard_query_with_verified_witness() -> None:
-    session = ExecutionSession()
-    observed: list[PathFeasibilityEvent] = []
-    session.add_path_feasibility_event_observer(observed.append)
-    solver = RecordingSolver(feasible=False)
-    x = z3.Int("owner_feasibility_hard_witness_x")
-    constraints = [
-        x == 0,
-        z3.BV2Int(z3.Int2BV(x, 8), is_signed=False) == 0,
-        *[x + index == index for index in range(10)],
-    ]
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=96)
-
-    result = check_path_feasibility(
-        session=session,
-        solver=solver,
-        hook_owner=object(),
-        hooks={},
-        state=state,
-    )
-
-    assert result is True
-    assert solver.checked_constraints == []
-    assert len(solver.added_constraints) == len(constraints)
-    assert state.pending_constraint_count == 0
-    assert state.last_inconclusive_feasibility_len == -1
-    assert session.degraded_passes == []
-    assert len(observed) == 1
-    assert observed[0].result == "feasible"
-    assert observed[0].result_source == "hard_theory_witness"
-    assert observed[0].solver_called is False
-    assert observed[0].hard_theory_skipped is False
-    assert 1 <= len(observed[0].query_constraint_excerpt) <= 8
-
-
-def test_check_path_feasibility_prunes_simplified_false_hard_query() -> None:
-    session = ExecutionSession()
-    solver = RecordingSolver(feasible=True)
-    x = z3.Int("owner_feasibility_hard_false_x")
-    bits = z3.BitVec("owner_feasibility_hard_false_bits", 8)
-    constraints = [x > -100 + index for index in range(10)]
-    constraints.extend(
-        [
-            z3.BV2Int(bits & z3.BitVecVal(1, 8), is_signed=False) == 1,
-            x == 0,
-            z3.Not(x == 0),
-        ]
-    )
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=98)
-
-    result = check_path_feasibility(
-        session=session,
-        solver=solver,
-        hook_owner=object(),
-        hooks={},
-        state=state,
-    )
-
-    assert result is False
-    assert solver.checked_constraints == []
-    assert solver.added_constraints == []
-    assert session.paths_pruned == 1
-    assert session.degraded_passes == []
-
-
-def test_check_path_feasibility_prunes_hard_query_false_under_literal_assignments() -> None:
-    session = ExecutionSession()
-    solver = RecordingSolver(feasible=True)
-    x = z3.Int("owner_feasibility_literal_hard_x")
-    y = z3.Int("owner_feasibility_literal_hard_y")
-    constraints = [
-        x == 0,
-        y == 0,
-        *[x >= -index for index in range(9)],
-        (x * y) % 5 == 2,
-    ]
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=97)
-
-    result = check_path_feasibility(
-        session=session,
-        solver=solver,
-        hook_owner=object(),
-        hooks={},
-        state=state,
-    )
-
-    assert result is False
-    assert solver.checked_constraints == []
-    assert solver.added_constraints == []
-    assert session.paths_pruned == 1
-    assert session.degraded_passes == []
-
-
-def test_check_path_feasibility_skips_medium_bitvector_query_as_degraded_unknown() -> None:
-    session = ExecutionSession()
-    solver = RecordingSolver(feasible=False)
-    x = z3.Int("owner_feasibility_medium_hard_x")
-    bits = z3.BitVec("owner_feasibility_medium_hard_bits", 8)
-    constraints = [x > -10 + index for index in range(11)]
-    constraints.append(z3.BV2Int(bits & z3.BitVecVal(1, 8), is_signed=False) == 1)
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=100)
-
-    result = check_path_feasibility(
-        session=session,
-        solver=solver,
-        hook_owner=object(),
-        hooks={},
-        state=state,
-    )
-
-    assert result is True
-    assert solver.checked_constraints == []
-    assert solver.added_constraints == []
-    assert state.pending_constraint_count == len(constraints)
-    assert state.last_inconclusive_feasibility_len == len(state.path_constraints)
-    assert session.paths_pruned == 0
-    assert session.degraded_passes == [SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS]
-    assert session.fallback_events[0].pc == 100
-
-
-def test_check_path_feasibility_skips_nonlinear_query_as_degraded_unknown() -> None:
-    session = ExecutionSession()
-    solver = RecordingSolver(feasible=False)
-    x = z3.Int("owner_feasibility_nonlinear_x")
-    y = z3.Int("owner_feasibility_nonlinear_y")
-    constraints = [x > -10 + index for index in range(11)]
-    constraints.append((x * y) % 7 == 3)
-    state = VMState(path_constraints=constraints, pending_constraint_count=len(constraints), pc=101)
-
-    result = check_path_feasibility(
-        session=session,
-        solver=solver,
-        hook_owner=object(),
-        hooks={},
-        state=state,
-    )
-
-    assert result is True
-    assert solver.checked_constraints == []
-    assert solver.added_constraints == []
-    assert state.pending_constraint_count == len(constraints)
-    assert state.last_inconclusive_feasibility_len == len(state.path_constraints)
-    assert session.paths_pruned == 0
-    assert session.degraded_passes == [SOLVER_UNKNOWN_PATH_FEASIBILITY_DEGRADED_PASS]
-    assert session.fallback_events[0].pc == 101

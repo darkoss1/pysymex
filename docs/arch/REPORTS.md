@@ -14,6 +14,10 @@ verification.
 5. Diagnostic logs record solver uncertainty, degraded passes, sandbox failures, and lifecycle
    events where observability matters.
 
+Reusable reporting modules own structured formatting and aggregate counters. CLI reporters own
+interactive scan progress, status lines, and terminal summaries; scanner modules provide those
+events only through the `pysymex._internal.scanner.protocols.ScanReporter` protocol.
+
 ## Report Contract
 
 Reports should preserve:
@@ -44,14 +48,14 @@ into a clean safety claim.
 
 ## Evidence In Source
 
-- Execution result formatting: `pysymex/reporting/formatters`
-- CLI formatters: `pysymex/cli/formatters`
-- SARIF: `pysymex/reporting/sarif`
-- HTML: `pysymex/reporting/html`
-- Scanner result types: `pysymex/scanner/types.py`
+- Execution result formatting: `pysymex/_internal/reporting/formatters`
+- CLI formatters: `pysymex/_internal/cli/formatters`
+- SARIF: `pysymex/_internal/reporting/sarif`
+- HTML: `pysymex/_internal/reporting/html`
+- Scanner result types: `pysymex/_internal/scanner/types.py`
 - Tests: `tests/unit/reporting`, `tests/unit/cli`
 
 ## Limits
 
-Some compatibility methods still exist on execution results for historic report shapes. General
-report generation should depend on structured result data, not import back into execution logic.
+General report generation should depend on structured result data, not teach execution result
+models about presentation-specific methods.

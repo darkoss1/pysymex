@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from pysymex.stats.sinks.console import (
+from pysymex._internal.stats.sinks.console import (
     ConsoleSink,
     format_metric_value,
     plain_text_metrics,
@@ -48,8 +48,19 @@ class TestConsoleSink:
         sink.live = None
         sink.started = False
 
-    def test_stop_prints_final_summary(self) -> None:
-        """Verify that stop() prints a final summary of the last metrics."""
+    def test_stop_prints_final_summary_when_live_is_none(self) -> None:
+        """Verify that stop() prints a final summary when live is None."""
+        sink = ConsoleSink()
+        sink.started = True
+        sink.last_metrics = {"total_paths_explored": 100.0}
+        sink.live = None
+        with patch.object(sink, "_print_final_summary") as mock_summary:
+            sink.stop()
+            mock_summary.assert_called_once_with({"total_paths_explored": 100.0})
+        assert sink.live is None
+
+    def test_stop_updates_and_stops_live(self) -> None:
+        """Verify that stop() updates and stops live when active."""
         sink = ConsoleSink()
         sink.started = True
         sink.last_metrics = {"total_paths_explored": 100.0}
@@ -57,7 +68,9 @@ class TestConsoleSink:
         sink.live = mock_live
         with patch.object(sink, "_print_final_summary") as mock_summary:
             sink.stop()
-            mock_summary.assert_called_once_with({"total_paths_explored": 100.0})
+            mock_summary.assert_not_called()
+        mock_live.update.assert_called_once()
+        mock_live.stop.assert_called_once()
         assert sink.live is None
 
     def test_stop_idempotent(self) -> None:
@@ -75,23 +88,16 @@ class TestConsoleSink:
         result = format_metric_value("path_exploration_rate", 1234.5)
         assert result == "1,234.5 paths/s"
 
-    def test_format_metric_value_ratio(self) -> None:
-        """Verify ratio metrics are formatted with 4 decimal places."""
-        result = format_metric_value("sat_unsat_ratio", 0.75)
-        assert result == "0.7500"
-
     def test_plain_text_metrics_uses_honest_solver_labels(self) -> None:
         """Verify solver counters use explicit human-facing labels."""
         rendered = plain_text_metrics(
             {
                 "solver_queries": 3,
                 "solver_unknown": 1,
-                "sat_unsat_ratio": 0.5,
             }
         )
         assert "Solver Queries" in rendered
         assert "Solver Unknown" in rendered
-        assert "SAT/(SAT+UNSAT)" in rendered
 
     def test_format_metric_value_int(self) -> None:
         """Verify integer values are formatted directly."""
@@ -127,17 +133,17 @@ class TestConsoleSink:
         assert "status" in output.lower() or "Status" in output
         assert "ok" in output
 
-    def test_build_table_returns_rich_table(self) -> None:
-        """Verify build_table produces a Rich Table object."""
-        from rich.table import Table
+    def test_build_table_returns_rich_panel(self) -> None:
+        """Verify build_table produces a Rich Panel object."""
+        from rich.panel import Panel
 
         metrics: dict[str, float | int | str] = {"total_paths_explored": 42.0}
-        table = ConsoleSink.build_table(metrics)
-        assert isinstance(table, Table)
+        panel = ConsoleSink.build_table(metrics)
+        assert isinstance(panel, Panel)
 
     def test_build_table_empty_metrics(self) -> None:
         """Verify build_table handles empty metrics gracefully."""
-        from rich.table import Table
+        from rich.panel import Panel
 
-        table = ConsoleSink.build_table({})
-        assert isinstance(table, Table)
+        panel = ConsoleSink.build_table({})
+        assert isinstance(panel, Panel)

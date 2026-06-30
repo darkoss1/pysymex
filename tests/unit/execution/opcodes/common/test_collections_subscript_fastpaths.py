@@ -5,13 +5,15 @@ from __future__ import annotations
 import pytest
 import z3
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.collections.subscript import handle_common_binary_subscr
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.collections.read.handler import (
+    handle_common_binary_subscr,
+)
 from tests.unit.execution.opcodes.common.collections_helpers import instr
 
 
@@ -33,7 +35,7 @@ def test_exact_symbolic_list_index_skips_out_of_bounds_probe(
         raise AssertionError("exact index should avoid the out-of-bounds SAT probe")
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.collections.read.path_is_sat",
+        "pysymex._internal.execution.opcodes.common.collections.read.handler.path_is_sat",
         fail_path_is_sat,
     )
 
@@ -60,7 +62,7 @@ def test_exact_symbolic_list_index_unknown_keeps_symbolic_fallback(
         return SolverResult.unknown()
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.collections.read.check_sat_result",
+        "pysymex._internal.execution.opcodes.common.collections.read.handler.check_sat_result",
         unknown_check,
     )
 
@@ -85,10 +87,12 @@ def test_bounded_symbolic_list_index_skips_exact_false_oob_probe(
         known_sat_prefix_len: int | None = None,
     ) -> bool:
         _ = known_sat_prefix_len
-        raise AssertionError("exact false out-of-bounds condition should not call path_is_sat")
+        raise AssertionError(
+            "exact false out-of-bounds condition should not call PathSatisfiability.is_sat"
+        )
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.collections.read.path_is_sat",
+        "pysymex._internal.execution.opcodes.common.collections.read.handler.path_is_sat",
         fail_path_is_sat,
     )
 
@@ -114,7 +118,7 @@ def test_definite_subscript_exception_skips_success_feasibility_probe(
         raise AssertionError("definite exception should not query success feasibility")
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.collections.read.path_is_sat",
+        "pysymex._internal.execution.opcodes.common.collections.read.handler.path_is_sat",
         fail_path_is_sat,
     )
 
@@ -162,7 +166,7 @@ def test_definite_subscript_exception_reuses_inconclusive_path_metadata(
         raise AssertionError("already-inconclusive definite exception should not re-query")
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.collections.read.check_sat_result",
+        "pysymex._internal.execution.opcodes.common.collections.read.handler.check_sat_result",
         fail_check_sat_result,
     )
 

@@ -36,11 +36,9 @@ evidence. Silent concrete approximation is unsafe because it can hide bugs or cr
 
 ## Evidence In Source
 
-- Call model dispatch: `pysymex/execution/calls/model_dispatch.py`
-- Builtin registry: `pysymex/models/builtins`
-- Container models: `pysymex/models/containers`
-- Standard-library models: `pysymex/models/stdlib`
-- Object and numeric models: `pysymex/models/objects`, `pysymex/models/numeric`
+- Call model dispatch: `pysymex/_internal/execution/calls/model/dispatch.py`
+- Builtin models: `pysymex/_internal/models/builtins`
+- Standard-library models: `pysymex/_internal/models/stdlib`
 - Tests: `tests/unit/models`, `tests/unit/scanner/test_core_*`
 
 ## Limits

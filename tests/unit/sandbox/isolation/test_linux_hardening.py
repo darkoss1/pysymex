@@ -8,13 +8,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-import pysymex.sandbox.isolation.linux as linux_mod
-import pysymex.sandbox.isolation.linux.limits as linux_limits
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.constants import HARNESS_FILENAME
-from pysymex.sandbox.isolation.linux import LinuxNamespaceBackend
-from pysymex.sandbox.isolation.linux.shared import SYSCALL_ALLOWLIST_X86_64
-from pysymex.sandbox.types import ExecutionStatus, SandboxConfig
+import pysymex._internal.sandbox.isolation.linux.limits as linux_limits
+from pysymex._internal.config.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.constants import HARNESS_FILENAME
+from pysymex._internal.sandbox.isolation.linux.backend import LinuxNamespaceBackend
+from pysymex._internal.sandbox.isolation.linux.shared import SYSCALL_ALLOWLIST_X86_64
+from pysymex._internal.sandbox.types import ExecutionStatus
 from tests.unit.sandbox.isolation.linux_test_helpers import FakeProcess
 
 
@@ -38,7 +38,10 @@ class TestLinuxNamespaceHardening:
     def test_rejects_target_filename_before_jail_population(self, tmp_path: Path) -> None:
         config = SandboxConfig(working_directory=tmp_path)
         backend = LinuxNamespaceBackend(config)
-        with patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True):
+        with patch(
+            "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+            True,
+        ):
             backend.setup()
             try:
                 with pytest.raises(SandboxSetupError, match="Invalid Linux sandbox target"):
@@ -68,17 +71,20 @@ class TestLinuxNamespaceHardening:
             return f"/usr/bin/{name}"
 
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._find_unshare",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._find_unshare",
                 return_value="/usr/bin/unshare",
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=True,
             ),
             patch.object(
@@ -86,7 +92,10 @@ class TestLinuxNamespaceHardening:
                 "_find_trusted_tool",
                 side_effect=_trusted_tool,
             ),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", side_effect=_popen),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                side_effect=_popen,
+            ),
         ):
             backend.setup()
             try:
@@ -132,21 +141,27 @@ class TestLinuxNamespaceHardening:
             return f"/usr/bin/{name}"
 
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._find_unshare",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._find_unshare",
                 return_value="/usr/bin/unshare",
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=False,
             ),
             patch.object(backend, "_find_trusted_tool", side_effect=_trusted_tool),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", side_effect=_popen),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                side_effect=_popen,
+            ),
         ):
             backend.setup()
             try:
@@ -174,7 +189,9 @@ class TestLinuxNamespaceHardening:
             getattr(backend, "_root_jail_library_path"),
         )
 
-        with patch("pysymex.sandbox.isolation.linux.backend.sysconfig.get_config_var") as cfg:
+        with patch(
+            "pysymex._internal.sandbox.isolation.linux.jail.sysconfig.get_config_var"
+        ) as cfg:
             cfg.return_value = "x86_64-linux-gnu"
             library_path = root_jail_library_path(
                 ("/usr/local", "/usr/lib", "/lib", "/lib64", "/bin"),
@@ -190,13 +207,16 @@ class TestLinuxNamespaceHardening:
         )
         backend = LinuxNamespaceBackend(config)
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=False,
             ),
         ):
@@ -210,13 +230,16 @@ class TestLinuxNamespaceHardening:
         config = SandboxConfig(python_executable="/opt/hostedtoolcache/Python/3.13.13/x64/python")
         backend = LinuxNamespaceBackend(config)
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=False,
             ),
         ):
@@ -237,20 +260,26 @@ class TestLinuxNamespaceHardening:
             return FakeProcess(0, b"ok\n", b"")
 
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._find_unshare",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._find_unshare",
                 return_value="/usr/bin/unshare",
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=False,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=False,
             ),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", side_effect=_popen),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                side_effect=_popen,
+            ),
         ):
             backend.setup()
             try:
@@ -264,7 +293,10 @@ class TestLinuxNamespaceHardening:
     def test_rejects_reserved_extra_file_before_jail_population(self, tmp_path: Path) -> None:
         config = SandboxConfig(working_directory=tmp_path)
         backend = LinuxNamespaceBackend(config)
-        with patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True):
+        with patch(
+            "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+            True,
+        ):
             backend.setup()
             try:
                 assert backend.jail_path is not None
@@ -299,13 +331,21 @@ class TestLinuxNamespaceHardening:
             return FakeProcess(0, b"ok\n", b"")
 
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=False,
             ),
-            patch("pysymex.sandbox.isolation.linux.shutil.which", side_effect=_which),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", side_effect=_popen),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.shutil.which", side_effect=_which
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                side_effect=_popen,
+            ),
         ):
             backend.setup()
             try:
@@ -345,7 +385,7 @@ class TestLinuxNamespaceHardening:
             preexec_fn = kwargs.get("preexec_fn")
             assert callable(preexec_fn)
             with (
-                patch.object(linux_mod.os, "setsid", return_value=None, create=True),
+                patch.object(linux_limits.os, "setsid", return_value=None, create=True),
                 patch("ctypes.CDLL", return_value=_FakeLibc()),
                 patch.dict(sys.modules, {"resource": fake_resource}),
             ):
@@ -353,16 +393,22 @@ class TestLinuxNamespaceHardening:
             return FakeProcess(0, b"ok\n", b"")
 
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._find_unshare",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._find_unshare",
                 return_value="/usr/bin/unshare",
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=False,
             ),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", side_effect=_popen),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                side_effect=_popen,
+            ),
         ):
             backend.setup()
             try:
@@ -373,15 +419,59 @@ class TestLinuxNamespaceHardening:
             finally:
                 backend.cleanup()
 
+    def test_preexec_does_not_apply_rlimit_nproc(self, tmp_path: Path) -> None:
+        config = SandboxConfig(working_directory=tmp_path)
+        backend = LinuxNamespaceBackend(config)
+
+        class _FakeLibc:
+            def prctl(self, *_args: object) -> int:
+                return 0
+
+        fake_resource = ModuleType("resource")
+        setattr(fake_resource, "RLIMIT_AS", 1)
+        setattr(fake_resource, "RLIMIT_CPU", 2)
+        setattr(fake_resource, "RLIMIT_NPROC", 3)
+        setattr(fake_resource, "RLIMIT_FSIZE", 4)
+        setattr(fake_resource, "RLIMIT_NOFILE", 5)
+        setattr(fake_resource, "RLIMIT_CORE", 6)
+        seen_limits: list[int] = []
+
+        def _setrlimit(limit: int, values: tuple[int, int]) -> None:
+            _ = values
+            seen_limits.append(limit)
+
+        setattr(fake_resource, "setrlimit", _setrlimit)
+
+        preexec_fn = backend._make_preexec_fn()  # type: ignore
+        with (
+            patch.object(linux_limits.os, "setsid", return_value=None, create=True),
+            patch("ctypes.CDLL", return_value=_FakeLibc()),
+            patch.dict(sys.modules, {"resource": fake_resource}),
+        ):
+            preexec_fn()
+
+        assert 3 not in seen_limits
+        assert seen_limits == [1, 2, 4, 5, 6]
+
+    def test_nproc_limit_is_emitted_in_harness_preamble(self, tmp_path: Path) -> None:
+        config = SandboxConfig(working_directory=tmp_path)
+        backend = LinuxNamespaceBackend(config)
+
+        preamble = backend._generate_nproc_preamble()  # type: ignore
+
+        assert "RLIMIT_NPROC" in preamble
+        assert "unshare --fork" not in preamble
+        compile(preamble, "<pysymex-nproc-preamble>", "exec")
+
     def test_cleanup_kills_process_group_then_falls_back_to_child(self) -> None:
         backend = LinuxNamespaceBackend(SandboxConfig())
         kill = Mock()
         sigkill = int(getattr(signal, "SIGKILL", getattr(signal, "SIGTERM", 9)))
         with (
-            patch.object(linux_mod.os, "getpgid", return_value=321, create=True),
-            patch.object(linux_mod.os, "killpg", side_effect=OSError("no pg"), create=True),
-            patch.object(linux_mod.os, "kill", kill),
-            patch.object(linux_mod.os, "waitpid", side_effect=ChildProcessError()),
+            patch.object(linux_limits.os, "getpgid", return_value=321, create=True),
+            patch.object(linux_limits.os, "killpg", side_effect=OSError("no pg"), create=True),
+            patch.object(linux_limits.os, "kill", kill),
+            patch.object(linux_limits.os, "waitpid", side_effect=ChildProcessError()),
         ):
             setattr(backend, "_child_pid", 123)
             backend.cleanup()
@@ -390,7 +480,7 @@ class TestLinuxNamespaceHardening:
     def test_capabilities_do_not_overstate_unavailable_namespaces(self) -> None:
         backend = LinuxNamespaceBackend(SandboxConfig())
         with patch(
-            "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available",
+            "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
             False,
         ):
             caps = backend.get_capabilities()
@@ -407,15 +497,15 @@ class TestLinuxNamespaceHardening:
         backend = LinuxNamespaceBackend(SandboxConfig())
         with (
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
                 True,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._supports_unshare_root",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._supports_unshare_root",
                 return_value=False,
             ),
             patch(
-                "pysymex.sandbox.isolation.linux.LinuxNamespaceBackend._should_enable_seccomp",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend._should_enable_seccomp",
                 return_value=True,
             ),
         ):

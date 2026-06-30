@@ -2,19 +2,31 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import build_shadow_capsule
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.obligations.capsules import build_shadow_capsule
+from pysymex._internal.execution.scheduling.cegis.bids.capsules import shadow_bids_for_capsule
+from pysymex._internal.execution.scheduling.cegis.bids.capsules import (
+    shadow_bids_for_capsule as shadow_bids_for_capsule_owner,
+)
+from pysymex._internal.execution.scheduling.cegis.bids.frontier import (
+    shadow_bids_for_frontier_capsules,
+)
+from pysymex._internal.execution.scheduling.cegis.bids.frontier import (
+    shadow_bids_for_frontier_capsules as shadow_bids_for_frontier_capsules_owner,
+)
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
     EvidenceBid,
     EvidenceOwner,
-    feature_vector_from_capsule,
-    select_deterministic_bid,
-    shadow_bids_for_capsule,
-    shadow_bids_for_frontier_capsules,
 )
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
+    EvidenceAction as EvidenceActionOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.bids.types import EvidenceBid as EvidenceBidOwner
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.features import feature_vector_from_capsule
+from pysymex._internal.execution.scheduling.cegis.policy import select_deterministic_bid
 
 
 def _bid(
@@ -137,3 +149,11 @@ def test_select_deterministic_bid_is_stable_for_equal_scores() -> None:
 
     assert decision is not None
     assert decision.selected_bid.action.action_id == "a"
+
+
+def test_bids_public_exports_point_to_direct_owners() -> None:
+    """The package import surface stays wired to the split bid owners."""
+    assert EvidenceAction is EvidenceActionOwner
+    assert EvidenceBid is EvidenceBidOwner
+    assert shadow_bids_for_capsule is shadow_bids_for_capsule_owner
+    assert shadow_bids_for_frontier_capsules is shadow_bids_for_frontier_capsules_owner

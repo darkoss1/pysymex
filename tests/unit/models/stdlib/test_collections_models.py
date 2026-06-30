@@ -1,10 +1,12 @@
-"""Tests for pysymex.models.stdlib.collections — all model classes + registry."""
+"""Tests for pysymex._internal.models.stdlib.collections — all model classes + registry."""
 
 from __future__ import annotations
 
+from typing import cast
+
 import z3
 
-from typing import cast
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
 
 
 class _FakeState:
@@ -20,17 +22,17 @@ class TestCounterModel:
 
     def test_model_init_returns_symbolic_dict(self) -> None:
         """Counter.__init__ returns an empty SymbolicDict."""
-        from pysymex.models.stdlib.collections import CounterModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.counter import CounterModel
 
         result = CounterModel.model_init(_FakeState())  # type: ignore[arg-type]
         assert isinstance(result, SymbolicDict)
 
     def test_model_most_common_returns_symbolic_list(self) -> None:
         """Counter.most_common returns a SymbolicList."""
-        from pysymex.models.stdlib.collections import CounterModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.models.stdlib.collections.counter import CounterModel
 
         counter = SymbolicDict.empty("counter")
         result = CounterModel.model_most_common(counter)
@@ -38,9 +40,9 @@ class TestCounterModel:
 
     def test_model_elements_returns_symbolic_list(self) -> None:
         """Counter.elements returns a SymbolicList."""
-        from pysymex.models.stdlib.collections import CounterModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.models.stdlib.collections.counter import CounterModel
 
         counter = SymbolicDict.empty("counter")
         result = CounterModel.model_elements(counter)
@@ -48,8 +50,8 @@ class TestCounterModel:
 
     def test_model_subtract_is_noop(self) -> None:
         """Counter.subtract() returns None (noop)."""
-        from pysymex.models.stdlib.collections import CounterModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.counter import CounterModel
 
         counter = SymbolicDict.empty("counter")
         result = CounterModel.model_subtract(counter)
@@ -57,8 +59,8 @@ class TestCounterModel:
 
     def test_model_update_is_noop(self) -> None:
         """Counter.update() returns None (noop)."""
-        from pysymex.models.stdlib.collections import CounterModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.counter import CounterModel
 
         counter = SymbolicDict.empty("counter")
         result = CounterModel.model_update(counter)
@@ -70,8 +72,8 @@ class TestDefaultDictModel:
 
     def test_model_init_sets_has_default_factory(self) -> None:
         """defaultdict.__init__ sets _has_default_factory on the result."""
-        from pysymex.models.stdlib.collections import DefaultDictModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.defaultdict import DefaultDictModel
 
         dd = DefaultDictModel.model_init(_FakeState())  # type: ignore[arg-type]
         assert isinstance(dd, SymbolicDict)
@@ -79,9 +81,9 @@ class TestDefaultDictModel:
 
     def test_model_getitem_returns_symbolic_value(self) -> None:
         """defaultdict[key] produces a SymbolicValue."""
-        from pysymex.models.stdlib.collections import DefaultDictModel
-        from pysymex.core.types.scalars.values import SymbolicValue
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.models.stdlib.collections.defaultdict import DefaultDictModel
 
         dd = SymbolicDict.empty("dd")
         key, _ = SymbolicValue.symbolic("k")
@@ -90,9 +92,9 @@ class TestDefaultDictModel:
 
     def test_model_missing_returns_symbolic_value(self) -> None:
         """defaultdict.__missing__ produces a SymbolicValue."""
-        from pysymex.models.stdlib.collections import DefaultDictModel
-        from pysymex.core.types.scalars.values import SymbolicValue
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.models.stdlib.collections.defaultdict import DefaultDictModel
 
         dd = SymbolicDict.empty("dd")
         key, _ = SymbolicValue.symbolic("k")
@@ -104,10 +106,12 @@ class TestDefaultDictRuntimeModels:
     """Test registered heap-backed ``defaultdict(int)`` constructor semantics."""
 
     def test_int_factory_creates_zero_default_dictionary_storage(self) -> None:
-        from pysymex.core.state.record import VMState
-        from pysymex.core.types.containers.dicts import SymbolicDict
-        from pysymex.core.types.containers.objects import SymbolicObject
-        from pysymex.models.stdlib.collections.defaultdict import DefaultDictConstructorModel
+        from pysymex._internal.core.state.record import VMState
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.objects import SymbolicObject
+        from pysymex._internal.models.stdlib.collections.defaultdict import (
+            DefaultDictConstructorModel,
+        )
 
         state = VMState(pc=4)
         result = DefaultDictConstructorModel().apply([int], {}, state)
@@ -117,8 +121,8 @@ class TestDefaultDictRuntimeModels:
         assert isinstance(storage, SymbolicDict)
         assert getattr(storage, "_has_default_factory", False) is True
         missing, presence = storage["missing"]
-        assert z3.is_true(z3.simplify(presence))
-        assert z3.simplify(missing.z3_int).as_long() == 0
+        assert z3.is_true(simplify_expr(presence))
+        assert simplify_expr(missing.z3_int).as_long() == 0
 
 
 class TestDequeModel:
@@ -126,16 +130,16 @@ class TestDequeModel:
 
     def test_model_init_no_iterable(self) -> None:
         """deque() with no iterable returns empty SymbolicList."""
-        from pysymex.models.stdlib.collections import DequeModel
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.models.stdlib.collections.deque import DequeModel
 
         result = DequeModel.model_init(_FakeState())  # type: ignore[arg-type]
         assert isinstance(result, SymbolicList)
 
     def test_model_init_with_iterable(self) -> None:
         """deque(iterable) returns the iterable itself."""
-        from pysymex.models.stdlib.collections import DequeModel
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.models.stdlib.collections.deque import DequeModel
 
         lst = SymbolicList.empty("input")
         result = DequeModel.model_init(_FakeState(), iterable=lst)  # type: ignore[arg-type]
@@ -143,9 +147,9 @@ class TestDequeModel:
 
     def test_model_pop_returns_symbolic_value(self) -> None:
         """deque.pop() returns a SymbolicValue."""
-        from pysymex.models.stdlib.collections import DequeModel
-        from pysymex.core.types.scalars.values import SymbolicValue
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.models.stdlib.collections.deque import DequeModel
 
         deque = SymbolicList.empty("deque")
         result = DequeModel.model_pop(deque)
@@ -153,9 +157,9 @@ class TestDequeModel:
 
     def test_model_popleft_returns_symbolic_value(self) -> None:
         """deque.popleft() returns a SymbolicValue."""
-        from pysymex.models.stdlib.collections import DequeModel
-        from pysymex.core.types.scalars.values import SymbolicValue
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.scalars.values import SymbolicValue
+        from pysymex._internal.models.stdlib.collections.deque import DequeModel
 
         deque = SymbolicList.empty("deque")
         result = DequeModel.model_popleft(deque)
@@ -163,8 +167,8 @@ class TestDequeModel:
 
     def test_model_clear_is_noop(self) -> None:
         """deque.clear() returns None."""
-        from pysymex.models.stdlib.collections import DequeModel
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.models.stdlib.collections.deque import DequeModel
 
         deque = SymbolicList.empty("deque")
         assert DequeModel.model_clear(deque) is None
@@ -174,10 +178,10 @@ class TestDequeRuntimeModels:
     """Test registered heap-backed deque call models."""
 
     def test_constructor_copies_symbolic_list_into_tagged_storage(self) -> None:
-        from pysymex.core.state.record import VMState
-        from pysymex.core.types.containers.lists import SymbolicList
-        from pysymex.core.types.containers.objects import SymbolicObject
-        from pysymex.models.stdlib.collections.deque import DequeConstructorModel
+        from pysymex._internal.core.state.record import VMState
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.objects import SymbolicObject
+        from pysymex._internal.models.stdlib.collections.deque import DequeConstructorModel
 
         state = VMState()
         source = SymbolicList.from_const([3])
@@ -192,11 +196,11 @@ class TestDequeRuntimeModels:
     def test_popleft_reports_empty_index_error_and_removes_one_item(self) -> None:
         import z3
 
-        from pysymex.core.state.record import VMState
-        from pysymex.core.types.containers.lists import SymbolicList
-        from pysymex.core.types.containers.objects import SymbolicObject
-        from pysymex.models.builtins.results import is_potential_exception_effect
-        from pysymex.models.stdlib.collections.deque import DequePopleftModel
+        from pysymex._internal.core.state.record import VMState
+        from pysymex._internal.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.objects import SymbolicObject
+        from pysymex._internal.models.contracts.results import SideEffects
+        from pysymex._internal.models.stdlib.collections.deque import DequePopleftModel
 
         state = VMState()
         storage = SymbolicList.from_const([3])
@@ -207,12 +211,12 @@ class TestDequeRuntimeModels:
         result = DequePopleftModel().apply([handle], {}, state)
 
         effect = result.side_effects.get("potential_exception")
-        assert is_potential_exception_effect(effect)
+        assert SideEffects.is_potential_exception(effect)
         assert effect["type"] == "IndexError"
         mutation = cast("dict[str, object]", result.side_effects["list_mutation"])
         updated = mutation["updated_list"]
         assert isinstance(updated, SymbolicList)
-        assert z3.simplify(updated.z3_len).as_long() == 0
+        assert simplify_expr(updated.z3_len).as_long() == 0
 
 
 class TestOrderedDictModel:
@@ -220,16 +224,16 @@ class TestOrderedDictModel:
 
     def test_model_init_returns_symbolic_dict(self) -> None:
         """OrderedDict() returns empty SymbolicDict."""
-        from pysymex.models.stdlib.collections import OrderedDictModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.mappings import OrderedDictModel
 
         result = OrderedDictModel.model_init(_FakeState())  # type: ignore[arg-type]
         assert isinstance(result, SymbolicDict)
 
     def test_model_popitem_returns_tuple(self) -> None:
         """OrderedDict.popitem() returns (key, value) tuple."""
-        from pysymex.models.stdlib.collections import OrderedDictModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.mappings import OrderedDictModel
 
         od = SymbolicDict.empty("od")
         result = OrderedDictModel.model_popitem(od)
@@ -242,54 +246,17 @@ class TestChainMapModel:
 
     def test_model_init_returns_symbolic_dict(self) -> None:
         """ChainMap() returns empty SymbolicDict."""
-        from pysymex.models.stdlib.collections import ChainMapModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.mappings import ChainMapModel
 
         result = ChainMapModel.model_init(_FakeState())  # type: ignore[arg-type]
         assert isinstance(result, SymbolicDict)
 
     def test_model_new_child_returns_symbolic_dict(self) -> None:
         """ChainMap.new_child() returns empty SymbolicDict."""
-        from pysymex.models.stdlib.collections import ChainMapModel
-        from pysymex.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.core.types.containers.dicts import SymbolicDict
+        from pysymex._internal.models.stdlib.collections.mappings import ChainMapModel
 
         cm = SymbolicDict.empty("cm")
         result = ChainMapModel.model_new_child(cm)
         assert isinstance(result, SymbolicDict)
-
-
-class TestGetCollectionsModel:
-    """Test get_collections_model registry lookup."""
-
-    def test_known_model_returns_class(self) -> None:
-        """Known names return the model class."""
-        from pysymex.models.stdlib.collections import (
-            get_collections_model,
-            CounterModel,
-            DequeModel,
-        )
-
-        assert get_collections_model("Counter") is CounterModel
-        assert get_collections_model("deque") is DequeModel
-
-    def test_unknown_model_returns_none(self) -> None:
-        """Unknown names return None."""
-        from pysymex.models.stdlib.collections import get_collections_model
-
-        assert get_collections_model("NonExistent") is None
-
-
-class TestRegisterCollectionsModels:
-    """Test register_collections_models."""
-
-    def test_returns_full_qualified_mapping(self) -> None:
-        """All models are returned with 'collections.' prefix."""
-        from pysymex.models.stdlib.collections import register_collections_models
-
-        registry = register_collections_models()
-        assert "collections.Counter" in registry
-        assert "collections.deque" in registry
-        assert "collections.OrderedDict" in registry
-        assert "collections.defaultdict" in registry
-        assert "collections.ChainMap" in registry
-        assert len(registry) == 5

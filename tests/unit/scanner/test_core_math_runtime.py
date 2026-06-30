@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_reports_math_sqrt_domain_value_error(tmp_path: Path) -> None:

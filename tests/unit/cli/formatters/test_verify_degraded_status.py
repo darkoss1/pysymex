@@ -4,10 +4,10 @@ import json
 from dataclasses import dataclass, field
 from unittest.mock import patch
 
-from pysymex.cli.formatters.html import HtmlFormatter
-from pysymex.cli.formatters.markdown import MarkdownFormatter
-from pysymex.cli.formatters.sarif import SarifFormatter
-from pysymex.cli.formatters.text import TextFormatter
+from pysymex._internal.cli.formatters.html import HtmlFormatter
+from pysymex._internal.cli.formatters.markdown import CliMarkdownFormatter
+from pysymex._internal.cli.formatters.sarif import SarifFormatter
+from pysymex._internal.cli.formatters.text.formatter import CliTextFormatter
 
 
 @dataclass
@@ -26,8 +26,8 @@ class _DegradedVerifyResult:
 def test_verify_text_and_markdown_reports_do_not_claim_degraded_result_is_verified() -> None:
     result = _DegradedVerifyResult()
 
-    text = TextFormatter(use_rich=False).format_verify([result], 0, 0.1)
-    markdown = MarkdownFormatter().format_verify([result], 0, 0.1)
+    text = CliTextFormatter(use_rich=False).format_verify([result], 0, 0.1)
+    markdown = CliMarkdownFormatter().format_verify([result], 0, 0.1)
 
     assert "verification was degraded" in text
     assert "All selected contracts verified." not in text
@@ -38,7 +38,7 @@ def test_verify_text_and_markdown_reports_do_not_claim_degraded_result_is_verifi
 def test_verify_html_and_sarif_reports_mark_degraded_result_incomplete() -> None:
     result = _DegradedVerifyResult()
     with patch(
-        "pysymex.cli.formatters.html.generate_html_report", return_value="<html></html>"
+        "pysymex._internal.cli.formatters.html.generate_html_report", return_value="<html></html>"
     ) as generate:
         HtmlFormatter().format_verify([result], 0, 0.1)
 

@@ -13,6 +13,7 @@ target safety.
 | Document | Use it for |
 | --- | --- |
 | [OVERVIEW.md](OVERVIEW.md) | End-to-end system shape and trust boundary. |
+
 | [SCANNING.md](SCANNING.md) | File discovery, compile-only loading, sandbox bytecode extraction, and scan results. |
 | [SANDBOX.md](SANDBOX.md) | Native isolation, capability checks, staged paths, and sandbox result states. |
 | [FLOW.md](FLOW.md) | Symbolic VM loop, `VMState`, opcode dispatch, and execution results. |
@@ -31,16 +32,16 @@ target safety.
 
 | Area | Main packages |
 | --- | --- |
-| Public entry points | `pysymex.api`, `pysymex.cli` |
-| Scanning | `pysymex.scanner`, `pysymex.analysis.scan` |
-| Execution | `pysymex.execution`, `pysymex.core.state` |
-| Solver and symbolic data | `pysymex.core.solver`, `pysymex.core.types`, `pysymex.core.memory` |
-| Runtime models | `pysymex.models` |
-| Detectors and analyses | `pysymex.analysis` |
-| Native isolation | `pysymex.sandbox` |
-| Contracts | `pysymex.contracts`, `pysymex.execution.executors.verified` |
-| Reports and diagnostics | `pysymex.reporting`, `pysymex.cli.formatters`, `pysymex.logger` |
-| Resource limits | `pysymex.resources`, `pysymex.execution.resources` |
+| Public interface | `pysymex.{scan,verify,logging,format}` and stable root data types |
+| Scanning | `pysymex._internal.scanner`, `pysymex._internal.analysis.scan` |
+| Execution | `pysymex._internal.execution`, `pysymex._internal.core.state` |
+| Solver and symbolic data | `pysymex._internal.core.solver`, `pysymex._internal.core.types`, `pysymex._internal.core.memory` |
+| Runtime models | `pysymex._internal.models` |
+| Detectors and analyses | `pysymex._internal.analysis` |
+| Native isolation | `pysymex._internal.sandbox` |
+| Contracts | `pysymex.contracts`, `pysymex._internal.execution.executors.verified` |
+| Reports and diagnostics | `pysymex._internal.reporting`, `pysymex._internal.cli.formatters`, `pysymex._internal.logging` |
+| Resource limits | `pysymex._internal.limits.models`, `pysymex._internal.limits.tracker`, `pysymex._internal.limits.mapping`, `pysymex._internal.execution.resources` |
 
 `pyproject.toml` contains import-linter contracts for the most important dependency boundaries.
 The practical rule is simple: lower layers produce evidence, upper layers present it.

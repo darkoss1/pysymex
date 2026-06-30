@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pysymex.stats import enable_console_sink, emit, EventType, start, stop, registry
-from pysymex.stats.sinks.console import ConsoleSink
-from pysymex.stats.types import MetricValue
+from pysymex._internal.stats.runtime import emit, enable_console_sink, registry, start, stop
+from pysymex._internal.stats.sinks.console import ConsoleSink
+from pysymex._internal.stats.types import EventType, MetricValue
 
 
 def test_stats_integration() -> None:
@@ -23,10 +23,6 @@ def test_stats_integration() -> None:
     total_paths = metrics["total_paths_explored"]
     assert isinstance(total_paths, int | float)
     assert total_paths >= 1.0
-    # sat_unsat_ratio may vary based on solver state, just check it's a valid ratio
-    sat_unsat_ratio = metrics["sat_unsat_ratio"]
-    assert isinstance(sat_unsat_ratio, int | float)
-    assert 0.0 <= sat_unsat_ratio <= 1.0
     assert metrics["solver_queries"] == 1
     solver_sat = metrics["solver_sat"]
     assert isinstance(solver_sat, int | float)

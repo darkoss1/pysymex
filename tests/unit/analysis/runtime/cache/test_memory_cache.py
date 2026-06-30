@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.analysis.runtime.cache.memory import LRUCache
+from pysymex._internal.analysis.runtime.cache.memory import LRUCache
 
 
 class TestLRUCache:
-    """Test suite for pysymex.analysis.runtime.cache.memory.LRUCache."""
+    """Test suite for pysymex._internal.analysis.runtime.cache.memory.LRUCache."""
 
     def test_get(self) -> None:
         cache = LRUCache[str, int]()

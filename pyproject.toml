@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pysymex"
-version = "0.1.1a1"
+dynamic = ["version"]
 description = "EDUCATIONAL PURPOSES ONLY: A symbolic execution engine for studying formal verification concepts. Not for production use."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -42,13 +42,8 @@ dependencies = [
     "psutil>=7.2.2",                 # runtime dep - used by stats collectors
 ]
 
-[project.optional-dependencies]
-sandbox = [
-    "wasmtime>=14.0.0",             # optional WASM isolation backend (sandbox/isolation/wasm.py)
-]
-
 [project.scripts]
-pysymex = "pysymex.cli:main"
+pysymex = "pysymex._internal.cli.entrypoint:main"
 
 [project.urls]
 Homepage = "https://github.com/darkoss1/pysymex"
@@ -63,6 +58,9 @@ packages = ["pysymex"]
 [tool.hatch.build.targets.sdist]
 include = ["/pysymex"]
 
+[tool.hatch.version]
+path = "pysymex/_internal/config/defaults.py"
+
 
 # `uv sync` creates `.venv` with activation prompt `[project].name` ("pysymex").
 # Prefer `uv sync` over bare `uv venv` for first-time environment setup.
@@ -72,7 +70,7 @@ default-groups = ["dev"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0",
+    "pytest>=9.1.0",
     "pytest-asyncio>=1.3.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.0",
@@ -85,7 +83,7 @@ dev = [
     "crosshair-tool>=0.0.104",
     "atheris>=2.3.0; sys_platform != 'win32' and python_version >= '3.11' and python_version < '3.14'",
     "ruff>=0.15.0",
-    "pyright>=1.1.0",
+    "pyright==1.1.411",
     "import-linter>=2.11",
     "deptry>=0.25.1",
     "vulture>=2.16",
@@ -100,36 +98,14 @@ dev = [
     "bytecode>=0.15",
     "xdis>=6.3.0",
     "icontract>=2.6",
-
-]
-
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-cache_dir = ".pytest_runtime/cache"
-norecursedirs = [
-    ".hypothesis", ".pytest_runtime", "_tmp_rt_*", "__pycache__",
-    ".git", ".venv", "tests_backup", "benchmarks", "docs",
-    "docker", "examples", "scripts",
-]
-addopts = "-v --tb=short -n auto --import-mode=importlib --basetemp=.pytest_runtime/tmp --benchmark-disable --durations=25 --durations-min=2.0"
-asyncio_mode = "auto"
-timeout = 120
-timeout_method = "thread"
-markers = [
-    "timeout: per-test timeout override (provided by pytest-timeout)",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "bench: benchmark tier tests",
-    "repro: regression reproduction tests",
+    "pyjwt>=2.13.0",
 ]
 
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-exclude = [".git", ".github", ".venv", "docs", "docker"]
+exclude = [".git", ".github", ".venv", ".tmp", "docs", "docker"]
 
 [tool.ruff.lint]
 # Several modules intentionally perform path setup, opcode registration, or
@@ -149,48 +125,50 @@ include = ["pysymex", "tests"]
 stubPath = "typings"
 typeCheckingMode = "strict"
 reportMissingModuleSource = "none"
-exclude = ["scripts", "examples", "benchmarks", "docs", "docker"]
+exclude = ["scripts", "examples", "benchmarks", "docker", ".tmp"]
+
+[tool.deptry]
+known_first_party = ["pysymex"]
+extend_exclude = [".tmp"]
 
 
 [tool.importlinter]
 root_packages = ["pysymex"]
 exclude_type_checking_imports = true
 
-[tool.deptry]
-per_rule_ignores = { DEP002 = ["wasmtime"] }
-
 [[tool.importlinter.contracts]]
 id = "sandbox-isolation-private"
 name = "Sandbox isolation internals stay behind sandbox package"
 type = "forbidden"
 source_modules = [
-    "pysymex.analysis",
-    "pysymex.api",
-    "pysymex.cli",
-    "pysymex.core",
-    "pysymex.execution",
-    "pysymex.models",
-    "pysymex.reporting",
-    "pysymex.scanner",
+    "pysymex._internal.analysis",
+    "pysymex._internal.cli",
+    "pysymex._internal.core",
+    "pysymex._internal.execution",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.scanner",
 ]
-forbidden_modules = ["pysymex.sandbox.isolation"]
+forbidden_modules = ["pysymex._internal.sandbox.isolation"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "core-foundation-no-upper-layers"
 name = "Core foundation does not depend on analysis, contracts, execution, models, sandbox, scanner, API, CLI, or reporting"
 type = "forbidden"
-source_modules = ["pysymex.core"]
+source_modules = ["pysymex._internal.core"]
 forbidden_modules = [
-    "pysymex.analysis",
-    "pysymex.api",
-    "pysymex.cli",
+    "pysymex._internal.analysis",
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
     "pysymex.contracts",
-    "pysymex.execution",
-    "pysymex.models",
-    "pysymex.reporting",
-    "pysymex.sandbox",
-    "pysymex.scanner",
+    "pysymex._internal.execution",
+    "pysymex._internal.limits",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.scanner",
+    "pysymex._internal.tracing",
 ]
 allow_indirect_imports = true
 
@@ -199,15 +177,16 @@ id = "runtime-layers-no-presentation-or-api"
 name = "Runtime layers do not depend on API, CLI, or reporting"
 type = "forbidden"
 source_modules = [
-    "pysymex.analysis",
-    "pysymex.execution",
-    "pysymex.models",
-    "pysymex.sandbox",
+    "pysymex._internal.analysis",
+    "pysymex._internal.execution",
+    "pysymex._internal.models",
+    "pysymex._internal.sandbox",
 ]
 forbidden_modules = [
-    "pysymex.api",
-    "pysymex.cli",
-    "pysymex.reporting",
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex._internal.reporting",
+    "pysymex._internal.tracing",
 ]
 allow_indirect_imports = true
 
@@ -215,26 +194,241 @@ allow_indirect_imports = true
 id = "analysis-does-not-import-execution"
 name = "Analysis produces detector and static facts without importing execution runtime"
 type = "forbidden"
-source_modules = ["pysymex.analysis"]
-forbidden_modules = ["pysymex.execution"]
+source_modules = ["pysymex._internal.analysis"]
+forbidden_modules = ["pysymex._internal.execution"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "scanner-core-no-cli"
-name = "Scanner core does not depend on CLI presentation"
+id = "scanner-core-no-presentation"
+name = "Scanner core does not depend on CLI or reporting presentation"
 type = "forbidden"
 source_modules = [
-    "pysymex.scanner.async_scanner",
-    "pysymex.scanner.directory",
-    "pysymex.scanner.file",
-    "pysymex.scanner.session",
-    "pysymex.scanner.summary",
-    "pysymex.scanner.symbolic_vars",
-    "pysymex.scanner.types",
-    "pysymex.scanner.workers",
+    "pysymex._internal.scanner.directory",
+    "pysymex._internal.scanner.file",
+    "pysymex._internal.scanner.issues",
+    "pysymex._internal.scanner.protocols",
+    "pysymex._internal.scanner.types",
+    "pysymex._internal.scanner.workers",
 ]
-forbidden_modules = ["pysymex.cli"]
+forbidden_modules = ["pysymex._internal.cli", "pysymex._internal.reporting"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "models-no-runtime-or-orchestration"
+name = "Models depend only on semantic foundation, not runtime, analysis, orchestration, or presentation"
+type = "forbidden"
+source_modules = ["pysymex._internal.models"]
+forbidden_modules = [
+    "pysymex._internal.analysis",
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex.contracts",
+    "pysymex._internal.execution",
+    "pysymex._internal.reporting",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.scanner",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+
+[[tool.importlinter.contracts]]
+id = "builtin-models-do-not-depend-on-stdlib-models"
+name = "Builtin models do not depend on standard-library model implementations"
+type = "forbidden"
+source_modules = ["pysymex._internal.models.builtins"]
+forbidden_modules = ["pysymex._internal.models.stdlib"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "stdlib-models-do-not-depend-on-builtin-models"
+name = "Standard-library models do not depend on builtin model implementations"
+type = "forbidden"
+source_modules = ["pysymex._internal.models.stdlib"]
+forbidden_modules = ["pysymex._internal.models.builtins"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "model-foundations-do-not-depend-on-concrete-families"
+name = "Model contracts and shared helpers do not depend on concrete model families"
+type = "forbidden"
+source_modules = ["pysymex._internal.models.contracts"]
+forbidden_modules = ["pysymex._internal.models.builtins", "pysymex._internal.models.stdlib"]
+
+[[tool.importlinter.contracts]]
+id = "contracts-no-runtime-or-presentation"
+name = "Contract APIs and verification helpers do not directly import runtime execution, models, orchestration, or presentation"
+type = "forbidden"
+source_modules = ["pysymex.contracts"]
+forbidden_modules = [
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex._internal.execution",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.scanner",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "shared-foundation-no-feature-layers"
+name = "Shared foundation packages stay independent of feature, runtime, orchestration, and presentation layers"
+type = "forbidden"
+source_modules = [
+    "pysymex._internal.limits",
+    "pysymex._internal.logging",
+    "pysymex._internal.typing",
+    "pysymex._internal.utils",
+]
+forbidden_modules = [
+    "pysymex._internal.analysis",
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex.contracts",
+    "pysymex._internal.execution",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.scanner",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+
+[[tool.importlinter.contracts]]
+id = "config-no-product-or-presentation-layers"
+name = "Configuration does not directly import product, analysis, reporting, tracing, benchmark, or scanner layers"
+type = "forbidden"
+source_modules = ["pysymex._internal.config"]
+forbidden_modules = [
+    "pysymex._internal.analysis",
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex.contracts",
+    "pysymex._internal.core",
+    "pysymex._internal.models",
+    "pysymex._internal.reporting",
+    "pysymex._internal.scanner",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "public-workflows-no-cli-benchmarks-stats-or-tracing"
+name = "Public workflow interfaces do not import CLI, benchmark, stats, or tracing subsystems"
+type = "forbidden"
+source_modules = [
+    "pysymex.diagnostics",
+    "pysymex.issues",
+    "pysymex.reports",
+    "pysymex.results",
+    "pysymex.scan",
+    "pysymex.verify",
+]
+forbidden_modules = [
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "reporting-no-orchestration-or-observability-tools"
+name = "Reporting serializes evidence without directly importing CLI, API, benchmark, stats, tracing, or sandbox orchestration"
+type = "forbidden"
+source_modules = ["pysymex._internal.reporting"]
+forbidden_modules = [
+    "pysymex._internal.benchmarks",
+    "pysymex._internal.cli",
+    "pysymex._internal.sandbox",
+    "pysymex._internal.stats",
+    "pysymex._internal.tracing",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "scanner-core-no-api-benchmarks-or-stats"
+name = "Scanner core does not directly import public API, benchmarks, or stats collection"
+type = "forbidden"
+source_modules = [
+    "pysymex._internal.scanner.directory",
+    "pysymex._internal.scanner.file",
+    "pysymex._internal.scanner.issues",
+    "pysymex._internal.scanner.protocols",
+    "pysymex._internal.scanner.types",
+    "pysymex._internal.scanner.workers",
+]
+forbidden_modules = ["pysymex._internal.benchmarks", "pysymex._internal.stats"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "benchmarks-only-enter-through-benchmark-cli"
+name = "Benchmark subsystem is only imported by its own package and benchmark CLI command"
+type = "protected"
+protected_modules = ["pysymex._internal.benchmarks"]
+allowed_importers = ["pysymex._internal.cli.commands.benchmark"]
+
+[[tool.importlinter.contracts]]
+id = "analysis-subpackages-acyclic"
+name = "Clean analysis subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = [
+    "pysymex._internal.analysis.detectors.runtime",
+    "pysymex._internal.analysis.runtime",
+    "pysymex._internal.analysis.scan",
+]
+depth = 3
+
+[[tool.importlinter.contracts]]
+id = "core-subpackages-acyclic"
+name = "Clean core subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = [
+    "pysymex._internal.core.identity",
+    "pysymex._internal.core.memory",
+    "pysymex._internal.core.solver",
+    "pysymex._internal.core.state",
+]
+depth = 3
+
+[[tool.importlinter.contracts]]
+id = "execution-subpackages-acyclic"
+name = "Clean execution subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = [
+    "pysymex._internal.execution.feasibility",
+    "pysymex._internal.execution.frontier",
+]
+depth = 3
+
+[[tool.importlinter.contracts]]
+id = "scanner-subpackages-acyclic"
+name = "Scanner subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = ["pysymex._internal.scanner"]
+depth = 3
+
+[[tool.importlinter.contracts]]
+id = "reporting-subpackages-acyclic"
+name = "Reporting subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = ["pysymex._internal.reporting"]
+depth = 3
+
+[[tool.importlinter.contracts]]
+id = "sandbox-subpackages-acyclic"
+name = "Clean sandbox subpackages remain acyclic"
+type = "acyclic_siblings"
+ancestors = [
+    "pysymex._internal.sandbox.bridge",
+    "pysymex._internal.sandbox.isolation.linux",
+    "pysymex._internal.sandbox.isolation.windows.appcontainer",
+    "pysymex._internal.sandbox.runner",
+]
+depth = 3
 
 
 [tool.coverage.run]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from pysymex.stats.types import Event, EventType, Metadata, new_metadata
+from pysymex._internal.stats.types import Event, EventType, Metadata, new_metadata
 
 
 class TestTypes:

@@ -1,9 +1,8 @@
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 """Tests for tracing analyzer variable-touch pipeline filters."""
 
 from __future__ import annotations
 
-from pysymex.tracing.analyzer.pipeline import build_pipeline
+from pysymex._internal.tracing.analyzer.pipeline.builder import build_pipeline
 from tests.unit.tracing.analyzer.pipeline_args import make_pipeline_args
 
 

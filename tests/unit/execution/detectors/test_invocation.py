@@ -6,13 +6,19 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors import Detector, IsSatFn, Issue, IssueKind
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.execution.detectors import DetectorQueryEvent
-from pysymex.execution.detectors.invocation import DetectorRunContext, run_detectors
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.session.state import ExecutionSession
+from pysymex._internal.analysis.detectors.detector.contract import Detector
+from pysymex._internal.analysis.detectors.detector.types import IsSatFn, Issue
+from pysymex._internal.core.memory.cow.dicts import CowDict
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame
+from pysymex._internal.execution.detectors.invocation.runner import run_detectors
+from pysymex._internal.execution.detectors.invocation.types import DetectorRunContext
+from pysymex._internal.execution.detectors.telemetry import DetectorQueryEvent
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _sample() -> int:
@@ -92,6 +98,40 @@ def test_run_detectors_publishes_issue_with_engine_resolved_line_number() -> Non
     assert len(session.issues) == 1
     assert session.issues[0].line_number == 7
     assert seen_issues == session.issues
+
+
+def test_run_detectors_preserves_unset_issue_function_context_inside_call_stack() -> None:
+    session = ExecutionSession()
+    instr = _first_instruction()
+    active_instructions = [instr]
+    detector = UniversalIssueDetector()
+    context = DetectorRunContext(
+        session=session,
+        solver=IncrementalSolver(),
+        dispatcher=OpcodeDispatcher(),
+        hook_owner=object(),
+        hooks={},
+        detector_dispatch={},
+        universal_detectors=[detector],
+        resolve_line_number=lambda _pc, _instructions: 7,
+    )
+    state = VMState(
+        pc=0,
+        call_stack=[
+            CallFrame(
+                function_name="callee",
+                return_pc=1,
+                local_vars=CowDict[str, StackValue](),
+                stack_depth=0,
+            )
+        ],
+    )
+
+    run_detectors(context, state, instr, active_instructions)
+
+    assert len(session.issues) == 1
+    assert session.issues[0].function_name is None
+    assert session.issues[0].stack_trace == ("callee",)
 
 
 def test_run_detectors_skips_already_reported_site() -> None:

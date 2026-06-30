@@ -21,8 +21,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pysymex.benchmarks.suite.reporting import BenchmarkReporter
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult
+from pysymex._internal.benchmarks.suite.reporting import BenchmarkReporter
+from pysymex._internal.benchmarks.suite.types import (
+    BenchmarkCategory,
+    BenchmarkEvent,
+    BenchmarkResult,
+)
 
 
 def test_reporter_outputs(tmp_path: Path) -> None:
@@ -49,3 +53,26 @@ def test_reporter_outputs(tmp_path: Path) -> None:
     assert "| b1 | OPCODES | completed | 1300.00 | 0.00 | 0.00 | 2 |" in as_md
     assert out.exists()
     assert markdown_out.read_text(encoding="utf-8").startswith("| Benchmark |")
+
+
+def test_benchmark_inventory_has_clean_terminal_layout() -> None:
+    """Benchmark inventory should read as a terminal section, not a cramped list."""
+    rendered = BenchmarkReporter.format_inventory(["exec_core", "cli_scan"])
+
+    assert rendered.startswith("\nBenchmark Cases\n\n")
+    assert "  exec_core" in rendered
+    assert "  cli_scan" in rendered
+    assert "Available benchmark cases" not in rendered
+
+
+def test_benchmark_progress_line_uses_plain_label() -> None:
+    """Benchmark progress should use the shared plain-label style."""
+    event = BenchmarkEvent(
+        phase="start",
+        benchmark_name="exec_core",
+        category=BenchmarkCategory.OPCODES,
+        completed=1,
+        total=3,
+    )
+
+    assert BenchmarkReporter.progress_line(event).startswith("Benchmark: [1/3]")

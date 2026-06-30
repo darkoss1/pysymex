@@ -6,15 +6,16 @@ from collections.abc import Iterable
 
 import z3
 
-from pysymex.core.cache import get_instructions
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.core.types.containers.bytes import BYTES_CONST_CACHE
-from pysymex.core.types.containers.bytes import SymbolicBytes
-from pysymex.core.types.scalars.values import FROM_CONST_CACHE
-from pysymex.core.types.scalars.values import STRING_CONST_CACHE
-from pysymex.core.types.scalars.values import SYMBOLIC_CACHE
-from pysymex.execution.engine.lifecycle import reset_execution_run
-from pysymex.execution.session.state import ExecutionSession
+from pysymex._internal.core.cache.code.instructions import get_instructions
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.core.types.containers.bytes import BYTES_CONST_CACHE, SymbolicBytes
+from pysymex._internal.core.types.scalars.value.scalar_ops import (
+    FROM_CONST_CACHE,
+    STRING_CONST_CACHE,
+    SYMBOLIC_CACHE,
+)
+from pysymex._internal.execution.engine.lifecycle import reset_execution_run
+from pysymex._internal.execution.session.state.core import ExecutionSession
 
 
 class ResettableDouble:
@@ -72,8 +73,13 @@ class SolverDouble:
         _ = known_sat_prefix_len
         return SolverResult.sat(None)
 
-    def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
+    def check_sat_cached(
+        self,
+        constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
         _ = constraints
+        _ = known_sat_prefix_len
         return SolverResult.sat(None)
 
     def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:

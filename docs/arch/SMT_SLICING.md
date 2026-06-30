@@ -30,11 +30,11 @@ core.
 
 ## Evidence In Source
 
-- Query slicing call path: `pysymex/core/solver/engine/sat.py`
-- Independence optimizer: `pysymex/core/solver/independence`
-- Result and subset caches: `pysymex/core/solver/engine/result_cache.py`
-- Exact UNSAT subset validation: `pysymex/core/solver/engine/unsat_subset_cache.py`
-- UNSAT core extraction: `pysymex/core/solver/unsat.py`
+- Query slicing call path: `pysymex/_internal/core/solver/engine/sat.py`
+- Independence optimizer: `pysymex/_internal/core/solver/independence`
+- Result and subset caches: `pysymex/_internal/core/solver/engine/cache/results.py`
+- Exact UNSAT subset validation: `pysymex/_internal/core/solver/engine/cache/unsat/subset/core.py`
+- UNSAT core extraction: `pysymex/_internal/core/solver/unsat.py`
 - Tests: `tests/unit/core/solver/test_independence.py`, `tests/unit/core/solver/test_unsat.py`
 
 ## Limits

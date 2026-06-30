@@ -17,8 +17,7 @@
 | Blocked | Policy, sandbox, import, filesystem, or environment constraints prevented execution. |
 | Degraded pass | An analysis pass completed partially, stopped early, or lost precision. |
 | Path frontier | The pending set of path states waiting to be explored. |
-| CIG | Constraint Interaction Graph. In source, `ConstraintInteractionGraph` tracks branch program counters and connects branches whose variable sets overlap. |
-| CIGS | Not a separate PySyMex subsystem in the current repository. When this term appears in discussion, check whether the intended term is CIG or CEGIS. |
+| CIG | Constraint Interaction Graph. In source, `ConstraintInteractionGraph` tracks branch program counters and connects branches whose variable sets overlap. Not to be confused with CEGIS. |
 | Detector | A component that inspects symbolic state, bytecode, or scan facts and emits findings when evidence is sufficient. |
 | Finding | A reported `Issue`, contract issue, arithmetic issue, or scan issue record. |
 | Report | A formatted representation of results, such as text, JSON, Markdown, HTML, or SARIF. |

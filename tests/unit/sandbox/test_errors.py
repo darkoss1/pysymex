@@ -1,6 +1,6 @@
 import pytest
 
-from pysymex.sandbox.errors import (
+from pysymex._internal.sandbox.errors import (
     ResourceExhaustedError,
     ResourceLimitError,
     SandboxCleanupError,
@@ -17,7 +17,7 @@ from pysymex.sandbox.errors import (
 
 
 class TestSandboxError:
-    """Test suite for pysymex.sandbox.errors.SandboxError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -28,7 +28,7 @@ class TestSandboxError:
 
 
 class TestSandboxSetupError:
-    """Test suite for pysymex.sandbox.errors.SandboxSetupError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxSetupError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -39,7 +39,7 @@ class TestSandboxSetupError:
 
 
 class TestSandboxExecutionError:
-    """Test suite for pysymex.sandbox.errors.SandboxExecutionError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxExecutionError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -49,7 +49,7 @@ class TestSandboxExecutionError:
 
 
 class TestSandboxProtocolError:
-    """Test suite for pysymex.sandbox.errors.SandboxProtocolError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxProtocolError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -59,7 +59,7 @@ class TestSandboxProtocolError:
 
 
 class TestSandboxResourceError:
-    """Test suite for pysymex.sandbox.errors.SandboxResourceError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxResourceError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -69,7 +69,7 @@ class TestSandboxResourceError:
 
 
 class TestSandboxSecurityError:
-    """Test suite for pysymex.sandbox.errors.SandboxSecurityError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxSecurityError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -79,7 +79,7 @@ class TestSandboxSecurityError:
 
 
 class TestSandboxTimeoutError:
-    """Test suite for pysymex.sandbox.errors.SandboxTimeoutError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxTimeoutError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -98,7 +98,7 @@ class TestSandboxTimeoutError:
 
 
 class TestSecurityViolationError:
-    """Test suite for pysymex.sandbox.errors.SecurityViolationError."""
+    """Test suite for pysymex._internal.sandbox.errors.SecurityViolationError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -119,7 +119,7 @@ class TestSecurityViolationError:
 
 
 class TestResourceExhaustedError:
-    """Test suite for pysymex.sandbox.errors.ResourceExhaustedError."""
+    """Test suite for pysymex._internal.sandbox.errors.ResourceExhaustedError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -133,7 +133,7 @@ class TestResourceExhaustedError:
 
 
 class TestSandboxCleanupError:
-    """Test suite for pysymex.sandbox.errors.SandboxCleanupError."""
+    """Test suite for pysymex._internal.sandbox.errors.SandboxCleanupError."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -144,7 +144,7 @@ class TestSandboxCleanupError:
 
 
 class TestExecutionSandboxErrors:
-    """Test execution sandbox errors owned by pysymex.sandbox.errors."""
+    """Test execution sandbox errors owned by pysymex._internal.sandbox.errors."""
 
     @pytest.mark.timeout(30)
     def test_resource_limit_error_keeps_execution_security_base(self) -> None:

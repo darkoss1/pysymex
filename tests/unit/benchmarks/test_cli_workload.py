@@ -4,11 +4,11 @@ import json
 import subprocess
 from unittest.mock import patch
 
-from pysymex.benchmarks.suite.workload.cli import (
+from pysymex._internal.benchmarks.suite.workload.cli import (
     bench_cli_default_scan,
     bench_scanner_default_scan,
 )
-from pysymex.scanner.types import ScanResult
+from pysymex._internal.scanner.types import ScanResult
 
 
 def test_cli_default_scan_workload_collects_json_metrics() -> None:
@@ -34,7 +34,9 @@ def test_cli_default_scan_workload_collects_json_metrics() -> None:
         stderr="",
     )
 
-    with patch("pysymex.benchmarks.suite.workload.cli.subprocess.run", return_value=completed):
+    with patch(
+        "pysymex._internal.benchmarks.suite.workload.cli.subprocess.run", return_value=completed
+    ):
         result = bench_cli_default_scan()
 
     assert result["paths"] == 3
@@ -53,7 +55,9 @@ def test_cli_default_scan_workload_fails_on_bad_process_status() -> None:
         stderr="bad args",
     )
 
-    with patch("pysymex.benchmarks.suite.workload.cli.subprocess.run", return_value=completed):
+    with patch(
+        "pysymex._internal.benchmarks.suite.workload.cli.subprocess.run", return_value=completed
+    ):
         try:
             bench_cli_default_scan()
         except RuntimeError as exc:
@@ -77,7 +81,7 @@ def test_scanner_default_scan_workload_collects_scan_metrics() -> None:
         },
     )
 
-    with patch("pysymex.scanner.file.scan_file", return_value=scan_result):
+    with patch("pysymex._internal.scanner.file.scan_file", return_value=scan_result):
         result = bench_scanner_default_scan()
 
     assert result["instructions"] == 1

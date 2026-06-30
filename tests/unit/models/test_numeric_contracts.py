@@ -2,12 +2,27 @@ from __future__ import annotations
 
 import pytest
 
-import pysymex.models.numeric as numeric
-
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.types.numeric.complex import ComplexConjugateModel
+from pysymex._internal.models.builtins.types.numeric.float import (
+    FloatConjugateModel,
+    FloatFromhexModel,
+    FloatHexModel,
+    FloatIsIntegerModel,
+    FloatRatioModel,
+)
+from pysymex._internal.models.builtins.types.numeric.int import (
+    IntAsIntegerRatioModel,
+    IntBitCountModel,
+    IntBitLengthModel,
+    IntConjugateModel,
+    IntFromBytesModel,
+    IntToBytesModel,
+)
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -15,15 +30,15 @@ def _state() -> VMState:
 
 
 RECEIVER_ONLY_MODELS: list[tuple[FunctionModel, StackValue]] = [
-    (numeric.IntBitLengthModel(), 1),
-    (numeric.IntBitCountModel(), 1),
-    (numeric.IntAsIntegerRatioModel(), 1),
-    (numeric.IntConjugateModel(), 1),
-    (numeric.FloatIsIntegerModel(), 1.0),
-    (numeric.FloatAsIntegerRatioModel(), 1.0),
-    (numeric.FloatHexModel(), 1.0),
-    (numeric.FloatConjugateModel(), 1.0),
-    (numeric.ComplexConjugateModel(), SymbolicValue.symbolic("complex_receiver")[0]),
+    (IntBitLengthModel(), 1),
+    (IntBitCountModel(), 1),
+    (IntAsIntegerRatioModel(), 1),
+    (IntConjugateModel(), 1),
+    (FloatIsIntegerModel(), 1.0),
+    (FloatRatioModel(), 1.0),
+    (FloatHexModel(), 1.0),
+    (FloatConjugateModel(), 1.0),
+    (ComplexConjugateModel(), SymbolicValue.symbolic("complex_receiver")[0]),
 ]
 
 
@@ -39,14 +54,14 @@ def test_receiver_only_numeric_methods_enforce_contract(
         result = model.apply(args, kwargs, _state())
         effect = result.side_effects.get("raised_exception")
 
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     assert "raised_exception" not in model.apply([receiver], {}, _state()).side_effects
 
 
 def test_int_to_bytes_accepts_named_options_and_rejects_duplicates() -> None:
-    model = numeric.IntToBytesModel()
+    model = IntToBytesModel()
     valid_calls: list[tuple[list[StackValue], dict[str, StackValue]]] = [
         ([1], {}),
         ([1, 2, "big"], {}),
@@ -63,12 +78,12 @@ def test_int_to_bytes_accepts_named_options_and_rejects_duplicates() -> None:
         assert "raised_exception" not in model.apply(args, kwargs, _state()).side_effects
     for args, kwargs in invalid_calls:
         effect = model.apply(args, kwargs, _state()).side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
 
 def test_int_from_bytes_accepts_classmethod_options_and_rejects_duplicates() -> None:
-    model = numeric.IntFromBytesModel()
+    model = IntFromBytesModel()
     valid_calls: list[tuple[list[StackValue], dict[str, StackValue]]] = [
         ([b"a"], {}),
         ([b"a", "big"], {"signed": True}),
@@ -85,12 +100,12 @@ def test_int_from_bytes_accepts_classmethod_options_and_rejects_duplicates() -> 
         assert "raised_exception" not in model.apply(args, kwargs, _state()).side_effects
     for args, kwargs in invalid_calls:
         effect = model.apply(args, kwargs, _state()).side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
 
 def test_float_fromhex_requires_one_positional_string() -> None:
-    model = numeric.FloatFromhexModel()
+    model = FloatFromhexModel()
 
     assert "raised_exception" not in model.apply(["0x1p0"], {}, _state()).side_effects
     invalid_calls: list[tuple[list[StackValue], dict[str, StackValue]]] = [
@@ -100,5 +115,5 @@ def test_float_fromhex_requires_one_positional_string() -> None:
     ]
     for args, kwargs in invalid_calls:
         effect = model.apply(args, kwargs, _state()).side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"

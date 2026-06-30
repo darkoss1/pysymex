@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 class Panel:
     def __init__(
         self,

@@ -8,7 +8,7 @@ Bytecode-level path exploration for supported Python programs, backed by Z3 and 
 unknown, unsupported, inconclusive, and blocked states when a definite answer is not justified.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-2563eb.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-alpha_0.1.1a1-f59e0b.svg)](https://github.com/darkoss1/pysymex)
+[![Status](https://img.shields.io/badge/status-alpha_0.1.1a2-f59e0b.svg)](https://github.com/darkoss1/pysymex)
 [![Solver](https://img.shields.io/badge/solver-Z3-7c3aed.svg)](https://github.com/Z3Prover/z3)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-111827.svg)](LICENSE)
 
@@ -29,7 +29,7 @@ unknown, unsupported, inconclusive, and blocked states when a definite answer is
 | Reasoning engine | Z3-backed path constraints and feasibility checks |
 | Result model | Definite issues only when the path is feasible; uncertainty remains explicit |
 | Output formats | Text, JSON, Markdown, HTML, and SARIF |
-| Primary interfaces | `pysymex scan`, `pysymex analyze`, `pysymex verify`, and Python APIs |
+| Primary interfaces | `pysymex scan`, `pysymex contracts`, `pysymex trace-analyze`, and Python APIs |
 | Project phase | Alpha, research-oriented, closed to external pull requests |
 
 ## Install
@@ -62,22 +62,22 @@ Scan a file:
 pysymex scan mycode.py
 ```
 
-Scan a directory recursively:
+Scan a directory:
 
 ```bash
-pysymex scan src/ -r
+pysymex scan src/
 ```
 
 Generate SARIF for CI systems:
 
 ```bash
-pysymex scan src/ -r --format sarif -o report.sarif
+pysymex scan src/ --format sarif -o report.sarif
 ```
 
-Analyze a specific function:
+Verify a specific function:
 
 ```bash
-pysymex analyze mycode.py -f risky_divide --args x:int y:int
+pysymex contracts mycode.py -f risky_divide --args x:int y:int
 ```
 
 Run the benchmark command:
@@ -86,37 +86,45 @@ Run the benchmark command:
 pysymex benchmark --format markdown
 ```
 
+Summarize an execution trace:
+
+```bash
+pysymex trace-analyze trace.jsonl --format summary
+```
+
 ## Command Map
+
+Run `pysymex <command> --help` for command-specific flags and examples.
+Malformed numeric limits or symbolic argument hints are rejected before analysis starts.
 
 | Need | Interface |
 | --- | --- |
-| Scan a file or tree for supported issue patterns | `pysymex scan PATH [-r]` |
-| Inspect one function with typed symbolic inputs | `pysymex analyze FILE -f NAME --args x:int` |
-| Verify contract-decorated code | `pysymex verify FILE -f NAME` |
-| Fail a CI job by severity and optionally write SARIF | `pysymex check PATH --fail-on high --sarif report.sarif` |
+| Scan a file or tree for supported issue patterns | `pysymex scan PATH` |
+| Check contract-decorated code | `pysymex contracts FILE [-f NAME]` |
 | Measure benchmark cases or compare baselines | `pysymex benchmark [--case NAME]` |
+| Filter or summarize JSONL execution traces | `pysymex trace-analyze TRACE_FILE` |
 
 ## Python API
 
 ```python
-import asyncio
-
-from pysymex import analyze
+import pysymex
 
 
 def risky_divide(x: int, y: int) -> int:
     return x // y
 
 
-result = asyncio.run(analyze(risky_divide, {"x": "int", "y": "int"}))
+result = pysymex.verify.run(risky_divide, {"x": "int", "y": "int"})
 
-for issue in result.issues:
+for issue in result.arithmetic_issues:
     print(issue.kind)
     print(issue.message)
-    print(issue.get_counterexample())
+
+print(pysymex.results.count(result))
+print(pysymex.reports.json(result))
 ```
 
-Use the Python API when you want direct access to symbolic execution results. Use the CLI when
+Use the Python API when you want direct access to verification results. Use the CLI when
 you want scanner workflows, report files, or CI-friendly output.
 
 ## Supported Inputs and Reports
@@ -124,11 +132,14 @@ you want scanner workflows, report files, or CI-friendly output.
 | Surface | Current support |
 | --- | --- |
 | Python versions | CPython 3.11, 3.12, and 3.13 bytecode families |
-| CLI symbolic argument types | `int`, `str`, `list`, `bool`, and `dict` |
+| CLI symbolic argument hints | `NAME:TYPE`; names must be Python identifiers, and type strings are interpreted by the symbolic input factory |
 | Scan | Symbolic execution only (`pysymex scan`; static/pipeline modes removed) |
 | Report formats | `text`, `json`, `sarif`, `rich`, `html`, and `markdown` |
-| CI workflow | `pysymex check` for severity-gated exits; SARIF for external viewers |
 | Sandbox boundary | Target loading can go through the sandbox bridge; denials remain visible |
+
+For Python callers, clean public imports such as `pysymex.scan.path(...)`,
+`pysymex.results.clean(...)`, and `pysymex.reports.json(...)` delegate to the
+internal engine owners while keeping implementation modules private.
 
 ## Result Semantics
 
@@ -157,7 +168,7 @@ justify.
 
 ## Detection Surface
 
-The detector surface includes runtime failures and static or logical signals. Coverage depends on
+The detector surface includes runtime failures and static signals. Coverage depends on
 supported syntax, bytecode, models, path limits, and solver outcomes.
 
 | Family | Examples |
@@ -168,7 +179,6 @@ supported syntax, bytecode, models, path limits, and solver outcomes.
 | Control flow | assertion failure, unreachable code, infinite loop signals |
 | Resources | resource leak patterns |
 | Contracts | precondition, postcondition, and contract validation failures |
-| Logical checks | contradictions, impossible branches, path-level inconsistencies |
 
 ## Architecture
 

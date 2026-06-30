@@ -81,12 +81,12 @@ def _import_reference(
 
 
 def _analysis_python_files() -> list[Path]:
-    return sorted((_repo_root() / "pysymex" / "analysis").rglob("*.py"))
+    return sorted((_repo_root() / "pysymex" / "_internal" / "analysis").rglob("*.py"))
 
 
 def _source_and_analysis_test_files() -> list[Path]:
     root = _repo_root()
-    files = [*sorted((root / "pysymex" / "analysis").rglob("*.py"))]
+    files = [*sorted((root / "pysymex" / "_internal" / "analysis").rglob("*.py"))]
     files.extend(sorted((root / "tests" / "unit" / "analysis").rglob("*.py")))
     return files
 
@@ -102,9 +102,9 @@ def _analysis_runtime_imports(paths: Iterable[Path]) -> Iterable[ImportReference
 
 def _analysis_top_level_package(module: str) -> str | None:
     parts = module.split(".")
-    if len(parts) < 3 or parts[0] != "pysymex" or parts[1] != "analysis":
+    if len(parts) < 4 or parts[:3] != ["pysymex", "_internal", "analysis"]:
         return None
-    return parts[2]
+    return parts[3]
 
 
 def _analysis_top_level_runtime_edges() -> set[tuple[str, str]]:
@@ -156,29 +156,7 @@ def test_analysis_runtime_does_not_import_execution_runtime() -> None:
     offenders = [
         f"{reference.path.relative_to(_repo_root())} imports {reference.module}"
         for reference in _analysis_runtime_imports(_analysis_python_files())
-        if reference.module.startswith("pysymex.execution")
-    ]
-
-    assert offenders == []
-
-
-def test_type_stub_records_do_not_import_type_inference_runtime() -> None:
-    stubs_root = _repo_root() / "pysymex" / "analysis" / "static" / "stubs"
-    offenders = [
-        str(reference.path.relative_to(_repo_root()))
-        for reference in _analysis_runtime_imports(stubs_root.rglob("*.py"))
-        if reference.module.startswith("pysymex.analysis.static.types")
-    ]
-
-    assert offenders == []
-
-
-def test_static_lifecycle_does_not_import_scan_runtime() -> None:
-    static_root = _repo_root() / "pysymex" / "analysis" / "static"
-    offenders = [
-        str(reference.path.relative_to(_repo_root()))
-        for reference in _analysis_runtime_imports(static_root.rglob("*.py"))
-        if reference.module.startswith("pysymex.analysis.scan")
+        if reference.module.startswith("pysymex._internal.execution")
     ]
 
     assert offenders == []
@@ -197,70 +175,8 @@ def test_stub_records_do_not_convert_themselves_to_pytype() -> None:
     assert offenders == []
 
 
-def test_scan_lifecycle_sources_live_under_scan_package() -> None:
-    analysis_root = _repo_root() / "pysymex" / "analysis"
-    stale_sources = [
-        "complexity.py",
-        "records.py",
-        "loading/__init__.py",
-        "preflight/__init__.py",
-    ]
+def test_issue_record_shapes_are_analysis_owned_not_scan_lifecycle_owned() -> None:
+    analysis_root = _repo_root() / "pysymex" / "_internal" / "analysis"
 
-    offenders = [
-        stale_source for stale_source in stale_sources if (analysis_root / stale_source).exists()
-    ]
-
-    assert offenders == []
-
-
-def test_static_lifecycle_sources_live_under_static_package() -> None:
-    analysis_root = _repo_root() / "pysymex" / "analysis"
-    stale_sources = [
-        "control/__init__.py",
-        "dataflow/__init__.py",
-        "dead_code/types.py",
-        "patterns/__init__.py",
-        "properties/__init__.py",
-        "type_inference/__init__.py",
-        "type_stubs/__init__.py",
-    ]
-
-    offenders = [
-        stale_source for stale_source in stale_sources if (analysis_root / stale_source).exists()
-    ]
-
-    assert offenders == []
-
-
-def test_runtime_lifecycle_sources_live_under_runtime_package() -> None:
-    analysis_root = _repo_root() / "pysymex" / "analysis"
-    stale_sources = [
-        "cache/__init__.py",
-        "summaries/__init__.py",
-    ]
-
-    offenders = [
-        stale_source for stale_source in stale_sources if (analysis_root / stale_source).exists()
-    ]
-
-    assert offenders == []
-
-
-def test_domain_lifecycle_sources_live_under_domains_package() -> None:
-    analysis_root = _repo_root() / "pysymex" / "analysis"
-    stale_sources = [
-        "concurrency/__init__.py",
-        "exceptions/__init__.py",
-        "resources/__init__.py",
-        "specialized/__init__.py",
-        "specialized/escape.py",
-        "specialized/flow/analyzer.py",
-        "specialized/ranges/analyzer.py",
-        "specialized/string/analyzer.py",
-    ]
-
-    offenders = [
-        stale_source for stale_source in stale_sources if (analysis_root / stale_source).exists()
-    ]
-
-    assert offenders == []
+    assert (analysis_root / "records.py").exists()
+    assert not (analysis_root / "scan" / "records.py").exists()

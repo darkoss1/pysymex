@@ -18,12 +18,12 @@
 
 """Command-line interface for pysymex."""
 
-import sys
 import faulthandler
+import sys
 
 faulthandler.enable()
 
-from pysymex.cli import main
+from pysymex._internal.cli.entrypoint import main
 
 if __name__ == "__main__":
     sys.exit(main())

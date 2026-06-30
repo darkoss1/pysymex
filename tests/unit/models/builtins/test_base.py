@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import z3
 import pytest
+import z3
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, ModelResult
-from pysymex.models.builtins.results import ModelResult as CanonicalModelResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import ModelResult
+from pysymex._internal.typing.protocols import StackValue
 
 
 class _IdentityModel(FunctionModel):
@@ -30,11 +30,7 @@ class _IdentityModel(FunctionModel):
 
 
 class TestModelResult:
-    """Test suite for pysymex.models.builtins.base.ModelResult."""
-
-    def test_base_import_reexports_canonical_result(self) -> None:
-        """Public base import and canonical result import point to the same class."""
-        assert ModelResult is CanonicalModelResult
+    """Test suite for pysymex._internal.models.contracts.ModelResult."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -47,7 +43,7 @@ class TestModelResult:
 
 
 class TestFunctionModel:
-    """Test suite for pysymex.models.builtins.base.FunctionModel."""
+    """Test suite for pysymex._internal.models.contracts.FunctionModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""

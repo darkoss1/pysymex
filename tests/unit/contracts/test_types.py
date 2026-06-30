@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.contracts.types import (
-    Contract,
-    ContractKind,
-    ContractViolation,
-    FunctionContract,
-    EffectKind,
-)
+from pysymex._internal.contracts.enums import EffectKind
+from pysymex._internal.contracts.types import Contract, ContractViolation, FunctionContract
+from pysymex.contracts import ContractKind
 
 
 class TestContractType:

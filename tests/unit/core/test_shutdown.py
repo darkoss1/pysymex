@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-import pysymex.core.shutdown
+import pysymex._internal.core.shutdown
 
 
 class FakeSignalLoop:
@@ -46,7 +46,7 @@ async def test_cancel_all_tasks() -> None:
     task = asyncio.create_task(wait_forever())
     await asyncio.sleep(0)
 
-    cancelled = pysymex.core.shutdown.cancel_all_tasks(asyncio.get_running_loop())
+    cancelled = pysymex._internal.core.shutdown.cancel_all_tasks(asyncio.get_running_loop())
 
     await asyncio.sleep(0)
     assert cancelled == 1
@@ -59,9 +59,9 @@ def test_install_signal_handlers_uses_loop_handlers_and_restores(
     """Scenario: loop supports signal handlers; expected handlers are removable."""
     fake_loop = FakeSignalLoop()
     loop = cast("asyncio.AbstractEventLoop", fake_loop)
-    monkeypatch.setattr(pysymex.core.shutdown.sys, "platform", "linux")
+    monkeypatch.setattr(pysymex._internal.core.shutdown.sys, "platform", "linux")
 
-    handle = pysymex.core.shutdown.install_signal_handlers(loop)
+    handle = pysymex._internal.core.shutdown.install_signal_handlers(loop)
 
     assert [sig for sig, _callback, _args in fake_loop.added] == [
         signal.SIGINT,
@@ -71,7 +71,7 @@ def test_install_signal_handlers_uses_loop_handlers_and_restores(
     _sig, callback, args = fake_loop.added[0]
     callback(*args)
     assert handle.shutdown_requested is True
-    assert fake_loop.scheduled == [(pysymex.core.shutdown.cancel_all_tasks, (loop,))]
+    assert fake_loop.scheduled == [(pysymex._internal.core.shutdown.cancel_all_tasks, (loop,))]
 
     handle.close()
     assert fake_loop.removed == [signal.SIGINT, signal.SIGTERM]
@@ -96,11 +96,11 @@ def test_install_signal_handlers_windows_process_handlers_restore(
         return previous_handlers[sig]
 
     try:
-        monkeypatch.setattr(pysymex.core.shutdown.sys, "platform", "win32")
+        monkeypatch.setattr(pysymex._internal.core.shutdown.sys, "platform", "win32")
         monkeypatch.setattr(signal, "getsignal", fake_getsignal)
         monkeypatch.setattr(signal, "signal", fake_signal)
 
-        handle = pysymex.core.shutdown.install_signal_handlers(loop)
+        handle = pysymex._internal.core.shutdown.install_signal_handlers(loop)
         handle.close()
     finally:
         loop.close()
@@ -110,41 +110,3 @@ def test_install_signal_handlers_windows_process_handlers_restore(
         (signal.SIGINT, signal.SIG_DFL),
         (signal.SIGTERM, signal.SIG_IGN),
     ]
-
-
-def test_run_with_shutdown() -> None:
-    """Scenario: run coroutine through helper; expected coroutine return value."""
-
-    async def coro() -> int:
-        return 99
-
-    assert pysymex.core.shutdown.run_with_shutdown(coro()) == 99
-
-
-def test_run_with_shutdown_preserves_internal_cancelled_error() -> None:
-    """Scenario: coroutine cancels itself; expected cancellation is not KeyboardInterrupt."""
-
-    async def coro() -> int:
-        raise asyncio.CancelledError
-
-    with pytest.raises(asyncio.CancelledError):
-        pysymex.core.shutdown.run_with_shutdown(coro())
-
-
-def test_run_with_shutdown_converts_signal_cancel_to_keyboard_interrupt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Scenario: installed handler requests shutdown; expected KeyboardInterrupt."""
-
-    def fake_install(loop: asyncio.AbstractEventLoop) -> pysymex.core.shutdown.ShutdownHandle:
-        handle = pysymex.core.shutdown.ShutdownHandle(loop)
-        handle.request_shutdown("SIGINT")
-        return handle
-
-    async def coro() -> int:
-        await asyncio.sleep(10)
-        return 1
-
-    monkeypatch.setattr(pysymex.core.shutdown, "install_signal_handlers", fake_install)
-    with pytest.raises(KeyboardInterrupt):
-        pysymex.core.shutdown.run_with_shutdown(coro())

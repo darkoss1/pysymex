@@ -2,40 +2,32 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pysymex.cli.formatters import get_formatter
-from pysymex.cli.formatters.base import iter_verify_issue_records
-from pysymex.cli.formatters.json import JsonFormatter
-from pysymex.cli.formatters.text import TextFormatter
-from pysymex.cli.formatters.sarif import SarifFormatter
-from pysymex.cli.formatters.html import HtmlFormatter
-from pysymex.cli.formatters.markdown import MarkdownFormatter
-from pysymex.contracts.decorators import get_function_contract, requires
-from pysymex.contracts.ir.evidence import SolverStatus, UnsupportedReason
-from pysymex.contracts.ir.obligations import ObligationHook, QueryKind
-from pysymex.contracts.obligations import build_contract_evidence
-from pysymex.contracts.types import Contract, VerificationResult
-from pysymex.reporting.formatters import (
-    JSONFormatter as ReportingJsonFormatter,
+
+from pysymex._internal.cli.formatters.base import iter_verify_issue_records
+from pysymex._internal.cli.formatters.html import HtmlFormatter
+from pysymex._internal.cli.formatters.json import JsonFormatter
+from pysymex._internal.cli.formatters.markdown import CliMarkdownFormatter
+from pysymex._internal.cli.formatters.registry import get_formatter
+from pysymex._internal.cli.formatters.sarif import SarifFormatter
+from pysymex._internal.cli.formatters.text.formatter import CliTextFormatter
+from pysymex._internal.contracts.decorator.registry import ContractRegistry
+from pysymex._internal.contracts.decorators import requires
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex._internal.contracts.ir.evidence import SolverStatus, UnsupportedReason
+from pysymex._internal.contracts.ir.obligations import ObligationHook, QueryKind
+from pysymex._internal.contracts.obligations.evidence import build_contract_evidence
+from pysymex._internal.contracts.types import Contract
+from pysymex._internal.execution.executors.verified.properties.types import (
+    ProofStatus,
+    PropertyKind,
+    PropertyProof,
+    PropertySpec,
+)
+from pysymex._internal.execution.executors.verified.types import InferredProperty
+from pysymex._internal.reporting.formatters.json import JSONFormatter as ReportingJsonFormatter
+from pysymex._internal.reporting.formatters.markup import (
     MarkdownFormatter as ReportingMarkdownFormatter,
 )
-
-
-@pytest.fixture
-def mock_issue() -> MagicMock:
-    issue = MagicMock()
-    issue.kind = "DIVISION_BY_ZERO"
-    issue.line = 10
-    issue.message = "Div by zero"
-    issue.severity = "critical"
-    issue.file = "test.py"
-    issue.to_dict.return_value = {
-        "kind": "DIVISION_BY_ZERO",
-        "line": 10,
-        "message": "Div by zero",
-        "severity": "critical",
-        "file": "test.py",
-    }
-    return issue
 
 
 @pytest.fixture
@@ -85,6 +77,7 @@ def mock_verify_result() -> MagicMock:
     result.issues = [runtime_issue]
     result.contract_issues = [contract_issue]
     result.arithmetic_issues = [arithmetic_issue]
+    result.inferred_properties = []
     return result
 
 
@@ -94,7 +87,7 @@ def _contract_target_for_report(x: int) -> int:
 
 
 def _contract_clause_for_report() -> Contract:
-    contract = get_function_contract(_contract_target_for_report)
+    contract = ContractRegistry.get(_contract_target_for_report)
     assert contract is not None
     return contract.preconditions[0]
 
@@ -115,11 +108,11 @@ def _contract_evidence_for_report() -> object:
 
 def test_get_formatter() -> None:
     assert isinstance(get_formatter("json"), JsonFormatter)
-    assert isinstance(get_formatter("rich"), TextFormatter)
-    assert isinstance(get_formatter("text"), TextFormatter)
+    assert isinstance(get_formatter("rich"), CliTextFormatter)
+    assert isinstance(get_formatter("text"), CliTextFormatter)
     assert isinstance(get_formatter("sarif"), SarifFormatter)
     assert isinstance(get_formatter("html"), HtmlFormatter)
-    assert isinstance(get_formatter("markdown"), MarkdownFormatter)
+    assert isinstance(get_formatter("markdown"), CliMarkdownFormatter)
 
 
 def test_get_formatter_rejects_unknown_format() -> None:
@@ -130,7 +123,7 @@ def test_get_formatter_rejects_unknown_format() -> None:
 def test_cli_formatters_are_distinct_from_single_result_reporting_formatters() -> None:
     """CLI formatters own command aggregation; reporting formatters own one result."""
     assert JsonFormatter is not ReportingJsonFormatter
-    assert MarkdownFormatter is not ReportingMarkdownFormatter
+    assert CliMarkdownFormatter is not ReportingMarkdownFormatter
     assert hasattr(JsonFormatter(), "format_symbolic")
     assert hasattr(ReportingJsonFormatter(), "format")
 
@@ -170,20 +163,70 @@ def test_json_verify_formatter_includes_contract_evidence_schema(
     assert data["results"][0]["contract_evidence"][0]["solver_status"] == "unsupported"
 
 
+def test_json_verify_formatter_includes_inferred_properties(
+    mock_verify_result: MagicMock,
+) -> None:
+    spec = PropertySpec(
+        PropertyKind.BOUNDED,
+        "bounded_execution_completion",
+        "bounded execution completed",
+    )
+    mock_verify_result.inferred_properties = [
+        InferredProperty(
+            kind=PropertyKind.BOUNDED,
+            description=spec.description,
+            confidence=1.0,
+            proof=PropertyProof(spec, ProofStatus.PROVEN),
+        )
+    ]
+
+    data = json.loads(JsonFormatter().format_verify([mock_verify_result], 3, 1.0))
+
+    prop = data["results"][0]["inferred_properties"][0]
+    assert prop["kind"] == "BOUNDED"
+    assert prop["description"] == "bounded execution completed"
+    assert prop["confidence"] == 1.0
+    assert prop["proof"]["status"] == "PROVEN"
+    assert prop["proof"]["name"] == "bounded_execution_completion"
+
+
 def test_text_verify_formatter_shows_contract_evidence_rows(
     mock_verify_result: MagicMock,
 ) -> None:
     evidence = _contract_evidence_for_report()
     mock_verify_result.contract_evidence = [evidence]
 
-    output = TextFormatter(use_rich=False).format_verify([mock_verify_result], 3, 1.0)
+    output = CliTextFormatter(use_rich=False).format_verify([mock_verify_result], 3, 1.0)
 
     assert "Contract evidence:" in output
     assert "[UNSUPPORTED] REQUIRES call_site/call_precondition (native): x > 0" in output
 
 
+def test_text_verify_formatter_shows_inferred_properties(
+    mock_verify_result: MagicMock,
+) -> None:
+    spec = PropertySpec(
+        PropertyKind.BOUNDED,
+        "bounded_execution_completion",
+        "bounded execution completed",
+    )
+    mock_verify_result.inferred_properties = [
+        InferredProperty(
+            kind=PropertyKind.BOUNDED,
+            description=spec.description,
+            confidence=1.0,
+            proof=PropertyProof(spec, ProofStatus.PROVEN),
+        )
+    ]
+
+    output = CliTextFormatter(use_rich=False).format_verify([mock_verify_result], 3, 1.0)
+
+    assert "Inferred properties:" in output
+    assert "[PROVEN] BOUNDED: bounded execution completed" in output
+
+
 def test_text_formatter(mock_scan_result: MagicMock) -> None:
-    fmt = TextFormatter(use_rich=False)
+    fmt = CliTextFormatter(use_rich=False)
     out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
     assert "pysymex - formal verification report" in out
     assert "DIVISION_BY_ZERO" in out
@@ -193,7 +236,7 @@ def test_text_formatter(mock_scan_result: MagicMock) -> None:
 def test_text_formatter_omits_empty_trigger(mock_scan_result: MagicMock) -> None:
     mock_scan_result.issues[0]["counterexample"] = {}
 
-    out = TextFormatter(use_rich=False).format_symbolic([mock_scan_result], 1, 1.5)
+    out = CliTextFormatter(use_rich=False).format_symbolic([mock_scan_result], 1, 1.5)
 
     assert "Trigger:" not in out
 
@@ -202,13 +245,13 @@ def test_rich_text_formatter_omits_empty_trigger(mock_scan_result: MagicMock) ->
     pytest.importorskip("rich")
     mock_scan_result.issues[0]["counterexample"] = {}
 
-    out = TextFormatter(use_rich=True).format_symbolic([mock_scan_result], 1, 1.5)
+    out = CliTextFormatter(use_rich=True).format_symbolic([mock_scan_result], 1, 1.5)
 
     assert "Trigger:" not in out
 
 
 def test_markdown_formatter(mock_scan_result: MagicMock) -> None:
-    fmt = MarkdownFormatter()
+    fmt = CliMarkdownFormatter()
     out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
     assert "# pysymex symbolic execution report" in out
     assert "DIVISION_BY_ZERO" in out
@@ -218,7 +261,7 @@ def test_markdown_formatter(mock_scan_result: MagicMock) -> None:
 def test_markdown_formatter_omits_empty_triggering_input(mock_scan_result: MagicMock) -> None:
     mock_scan_result.issues[0]["counterexample"] = {}
 
-    out = MarkdownFormatter().format_symbolic([mock_scan_result], 1, 1.5)
+    out = CliMarkdownFormatter().format_symbolic([mock_scan_result], 1, 1.5)
 
     assert "Triggering Input" not in out
 
@@ -226,7 +269,7 @@ def test_markdown_formatter_omits_empty_triggering_input(mock_scan_result: Magic
 def test_html_formatter(mock_scan_result: MagicMock) -> None:
     fmt = HtmlFormatter()
 
-    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
+    with patch("pysymex._internal.cli.formatters.html.generate_html_report") as mock_gen:
         mock_gen.return_value = "<html></html>"
         out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
         assert out == "<html></html>"
@@ -236,7 +279,7 @@ def test_html_formatter_normalizes_empty_triggering_input(mock_scan_result: Magi
     mock_scan_result.issues[0]["counterexample"] = {}
     fmt = HtmlFormatter()
 
-    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
+    with patch("pysymex._internal.cli.formatters.html.generate_html_report") as mock_gen:
         mock_gen.return_value = "<html></html>"
 
         out = fmt.format_symbolic([mock_scan_result], 1, 1.5)
@@ -251,7 +294,7 @@ def test_html_verify_formatter_uses_normalized_verify_records(
 ) -> None:
     fmt = HtmlFormatter()
 
-    with patch("pysymex.cli.formatters.html.generate_html_report") as mock_gen:
+    with patch("pysymex._internal.cli.formatters.html.generate_html_report") as mock_gen:
         mock_gen.return_value = "<html></html>"
 
         out = fmt.format_verify([mock_verify_result], 3, 1.0)
@@ -270,7 +313,7 @@ def test_html_verify_formatter_uses_normalized_verify_records(
 def test_sarif_formatter(mock_scan_result: MagicMock) -> None:
     fmt = SarifFormatter()
 
-    with patch("pysymex.reporting.sarif.SARIFGenerator") as mock_gen_sym:
+    with patch("pysymex._internal.reporting.sarif.generator.SARIFGenerator") as mock_gen_sym:
         mock_sarif = MagicMock()
         mock_sarif.to_json.return_value = "{}"
         mock_gen_sym.return_value.generate.return_value = mock_sarif
@@ -299,7 +342,7 @@ def test_sarif_verify_formatter_uses_normalized_verify_records(
     evidence = _contract_evidence_for_report()
     mock_verify_result.contract_issues[0].evidence = evidence
 
-    with patch("pysymex.reporting.sarif.SARIFGenerator") as mock_generator:
+    with patch("pysymex._internal.reporting.sarif.generator.SARIFGenerator") as mock_generator:
         mock_sarif = MagicMock()
         mock_sarif.to_json.return_value = "{}"
         mock_generator.return_value.generate.return_value = mock_sarif

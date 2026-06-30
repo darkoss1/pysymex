@@ -1,6 +1,10 @@
 import pytest
-from pysymex.sandbox.isolation.constants import HARNESS_FILENAME as CANONICAL_HARNESS_FILENAME
-from pysymex.sandbox.isolation.harness import HARNESS_FILENAME, generate_harness_script
+
+from pysymex._internal.sandbox.isolation.constants import HARNESS_FILENAME
+from pysymex._internal.sandbox.isolation.constants import (
+    HARNESS_FILENAME as CANONICAL_HARNESS_FILENAME,
+)
+from pysymex._internal.sandbox.isolation.harness.generator import generate_harness_script
 
 
 def test_harness_filename_public_import() -> None:

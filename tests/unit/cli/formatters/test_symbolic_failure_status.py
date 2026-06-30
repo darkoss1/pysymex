@@ -4,10 +4,10 @@ import json
 from dataclasses import dataclass, field
 from unittest.mock import patch
 
-from pysymex.cli.formatters.html import HtmlFormatter
-from pysymex.cli.formatters.markdown import MarkdownFormatter
-from pysymex.cli.formatters.sarif import SarifFormatter
-from pysymex.cli.formatters.text import TextFormatter
+from pysymex._internal.cli.formatters.html import HtmlFormatter
+from pysymex._internal.cli.formatters.markdown import CliMarkdownFormatter
+from pysymex._internal.cli.formatters.sarif import SarifFormatter
+from pysymex._internal.cli.formatters.text.formatter import CliTextFormatter
 
 
 @dataclass
@@ -34,7 +34,7 @@ class _DegradedResult:
 
 
 def test_ascii_symbolic_report_does_not_claim_failed_scan_is_clean() -> None:
-    output = TextFormatter(use_rich=False).format_symbolic([_FailedResult()], 0, 0.1)
+    output = CliTextFormatter(use_rich=False).format_symbolic([_FailedResult()], 0, 0.1)
 
     assert "[X] Scan errors:" in output
     assert "Syntax Error: invalid syntax" in output
@@ -42,7 +42,7 @@ def test_ascii_symbolic_report_does_not_claim_failed_scan_is_clean() -> None:
 
 
 def test_markdown_symbolic_report_exposes_analysis_failure() -> None:
-    output = MarkdownFormatter().format_symbolic([_FailedResult()], 0, 0.1)
+    output = CliMarkdownFormatter().format_symbolic([_FailedResult()], 0, 0.1)
 
     assert "**Analysis Errors:** 1" in output
     assert "No findings reported; analysis did not complete successfully." in output
@@ -52,7 +52,7 @@ def test_markdown_symbolic_report_exposes_analysis_failure() -> None:
 
 def test_html_symbolic_report_sets_failure_state_for_analysis_error() -> None:
     with patch(
-        "pysymex.cli.formatters.html.generate_html_report", return_value="<html></html>"
+        "pysymex._internal.cli.formatters.html.generate_html_report", return_value="<html></html>"
     ) as generate:
         output = HtmlFormatter().format_symbolic([_FailedResult()], 0, 0.1)
 
@@ -65,8 +65,8 @@ def test_html_symbolic_report_sets_failure_state_for_analysis_error() -> None:
 def test_symbolic_reports_do_not_claim_degraded_scan_is_clean() -> None:
     result = _DegradedResult()
 
-    ascii_output = TextFormatter(use_rich=False).format_symbolic([result], 0, 0.1)
-    markdown_output = MarkdownFormatter().format_symbolic([result], 0, 0.1)
+    ascii_output = CliTextFormatter(use_rich=False).format_symbolic([result], 0, 0.1)
+    markdown_output = CliMarkdownFormatter().format_symbolic([result], 0, 0.1)
     sarif_output = json.loads(SarifFormatter().format_symbolic([result], 0, 0.1))
 
     assert "Degraded analyses:" in ascii_output
@@ -79,7 +79,7 @@ def test_symbolic_reports_do_not_claim_degraded_scan_is_clean() -> None:
 
 def test_html_symbolic_report_sets_failure_state_for_degraded_analysis() -> None:
     with patch(
-        "pysymex.cli.formatters.html.generate_html_report", return_value="<html></html>"
+        "pysymex._internal.cli.formatters.html.generate_html_report", return_value="<html></html>"
     ) as generate:
         HtmlFormatter().format_symbolic([_DegradedResult()], 0, 0.1)
 

@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.cli.scan.symbolic import handle_symbolic_scan
-from pysymex.scanner.types import ScanResult
+from pysymex._internal.cli.commands.scan.symbolic import handle_symbolic_scan
+from pysymex._internal.scanner.types import ScanResult
 
 
 def test_symbolic_cli_returns_failure_for_error_result(tmp_path: Path) -> None:
@@ -15,13 +15,10 @@ def test_symbolic_cli_returns_failure_for_error_result(tmp_path: Path) -> None:
     args = argparse.Namespace(
         verbose=False,
         visualize=False,
-        recursive=False,
         max_paths=10,
         timeout=5.0,
         workers=1,
         auto=False,
-        deterministic=False,
-        seed=42,
         no_cache=False,
         max_iterations=0,
         trace=False,
@@ -36,27 +33,24 @@ def test_symbolic_cli_returns_failure_for_error_result(tmp_path: Path) -> None:
 
     with (
         patch(
-            "pysymex.cli.scan.symbolic.call_with_supported_kwargs",
+            "pysymex._internal.cli.commands.scan.symbolic.call_with_supported_kwargs",
             return_value=failed_result,
         ),
-        patch("pysymex.cli.scan.symbolic.emit_cli_output"),
+        patch("pysymex._internal.cli.commands.scan.symbolic.emit_cli_output"),
     ):
         assert handle_symbolic_scan(args, target, 0.0) == 1
 
 
-def test_symbolic_cli_returns_failure_for_degraded_result(tmp_path: Path) -> None:
+def test_symbolic_cli_returns_success_for_degraded_no_issue_result(tmp_path: Path) -> None:
     target = tmp_path / "degraded.py"
     target.write_text("x = 1\n", encoding="utf-8")
     args = argparse.Namespace(
         verbose=False,
         visualize=False,
-        recursive=False,
         max_paths=10,
         timeout=5.0,
         workers=1,
         auto=False,
-        deterministic=False,
-        seed=42,
         no_cache=False,
         max_iterations=0,
         trace=False,
@@ -74,7 +68,10 @@ def test_symbolic_cli_returns_failure_for_degraded_result(tmp_path: Path) -> Non
     )
 
     with (
-        patch("pysymex.cli.scan.symbolic.call_with_supported_kwargs", return_value=degraded_result),
-        patch("pysymex.cli.scan.symbolic.emit_cli_output"),
+        patch(
+            "pysymex._internal.cli.commands.scan.symbolic.call_with_supported_kwargs",
+            return_value=degraded_result,
+        ),
+        patch("pysymex._internal.cli.commands.scan.symbolic.emit_cli_output"),
     ):
-        assert handle_symbolic_scan(args, target, 0.0) == 1
+        assert handle_symbolic_scan(args, target, 0.0) == 0

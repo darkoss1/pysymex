@@ -11,6 +11,7 @@ current repository: public workflows, architecture, uncertainty semantics, and m
 | [API.md](API.md) | Public Python entrypoints, result objects, and API stability boundaries. |
 | [LIMITATIONS.md](LIMITATIONS.md) | Supported scope, known limits, and uncertainty policy. |
 | [arch/README.md](arch/README.md) | Architecture index and source-area map. |
+
 | [GLOSSARY.md](GLOSSARY.md) | Short definitions for terms used across the docs. |
 
 For a new contributor, start with [LIMITATIONS.md](LIMITATIONS.md), then read
@@ -22,6 +23,7 @@ that matches your task.
 | Document | Scope |
 | --- | --- |
 | [arch/OVERVIEW.md](arch/OVERVIEW.md) | End-to-end system shape and trust boundary. |
+
 | [arch/SCANNING.md](arch/SCANNING.md) | Target discovery, compile-only loading, sandbox bytecode extraction, and scan results. |
 | [arch/SANDBOX.md](arch/SANDBOX.md) | Native isolation, capability checks, staged paths, and sandbox result states. |
 | [arch/FLOW.md](arch/FLOW.md) | Symbolic VM loop, `VMState`, opcode dispatch, and execution results. |

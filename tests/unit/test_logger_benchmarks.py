@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import time
 from io import StringIO
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 
-from pysymex.logger import LogLevel, PysymexLogger
+from pysymex._internal.logging.levels import LogLevel
+from pysymex._internal.logging.logger import PysymexLogger
 
 
 def _elapsed(call_count: int, action: Callable[[], None]) -> float:

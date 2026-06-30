@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-import pysymex
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _assert_no_issue_kinds(result: object, forbidden: set[str]) -> None:
@@ -156,54 +154,6 @@ def test_scan_file_class_decorator_attribute_write_updates_class(tmp_path: Path)
     result = scan_file(target, use_sandbox=False)
 
     _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NAME_ERROR"})
-
-
-def test_analyze_code_class_decorator_attribute_write_updates_class() -> None:
-    """Direct module analysis keeps decorator class-attribute writes visible."""
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "def decorate(cls):\n"
-            "    cls.value = 3\n"
-            "    return cls\n\n"
-            "@decorate\n"
-            "class Box:\n"
-            "    pass\n\n"
-            "result = Box.value\n",
-            max_paths=20,
-            max_depth=80,
-            max_iterations=1500,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NAME_ERROR"})
-
-
-def test_analyze_code_metaclass_call_initializes_instance_attribute() -> None:
-    """A custom metaclass ``__call__`` can initialize attributes before returning."""
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Meta(type):\n"
-            "    def __call__(cls, value: int = 2):\n"
-            "        item = super().__call__()\n"
-            "        item.value = value + 1\n"
-            "        return item\n"
-            "class Box(metaclass=Meta):\n"
-            "    pass\n\n"
-            "result = Box().value\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2200,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(
-        result,
-        {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NAME_ERROR", "UNBOUND_VARIABLE", "UNHANDLED_EXCEPTION"},
-    )
-    assert "unsupported_super_protocol" not in result.degraded_passes
-    assert "unsupported_construction_protocol" not in result.degraded_passes
 
 
 def test_scan_file_metaclass_call_initializes_instance_attribute(tmp_path: Path) -> None:

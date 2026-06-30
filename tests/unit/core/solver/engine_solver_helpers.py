@@ -10,10 +10,3 @@ def is_sat_with_z3(constraints: list[z3.BoolRef]) -> bool:
     solver = z3.Solver()
     solver.add(constraints)
     return solver.check() == z3.sat
-
-
-def is_unsat_with_z3(constraints: list[z3.BoolRef]) -> bool:
-    """Return whether the given constraints are unsatisfiable in raw Z3."""
-    solver = z3.Solver()
-    solver.add(constraints)
-    return solver.check() == z3.unsat

@@ -2,36 +2,38 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.advanced_float import AdvancedSymbolicFloat
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import ModelResult, is_raised_exception_effect
-from pysymex.models.builtins.core.abs import AbsModel
-from pysymex.models.builtins.core.collections import NoneModel
-from pysymex.models.builtins.core.conversions.numeric import ComplexModel, FloatModel
-from pysymex.models.builtins.core.conversions.scalar import BoolModel, IntModel, StrModel
-from pysymex.models.builtins.core.iterables import SumModel
-from pysymex.models.builtins.core.len import LenModel
-from pysymex.models.builtins.core.max import MaxModel
-from pysymex.models.builtins.core.min import MinModel
-from pysymex.models.builtins.core.range import RangeModel
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.numeric.float import SymbolicFloat
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.constructors.collections import NoneModel
+from pysymex._internal.models.builtins.conversions.boolean import BoolModel
+from pysymex._internal.models.builtins.conversions.numeric import ComplexModel, FloatModel
+from pysymex._internal.models.builtins.conversions.scalar import IntModel, StrModel
+from pysymex._internal.models.builtins.iteration.aggregates import SumModel
+from pysymex._internal.models.builtins.numeric.abs import AbsModel
+from pysymex._internal.models.builtins.numeric.max import MaxModel
+from pysymex._internal.models.builtins.numeric.min import MinModel
+from pysymex._internal.models.builtins.sequences.len import LenModel
+from pysymex._internal.models.builtins.sequences.range import RangeModel
+from pysymex._internal.models.contracts.results import ModelResult, SideEffects
+from pysymex._internal.typing.protocols import StackValue
 from tests.unit.models.builtins.core_model_helpers import state
 
 
 def _raised_exception_type(result: ModelResult) -> str | None:
     raised = result.side_effects.get("raised_exception")
-    if not is_raised_exception_effect(raised):
+    if not SideEffects.is_raised_exception(raised):
         return None
     return raised["exception_type"]
 
 
 class TestLenModel:
-    """Test suite for pysymex.models.builtins.core.LenModel."""
+    """Test suite for pysymex._internal.models.builtins.core.LenModel."""
 
     def test_apply_without_args_emits_type_error_side_effect(self) -> None:
         """len() raises TypeError in CPython."""
@@ -82,7 +84,7 @@ class TestLenModel:
 
 
 class TestRangeModel:
-    """Test suite for pysymex.models.builtins.core.RangeModel."""
+    """Test suite for pysymex._internal.models.builtins.core.RangeModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -99,7 +101,19 @@ class TestRangeModel:
         """Test small concrete ranges avoid quantified constraints."""
         result = RangeModel().apply([1, 4], {}, state())
         assert result.value is not None
+        assert getattr(result.value, "_type", None) == "range"
         assert not any(z3.is_quantifier(constraint) for constraint in result.constraints)
+
+    def test_large_concrete_range_retains_compact_runtime_type_and_length(self) -> None:
+        """Large ranges stay compact while preserving exact range identity and length."""
+        result = RangeModel().apply([1_000_000_000], {}, state())
+
+        assert isinstance(result.value, SymbolicList)
+        assert result.value.concrete_items is None
+        assert getattr(result.value, "_type", None) == "range"
+        solver = z3.Solver()
+        solver.add(*result.constraints, result.value.z3_len != 1_000_000_000)
+        assert solver.check() == z3.unsat
 
     def test_symbolic_range_uses_exact_element_progression_without_lambda_axiom(self) -> None:
         """Observed symbolic range elements stay exact without quantified constraints."""
@@ -109,7 +123,43 @@ class TestRangeModel:
         assert isinstance(result.value, SymbolicList)
         assert not any(z3.is_quantifier(constraint) for constraint in result.constraints)
         first = result.value[0]
-        assert z3.is_true(z3.simplify(first.z3_int == 0))
+        assert z3.is_true(simplify_expr(first.z3_int == 0))
+
+    def test_symbolic_negative_step_range_counts_down_from_positive_start(self) -> None:
+        """range(n, 0, -1) has exactly n items when n is positive."""
+        start, start_constraint = SymbolicValue.symbolic_int("range_down_start")
+        result = RangeModel().apply([start, 0, -1], {}, state())
+
+        assert isinstance(result.value, SymbolicList)
+        solver = z3.Solver()
+        solver.add(start_constraint, *result.constraints)
+        solver.add(start.z3_int > 0)
+        solver.add(result.value.z3_len != start.z3_int)
+        assert solver.check() == z3.unsat
+
+    def test_symbolic_negative_step_range_is_empty_when_direction_misses_stop(self) -> None:
+        """range(n, 0, -1) is empty when n is not positive."""
+        start, start_constraint = SymbolicValue.symbolic_int("range_empty_down_start")
+        result = RangeModel().apply([start, 0, -1], {}, state())
+
+        assert isinstance(result.value, SymbolicList)
+        solver = z3.Solver()
+        solver.add(start_constraint, *result.constraints)
+        solver.add(start.z3_int <= 0)
+        solver.add(result.value.z3_len != 0)
+        assert solver.check() == z3.unsat
+
+    def test_symbolic_positive_step_range_counts_up_to_positive_stop(self) -> None:
+        """range(0, n, 1) keeps the existing positive-step length relation."""
+        stop, stop_constraint = SymbolicValue.symbolic_int("range_up_stop")
+        result = RangeModel().apply([0, stop, 1], {}, state())
+
+        assert isinstance(result.value, SymbolicList)
+        solver = z3.Solver()
+        solver.add(stop_constraint, *result.constraints)
+        solver.add(stop.z3_int > 0)
+        solver.add(result.value.z3_len != stop.z3_int)
+        assert solver.check() == z3.unsat
 
     def test_concrete_invalid_argument_and_zero_step_emit_exceptions(self) -> None:
         invalid_type = RangeModel().apply([1.0], {}, state())
@@ -125,7 +175,7 @@ class TestRangeModel:
 
 
 class TestAbsModel:
-    """Test suite for pysymex.models.builtins.core.AbsModel."""
+    """Test suite for pysymex._internal.models.builtins.core.AbsModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -146,7 +196,7 @@ class TestAbsModel:
 
 
 class TestMinModel:
-    """Test suite for pysymex.models.builtins.core.MinModel."""
+    """Test suite for pysymex._internal.models.builtins.core.MinModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -189,7 +239,7 @@ class TestMinModel:
 
 
 class TestMaxModel:
-    """Test suite for pysymex.models.builtins.core.MaxModel."""
+    """Test suite for pysymex._internal.models.builtins.core.MaxModel."""
 
     def test_apply(self) -> None:
         """Test apply behavior."""
@@ -246,6 +296,26 @@ class TestScalarModels:
 
         assert _raised_exception_type(result) == "ValueError"
 
+    def test_int_parses_path_forced_symbolic_string_literal(self) -> None:
+        text, text_constraint = SymbolicString.symbolic("int_text")
+        length_slot = z3.Int("len_int_text_int")
+        vm_state = VMState(
+            path_constraints=[
+                text_constraint,
+                length_slot == z3.Length(text.z3_str),
+                length_slot == 2,
+                z3.SubString(text.z3_str, 0, 1) == z3.StringVal("4"),
+                z3.SubString(text.z3_str, 1, 1) == z3.StringVal("2"),
+            ],
+            pc=12,
+        )
+
+        result = IntModel().apply([text], {}, vm_state)
+
+        assert result.value == 42
+        assert result.constraints == ()
+        assert "potential_exception" not in result.side_effects
+
     def test_int_definite_type_failures_are_modeled(self) -> None:
         invalid_base = IntModel().apply([SymbolicString.from_const("10")], {"base": 1.5}, state())
         invalid_source = IntModel().apply([None], {}, state())
@@ -280,8 +350,10 @@ class TestScalarModels:
         invalid_literal = FloatModel().apply([b"bad"], {}, state())
         invalid_type = FloatModel().apply([None], {}, state())
 
-        assert isinstance(parsed.value, AdvancedSymbolicFloat)
-        assert z3.is_true(z3.simplify(z3.fpEQ(parsed.value.z3_expr, z3.FPVal(1.25, z3.Float64()))))
+        assert isinstance(parsed.value, SymbolicFloat)
+        assert z3.is_true(
+            simplify_expr(z3.fpEQ(parsed.value.z3_expr, z3.FPVal(1.25, z3.Float64())))
+        )
         assert _raised_exception_type(invalid_literal) == "ValueError"
         assert _raised_exception_type(invalid_type) == "TypeError"
 

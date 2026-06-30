@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.analysis.detectors.detector.issue_evidence import (
+from pysymex._internal.analysis.detectors.detector.issue_evidence import (
     constraints_extend_inconclusive_path,
     issue_from_feasibility_evidence,
 )
-from pysymex.analysis.detectors.detector.types import IssueKind
-from pysymex.analysis.detectors.feasibility import FeasibilityModelResult
+from pysymex._internal.analysis.evidence.result import FeasibilityModelResult
+from pysymex._internal.core.outcome import IssueKind
 
 
 def test_issue_from_feasibility_evidence_suppresses_no_sat_evidence() -> None:

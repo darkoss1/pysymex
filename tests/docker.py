@@ -15,16 +15,14 @@ Example:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tests.docker import DockerTestRunner, TestResult, TestStatus
-
-__all__ = ["DockerTestRunner", "TestResult", "TestStatus", "main"]
+from tests.docker.core import DockerTestRunner
 
 
 def main() -> int:

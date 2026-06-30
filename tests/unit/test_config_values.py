@@ -1,0 +1,90 @@
+"""Tests for pysymex._internal.config.values.ConfigValues."""
+
+from __future__ import annotations
+
+from pysymex._internal.config.values import ConfigValues
+
+
+class TestIsObjectList:
+    """Tests for ConfigValues.is_object_list TypeGuard."""
+
+    def test_list_returns_true(self) -> None:
+        """A list returns True."""
+        assert ConfigValues.is_object_list([1, 2, 3]) is True
+
+    def test_tuple_returns_false(self) -> None:
+        """A tuple is not a list."""
+        assert ConfigValues.is_object_list((1, 2)) is False
+
+    def test_string_returns_false(self) -> None:
+        """A string is not a list."""
+        assert ConfigValues.is_object_list("abc") is False
+
+
+class TestIsObjectCollection:
+    """Tests for ConfigValues.is_object_collection TypeGuard."""
+
+    def test_list_returns_true(self) -> None:
+        """A list is a collection."""
+        assert ConfigValues.is_object_collection([1]) is True
+
+    def test_set_returns_true(self) -> None:
+        """A set is a collection."""
+        assert ConfigValues.is_object_collection({1, 2}) is True
+
+    def test_tuple_returns_true(self) -> None:
+        """A tuple is a collection."""
+        assert ConfigValues.is_object_collection((1,)) is True
+
+    def test_dict_returns_false(self) -> None:
+        """A dict is not in the collection TypeGuard."""
+        assert ConfigValues.is_object_collection({"a": 1}) is False
+
+    def test_string_returns_false(self) -> None:
+        """A string is not a collection."""
+        assert ConfigValues.is_object_collection("abc") is False
+
+
+class TestIsObjectDict:
+    """Tests for ConfigValues.is_object_dict TypeGuard."""
+
+    def test_dict_returns_true(self) -> None:
+        """A dict returns True."""
+        assert ConfigValues.is_object_dict({"a": 1}) is True
+
+    def test_list_returns_false(self) -> None:
+        """A list is not a dict."""
+        assert ConfigValues.is_object_dict([1, 2]) is False
+
+
+class TestNormalizeObjectDict:
+    """Tests for ConfigValues.as_object_dict."""
+
+    def test_valid_dict(self) -> None:
+        """A dict with mixed keys is normalized to str keys."""
+        result = ConfigValues.as_object_dict({1: "a", "b": 2})
+        assert result == {"1": "a", "b": 2}
+
+    def test_non_dict_returns_none(self) -> None:
+        """Non-dict input returns None."""
+        result = ConfigValues.as_object_dict([1, 2])
+        assert result is None
+
+    def test_empty_dict(self) -> None:
+        """Empty dict normalizes to empty dict."""
+        result = ConfigValues.as_object_dict({})
+        assert result == {}
+
+
+class TestNormalizeStringList:
+    """Tests for ConfigValues.as_string_list."""
+
+    def test_valid_list(self) -> None:
+        """A list of mixed types is stringified."""
+        result = ConfigValues.as_string_list([1, "two", 3.0])
+        assert result == ["1", "two", "3.0"]
+
+    def test_non_list_returns_none(self) -> None:
+        """Non-list input returns None."""
+        result = ConfigValues.as_string_list("abc")
+        assert result is None

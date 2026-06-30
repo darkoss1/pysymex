@@ -31,19 +31,24 @@ Supported in verified execution:
 - class invariant obligations when receiver state can be modeled;
 - frame-condition and pure-effect checks over modeled VM write events;
 - arithmetic issues projected from symbolic execution results.
+- bounded termination evidence derived from completed, non-degraded verified execution runs.
+- optional bounded-execution property inference when `infer_properties=True`.
 
 Explicitly limited:
 
 - loop invariant enforcement is reported as unsupported in verified execution;
 - deep heap equality and external/native side effects are outside the current effect-ledger slice;
-- termination proof output is not a general proof object.
+- termination proof output is not a general ranking-function or liveness proof object;
+- inferred properties currently cover bounded execution completion only, not arbitrary
+  monotonicity, positivity, or user-defined properties.
 
 ## Evidence In Source
 
-- Contract records: `pysymex/contracts/types.py`
-- Compiler and solver query layer: `pysymex/contracts/compiler.py`, `pysymex/contracts/solver`
-- Offline verifier: `pysymex/contracts/verifier.py`
-- Verified executor: `pysymex/execution/executors/verified`
+- Contract records: `pysymex/_internal/contracts/types.py`
+- Compiler and solver query layer: `pysymex/_internal/contracts/compiler.py`, `pysymex/_internal/contracts/solver`
+- Offline verifier: `pysymex/_internal/contracts/verifier.py`
+- Verified executor: `pysymex/_internal/execution/executors/verified`
+- Termination result classification: `pysymex/_internal/execution/termination.py`
 - Tests: `tests/unit/contracts`, `tests/unit/execution/executors/test_verified*.py`
 
 ## Limits

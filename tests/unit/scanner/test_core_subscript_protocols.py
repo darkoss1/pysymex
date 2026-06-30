@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_respects_safe_custom_getitem_result(tmp_path: Path) -> None:
@@ -189,5 +189,133 @@ def test_scan_file_executes_custom_index_for_native_delete(tmp_path: Path) -> No
 
     assert not any(
         issue.get("kind") in {"TYPE_ERROR", "INDEX_ERROR", "DIVISION_BY_ZERO"}
+        for issue in result.issues
+    )
+
+
+def test_scan_file_reports_symbolic_list_store_index_error(tmp_path: Path) -> None:
+    target = tmp_path / "symbolic_list_store_index_error.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    values[index] = 9\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 3
+        for issue in result.issues
+    )
+
+
+def test_scan_file_respects_guarded_symbolic_list_store_index(tmp_path: Path) -> None:
+    target = tmp_path / "guarded_symbolic_list_store_index.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    if -len(values) <= index < len(values):\n"
+        "        values[index] = 9\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 4
+        for issue in result.issues
+    )
+
+
+def test_scan_file_routes_caught_symbolic_list_store_index_error(tmp_path: Path) -> None:
+    target = tmp_path / "caught_symbolic_list_store_index_error.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    try:\n"
+        "        values[index] = 9\n"
+        "    except IndexError:\n"
+        "        values[0] = 5\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 4
+        for issue in result.issues
+    )
+
+
+def test_scan_file_reports_symbolic_list_delete_index_error(tmp_path: Path) -> None:
+    target = tmp_path / "symbolic_list_delete_index_error.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    del values[index]\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 3
+        for issue in result.issues
+    )
+
+
+def test_scan_file_respects_guarded_symbolic_list_delete_index(tmp_path: Path) -> None:
+    target = tmp_path / "guarded_symbolic_list_delete_index.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    if -len(values) <= index < len(values):\n"
+        "        del values[index]\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 4
+        for issue in result.issues
+    )
+
+
+def test_scan_file_routes_caught_symbolic_list_delete_index_error(tmp_path: Path) -> None:
+    target = tmp_path / "caught_symbolic_list_delete_index_error.py"
+    target.write_text(
+        "def target(index: int) -> int:\n"
+        "    values = [1, 2, 3]\n"
+        "    try:\n"
+        "        del values[index]\n"
+        "    except IndexError:\n"
+        "        values[0] = 5\n"
+        "    return values[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "INDEX_ERROR"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 4
         for issue in result.issues
     )

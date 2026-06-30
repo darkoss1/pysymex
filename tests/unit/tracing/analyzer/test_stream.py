@@ -1,5 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
-"""Tests for pysymex.tracing.analyzer.stream — JSONL trace streaming and formatting."""
+"""Tests for pysymex._internal.tracing.analyzer.stream — JSONL trace streaming and formatting."""
 
 from __future__ import annotations
 
@@ -7,22 +6,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pysymex.tracing.analyzer.stream import (
-    stream_events,
-    SummaryAccumulator,
-    format_pretty,
-    format_fields,
-)
+from pysymex._internal.tracing.analyzer.stream.output import SummaryAccumulator, TraceEventFormat
+from pysymex._internal.tracing.analyzer.stream.reader import TraceEvents
 
 
 class TestStreamEvents:
-    """Tests for stream_events JSONL reader."""
+    """Tests for TraceEvents.from_path JSONL reader."""
 
     def test_reads_valid_jsonl(self, tmp_path: Path) -> None:
         """Reads valid JSONL lines."""
         f = tmp_path / "trace.jsonl"
         f.write_text('{"seq":1}\n{"seq":2}\n', encoding="utf-8")
-        rows = list(stream_events(str(f)))
+        rows = list(TraceEvents.from_path(str(f)))
         assert len(rows) == 2
         assert rows[0][1]["seq"] == 1
         assert rows[1][1]["seq"] == 2
@@ -31,14 +26,14 @@ class TestStreamEvents:
         """Blank lines are skipped."""
         f = tmp_path / "trace.jsonl"
         f.write_text('{"seq":1}\n\n{"seq":2}\n', encoding="utf-8")
-        rows = list(stream_events(str(f)))
+        rows = list(TraceEvents.from_path(str(f)))
         assert len(rows) == 2
 
     def test_reads_utf8_bom_file(self, tmp_path: Path) -> None:
         """UTF-8 BOM on first line is ignored."""
         f = tmp_path / "trace.jsonl"
         f.write_text('\ufeff{"seq":1}\n{"seq":2}\n', encoding="utf-8")
-        rows = list(stream_events(str(f)))
+        rows = list(TraceEvents.from_path(str(f)))
         assert len(rows) == 2
         assert rows[0][1]["seq"] == 1
 
@@ -46,15 +41,21 @@ class TestStreamEvents:
         """Malformed JSON lines are skipped."""
         f = tmp_path / "trace.jsonl"
         f.write_text('{"seq":1}\nnot-json\n{"seq":2}\n', encoding="utf-8")
-        rows = list(stream_events(str(f)))
+        rows = list(TraceEvents.from_path(str(f)))
         assert len(rows) == 2
 
     def test_empty_file(self, tmp_path: Path) -> None:
         """Empty file yields nothing."""
         f = tmp_path / "trace.jsonl"
         f.write_text("", encoding="utf-8")
-        rows = list(stream_events(str(f)))
+        rows = list(TraceEvents.from_path(str(f)))
         assert rows == []
+
+    def test_iter_stream_events_accepts_line_iterables(self) -> None:
+        """Generic stream parsing does not own CLI stdin conventions."""
+        rows = list(TraceEvents.from_lines(['{"seq":1}\n', "", '{"seq":2}\n'], source="<test>"))
+
+        assert [event["seq"] for _, event in rows] == [1, 2]
 
 
 class TestSummaryAccumulator:
@@ -198,14 +199,14 @@ class TestFormatFunctions:
     def test_format_pretty(self) -> None:
         """_format_pretty produces indented JSON."""
         event: dict[str, object] = {"seq": 1, "event_type": "step"}
-        result: Any = format_pretty(event)
+        result: Any = TraceEventFormat.pretty(event)
         parsed = json.loads(result)
         assert parsed["seq"] == 1
 
     def test_format_fields(self) -> None:
         """_format_fields extracts only requested fields."""
         event: dict[str, object] = {"seq": 1, "event_type": "step", "pc": 10}
-        result: Any = format_fields(event, ["seq", "pc"])
+        result: Any = TraceEventFormat.fields(event, ["seq", "pc"])
         parsed = json.loads(result)
         assert "seq" in parsed
         assert "pc" in parsed

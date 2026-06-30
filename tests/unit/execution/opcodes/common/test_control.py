@@ -2,33 +2,51 @@ from __future__ import annotations
 
 import dis
 from collections.abc import Callable, Iterator
-from unittest.mock import patch
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 import z3
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state.types import CallFrame
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import ProtocolCallCandidate
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.calls.construction_fallbacks import (
+import pysymex._internal.execution.opcodes.common.control.feasibility.branching as branching_mod
+import pysymex._internal.execution.opcodes.common.control.feasibility.witnesses as witnesses_mod
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.solver.constraints.values import ConstraintValues
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import BlockInfo, CallFrame, ProtocolCallCandidate
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.calls.construction_fallbacks import (
     CONSTRUCTOR_RETURN_UNCERTAIN_REASON,
     UNSUPPORTED_CONSTRUCTION_PROTOCOL,
 )
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.fallback import FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.opcodes.common.control.feasibility import (
-    branch_feasible,
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.fallback.types import FallbackKind, RiskLevel, SoundnessTag
+from pysymex._internal.execution.opcodes.common.control.fallbacks import (
+    LIST_TO_TUPLE_TYPE_UNCERTAIN,
+    LIST_TO_TUPLE_TYPE_UNCERTAIN_REASON,
+)
+from pysymex._internal.execution.opcodes.common.control.feasibility.branches import (
     handle_common_pop_jump_bool,
 )
-from pysymex.execution.opcodes.common.control import feasibility as control_feasibility
-from pysymex.execution.opcodes.common.control.protocol.fallbacks import (
+from pysymex._internal.execution.opcodes.common.control.feasibility.branching import branch_feasible
+from pysymex._internal.execution.opcodes.common.control.intrinsics import (
+    handle_list_to_tuple_intrinsic,
+)
+from pysymex._internal.execution.opcodes.common.control.iteration.handlers import (
+    handle_common_for_iter,
+    handle_common_get_iter,
+)
+from pysymex._internal.execution.opcodes.common.control.match.handlers import (
+    handle_common_match_class,
+)
+from pysymex._internal.execution.opcodes.common.control.protocol.fallbacks import (
     COMPARISON_REFLECTION_UNCERTAIN_REASON,
     INIT_RETURN_UNCERTAIN_REASON,
     PROTOCOL_FALLBACK_UNAVAILABLE_REASON,
@@ -38,36 +56,28 @@ from pysymex.execution.opcodes.common.control.protocol.fallbacks import (
     UNSUPPORTED_INIT_RETURN_PROTOCOL,
     UNSUPPORTED_TRUTH_PROTOCOL,
 )
-from pysymex.execution.opcodes.common.control.protocol.negotiation import (
+from pysymex._internal.execution.opcodes.common.control.protocol.negotiation import (
     continue_deferred_protocol_call,
 )
-from pysymex.execution.opcodes.common.control.flow import (
-    handle_common_list_to_tuple_intrinsic,
-    handle_common_for_iter,
-    handle_common_get_iter,
+from pysymex._internal.execution.opcodes.common.control.raise_varargs import (
+    handle_control_raise_varargs,
 )
-from pysymex.execution.opcodes.common.control_fallbacks import (
-    LIST_TO_TUPLE_TYPE_UNCERTAIN,
-    LIST_TO_TUPLE_TYPE_UNCERTAIN_REASON,
-)
-from pysymex.execution.opcodes.common.control.match import (
-    handle_common_match_class,
-)
-from pysymex.execution.opcodes.common.control.returns import (
-    apply_argument_alias_updates,
+from pysymex._internal.execution.opcodes.common.control.returns.handlers import (
     handle_common_return_value,
 )
-from pysymex.execution.opcodes.common.functions.protocol.fallbacks import (
+from pysymex._internal.execution.opcodes.common.control.returns.state import (
+    apply_argument_alias_updates,
+)
+from pysymex._internal.execution.opcodes.common.functions.protocol.fallbacks import (
     ITERATION_PROTOCOL_UNAVAILABLE_REASON,
     UNSUPPORTED_ITERATION_PROTOCOL,
 )
-from pysymex.execution.opcodes.common.numeric.fallbacks import (
+from pysymex._internal.execution.opcodes.common.numeric.fallbacks import (
     NUMERIC_REFLECTION_UNCERTAIN_REASON,
 )
-from pysymex.execution.opcodes.common.numeric.labels import UNSUPPORTED_NUMERIC_REFLECTION
-from pysymex.execution.opcodes.py312.control import handle_return_const
-from pysymex.models.objects import SymbolicClass, class_registry
-from pysymex.typing import StackValue
+from pysymex._internal.execution.opcodes.common.numeric.labels import UNSUPPORTED_NUMERIC_REFLECTION
+from pysymex._internal.execution.opcodes.py312.control import handle_return_const
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
@@ -137,7 +147,9 @@ def test_branch_feasible_skips_solver_for_complex_bitvector_guard() -> None:
     value = z3.Int("value")
     masked = z3.BV2Int(z3.Int2BV(value, 8) & z3.BitVecVal(3, 8), is_signed=False)
 
-    with patch("pysymex.core.solver.engine.policies.path_may_be_feasible") as solver_query:
+    with patch(
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible"
+    ) as solver_query:
         assert branch_feasible([], masked == 1) is True
 
     solver_query.assert_not_called()
@@ -150,9 +162,9 @@ def test_branch_feasible_uses_constraint_chain_bitvector_summary() -> None:
     state = VMState(path_constraints=[masked == 1])
 
     with (
-        patch("pysymex.core.solver.engine.policies.path_may_be_feasible") as solver_query,
+        patch("pysymex._internal.core.solver.engine.policies.path_may_be_feasible") as solver_query,
         patch.object(
-            control_feasibility,
+            branching_mod,
             "constraints_include_bitvector_smt_theory",
             side_effect=AssertionError("ConstraintChain summary should avoid path rescans"),
         ),
@@ -169,11 +181,11 @@ def test_branch_feasible_uses_negative_constraint_chain_bitvector_summary() -> N
 
     with (
         patch(
-            "pysymex.core.solver.engine.policies.path_may_be_feasible",
+            "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
             return_value=True,
         ) as solver_query,
         patch.object(
-            control_feasibility,
+            branching_mod,
             "constraints_include_bitvector_smt_theory",
             side_effect=AssertionError("ConstraintChain summary should avoid path rescans"),
         ),
@@ -224,7 +236,7 @@ def test_handle_common_pop_jump_bool_passes_known_sat_prefix_to_branch_solver() 
     )
 
     with patch(
-        "pysymex.core.solver.engine.policies.path_may_be_feasible",
+        "pysymex._internal.core.solver.engine.policies.path_may_be_feasible",
         side_effect=capture_path_query,
     ):
         result = handle_common_pop_jump_bool(
@@ -315,11 +327,11 @@ def test_string_witness_term_cache_reuses_subtree_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expr = z3.Int("string_witness_cache_x") + 1 < 3
-    expr_cache = getattr(control_feasibility, "_STRING_WITNESS_EXPR_CACHE")
+    expr_cache = getattr(witnesses_mod, "_STRING_WITNESS_EXPR_CACHE")
     getattr(expr_cache, "clear")()
     uncached_has_terms = cast(
         "Callable[[tuple[z3.ExprRef, ...]], bool]",
-        getattr(control_feasibility, "_uncached_has_string_witness_terms"),
+        getattr(witnesses_mod, "_uncached_has_string_witness_terms"),
     )
 
     assert uncached_has_terms((expr,)) is False
@@ -328,7 +340,7 @@ def test_string_witness_term_cache_reuses_subtree_result(
         raise AssertionError("cached subtree result should skip witness-term scan")
 
     monkeypatch.setattr(
-        control_feasibility,
+        witnesses_mod,
         "_is_string_witness_term",
         fail_is_string_witness_term,
     )
@@ -344,7 +356,7 @@ def test_preferred_truth_order_scans_condition_once_for_string_witness_terms(
     observed: list[tuple[z3.ExprRef, ...]] = []
     preferred_truth_order = cast(
         "Callable[[list[z3.BoolRef], z3.BoolRef, z3.BoolRef], tuple[bool, bool]]",
-        getattr(control_feasibility, "_preferred_truth_order"),
+        getattr(branching_mod, "_preferred_truth_order"),
     )
 
     def no_string_witness_terms(expressions: tuple[z3.ExprRef, ...]) -> bool:
@@ -352,7 +364,7 @@ def test_preferred_truth_order_scans_condition_once_for_string_witness_terms(
         return False
 
     monkeypatch.setattr(
-        control_feasibility,
+        branching_mod,
         "_has_string_witness_terms",
         no_string_witness_terms,
     )
@@ -367,14 +379,14 @@ def test_preferred_truth_order_uses_default_order_without_string_witness(
     condition = z3.Bool("preferred_truth_order_default_condition")
     preferred_truth_order = cast(
         "Callable[..., tuple[bool, bool]]",
-        getattr(control_feasibility, "_preferred_truth_order"),
+        getattr(branching_mod, "_preferred_truth_order"),
     )
 
     def no_string_witness_terms(_expressions: tuple[z3.ExprRef, ...]) -> bool:
         return False
 
     monkeypatch.setattr(
-        control_feasibility,
+        branching_mod,
         "_has_string_witness_terms",
         no_string_witness_terms,
     )
@@ -393,7 +405,7 @@ def test_preferred_truth_order_skips_constraint_materialization_without_string_w
     condition = z3.Bool("preferred_truth_order_no_materialize_condition")
     preferred_truth_order = cast(
         "Callable[[object, z3.BoolRef, z3.BoolRef], tuple[bool, bool]]",
-        getattr(control_feasibility, "_preferred_truth_order"),
+        getattr(branching_mod, "_preferred_truth_order"),
     )
 
     class ConstraintsThatShouldNotBeRead:
@@ -404,7 +416,7 @@ def test_preferred_truth_order_skips_constraint_materialization_without_string_w
         return False
 
     monkeypatch.setattr(
-        control_feasibility,
+        branching_mod,
         "_has_string_witness_terms",
         no_string_witness_terms,
     )
@@ -475,6 +487,45 @@ def test_handle_common_pop_jump_bool_degrades_unexecutable_modeled_bool() -> Non
     assert event.soundness is SoundnessTag.UNSUPPORTED
     assert event.false_positive_risk is RiskLevel.MEDIUM
     assert event.false_negative_risk is RiskLevel.HIGH
+
+
+def test_cpython_not_implemented_error_is_catchable_by_raise_varargs() -> None:
+    caught = False
+
+    try:
+        raise NotImplementedError()
+    except NotImplementedError:
+        caught = True
+
+    assert caught is True
+    assert dis.stack_effect(dis.opmap["RAISE_VARARGS"], 1) == -1
+
+
+def test_handle_control_raise_varargs_routes_not_implemented_error_to_handler() -> None:
+    marker = SymbolicValue.from_const(0)
+    marker = SymbolicValue(
+        _name="NotImplementedError",
+        z3_int=marker.z3_int,
+        is_int=marker.is_int,
+        z3_bool=marker.z3_bool,
+        is_bool=marker.is_bool,
+    )
+    state = VMState(
+        stack=[marker],
+        block_stack=[BlockInfo("except", start_pc=0, end_pc=2, handler_pc=3)],
+        pc=0,
+    )
+
+    result = handle_control_raise_varargs(
+        _instr("RAISE_VARARGS", 1, offset=0), state, OpcodeDispatcher()
+    )
+
+    assert result.terminal is False
+    assert len(result.new_states) == 1
+    next_state = result.new_states[0]
+    assert next_state.pc == 3
+    assert len(next_state.stack) == 1
+    assert next_state.stack[-1] is marker
 
 
 def test_handle_common_pop_jump_bool_forks_negative_symbolic_modeled_length_result() -> None:
@@ -696,6 +747,24 @@ def test_apply_argument_alias_updates_restores_path_local_caller_mapping() -> No
     assert original_item.value == 1
 
 
+def test_apply_argument_alias_updates_ignores_callee_closure_cell_wrapper() -> None:
+    original = SymbolicValue.from_const(9)
+    caller = VMState().set_local("ledger", original)
+    frame = CallFrame(
+        function_name="callee",
+        return_pc=1,
+        local_vars=caller.local_vars,
+        stack_depth=0,
+        argument_aliases=(("ledger", original),),
+    )
+    cell = SymbolicObject("cell_ledger", 1201, ConstraintValues.int(1201), {1201})
+    callee = VMState(local_vars={"ledger": cell}, memory={1201: original})
+
+    restored = apply_argument_alias_updates(callee, frame)
+
+    assert restored["ledger"] is original
+
+
 def test_handle_common_match_class_returns_attr_tuple_for_concrete_keyword_match() -> None:
     state = VMState(stack=cast("list[StackValue]", [_Point(5), _Point, ("x",)]), pc=4)
 
@@ -751,6 +820,20 @@ def test_handle_common_match_class_uses_modeled_user_class_identity() -> None:
     assert result.new_states[0].stack[-1] == (7,)
 
 
+def test_handle_common_match_class_uses_concrete_pattern_for_modeled_user_class() -> None:
+    class _ConcretePatternPoint:
+        __match_args__ = ("x",)
+
+    modeled_cls = class_registry.register_class(SymbolicClass("_ConcretePatternPoint"))
+    modeled_cls.class_vars["__match_args__"] = ("x",)
+    instance_value = _symbolic_instance_value("_ConcretePatternPoint", modeled_cls)
+    state = VMState(stack=[instance_value, _ConcretePatternPoint, ()], pc=9)
+
+    result = handle_common_match_class(_instr("MATCH_CLASS", 1), state, OpcodeDispatcher())
+
+    assert result.new_states[0].stack[-1] == (7,)
+
+
 def test_handle_common_match_class_rejects_different_modeled_user_class() -> None:
     subject_cls = class_registry.register_class(SymbolicClass("_SubjectClass"))
     pattern_cls = class_registry.register_class(SymbolicClass("_PatternClass"))
@@ -759,6 +842,21 @@ def test_handle_common_match_class_rejects_different_modeled_user_class() -> Non
     )
     subject_value = _symbolic_instance_value("_SubjectClass", subject_cls)
     state = VMState(stack=[subject_value, pattern_value, ()], pc=9)
+
+    result = handle_common_match_class(_instr("MATCH_CLASS", 0), state, OpcodeDispatcher())
+
+    assert isinstance(result.new_states[0].stack[-1], SymbolicNone)
+
+
+def test_handle_common_match_class_rejects_different_concrete_pattern_class() -> None:
+    class _ConcreteOtherPattern:
+        pass
+
+    subject_cls = class_registry.register_class(SymbolicClass("_ConcreteSubjectPattern"))
+    pattern_cls = class_registry.register_class(SymbolicClass("_ConcreteOtherPattern"))
+    pattern_cls.class_vars["__match_args__"] = ()
+    subject_value = _symbolic_instance_value("_ConcreteSubjectPattern", subject_cls)
+    state = VMState(stack=[subject_value, _ConcreteOtherPattern, ()], pc=10)
 
     result = handle_common_match_class(_instr("MATCH_CLASS", 0), state, OpcodeDispatcher())
 
@@ -819,6 +917,35 @@ def test_handle_common_for_iter_yields_concrete_tuple_items() -> None:
     assert isinstance(advanced, SymbolicIterator)
     assert advanced.index == 1
     assert continue_state.stack[-1] == 2
+
+
+def test_handle_common_for_iter_empty_stack_reports_unsupported_iteration() -> None:
+    """A malformed VM state must stop explicitly instead of fabricating cleanup stack."""
+    dispatcher = OpcodeDispatcher()
+    dispatcher.set_instructions(
+        [
+            _instr("FOR_ITER", 10, offset=0),
+            _instr("END_FOR", offset=10),
+            _instr("POP_TOP", offset=12),
+        ]
+    )
+    state = VMState(stack=[], pc=24)
+
+    result = handle_common_for_iter(_instr("FOR_ITER", 10, offset=0), state, dispatcher)
+
+    assert result.terminal
+    assert result.new_states == []
+    assert result.degraded_passes == [UNSUPPORTED_ITERATION_PROTOCOL]
+    assert len(result.fallback_events) == 1
+    event = result.fallback_events[0]
+    assert event.kind is FallbackKind.UNSUPPORTED
+    assert event.label == UNSUPPORTED_ITERATION_PROTOCOL
+    assert event.owner == "execution.opcodes.iteration"
+    assert event.reason == "FOR_ITER requires an iterator on the VM stack"
+    assert event.pc == 24
+    assert event.soundness is SoundnessTag.UNSUPPORTED
+    assert event.false_positive_risk is RiskLevel.MEDIUM
+    assert event.false_negative_risk is RiskLevel.HIGH
 
 
 def test_handle_common_for_iter_continues_symbolic_string_before_exact_length() -> None:
@@ -947,7 +1074,7 @@ def test_handle_common_list_to_tuple_intrinsic_records_uncertain_type_event() ->
     source, source_constraint = SymbolicValue.symbolic("maybe_list_to_tuple")
     state = VMState(path_constraints=[source_constraint], pc=24)
 
-    result = handle_common_list_to_tuple_intrinsic(
+    result = handle_list_to_tuple_intrinsic(
         _instr("CALL_INTRINSIC_1", 6),
         state,
         source,

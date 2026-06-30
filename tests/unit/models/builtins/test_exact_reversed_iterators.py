@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import cast
 
-import pysymex.models.builtins as builtins
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import is_raised_exception_effect
-from pysymex.typing import StackValue
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.iteration.next_model import NextModel
+from pysymex._internal.models.builtins.iteration.reversed_model import ReversedModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -17,7 +18,7 @@ def _state() -> VMState:
 
 
 def test_reversed_bytes_materializes_integer_items_in_reverse_order() -> None:
-    result = builtins.ReversedModel().apply([SymbolicValue.from_const(b"\x01\x02")], {}, _state())
+    result = ReversedModel().apply([SymbolicValue.from_const(b"\x01\x02")], {}, _state())
 
     iterator = result.value
     assert isinstance(iterator, SymbolicIterator)
@@ -25,7 +26,7 @@ def test_reversed_bytes_materializes_integer_items_in_reverse_order() -> None:
 
 
 def test_reversed_string_materializes_characters_in_reverse_order() -> None:
-    result = builtins.ReversedModel().apply(["ab"], {}, _state())
+    result = ReversedModel().apply(["ab"], {}, _state())
 
     iterator = result.value
     assert isinstance(iterator, SymbolicIterator)
@@ -35,7 +36,7 @@ def test_reversed_string_materializes_characters_in_reverse_order() -> None:
 def test_reversed_dict_materializes_keys_in_reverse_insertion_order() -> None:
     source = cast("StackValue", {1: "a", 2: "b"})
 
-    result = builtins.ReversedModel().apply([source], {}, _state())
+    result = ReversedModel().apply([source], {}, _state())
 
     iterator = result.value
     assert isinstance(iterator, SymbolicIterator)
@@ -43,25 +44,25 @@ def test_reversed_dict_materializes_keys_in_reverse_insertion_order() -> None:
 
 
 def test_reversed_set_emits_type_error_side_effect() -> None:
-    result = builtins.ReversedModel().apply([SymbolicValue.from_const({1})], {}, _state())
+    result = ReversedModel().apply([SymbolicValue.from_const({1})], {}, _state())
 
     effect = result.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
 def test_second_next_on_reversed_singleton_emits_stop_iteration() -> None:
-    result = builtins.ReversedModel().apply([[1]], {}, _state())
+    result = ReversedModel().apply([[1]], {}, _state())
     iterator = result.value
     assert isinstance(iterator, SymbolicIterator)
 
-    first = builtins.NextModel().apply([iterator], {}, _state())
+    first = NextModel().apply([iterator], {}, _state())
     mutation = cast("dict[str, object]", first.side_effects.get("iterator_mutation"))
     updated = mutation["updated_iterator"]
     assert isinstance(updated, SymbolicIterator)
 
-    second = builtins.NextModel().apply([updated], {}, _state())
+    second = NextModel().apply([updated], {}, _state())
 
     effect = second.side_effects.get("raised_exception")
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "StopIteration"

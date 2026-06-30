@@ -4,21 +4,21 @@ from typing import cast
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
-    FrontierStateSnapshot,
-    build_frontier_checkpoint,
-)
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoint.snapshot.record import FrontierStateSnapshot
+from pysymex._internal.execution.frontier.checkpoints import build_frontier_checkpoint
+from pysymex._internal.execution.scheduling.cegis.application import plan_evidence_application
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
+    EvidenceOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
     EvidenceCertificateKind,
     EvidenceOutcomeKind,
-    EvidenceOwner,
-    evaluate_checkpoint_unsat_core_action,
-    plan_evidence_application,
 )
+from pysymex._internal.execution.scheduling.cegis.owners import choose_checkpoint_unsat_core_action
 
 
 def _solver_action(
@@ -43,7 +43,7 @@ def test_checkpoint_unsat_core_owner_builds_certificate_from_reconstruction() ->
         capsule_id="path:0",
     )
 
-    outcome = evaluate_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
+    outcome = choose_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
     plan = plan_evidence_application(
         outcome,
         live_state_ids=(0,),
@@ -76,7 +76,7 @@ def test_checkpoint_unsat_core_owner_covers_exact_live_core_supersets() -> None:
         capsule_id="path:2",
     )
 
-    outcome = evaluate_checkpoint_unsat_core_action(
+    outcome = choose_checkpoint_unsat_core_action(
         _solver_action("path:0"),
         selected,
         candidate_checkpoints=(selected, duplicate, sat_sibling),
@@ -105,7 +105,7 @@ def test_checkpoint_unsat_core_owner_keeps_sat_non_removing() -> None:
         capsule_id="path:0",
     )
 
-    outcome = evaluate_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
+    outcome = choose_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
     plan = plan_evidence_application(
         outcome,
         live_state_ids=(0,),
@@ -121,7 +121,7 @@ def test_checkpoint_unsat_core_owner_rejects_action_capsule_mismatch() -> None:
     """A solver action cannot certify a different checkpoint capsule."""
     checkpoint = build_frontier_checkpoint(VMState(pc=1), capsule_id="path:0")
 
-    outcome = evaluate_checkpoint_unsat_core_action(_solver_action("path:1"), checkpoint)
+    outcome = choose_checkpoint_unsat_core_action(_solver_action("path:1"), checkpoint)
 
     assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
     assert outcome.certificate is None
@@ -132,7 +132,7 @@ def test_checkpoint_unsat_core_owner_rejects_non_solver_owner() -> None:
     """Only solver-owned UNSAT-core actions may run the solver evaluator."""
     checkpoint = build_frontier_checkpoint(VMState(pc=1), capsule_id="path:0")
 
-    outcome = evaluate_checkpoint_unsat_core_action(
+    outcome = choose_checkpoint_unsat_core_action(
         _solver_action("path:0", owner=EvidenceOwner.VM),
         checkpoint,
     )
@@ -148,7 +148,7 @@ def test_checkpoint_unsat_core_owner_rejects_digest_mismatch() -> None:
     snapshot = cast("FrontierStateSnapshot", object.__getattribute__(checkpoint, "_snapshot"))
     object.__setattr__(snapshot, "pc", 2)
 
-    outcome = evaluate_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
+    outcome = choose_checkpoint_unsat_core_action(_solver_action("path:0"), checkpoint)
 
     assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
     assert outcome.certificate is None

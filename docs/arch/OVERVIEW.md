@@ -76,13 +76,13 @@ reports.
 
 ## Evidence In Source
 
-- Scanning: `pysymex/scanner`, `pysymex/analysis/scan`
-- Execution: `pysymex/execution`, `pysymex/core/state`
-- Solver: `pysymex/core/solver`
-- Models: `pysymex/models`
-- Detectors: `pysymex/analysis/detectors`
-- Sandbox: `pysymex/sandbox`
-- Reports: `pysymex/reporting`, `pysymex/cli/formatters`
+- Scanning: `pysymex/_internal/scanner`, `pysymex/_internal/analysis/scan`
+- Execution: `pysymex/_internal/execution`, `pysymex/_internal/core/state`
+- Solver: `pysymex/_internal/core/solver`
+- Models: `pysymex/_internal/models`
+- Detectors: `pysymex/_internal/analysis/detectors`
+- Sandbox: `pysymex/_internal/sandbox`
+- Reports: `pysymex/_internal/reporting`, `pysymex/_internal/cli/formatters`
 
 ## Related Pages
 

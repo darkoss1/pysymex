@@ -1,9 +1,9 @@
-"""Tests for pysymex.core.builtins."""
+"""Tests for pysymex._internal.core.builtins."""
 
 import builtins
 
-from pysymex.core.builtins import get_all_builtins
-from pysymex.core.exceptions.builtins import BUILTIN_EXCEPTIONS
+from pysymex._internal.core.builtins import get_all_builtins
+from pysymex._internal.core.exceptions.builtins import BUILTIN_EXCEPTIONS
 
 
 class TestGetAllBuiltins:

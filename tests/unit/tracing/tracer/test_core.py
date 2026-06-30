@@ -1,4 +1,4 @@
-"""Tests for pysymex.tracing.tracer.core — ExecutionTracer behavior."""
+"""Tests for pysymex._internal.tracing.tracer.core — ExecutionTracer behavior."""
 
 from __future__ import annotations
 
@@ -8,20 +8,25 @@ from typing import TYPE_CHECKING, cast
 
 import z3
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.config.tracing import VerbosityLevel
-from pysymex.execution.detectors import DetectorQueryEvent
-from pysymex.execution.fallback import FallbackEvent, FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.feasibility.telemetry import PathFeasibilityEvent
-from pysymex.execution.scheduling.telemetry import SchedulerEvent
-from pysymex.tracing.tracer.core import ExecutionTracer
-from pysymex.tracing.schemas import TracerConfig
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.config.tracing.settings import TracerConfig, VerbosityLevel
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.execution.detectors.telemetry import DetectorQueryEvent
+from pysymex._internal.execution.fallback.types import (
+    FallbackEvent,
+    FallbackKind,
+    RiskLevel,
+    SoundnessTag,
+)
+from pysymex._internal.execution.feasibility.telemetry import PathFeasibilityEvent
+from pysymex._internal.execution.scheduling.telemetry import SchedulerEvent
+from pysymex._internal.tracing.tracer.core import ExecutionTracer
 
 if TYPE_CHECKING:
     import dis
 
-    from pysymex.core.state.record import VMState
-    from pysymex.execution.executors.core import SymbolicExecutor
+    from pysymex._internal.core.state.record import VMState
+    from pysymex._internal.execution.executors.core import SymbolicExecutor
 
 
 class _MemoryTraceWriter:

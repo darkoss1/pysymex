@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, ItemsView, KeysView, Mapping, ValuesView
+from collections.abc import ItemsView, Iterable, Iterator, KeysView, Mapping, ValuesView
 from types import TracebackType
 from typing import Generic, Self, TypeVar, overload
 
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")
-
 
 class Map(Mapping[K, V], Generic[K, V]):
     def __init__(self, col: Mapping[K, V] | Iterable[tuple[K, V]] | None = None) -> None: ...
@@ -28,7 +27,6 @@ class Map(Mapping[K, V], Generic[K, V]):
     def set(self, key: K, val: V, /) -> Map[K, V]: ...
     def delete(self, key: K, /) -> Map[K, V]: ...
     def mutate(self) -> MapMutation[K, V]: ...
-
 
 class MapMutation(Generic[K, V]):
     def __enter__(self) -> Self: ...

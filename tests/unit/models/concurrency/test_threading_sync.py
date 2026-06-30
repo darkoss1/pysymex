@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.models.concurrency.threading.locks import LockModel
-from pysymex.models.concurrency.threading.registry import THREADING_MODELS, get_threading_model
-from pysymex.models.concurrency.threading.sync import (
+from pysymex._internal.models.stdlib.threading.state.locks import LockModel
+from pysymex._internal.models.stdlib.threading.state.sync import (
     BarrierModel,
     ConditionModel,
     EventModel,
-)
-from pysymex.models.concurrency.threading.threads import (
-    ThreadModel,
 )
 
 
@@ -196,34 +192,3 @@ class TestBarrierModel:
         assert "parties=3" in r
         assert "waiting=0" in r
         assert "broken=False" in r
-
-
-class TestGetThreadingModel:
-    """Tests for get_threading_model lookup."""
-
-    def test_known_model(self) -> None:
-        """Known model names return the class."""
-        assert get_threading_model("Lock") is LockModel
-        assert get_threading_model("Thread") is ThreadModel
-
-    def test_unknown_returns_none(self) -> None:
-        """Unknown name returns None."""
-        assert get_threading_model("Nonexistent") is None
-
-
-class TestThreadingModelsDict:
-    """Tests for THREADING_MODELS registry."""
-
-    def test_contains_all_models(self) -> None:
-        """Registry contains all 8 threading primitives."""
-        expected = {
-            "Thread",
-            "Lock",
-            "RLock",
-            "Semaphore",
-            "BoundedSemaphore",
-            "Event",
-            "Condition",
-            "Barrier",
-        }
-        assert set(THREADING_MODELS.keys()) == expected

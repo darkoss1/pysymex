@@ -1,40 +1,29 @@
-from collections.abc import Callable, MutableMapping
 import time
+from collections.abc import Callable, MutableMapping
 from typing import cast
 
 import z3
 from pytest import MonkeyPatch
 
-import pysymex.analysis.detectors.feasibility as feasibility_mod
-from pysymex.analysis.detectors.feasibility import (
-    FeasibilityModelStatus,
+import pysymex._internal.analysis.detectors.feasibility as feasibility_mod
+import pysymex._internal.analysis.evidence.cache as evidence_cache_mod
+import pysymex._internal.analysis.evidence.integers as integer_evidence_mod
+from pysymex._internal.analysis.detectors.feasibility import (
     detector_witness_model,
-    get_model_if_satisfiable,
     get_model_if_satisfiable_result,
     hard_theory_witness_model,
-    integer_witness_model,
+)
+from pysymex._internal.analysis.evidence.floats import zero_float_witness_model
+from pysymex._internal.analysis.evidence.integers import integer_witness_model
+from pysymex._internal.analysis.evidence.result import FeasibilityModelStatus
+from pysymex._internal.analysis.evidence.strings import (
     string_integer_context_truth_value,
     string_integer_witness_model,
-    zero_float_witness_model,
 )
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.solver.engine.results import SolverResult
-
-
-def test_feasibility_public_exports_are_explicit() -> None:
-    assert sorted(feasibility_mod.__all__) == [
-        "FeasibilityModelResult",
-        "FeasibilityModelStatus",
-        "detector_witness_model",
-        "get_model_if_satisfiable",
-        "get_model_if_satisfiable_result",
-        "hard_theory_witness_model",
-        "integer_witness_model",
-        "string_integer_context_truth_value",
-        "string_integer_witness_model",
-        "zero_float_witness_model",
-    ]
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.solver.engine.results import SolverResult
 
 
 def test_string_integer_context_truth_value_maps_ord_variables_from_context() -> None:
@@ -63,15 +52,6 @@ def test_string_integer_context_truth_value_returns_none_without_witness_terms()
     assert string_integer_context_truth_value([], value == 1) is None
 
 
-def test_get_model_if_satisfiable_returns_none_when_sat_callback_fails() -> None:
-    """Detector SAT callback failures are inconclusive, not definite issues."""
-
-    def raising_sat_callback(_constraints: list[z3.BoolRef]) -> bool:
-        raise z3.Z3Exception("forced detector SAT callback failure")
-
-    assert get_model_if_satisfiable([z3.BoolVal(True)], raising_sat_callback) is None
-
-
 def test_get_model_if_satisfiable_result_marks_sat_callback_failure_inconclusive() -> None:
     """Structured detector feasibility preserves callback failures."""
 
@@ -98,24 +78,6 @@ def test_get_model_if_satisfiable_result_marks_callback_false_as_no_sat_evidence
     assert result.is_sat is False
     assert result.model is None
     assert result.reason == "sat_callback_returned_false"
-
-
-def test_get_model_if_satisfiable_returns_none_when_model_callback_fails() -> None:
-    """Detector model callback failures are inconclusive, not detector crashes."""
-    x = z3.Int("detector_feasibility_model_callback_failure_x")
-
-    def raising_model_callback(_constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
-        raise z3.Z3Exception("forced detector model callback failure")
-
-    assert (
-        get_model_if_satisfiable(
-            [x == 4096],
-            lambda _constraints: True,
-            raising_model_callback,
-            allow_witness_model=False,
-        )
-        is None
-    )
 
 
 def test_get_model_if_satisfiable_result_marks_model_callback_failure_inconclusive() -> None:
@@ -186,14 +148,14 @@ def test_get_model_if_satisfiable_result_uses_default_structured_model_unknown()
     solver = IncrementalSolver(timeout_ms=1000)
     solver.set_deadline(time.perf_counter() - 1.0)
     flag = z3.Bool("detector_feasibility_default_unknown_flag")
-    token = active_incremental_solver.set(solver)
+    token = SolverContext.active.set(solver)
     try:
         result = get_model_if_satisfiable_result(
             [flag],
             lambda _constraints: True,
         )
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert result.status is FeasibilityModelStatus.INCONCLUSIVE
     assert result.model is None
@@ -207,8 +169,13 @@ def test_get_model_if_satisfiable_result_uses_detached_model_after_active_unknow
         def __init__(self) -> None:
             super().__init__(timeout_ms=5000)
 
-        def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
+        def check_sat_cached(
+            self,
+            constraints: list[z3.BoolRef],
+            known_sat_prefix_len: int | None = None,
+        ) -> SolverResult:
             _ = constraints
+            _ = known_sat_prefix_len
             return SolverResult.unknown()
 
         def _effective_timeout_ms(self) -> int:
@@ -216,14 +183,14 @@ def test_get_model_if_satisfiable_result_uses_detached_model_after_active_unknow
 
     count = z3.Int("count_detector_feasibility_detached_retry_int")
     bin_length = z3.Int("bin_detector_feasibility_detached_retry_len")
-    token = active_incremental_solver.set(ActiveUnknownModelSolver())
+    token = SolverContext.active.set(ActiveUnknownModelSolver())
     try:
         result = get_model_if_satisfiable_result(
             [bin_length >= 3, count == 0],
             lambda _constraints: True,
         )
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert result.status is FeasibilityModelStatus.SAT
     assert result.model is not None
@@ -366,7 +333,7 @@ def test_integer_witness_model_skips_search_for_simplified_false_formula(
         raise AssertionError("assignment search should not run for simplified false formulas")
 
     monkeypatch.setattr(
-        feasibility_mod,
+        integer_evidence_mod,
         "_verified_integer_assignment_model",
         fail_assignment_search,
     )
@@ -456,7 +423,7 @@ def test_string_integer_witness_model_returns_model_for_ord_state_assignment() -
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal(witness_text)))
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal(witness_text)))
     assert model.eval(len_text).as_long() == 5
     assert [model.eval(value).as_long() for value in ord_values] == [
         ord(character) for character in witness_text
@@ -495,7 +462,7 @@ def test_string_integer_witness_model_returns_model_for_short_license_ord_seeds(
         )
 
         assert model is not None
-        assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal(witness_text)))
+        assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal(witness_text)))
         assert model.eval(len_text).as_long() == len(witness_text)
         assert [model.eval(value).as_long() for value in ord_values] == [
             ord(character) for character in witness_text
@@ -556,8 +523,8 @@ def test_string_integer_witness_model_returns_model_for_bin_count_bridge() -> No
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(key_text) == z3.StringVal(witness_text)))
-    assert z3.is_true(z3.simplify(model.eval(bin_text) == z3.StringVal(witness_bin)))
+    assert z3.is_true(simplify_expr(model.eval(key_text) == z3.StringVal(witness_text)))
+    assert z3.is_true(simplify_expr(model.eval(bin_text) == z3.StringVal(witness_bin)))
     assert model.eval(count).as_long() == 15
     assert [model.eval(value).as_long() for value in ord_values] == [
         ord(character) for character in witness_text
@@ -596,7 +563,7 @@ def test_string_integer_witness_model_derives_helper_ints_for_long_license_seed(
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(key_text) == z3.StringVal(witness_text)))
+    assert z3.is_true(simplify_expr(model.eval(key_text) == z3.StringVal(witness_text)))
     assert model.eval(helper_sum).as_long() == sum(ord(character) for character in witness_text)
 
 
@@ -633,7 +600,7 @@ def test_string_integer_witness_model_returns_model_for_rfind_missing_seed() -> 
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal("bbb")))
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal("bbb")))
     assert model.eval(index).as_long() == -1
     assert model.eval(salt).as_long() == 0
 
@@ -685,7 +652,7 @@ def test_detector_witness_model_assigns_integer_type_flags_without_string_slot()
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(z3.Not(z3.Contains(model.eval(text), z3.StringVal("a")))))
+    assert z3.is_true(simplify_expr(z3.Not(z3.Contains(model.eval(text), z3.StringVal("a")))))
     assert model.eval(index).as_long() == -1
     assert model.eval(salt).as_long() == 0
 
@@ -736,7 +703,7 @@ def test_detector_witness_model_returns_zero_float_witness() -> None:
 
     assert model is not None
     assert z3.is_true(
-        z3.simplify(model.eval(x, model_completion=True) == z3.FPVal(0.0, z3.Float64()))
+        simplify_expr(model.eval(x, model_completion=True) == z3.FPVal(0.0, z3.Float64()))
     )
 
 
@@ -754,7 +721,7 @@ def test_detector_witness_model_returns_string_integer_witness() -> None:
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal("bbb")))
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal("bbb")))
 
 
 def test_detector_witness_model_returns_zero_numeric_string_witness() -> None:
@@ -771,7 +738,7 @@ def test_detector_witness_model_returns_zero_numeric_string_witness() -> None:
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal("0")))
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal("0")))
     assert model.eval(parsed).as_long() == 0
 
 
@@ -784,11 +751,11 @@ def test_witness_constants_reuses_same_live_formula_collection(
     calls = 0
     original_collect = cast(
         "Callable[[z3.ExprRef], object]",
-        getattr(feasibility_mod, "_collect_witness_constants"),
+        evidence_cache_mod.collect_witness_constants,
     )
     cache = cast(
         "MutableMapping[object, object]",
-        getattr(feasibility_mod, "_WITNESS_CONSTANTS_CACHE"),
+        getattr(evidence_cache_mod, "_WITNESS_CONSTANTS_CACHE"),
     )
     cache.clear()
 
@@ -797,11 +764,81 @@ def test_witness_constants_reuses_same_live_formula_collection(
         calls += 1
         return original_collect(formula)
 
-    monkeypatch.setattr(feasibility_mod, "_collect_witness_constants", counting_collect)
+    monkeypatch.setattr(evidence_cache_mod, "collect_witness_constants", counting_collect)
 
-    assert getattr(feasibility_mod, "_witness_constants")(formula) is not None
-    assert getattr(feasibility_mod, "_witness_constants")(formula) is not None
+    assert evidence_cache_mod.witness_constants(formula) is not None
+    assert evidence_cache_mod.witness_constants(formula) is not None
 
+    assert calls == 1
+
+
+def test_witness_constants_reuses_wrapper_equivalent_formula_collection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Different Python wrappers for one Z3 AST should share variable collection."""
+    x = z3.Int("detector_combined_wrapper_cache_x")
+    formula = x == 4096
+    calls = 0
+    original_collect = cast(
+        "Callable[[z3.ExprRef], object]",
+        evidence_cache_mod.collect_witness_constants,
+    )
+    cache = cast(
+        "MutableMapping[object, object]",
+        getattr(evidence_cache_mod, "_WITNESS_CONSTANTS_CACHE"),
+    )
+    cache.clear()
+
+    def counting_collect(formula: z3.ExprRef) -> object:
+        nonlocal calls
+        calls += 1
+        return original_collect(formula)
+
+    monkeypatch.setattr(evidence_cache_mod, "collect_witness_constants", counting_collect)
+    as_ast = cast("Callable[[], object]", getattr(formula, "as_ast"))
+    bool_ref = cast("Callable[[object, object], object]", z3.BoolRef)
+    equivalent_wrapper = cast("z3.BoolRef", bool_ref(as_ast(), formula.ctx))
+
+    assert evidence_cache_mod.witness_constants(formula) is not None
+    assert evidence_cache_mod.witness_constants(equivalent_wrapper) is not None
+
+    assert calls == 1
+
+
+def test_string_integer_witness_collects_variables_once(monkeypatch: MonkeyPatch) -> None:
+    """A string witness probe should discover all variable families in one AST walk."""
+    text = z3.String("detector_single_pass_text_str")
+    length = z3.Int("len_detector_single_pass_text_int")
+    text_is_str = z3.Bool("detector_single_pass_text_is_str")
+    calls = 0
+    original_collect = cast(
+        "Callable[[z3.ExprRef], object]",
+        evidence_cache_mod.collect_witness_constants,
+    )
+    cache = cast(
+        "MutableMapping[object, object]",
+        getattr(evidence_cache_mod, "_WITNESS_CONSTANTS_CACHE"),
+    )
+    cache.clear()
+
+    def counting_collect(formula: z3.ExprRef) -> object:
+        nonlocal calls
+        calls += 1
+        return original_collect(formula)
+
+    monkeypatch.setattr(evidence_cache_mod, "collect_witness_constants", counting_collect)
+
+    model = string_integer_witness_model(
+        [
+            text == z3.StringVal("bbb"),
+            length == z3.Length(text),
+            length == 3,
+            text_is_str,
+        ]
+    )
+
+    assert model is not None
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal("bbb")))
     assert calls == 1
 
 
@@ -826,7 +863,7 @@ def test_hard_theory_witness_model_accepts_zero_numeric_string_formula() -> None
     )
 
     assert model is not None
-    assert z3.is_true(z3.simplify(model.eval(text) == z3.StringVal("0")))
+    assert z3.is_true(simplify_expr(model.eval(text) == z3.StringVal("0")))
     assert model.eval(parsed).as_long() == 0
 
 
@@ -910,7 +947,7 @@ def test_get_model_if_satisfiable_result_uses_hard_witness_after_no_sat_callback
 
     assert result.status is FeasibilityModelStatus.SAT
     assert isinstance(result.model, z3.ModelRef)
-    assert z3.is_true(z3.simplify(result.model.eval(text) == z3.StringVal("0")))
+    assert z3.is_true(simplify_expr(result.model.eval(text) == z3.StringVal("0")))
     assert result.model.eval(parsed).as_long() == 0
 
 

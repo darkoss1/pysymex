@@ -1,15 +1,15 @@
-"""Tests for pysymex/analysis/detectors/runtime/overflow.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/overflow.py."""
 
 from __future__ import annotations
 
 import dis
 import time
 
-from pysymex.analysis.detectors.runtime.overflow import OverflowDetector
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.overflow import OverflowDetector
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -33,7 +33,7 @@ def _make_instruction(
 
 
 class TestOverflowDetector:
-    """Test suite for pysymex.analysis.detectors.detector.OverflowDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.OverflowDetector."""
 
     def test_description_identifies_bounded_width_policy(self) -> None:
         """Keep the user-visible detector metadata honest about its numeric model."""
@@ -73,7 +73,7 @@ class TestOverflowDetector:
         right = SymbolicValue.from_const(1)
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(stack=[left, right], path_constraints=[left_constraint], pc=1),
@@ -81,6 +81,6 @@ class TestOverflowDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None

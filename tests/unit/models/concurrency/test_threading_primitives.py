@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.models.concurrency.threading.locks import (
+from pysymex._internal.models.stdlib.threading.state.locks import (
     BoundedSemaphoreModel,
     LockModel,
     RLockModel,
     SemaphoreModel,
 )
-from pysymex.models.concurrency.threading.threads import (
+from pysymex._internal.models.stdlib.threading.state.threads import (
     ThreadModel,
 )
 

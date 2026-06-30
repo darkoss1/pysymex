@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pysymex.core.state.factory import create_initial_state
-from pysymex.models.builtins.types import (
-    BuiltinTypeModel,
-    TypeModel,
-    TypeModelResult,
-    new_side_effects,
-)
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.models.builtins.types.model import BuiltinTypeModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.models.contracts.types import TypeModel, TypeModelResult
 
 if TYPE_CHECKING:
-    from pysymex.typing import StackValue
-    from pysymex.core.state.record import VMState
+    from pysymex._internal.typing.protocols import StackValue
+
+
+def create_initial_state() -> VMState:
+    """Create the minimal root state needed by builtin type model tests."""
+    return VMState(global_vars={"__name__": "__main__"})
 
 
 class DummyTypeModel(TypeModel):
@@ -34,9 +35,9 @@ class DummyTypeModel(TypeModel):
 class TestTypesModel:
     """Test class for builtin types models."""
 
-    def test_new_side_effects_returns_empty_dict(self) -> None:
-        """Verify that new_side_effects produces a fresh, empty dictionary."""
-        res = new_side_effects()
+    def test_side_effects_empty_returns_empty_dict(self) -> None:
+        """Verify that SideEffects.empty produces a fresh, empty dictionary."""
+        res = SideEffects.empty()
         assert isinstance(res, dict)
         assert len(res) == 0
 

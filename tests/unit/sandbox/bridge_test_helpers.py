@@ -3,7 +3,7 @@ import re
 from types import CodeType
 from typing import TypeGuard
 
-from pysymex.sandbox.bridge.types import create_bytecode_payload
+from pysymex._internal.sandbox.bridge.serialization import create_bytecode_payload
 
 
 def is_object_mapping(value: object) -> TypeGuard[dict[str, object]]:

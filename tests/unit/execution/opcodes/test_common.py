@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pysymex.execution.opcodes.common import BUILTIN_TYPES
+from pysymex._internal.execution.opcodes.common.affinity import BUILTIN_TYPES
 
 
 def test_builtin_types_contains_int() -> None:

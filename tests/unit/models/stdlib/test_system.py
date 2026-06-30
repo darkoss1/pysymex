@@ -2,24 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.stdlib.models.datetime import (
-    DatetimeConstructorModel,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.stdlib.datetime.models import (
+    DatetimeModel,
     DatetimeNowModel,
     TimedeltaConstructorModel,
 )
-from pysymex.models.stdlib.models.json import (
+from pysymex._internal.models.stdlib.json.models import (
     JsonDumpModel,
     JsonDumpsModel,
     JsonLoadModel,
     JsonLoadsModel,
 )
-from pysymex.models.stdlib.models.ospath import (
+from pysymex._internal.models.stdlib.os.path import (
     OsPathAbspathModel,
     OsPathBasenameModel,
     OsPathDirnameModel,
@@ -29,7 +29,7 @@ from pysymex.models.stdlib.models.ospath import (
     OsPathJoinModel,
     OsPathSplitModel,
 )
-from pysymex.models.stdlib.models.random import (
+from pysymex._internal.models.stdlib.random.models import (
     RandomChoiceModel,
     RandomRandintModel,
     RandomRandomModel,
@@ -37,7 +37,7 @@ from pysymex.models.stdlib.models.random import (
     RandomShuffleModel,
     RandomUniformModel,
 )
-from pysymex.models.stdlib.models.types import SimpleNamespaceModel
+from pysymex._internal.models.stdlib.types.models import SimpleNamespaceModel
 
 
 def _state() -> VMState:
@@ -49,7 +49,7 @@ def _call_model(fn: Callable[[], object]) -> None:
 
 
 class TestOsPathExistsModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathExistsModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathExistsModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: OsPathExistsModel().apply(["."], {}, _state()))
@@ -59,7 +59,7 @@ class TestOsPathExistsModel:
 
 
 class TestOsPathIsfileModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathIsfileModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathIsfileModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: OsPathIsfileModel().apply(["."], {}, _state()))
@@ -69,7 +69,7 @@ class TestOsPathIsfileModel:
 
 
 class TestOsPathIsdirModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathIsdirModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathIsdirModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: OsPathIsdirModel().apply(["."], {}, _state()))
@@ -79,7 +79,7 @@ class TestOsPathIsdirModel:
 
 
 class TestOsPathJoinModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathJoinModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathJoinModel."""
 
     def test_faithfulness(self) -> None:
         result = OsPathJoinModel().apply(["a", "b"], {}, _state())
@@ -91,7 +91,7 @@ class TestOsPathJoinModel:
 
 
 class TestOsPathDirnameModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathDirnameModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathDirnameModel."""
 
     def test_faithfulness(self) -> None:
         result = OsPathDirnameModel().apply(["a/b"], {}, _state())
@@ -102,7 +102,7 @@ class TestOsPathDirnameModel:
 
 
 class TestOsPathBasenameModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathBasenameModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathBasenameModel."""
 
     def test_faithfulness(self) -> None:
         result = OsPathBasenameModel().apply(["a/b"], {}, _state())
@@ -113,7 +113,7 @@ class TestOsPathBasenameModel:
 
 
 class TestOsPathSplitModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathSplitModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathSplitModel."""
 
     def test_faithfulness(self) -> None:
         result = OsPathSplitModel().apply(["a/b"], {}, _state())
@@ -124,7 +124,7 @@ class TestOsPathSplitModel:
 
 
 class TestOsPathAbspathModel:
-    """Test suite for pysymex.models.stdlib.models.OsPathAbspathModel."""
+    """Test suite for pysymex._internal.models.stdlib.OsPathAbspathModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: OsPathAbspathModel().apply(["."], {}, _state()))
@@ -134,7 +134,7 @@ class TestOsPathAbspathModel:
 
 
 class TestJsonLoadsModel:
-    """Test suite for pysymex.models.stdlib.models.JsonLoadsModel."""
+    """Test suite for pysymex._internal.models.stdlib.JsonLoadsModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: JsonLoadsModel().apply(['{"a":1}'], {}, _state()))
@@ -153,7 +153,7 @@ class TestJsonLoadsModel:
 
 
 class TestJsonDumpsModel:
-    """Test suite for pysymex.models.stdlib.models.JsonDumpsModel."""
+    """Test suite for pysymex._internal.models.stdlib.JsonDumpsModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: JsonDumpsModel().apply([{"a": 1}], {}, _state()))
@@ -163,7 +163,7 @@ class TestJsonDumpsModel:
 
 
 class TestJsonLoadModel:
-    """Test suite for pysymex.models.stdlib.models.JsonLoadModel."""
+    """Test suite for pysymex._internal.models.stdlib.JsonLoadModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: JsonLoadModel().apply([SymbolicValue.from_const("file")], {}, _state()))
@@ -173,7 +173,7 @@ class TestJsonLoadModel:
 
 
 class TestJsonDumpModel:
-    """Test suite for pysymex.models.stdlib.models.JsonDumpModel."""
+    """Test suite for pysymex._internal.models.stdlib.JsonDumpModel."""
 
     def test_faithfulness(self) -> None:
         result = JsonDumpModel().apply([{"a": 1}, SymbolicValue.from_const("file")], {}, _state())
@@ -185,7 +185,7 @@ class TestJsonDumpModel:
 
 
 class TestDatetimeNowModel:
-    """Test suite for pysymex.models.stdlib.models.DatetimeNowModel."""
+    """Test suite for pysymex._internal.models.stdlib.DatetimeNowModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: DatetimeNowModel().apply([], {}, _state()))
@@ -195,17 +195,17 @@ class TestDatetimeNowModel:
 
 
 class TestDatetimeConstructorModel:
-    """Test suite for pysymex.models.stdlib.models.DatetimeConstructorModel."""
+    """Test suite for pysymex._internal.models.stdlib.DatetimeConstructorModel."""
 
     def test_faithfulness(self) -> None:
-        _call_model(lambda: DatetimeConstructorModel().apply([2025, 1, 1], {}, _state()))
+        _call_model(lambda: DatetimeModel().apply([2025, 1, 1], {}, _state()))
 
     def test_error_path(self) -> None:
-        _call_model(lambda: DatetimeConstructorModel().apply([], {}, _state()))
+        _call_model(lambda: DatetimeModel().apply([], {}, _state()))
 
 
 class TestTimedeltaConstructorModel:
-    """Test suite for pysymex.models.stdlib.models.TimedeltaConstructorModel."""
+    """Test suite for pysymex._internal.models.stdlib.TimedeltaConstructorModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: TimedeltaConstructorModel().apply([1], {}, _state()))
@@ -215,7 +215,7 @@ class TestTimedeltaConstructorModel:
 
 
 class TestRandomRandomModel:
-    """Test suite for pysymex.models.stdlib.models.RandomRandomModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomRandomModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: RandomRandomModel().apply([], {}, _state()))
@@ -225,7 +225,7 @@ class TestRandomRandomModel:
 
 
 class TestRandomRandintModel:
-    """Test suite for pysymex.models.stdlib.models.RandomRandintModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomRandintModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: RandomRandintModel().apply([1, 3], {}, _state()))
@@ -235,7 +235,7 @@ class TestRandomRandintModel:
 
 
 class TestRandomChoiceModel:
-    """Test suite for pysymex.models.stdlib.models.RandomChoiceModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomChoiceModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: RandomChoiceModel().apply([[1, 2]], {}, _state()))
@@ -245,7 +245,7 @@ class TestRandomChoiceModel:
 
 
 class TestRandomShuffleModel:
-    """Test suite for pysymex.models.stdlib.models.RandomShuffleModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomShuffleModel."""
 
     def test_faithfulness(self) -> None:
         result = RandomShuffleModel().apply([[1, 2]], {}, _state())
@@ -257,7 +257,7 @@ class TestRandomShuffleModel:
 
 
 class TestRandomSampleModel:
-    """Test suite for pysymex.models.stdlib.models.RandomSampleModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomSampleModel."""
 
     def test_faithfulness(self) -> None:
         result = RandomSampleModel().apply([[1, 2, 3], 2], {}, _state())
@@ -269,7 +269,7 @@ class TestRandomSampleModel:
 
 
 class TestRandomUniformModel:
-    """Test suite for pysymex.models.stdlib.models.RandomUniformModel."""
+    """Test suite for pysymex._internal.models.stdlib.RandomUniformModel."""
 
     def test_faithfulness(self) -> None:
         _call_model(lambda: RandomUniformModel().apply([1.0, 2.0], {}, _state()))
@@ -279,7 +279,7 @@ class TestRandomUniformModel:
 
 
 class TestSimpleNamespaceModel:
-    """Test suite for pysymex.models.stdlib.models.SimpleNamespaceModel."""
+    """Test suite for pysymex._internal.models.stdlib.SimpleNamespaceModel."""
 
     def test_faithfulness(self) -> None:
         state = _state()

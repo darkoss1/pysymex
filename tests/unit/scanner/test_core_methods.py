@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from pysymex.scanner.file import scan_file
+from textwrap import dedent
+
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_reports_instance_method_returned_zero(tmp_path: Path) -> None:
@@ -339,3 +341,152 @@ def test_scan_file_standalone_method_self_uses_class_constructor_state(
         for issue in result.issues
     )
     assert not any(issue.get("kind") == "TYPE_ERROR" for issue in result.issues)
+
+
+def test_scan_file_standalone_method_self_replays_constructor_list_literal(
+    tmp_path: Path,
+) -> None:
+    """List literal fields should not make earlier constructor attributes disappear."""
+    target = tmp_path / "method_constructor_list_literal.py"
+    target.write_text(
+        "class Handle:\n"
+        "    def __init__(self) -> None:\n"
+        "        self.closed = False\n"
+        "        self.payload = [3, 1, 4]\n\n"
+        "    def read(self) -> int:\n"
+        "        if self.closed:\n"
+        "            raise ValueError('closed')\n"
+        "        return self.payload[0]\n\n"
+        "def target() -> int:\n"
+        "    return Handle().read()\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") == "ATTRIBUTE_ERROR" and issue.get("function_name") in {"read", "target"}
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "VALUE_ERROR" and issue.get("function_name") in {"read", "target"}
+        for issue in result.issues
+    )
+
+
+def test_scan_file_standalone_method_self_replays_zero_list_literal_bug(
+    tmp_path: Path,
+) -> None:
+    """The replayed list literal should remain precise enough for downstream detectors."""
+    target = tmp_path / "method_constructor_zero_list_literal.py"
+    target.write_text(
+        "class Handle:\n"
+        "    def __init__(self) -> None:\n"
+        "        self.payload = [0, 1, 4]\n\n"
+        "    def invert(self) -> int:\n"
+        "        return 10 // self.payload[0]\n\n"
+        "def target() -> int:\n"
+        "    return Handle().invert()\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert any(
+        issue.get("kind") == "DIVISION_BY_ZERO"
+        and issue.get("function_name") in {"invert", "target"}
+        and issue.get("line") == 6
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "ATTRIBUTE_ERROR"
+        and issue.get("function_name") in {"invert", "target"}
+        for issue in result.issues
+    )
+
+
+def test_scan_file_standalone_method_self_uses_generic_constructor_list_hint(
+    tmp_path: Path,
+) -> None:
+    """Generic ``list[int]`` constructor fields should seed list-like instance attrs."""
+    target = tmp_path / "method_constructor_generic_list_hint.py"
+    target.write_text(
+        "class Packet:\n"
+        "    def __init__(self, payload: list[int]) -> None:\n"
+        "        self.payload = payload\n\n"
+        "    def head(self) -> int:\n"
+        "        return self.payload[0]\n\n"
+        "def target(packet: Packet) -> int:\n"
+        "    return packet.payload[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not any(
+        issue.get("kind") in {"NULL_DEREFERENCE", "ATTRIBUTE_ERROR"}
+        and issue.get("function_name") in {"head", "target"}
+        for issue in result.issues
+    )
+
+
+def test_scan_file_infeasible_method_path_does_not_report_receiver_null(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "infeasible_method_receiver.py"
+    target.write_text(
+        dedent(
+            """\
+            class Probe:
+                def __init__(self, cells: list[int]) -> None:
+                    self.cells = cells
+
+                def __getitem__(self, index: int) -> int:
+                    return self.cells[index]
+
+
+            def target(x: int) -> int:
+                probe = Probe([x])
+                if x == 0:
+                    if x != 0:
+                        return probe[0]
+                return 0
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, timeout=10, max_paths=100, no_cache=True)
+
+    assert result.error is None
+    assert result.issues == []
+
+
+def test_scan_file_missing_modeled_instance_attribute_is_attribute_error(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "missing_instance_attribute.py"
+    target.write_text(
+        dedent(
+            """\
+            class Gate:
+                def __init__(self, value: int) -> None:
+                    self.value = value
+
+
+            def target(x: int) -> int:
+                gate = Gate(x)
+                if x == 0:
+                    return gate.missing
+                return 0
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, timeout=10, max_paths=100, no_cache=True)
+
+    assert result.error is None
+    issue_kinds = {issue.get("kind") for issue in result.issues}
+    assert "ATTRIBUTE_ERROR" in issue_kinds
+    assert "NULL_DEREFERENCE" not in issue_kinds

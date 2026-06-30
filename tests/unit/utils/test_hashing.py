@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pysymex.utils.hashing import (
+from pysymex._internal.utils.hashing import (
     STABLE_DIGEST_ALGORITHM,
     stable_digest_hex,
 )

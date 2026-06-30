@@ -4,17 +4,17 @@ import dis
 from pathlib import Path
 from typing import cast
 
-from pysymex.core.effects.events import WriteEvent, WriteKind
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import BlockInfo
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.frontier import (
-    FrontierRuntimeMode,
+from pysymex._internal.core.effects.events import WriteEvent, WriteKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import BlockInfo
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
+from pysymex._internal.execution.frontier.spill.policy import (
     FrontierSpillPolicy,
     FrontierSpillStatus,
-    FrontierWorkStore,
-    state_shadow_digest,
 )
+from pysymex._internal.execution.frontier.store.core import FrontierWorkStore
 
 
 def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:

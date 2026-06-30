@@ -4,24 +4,55 @@ from __future__ import annotations
 
 import dis
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from pysymex.analysis.detectors import Detector, DetectorRegistry, IsSatFn, Issue, IssueKind
-from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
-from pysymex.core.state.record import VMState
-from pysymex.core.state.types import VMStateError
-from pysymex.execution.frontier import FrontierRuntimeMode
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.fallback import FallbackKind, RiskLevel, SoundnessTag
-from pysymex.execution.fallback.infrastructure import (
-    CROSS_FUNCTION_DEGRADED_PASS,
+from pysymex._internal.analysis.detectors.detector.contract import Detector
+from pysymex._internal.analysis.detectors.detector.registry import DetectorRegistry
+from pysymex._internal.analysis.detectors.detector.types import IsSatFn, Issue
+from pysymex._internal.analysis.detectors.runtime.user.exception import UserExceptionDetector
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import VMStateError
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.executors.executor.bootstrap import resolve_execution_config
+from pysymex._internal.execution.executors.executor.entrypoints.mixin import (
+    ExecutorEntrypointMixin as ExecutorEntrypointMixinExport,
+)
+from pysymex._internal.execution.executors.executor.entrypoints.mixin import (
+    ExecutorEntrypointMixin as ExecutorEntrypointMixinOwner,
+)
+from pysymex._internal.execution.executors.executor.loop.mixin import (
+    ExecutorLoopMixin as ExecutorLoopMixinExport,
+)
+from pysymex._internal.execution.executors.executor.loop.mixin import (
+    ExecutorLoopMixin as ExecutorLoopMixinOwner,
+)
+from pysymex._internal.execution.fallback.infrastructure import (
     FP_FILTERING_DEGRADED_PASS,
     STATE_MERGER_DEGRADED_PASS,
-    TYPE_INFERENCE_DEGRADED_PASS,
 )
+from pysymex._internal.execution.fallback.types import FallbackKind, RiskLevel, SoundnessTag
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
 from tests.unit.execution.executors.core_executor_helpers import simple
+
+
+def test_executor_loop_public_export_points_to_direct_owner() -> None:
+    assert ExecutorLoopMixinExport is ExecutorLoopMixinOwner
+
+
+def test_executor_entrypoint_public_export_points_to_direct_owner() -> None:
+    assert ExecutorEntrypointMixinExport is ExecutorEntrypointMixinOwner
+
+
+def test_executor_bootstrap_resolves_config_overrides_without_mutating_input() -> None:
+    config = ExecutionConfig(max_paths=2, max_iterations=20)
+
+    resolved = resolve_execution_config(config, {"max_paths": 7})
+
+    assert resolved.max_paths == 7
+    assert config.max_paths == 2
 
 
 class TestSymbolicExecutorApi:
@@ -114,56 +145,7 @@ class TestSymbolicExecutorApi:
         assert universal_names == []
         assert dispatch == {
             "RAISE_VARARGS": ["user_exception"],
-            "RERAISE": ["user_exception"],
         }
-
-    def test_register_handler(self) -> None:
-        """Test register_handler behavior."""
-        executor = SymbolicExecutor(ExecutionConfig(max_paths=2, max_iterations=20))
-
-        def local_handler(
-            instr: dis.Instruction,
-            state: VMState,
-            ctx: object,
-        ) -> OpcodeResult:
-            _ = instr
-            _ = ctx
-            return OpcodeResult.continue_with(state.advance_pc())
-
-        executor.register_handler("UNIT_TEST_OPCODE", local_handler)
-        assert executor.dispatcher.has_handler("UNIT_TEST_OPCODE") is True
-
-    def test_register_hook(self) -> None:
-        """Test register_hook behavior."""
-        executor = SymbolicExecutor(ExecutionConfig(max_paths=2, max_iterations=20))
-        seen = {"count": 0}
-
-        def hook(*args: object, **kwargs: object) -> None:
-            _ = args
-            _ = kwargs
-            seen["count"] += 1
-
-        executor.register_hook("pre_step", hook)
-        _ = executor.execute_function(simple, {"x": "int"})
-        assert seen["count"] >= 1
-
-    def test_post_step_hook_observes_successor_states(self) -> None:
-        """Post-step hooks still receive successor states after the no-hook fast path."""
-        executor = SymbolicExecutor(ExecutionConfig(max_paths=4, max_iterations=40))
-        seen_successor_pcs: list[int] = []
-
-        def hook(
-            _executor: SymbolicExecutor,
-            next_state: VMState,
-            _instruction: dis.Instruction,
-        ) -> None:
-            seen_successor_pcs.append(next_state.pc)
-
-        executor.register_hook("post_step", hook)
-        result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.paths_explored >= 1
-        assert seen_successor_pcs
 
     def test_execute_function(self) -> None:
         """Test execute_function behavior."""
@@ -242,34 +224,13 @@ class TestSymbolicExecutorApi:
         assert shadow_frontier["checkpoint_count"] == 0
         assert shadow_frontier["spill_denied_count"] == 0
         assert shadow_cegis["enabled"] is True
-        assert "runtime_preview_count" in shadow_cegis
-        assert "runtime_removed_state_count" in shadow_cegis
-
-    def test_type_inference_prepass_calls_analyze_function(self) -> None:
-        """Enabled type inference should call the TypeAnalyzer API that exists."""
-        analyzer = MagicMock()
-        analyzer.analyze_function.return_value = {}
-        with patch(
-            "pysymex.execution.engine.TypeAnalyzer",
-            return_value=analyzer,
-        ):
-            executor = SymbolicExecutor(
-                ExecutionConfig(
-                    max_paths=2,
-                    max_iterations=20,
-                    enable_type_inference=True,
-                    enable_caching=False,
-                )
-            )
-            result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.function_name == "simple"
-        analyzer.analyze_function.assert_called_once()
+        assert "runtime_execution_select_count" in shadow_cegis
+        assert "runtime_execution_no_selection_count" in shadow_cegis
 
     def test_state_merger_prepass_failure_records_fallback_event(self) -> None:
         """State-merger setup failures should retain degraded label compatibility."""
         with patch(
-            "pysymex.execution.executors.core.StateMerger.detect_join_points",
+            "pysymex._internal.execution.executors.core.StateMerger.detect_join_points",
             side_effect=ValueError("boom"),
         ):
             executor = SymbolicExecutor(
@@ -294,7 +255,7 @@ class TestSymbolicExecutorApi:
     def test_fp_filtering_failure_records_fallback_event(self) -> None:
         """Final issue filtering failures should expose raw-issue degradation."""
         with patch(
-            "pysymex.execution.detectors.filter_issues",
+            "pysymex._internal.execution.detectors.finalization.filter_issues",
             side_effect=TypeError("boom"),
         ):
             executor = SymbolicExecutor(
@@ -309,51 +270,6 @@ class TestSymbolicExecutorApi:
         assert event.owner == "execution.detectors.fp_filtering"
         assert event.false_positive_risk is RiskLevel.HIGH
         assert event.false_negative_risk is RiskLevel.LOW
-        assert event.soundness is SoundnessTag.PRECISION_LOSS
-
-    def test_cross_function_prepass_failure_records_fallback_event(self) -> None:
-        """Cross-function pre-pass failures should keep the existing degraded label."""
-        with patch(
-            "pysymex.execution.executors.core.CrossFunctionAnalyzer.analyze_module",
-            side_effect=RuntimeError("boom"),
-        ):
-            executor = SymbolicExecutor(
-                ExecutionConfig(max_paths=2, max_iterations=20, enable_caching=False)
-            )
-            result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.degraded_passes == [CROSS_FUNCTION_DEGRADED_PASS]
-        event = executor.session.fallback_events[-1]
-        assert event.kind is FallbackKind.PRECISION_LOSS
-        assert event.label == CROSS_FUNCTION_DEGRADED_PASS
-        assert event.owner == "analysis.cross_function"
-        assert event.false_positive_risk is RiskLevel.MEDIUM
-        assert event.false_negative_risk is RiskLevel.HIGH
-        assert event.soundness is SoundnessTag.PRECISION_LOSS
-
-    def test_type_inference_prepass_failure_records_fallback_event(self) -> None:
-        """Type-inference pre-pass failures should keep the existing degraded label."""
-        with patch(
-            "pysymex.execution.engine.TypeAnalyzer",
-            side_effect=RuntimeError("boom"),
-        ):
-            executor = SymbolicExecutor(
-                ExecutionConfig(
-                    max_paths=2,
-                    max_iterations=20,
-                    enable_type_inference=True,
-                    enable_caching=False,
-                )
-            )
-            result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.degraded_passes == [TYPE_INFERENCE_DEGRADED_PASS]
-        event = executor.session.fallback_events[-1]
-        assert event.kind is FallbackKind.PRECISION_LOSS
-        assert event.label == TYPE_INFERENCE_DEGRADED_PASS
-        assert event.owner == "analysis.type_inference"
-        assert event.false_positive_risk is RiskLevel.MEDIUM
-        assert event.false_negative_risk is RiskLevel.MEDIUM
         assert event.soundness is SoundnessTag.PRECISION_LOSS
 
     def test_execute_step_converts_vm_state_error_to_unknown_issue(self) -> None:
@@ -375,45 +291,3 @@ class TestSymbolicExecutorApi:
         assert executor.session.issues[-1].kind is IssueKind.UNKNOWN
         assert "unit stack failure" in executor.session.issues[-1].message
         assert executor.session.paths_pruned == 1
-
-    def test_execute_step_calls_before_dispatch_extension_hook(self) -> None:
-        """Executor variants can intercept a step without copying the core loop."""
-
-        class HookedExecutor(SymbolicExecutor):
-            def __init__(self) -> None:
-                super().__init__(ExecutionConfig(max_paths=2, max_iterations=20))
-                self.seen: list[str] = []
-
-            def _before_dispatch(
-                self,
-                instr: dis.Instruction,
-                state: VMState,
-                active_instructions: list[dis.Instruction],
-            ) -> None:
-                _ = state
-                _ = active_instructions
-                self.seen.append(instr.opname)
-
-        executor = HookedExecutor()
-        result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.function_name == "simple"
-        assert executor.seen
-
-    def test_execute_step_calls_path_complete_extension_hook(self) -> None:
-        """Executor variants can observe normal path completion."""
-
-        class HookedExecutor(SymbolicExecutor):
-            def __init__(self) -> None:
-                super().__init__(ExecutionConfig(max_paths=2, max_iterations=20))
-                self.completed = 0
-
-            def _on_path_complete(self, state: VMState) -> None:
-                _ = state
-                self.completed += 1
-
-        executor = HookedExecutor()
-        result = executor.execute_function(simple, {"x": "int"})
-
-        assert result.paths_completed >= 1
-        assert executor.completed == result.paths_completed

@@ -5,11 +5,11 @@ from typing import cast
 
 import z3
 
-from pysymex.contracts.ir.evidence import TheoryFeature
-from pysymex.contracts.ir.obligations import QueryKind
-from pysymex.contracts.solver import ContractQuery, check_contract_query
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.results import SolverResult
+from pysymex._internal.contracts.ir.evidence import TheoryFeature
+from pysymex._internal.contracts.ir.obligations import QueryKind
+from pysymex._internal.contracts.solver.query import ContractQuery, check_contract_query
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.results import SolverResult
 
 
 class _UnknownSolver:
@@ -28,8 +28,13 @@ class _UnknownSolver:
         self.calls += 1
         return SolverResult.unknown()
 
-    def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
+    def check_sat_cached(
+        self,
+        constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
         _ = constraints
+        _ = known_sat_prefix_len
         return SolverResult.unknown()
 
     def check(
@@ -143,7 +148,7 @@ def test_contract_query_profiles_quantifiers_without_ast_application_crash() -> 
 
 def test_contract_query_preserves_solver_unknown() -> None:
     fake_solver = _UnknownSolver()
-    token = active_incremental_solver.set(fake_solver)
+    token = SolverContext.active.set(fake_solver)
     try:
         query = ContractQuery.from_constraints(
             [z3.Bool("flag")],
@@ -151,7 +156,7 @@ def test_contract_query_preserves_solver_unknown() -> None:
         )
         result = check_contract_query(query)
     finally:
-        active_incremental_solver.reset(token)
+        SolverContext.active.reset(token)
 
     assert fake_solver.calls == 1
     assert result.is_unknown is True

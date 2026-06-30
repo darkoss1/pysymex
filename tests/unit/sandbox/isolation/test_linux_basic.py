@@ -3,14 +3,15 @@ from unittest.mock import patch
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.linux import LinuxNamespaceBackend
-from pysymex.sandbox.types import ExecutionStatus, SandboxConfig
+from pysymex._internal.config.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.linux.backend import LinuxNamespaceBackend
+from pysymex._internal.sandbox.types import ExecutionStatus
 from tests.unit.sandbox.isolation.linux_test_helpers import FakeProcess
 
 
 class TestLinuxNamespaceBackend:
-    """Test suite for pysymex.sandbox.isolation.linux.LinuxNamespaceBackend."""
+    """Test suite for pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend."""
 
     @pytest.mark.timeout(30)
     @pytest.mark.skipif(not sys.platform == "linux", reason="Linux only")
@@ -62,9 +63,12 @@ class TestLinuxNamespaceBackend:
         config = SandboxConfig()
         backend = LinuxNamespaceBackend(config)
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
             patch(
-                "pysymex.sandbox.isolation.linux.subprocess.Popen",
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
                 return_value=FakeProcess(0, b"ok\n", b""),
             ),
         ):
@@ -85,8 +89,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(1, b"", b"sandbox-harness: network access is hard-blocked")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:
@@ -104,8 +114,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(1, b"", b"sandbox-harness: blocked write")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:
@@ -123,8 +139,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(1, b"", b"sandbox-harness: blocked runtime event 'subprocess.Popen'")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:
@@ -142,8 +164,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(1, b"", b"sandbox-harness: rejected")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:
@@ -161,8 +189,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(0, b"safe\n", b"")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:
@@ -180,8 +214,14 @@ class TestLinuxNamespaceBackend:
         backend = LinuxNamespaceBackend(config)
         fake = FakeProcess(0, b"degraded-safe\n", b"")
         with (
-            patch("pysymex.sandbox.isolation.linux.LinuxNamespaceBackend.is_available", True),
-            patch("pysymex.sandbox.isolation.linux.subprocess.Popen", return_value=fake),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.backend.LinuxNamespaceBackend.is_available",
+                True,
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.linux.execution.subprocess.Popen",
+                return_value=fake,
+            ),
         ):
             backend.setup()
             try:

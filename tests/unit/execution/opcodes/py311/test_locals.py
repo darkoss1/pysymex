@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py311 import locals
+import pysymex._internal.execution.opcodes.py311.locals as locals
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, arg: int = 0) -> dis.Instruction:

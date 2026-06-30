@@ -6,9 +6,9 @@ from typing import cast
 
 import pytest
 
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.frontier import FrontierRuntimeMode
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
 
 
 @pytest.mark.parametrize(

@@ -5,12 +5,12 @@ import sys
 
 import pytest
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py313.formatting import (
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.py313.formatting import (
     handle_convert_value,
     handle_format_simple,
     handle_format_with_spec,

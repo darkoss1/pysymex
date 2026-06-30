@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.models.builtins.extended.binary_constructors import BytearrayModel
-from pysymex.models.containers.bytes.bytearray.growth import (
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.models.builtins.bytes.constructors import BytearrayModel
+from pysymex._internal.models.builtins.types.containers.bytes.bytearray.growth import (
     BytearrayAppendModel,
     BytearrayExtendModel,
     BytearrayInsertModel,
 )
-from pysymex.models.containers.bytes.bytearray.misc import BytearrayCopyModel, BytearrayReverseModel
-from pysymex.models.containers.bytes.bytearray.removal import (
+from pysymex._internal.models.builtins.types.containers.bytes.bytearray.ordering import (
+    BytearrayCopyModel,
+    BytearrayReverseModel,
+)
+from pysymex._internal.models.builtins.types.containers.bytes.bytearray.removal import (
     BytearrayClearModel,
     BytearrayPopModel,
     BytearrayRemoveModel,

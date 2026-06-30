@@ -1,9 +1,11 @@
+import pytest
 import z3
 
-from pysymex.core.types.scalars.values import int_to_bv, py_floor_div, py_mod
-from pysymex.core.types.numeric.bool import SymbolicBool
-from pysymex.core.types.numeric.float import SymbolicFloat
-from pysymex.core.types.numeric.int import SymbolicInt
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.types.numeric.bool import SymbolicBool
+from pysymex._internal.core.types.numeric.float import SymbolicFloat
+from pysymex._internal.core.types.numeric.int import SymbolicInt
+from pysymex._internal.core.types.scalars.value.scalar_ops import ScalarValueOps
 
 
 class TestSymbolicBool:
@@ -67,7 +69,7 @@ class TestSymbolicInt:
     def test_as_bv(self) -> None:
         i = SymbolicInt.symbolic("i")
         assert z3.is_bv(i.as_bv)
-        assert z3.eq(i.as_bv, int_to_bv(i.z3_int))
+        assert z3.eq(i.as_bv, ScalarValueOps.int_to_bv(i.z3_int))
 
     def test_is_truthy(self) -> None:
         i = SymbolicInt.symbolic("i")
@@ -99,18 +101,18 @@ class TestSymbolicInt:
         right = SymbolicInt.concrete(2)
         result = left // right
         safe_divisor = z3.If(right.z3_int == 0, z3.IntVal(1), right.z3_int)
-        expected = py_floor_div(left.z3_int, safe_divisor)
+        expected = ScalarValueOps.py_floor_div(left.z3_int, safe_divisor)
         assert z3.eq(result.z3_int, expected)
-        assert z3.simplify(result.z3_int).as_long() == -2
+        assert simplify_expr(result.z3_int).as_long() == -2
 
     def test_modulo_reuses_python_semantics_helper(self) -> None:
         left = SymbolicInt.concrete(-3)
         right = SymbolicInt.concrete(2)
         result = left % right
         safe_divisor = z3.If(right.z3_int == 0, z3.IntVal(1), right.z3_int)
-        expected = py_mod(left.z3_int, safe_divisor)
+        expected = ScalarValueOps.py_mod(left.z3_int, safe_divisor)
         assert z3.eq(result.z3_int, expected)
-        assert z3.simplify(result.z3_int).as_long() == 1
+        assert simplify_expr(result.z3_int).as_long() == 1
 
 
 class TestSymbolicFloat:
@@ -125,7 +127,7 @@ class TestSymbolicFloat:
 
     def test_to_z3(self) -> None:
         f = SymbolicFloat.symbolic("f")
-        assert z3.is_real(f.to_z3())
+        assert z3.is_fp(f.to_z3())
 
     def test_is_truthy(self) -> None:
         f = SymbolicFloat.symbolic("f")
@@ -154,4 +156,90 @@ class TestSymbolicFloat:
 
     def test_concrete(self) -> None:
         f = SymbolicFloat.concrete(1.5)
-        assert z3.is_rational_value(f.z3_real)
+        assert z3.is_fp_value(f.z3_expr)
+
+
+class TestNumericInteroperability:
+    def test_integer_native_arithmetic(self) -> None:
+        s = SymbolicInt.concrete(3)
+
+        # addition
+        assert isinstance(s + 5, SymbolicInt)
+        assert isinstance(5 + s, SymbolicInt)
+
+        # subtraction
+        assert isinstance(s - 1, SymbolicInt)
+        assert isinstance(10 - s, SymbolicInt)
+
+        # multiplication
+        assert isinstance(s * 2, SymbolicInt)
+        assert isinstance(2 * s, SymbolicInt)
+
+        # division (true division converts to float)
+        assert isinstance(s / 2, SymbolicFloat)
+        assert isinstance(10 / s, SymbolicFloat)
+
+        # floor division
+        assert isinstance(s // 2, SymbolicInt)
+        assert isinstance(10 // s, SymbolicInt)
+
+        # modulo
+        assert isinstance(s % 2, SymbolicInt)
+        assert isinstance(10 % s, SymbolicInt)
+
+        # exponentiation
+        assert isinstance(s**2, SymbolicInt)
+        assert isinstance(2**s, SymbolicInt)
+
+        symbolic_power = SymbolicInt.symbolic("symbolic_power") ** 2
+        assert isinstance(symbolic_power, SymbolicInt)
+        assert symbolic_power.z3_int.sort() == z3.IntSort()
+
+        negative_power = s**-1
+        assert isinstance(negative_power, SymbolicFloat)
+        assert z3.is_true(
+            z3.simplify(z3.fpEQ(negative_power.z3_expr, z3.FPVal(1 / 3, z3.Float64())))
+        )
+
+        with pytest.raises(ZeroDivisionError):
+            _ = 0 ** SymbolicInt.concrete(-1)
+
+    def test_integer_native_comparisons(self) -> None:
+        s = SymbolicInt.concrete(3)
+        assert isinstance(s < 5, SymbolicBool)
+        assert isinstance(5 < s, SymbolicBool)
+        assert isinstance(s <= 3, SymbolicBool)
+        assert s == 3
+        assert s != 4
+
+    def test_integer_native_bitwise(self) -> None:
+        s = SymbolicInt.concrete(3)
+        assert isinstance(s & 5, SymbolicInt)
+        assert isinstance(5 & s, SymbolicInt)
+        assert isinstance(s | 5, SymbolicInt)
+        assert isinstance(5 | s, SymbolicInt)
+        assert isinstance(s ^ 5, SymbolicInt)
+        assert isinstance(5 ^ s, SymbolicInt)
+        assert isinstance(s << 1, SymbolicInt)
+        assert isinstance(1 << s, SymbolicInt)
+        assert isinstance(s >> 1, SymbolicInt)
+        assert isinstance(10 >> s, SymbolicInt)
+
+        negative = SymbolicInt.concrete(-1)
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = s << -1
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = s >> negative
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = 1 << negative
+        with pytest.raises(ValueError, match="negative shift count"):
+            _ = 1 >> negative
+
+    def test_boolean_native_logical(self) -> None:
+        b = SymbolicBool.concrete(True)
+        assert isinstance(b & False, SymbolicBool)
+        assert isinstance(False & b, SymbolicBool)
+        assert isinstance(b | False, SymbolicBool)
+        assert isinstance(False | b, SymbolicBool)
+        assert isinstance(b ^ True, SymbolicBool)
+        assert isinstance(True ^ b, SymbolicBool)

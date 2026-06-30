@@ -1,19 +1,28 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 import z3
 
-from pysymex.contracts.binding import runtime_contract_frame
-from pysymex.contracts.runtime.calls import inject_call_preconditions
-from pysymex.contracts.runtime.entry import inject_preconditions_initial
-from pysymex.contracts.runtime.returns import inject_postconditions
-from pysymex.core.state.factory import create_initial_state
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.contracts.decorators import assumes, ensures, requires
-from pysymex.analysis.detectors import IssueKind
+from pysymex._internal.contracts.binding.snapshots import runtime_contract_frame
+from pysymex._internal.contracts.decorators import assumes, ensures, requires
+from pysymex._internal.contracts.runtime.calls import inject_call_preconditions
+from pysymex._internal.contracts.runtime.entry import inject_preconditions_initial
+from pysymex._internal.contracts.runtime.returns import inject_postconditions
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+
+if TYPE_CHECKING:
+    from pysymex._internal.typing.protocols import StackValue
+
+
+def create_initial_state(local_vars: dict[str, StackValue] | None = None) -> VMState:
+    """Create the minimal root state needed by contract runtime tests."""
+    return VMState(local_vars=local_vars, global_vars={"__name__": "__main__"})
 
 
 class MockStackValue:
@@ -88,7 +97,7 @@ class TestRuntimeHooks:
             pass
 
         with patch(
-            "pysymex.contracts.types.Contract.compile",
+            "pysymex._internal.contracts.types.Contract.compile",
             side_effect=RuntimeError("internal failure"),
         ):
             with pytest.raises(RuntimeError, match="internal failure"):

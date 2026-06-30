@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.execution.results.result import ExecutionResult
-from pysymex.scanner.file import scan_file
+from pysymex._internal.execution.results.result import ExecutionResult
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_preserves_execution_degradation(
@@ -20,7 +20,7 @@ def test_scan_file_preserves_execution_degradation(
         return ExecutionResult(degraded_passes=["solver_unknown_detector_query"])
 
     monkeypatch.setattr(
-        "pysymex.scanner.execution.passes.SymbolicExecutor.execute_code",
+        "pysymex._internal.execution.executors.core.SymbolicExecutor.execute_code",
         degraded_execution,
     )
 

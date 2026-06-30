@@ -3,15 +3,18 @@ from __future__ import annotations
 import pytest
 import z3
 
-from pysymex.contracts.ir.evidence import TheoryFeature, UnsupportedReason
-from pysymex.contracts.quantifiers.lowering import (
+from pysymex._internal.contracts.ir.evidence import TheoryFeature, UnsupportedReason
+from pysymex._internal.contracts.quantifiers.lower.policy import (
     ConcreteRange,
     QuantifierLoweringError,
     QuantifierLoweringPolicy,
+)
+from pysymex._internal.contracts.quantifiers.lowering import (
     find_quantifier_occurrences,
     lower_condition_quantifiers,
 )
-from pysymex.contracts.solver.query import theory_profile_for_constraints
+from pysymex._internal.contracts.solver.query import theory_profile_for_constraints
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
 
 
 def test_concrete_bounded_forall_is_finite_expanded_without_quantifier_theory() -> None:
@@ -28,9 +31,24 @@ def test_concrete_bounded_exists_and_unique_are_expanded() -> None:
     unique_formula = lower_condition_quantifiers("exists!(i, 0 <= i < 4, i == 2)", {})
     not_unique_formula = lower_condition_quantifiers("exists!(i, 0 <= i < 4, i >= 2)", {})
 
-    assert z3.is_true(z3.simplify(exists_formula))
-    assert z3.is_true(z3.simplify(unique_formula))
-    assert z3.is_false(z3.simplify(not_unique_formula))
+    assert z3.is_true(simplify_expr(exists_formula))
+    assert z3.is_true(simplify_expr(unique_formula))
+    assert z3.is_false(simplify_expr(not_unique_formula))
+
+
+def test_default_policy_expands_finite_domain_beyond_old_internal_cap() -> None:
+    formula = lower_condition_quantifiers("forall(i, 0 <= i < 65, i >= 0)", {})
+
+    solver = z3.Solver()
+    solver.add(z3.Not(formula))
+    assert solver.check() == z3.unsat
+
+
+def test_explicit_quantifier_expansion_limit_remains_supported() -> None:
+    policy = QuantifierLoweringPolicy(max_expansion=64)
+
+    with pytest.raises(QuantifierLoweringError):
+        lower_condition_quantifiers("forall(i, 0 <= i < 65, i >= 0)", {}, policy=policy)
 
 
 def test_symbolic_bounded_range_is_guarded_by_explicit_policy() -> None:

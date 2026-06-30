@@ -2,16 +2,19 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 import pytest
-from pysymex.sandbox.errors import SandboxError, SandboxSetupError
-from pysymex.sandbox.runner import SandboxRunner
-from pysymex.sandbox.types import (
-    ExecutionStatus,
+
+from pysymex._internal.config.sandbox.types import (
     ResourceLimits,
     SandboxBackend,
-    SandboxBackendStrength,
     SandboxConfig,
-    SandboxResult,
     SecurityCapabilities,
+)
+from pysymex._internal.sandbox.errors import SandboxError, SandboxSetupError
+from pysymex._internal.sandbox.runner import SandboxRunner
+from pysymex._internal.sandbox.types import (
+    ExecutionStatus,
+    SandboxBackendStrength,
+    SandboxResult,
 )
 
 
@@ -62,7 +65,7 @@ def _fake_backend_patch(backend: _FakeStrongBackend | None = None):
 
 
 class TestSandboxRunner:
-    """Test suite for pysymex.sandbox.runner.SandboxRunner."""
+    """Test suite for pysymex._internal.sandbox.runner.SandboxRunner."""
 
     @pytest.mark.timeout(30)
     def test_is_active(self) -> None:
@@ -105,17 +108,17 @@ class TestSandboxRunner:
     @pytest.mark.timeout(30)
     def test_backend_strength_reports_verified_strong_backend(self) -> None:
         with (
-            patch("pysymex.sandbox.runner.sys.platform", "win32"),
+            patch("pysymex._internal.sandbox.runner.sys.platform", "win32"),
             patch(
-                "pysymex.sandbox.runner.check_windows_appcontainer_support",
+                "pysymex._internal.sandbox.runner.check_windows_appcontainer_support",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.setup",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.setup",
                 return_value=None,
             ),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.get_capabilities",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.get_capabilities",
                 return_value=SecurityCapabilities(
                     process_isolation=True,
                     filesystem_jail=True,
@@ -137,11 +140,11 @@ class TestSandboxRunner:
         )
         with (
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.setup",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.setup",
                 return_value=None,
             ),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.get_capabilities",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.get_capabilities",
                 return_value=SecurityCapabilities(process_isolation=True),
             ),
         ):
@@ -260,52 +263,29 @@ class TestSandboxRunner:
     def test_linux_auto_detect_does_not_select_namespace_without_unshare(self) -> None:
         """Linux auto-detection must not claim namespace isolation when unshare is absent."""
         with (
-            patch("pysymex.sandbox.runner.sys.platform", "linux"),
+            patch("pysymex._internal.sandbox.runner.sys.platform", "linux"),
             patch("shutil.which", return_value=None),
             patch("builtins.open", mock_open(read_data="1")),
-            patch("pysymex.sandbox.backend_selection.find_spec", return_value=None),
         ):
             with pytest.raises(SandboxSetupError, match="No strong pysymex sandbox backend"):
                 with SandboxRunner():
                     pass
 
     @pytest.mark.timeout(30)
-    def test_windows_auto_detect_prefers_configured_wasm_over_job_objects(
-        self, tmp_path: Path
-    ) -> None:
-        """Windows defaults to WASM when a strong WASI runtime is configured."""
-        artifact = tmp_path / "python.wasm"
-        artifact.write_bytes(b"\0asm")
-        config = SandboxConfig(wasm_python_module=artifact)
-
-        with (
-            patch("pysymex.sandbox.runner.sys.platform", "win32"),
-            patch(
-                "pysymex.sandbox.runner.check_windows_appcontainer_support",
-                return_value=False,
-            ),
-            patch("pysymex.sandbox.backend_selection.find_spec", return_value=object()),
-            patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=object()),
-            patch("pysymex.sandbox.isolation.wasm.WasmBackend.setup", return_value=None),
-        ):
-            with SandboxRunner(config) as runner:
-                assert runner.backend_name == "WasmBackend"
-
-    @pytest.mark.timeout(30)
     def test_windows_auto_detect_prefers_native_appcontainer(self) -> None:
-        """Windows selects the native strong backend before portable WASM."""
+        """Windows selects the native strong backend when it is available."""
         with (
-            patch("pysymex.sandbox.runner.sys.platform", "win32"),
+            patch("pysymex._internal.sandbox.runner.sys.platform", "win32"),
             patch(
-                "pysymex.sandbox.runner.check_windows_appcontainer_support",
+                "pysymex._internal.sandbox.runner.check_windows_appcontainer_support",
                 return_value=True,
             ),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.setup",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.setup",
                 return_value=None,
             ),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.get_capabilities",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.get_capabilities",
                 return_value=SecurityCapabilities(
                     process_isolation=True,
                     filesystem_jail=True,
@@ -317,48 +297,42 @@ class TestSandboxRunner:
             ),
         ):
             with SandboxRunner() as runner:
-                assert runner.backend_name == "WindowsAppContainerBackend"
+                assert runner.backend_name == "AppContainerBackend"
 
     @pytest.mark.timeout(30)
-    def test_windows_appcontainer_setup_failure_can_fall_back_to_configured_wasm(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_windows_appcontainer_setup_failure_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A failed native strong setup may fall back only to another strong backend."""
+        """A failed native strong setup stays visible instead of falling back."""
         monkeypatch.setattr(
-            "pysymex.sandbox.backend_selection._windows_appcontainer_auto_disabled_reason",
+            "pysymex._internal.sandbox.backends._windows_appcontainer_auto_disabled_reason",
             None,
         )
-        artifact = tmp_path / "python.wasm"
-        artifact.write_bytes(b"\0asm")
-        config = SandboxConfig(wasm_python_module=artifact)
 
         with (
-            patch("pysymex.sandbox.runner.sys.platform", "win32"),
+            patch("pysymex._internal.sandbox.runner.sys.platform", "win32"),
             patch(
-                "pysymex.sandbox.runner.check_windows_appcontainer_support",
+                "pysymex._internal.sandbox.runner.check_windows_appcontainer_support",
                 return_value=True,
             ),
-            patch("pysymex.sandbox.backend_selection.find_spec", return_value=object()),
-            patch("pysymex.sandbox.isolation.wasm.backend.find_spec", return_value=object()),
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.WindowsAppContainerBackend.setup",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.AppContainerBackend.setup",
                 side_effect=SandboxSetupError("native self-check failed"),
             ),
-            patch("pysymex.sandbox.isolation.wasm.WasmBackend.setup", return_value=None),
+            pytest.raises(SandboxSetupError, match="native self-check failed"),
         ):
-            with SandboxRunner(config) as runner:
-                assert runner.backend_name == "WasmBackend"
+            with SandboxRunner():
+                pass
 
     @pytest.mark.timeout(30)
-    def test_windows_without_native_or_wasm_backend_fails_closed(self) -> None:
-        """Windows has no weak native fallback after AppContainer and WASM fail."""
+    def test_windows_without_native_backend_fails_closed(self) -> None:
+        """Windows has no weak fallback when AppContainer is unavailable."""
         with (
-            patch("pysymex.sandbox.runner.sys.platform", "win32"),
+            patch("pysymex._internal.sandbox.runner.sys.platform", "win32"),
             patch(
-                "pysymex.sandbox.runner.check_windows_appcontainer_support",
+                "pysymex._internal.sandbox.runner.check_windows_appcontainer_support",
                 return_value=False,
             ),
-            patch("pysymex.sandbox.backend_selection.find_spec", return_value=None),
             pytest.raises(SandboxSetupError, match="No strong pysymex sandbox backend"),
         ):
             with SandboxRunner():

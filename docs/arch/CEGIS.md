@@ -36,18 +36,19 @@ reconstruction, and invalid coverage are non-removing outcomes.
 | Dominance | Frontier checkpoints prove exact structural duplicate coverage. |
 | Execute step | VM execution remains a normal non-removing action. |
 
-Automatic proof pruning is currently disabled by a zero frontier limit. Runtime mode can still use
-CEGIS to select detector-obligation states for execution and to apply explicit exact outcomes in
-tests or callers.
+Runtime mode uses CEGIS only through explicit dispatch points: detector-obligation states can be
+selected before native scheduling, and exact owner outcomes can be previewed or applied by callers.
+There is no background automatic proof-pruning loop.
 
 ## Evidence In Source
 
-- Runtime controller: `pysymex/execution/scheduling/cegis/runtime.py`
-- Bids and policy: `pysymex/execution/scheduling/cegis/bids.py`, `policy.py`
-- Outcome typing: `pysymex/execution/scheduling/cegis/outcomes.py`
-- Application plan: `pysymex/execution/scheduling/cegis/application.py`
-- Evaluators: `pysymex/execution/scheduling/cegis`
-- Tests: `tests/unit/execution/scheduling/cegis`, `tests/unit/scanner/test_polar_cegis_no_false_prune.py`
+- Runtime controller and stats: `pysymex/_internal/execution/scheduling/cegis/runtime`
+- Bids and policy: `pysymex/_internal/execution/scheduling/cegis/bids`, `pysymex/_internal/execution/scheduling/cegis/policy.py`
+- Outcome typing and owner outcomes: `pysymex/_internal/execution/scheduling/cegis/outcomes`
+- Application plan: `pysymex/_internal/execution/scheduling/cegis/application.py`
+- Evaluators: `pysymex/_internal/execution/scheduling/cegis`
+- Tests: `tests/unit/execution/scheduling/cegis`,
+  `tests/unit/execution/strategies/test_manager_cegis_runtime.py`
 
 ## Limits
 

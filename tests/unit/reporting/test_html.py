@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from pysymex.reporting.html.conversion import create_report_from_result, save_html_report
-from pysymex.reporting.html.models import (
+from pysymex._internal.reporting.html.conversion import create_report_from_result, save_html_report
+from pysymex._internal.reporting.html.models import (
     AnalysisReport,
     IssueReport,
 )
-from pysymex.reporting.html.rendering import generate_html_report
+from pysymex._internal.reporting.html.rendering import generate_html_report
 
 
 def test_issue_and_analysis_report_to_dict() -> None:

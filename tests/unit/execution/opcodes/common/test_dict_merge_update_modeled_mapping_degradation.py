@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.collections.mapping_protocol import (
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.mapping_protocol.extraction import (
     UNSUPPORTED_MAPPING_PROTOCOL,
 )
-from pysymex.execution.opcodes.common.collections.mutation import (
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.collections.mutation.dicts import (
     handle_common_dict_merge_update,
 )
-from pysymex.execution.opcodes.common.functions.classes import modeled_instance_value
-from pysymex.models.objects import SymbolicClass, class_registry
-from pysymex.typing import StackValue
+from pysymex._internal.execution.opcodes.common.functions.classes.instances.values import (
+    modeled_instance_value,
+)
+from pysymex._internal.typing.protocols import StackValue
 from tests.unit.execution.opcodes.common.collections_helpers import instr
 
 

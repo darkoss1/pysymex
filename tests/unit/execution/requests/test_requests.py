@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from pysymex.execution.requests.types import CodeExecutionRequest, FunctionExecutionRequest
+from pysymex._internal.execution.requests.types import (
+    CodeExecutionRequest,
+    ExecutionRequest,
+)
 
 
 def _target(x: int) -> int:
@@ -8,7 +11,7 @@ def _target(x: int) -> int:
 
 
 def test_function_execution_request_preserves_cache_token_for_none_symbolic_args() -> None:
-    request = FunctionExecutionRequest.from_inputs(_target, None, None)
+    request = ExecutionRequest.from_inputs(_target, None, None)
 
     assert request.code is _target.__code__
     assert request.function_name == "_target"
@@ -20,7 +23,7 @@ def test_function_execution_request_preserves_cache_token_for_none_symbolic_args
 def test_function_execution_request_copies_mutable_inputs() -> None:
     symbolic_args = {"x": "int"}
     initial_values: dict[str, object] = {"x": 3}
-    request = FunctionExecutionRequest.from_inputs(_target, symbolic_args, initial_values)
+    request = ExecutionRequest.from_inputs(_target, symbolic_args, initial_values)
 
     symbolic_args["x"] = "str"
     initial_values["x"] = 4

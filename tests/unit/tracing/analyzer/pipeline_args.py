@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+from typing import cast
+
+from pysymex._internal.tracing.analyzer.pipeline.criteria import TraceFilterCriteria
 
 
-def make_pipeline_args(**overrides: object) -> argparse.Namespace:
-    """Build a CLI-args namespace with every pipeline option defaulted."""
+def make_pipeline_args(**overrides: object) -> TraceFilterCriteria:
+    """Build a trace filter config with every pipeline option defaulted."""
     values: dict[str, object] = {
         "event_type": None,
         "seq": None,
@@ -70,4 +73,4 @@ def make_pipeline_args(**overrides: object) -> argparse.Namespace:
         "any_field_contains": None,
     }
     values.update(overrides)
-    return argparse.Namespace(**values)
+    return cast(TraceFilterCriteria, argparse.Namespace(**values))

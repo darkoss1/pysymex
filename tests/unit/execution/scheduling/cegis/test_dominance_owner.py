@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import build_frontier_checkpoint, build_shadow_capsule
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoints import build_frontier_checkpoint
+from pysymex._internal.execution.scheduling.cegis.application import plan_evidence_application
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
+    EvidenceOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
     EvidenceCertificateKind,
     EvidenceOutcomeKind,
-    EvidenceOwner,
-    evaluate_capsule_dominance_action,
-    evaluate_checkpoint_dominance_action,
-    plan_evidence_application,
 )
+from pysymex._internal.execution.scheduling.cegis.owners import choose_checkpoint_dominance_action
 
 
 def _dominance_action(
@@ -46,7 +47,7 @@ def test_checkpoint_dominance_owner_certifies_exact_duplicate_candidate() -> Non
         capsule_id="path:1",
     )
 
-    outcome = evaluate_checkpoint_dominance_action(
+    outcome = choose_checkpoint_dominance_action(
         _dominance_action("path:0"),
         subject,
         (candidate,),
@@ -70,7 +71,7 @@ def test_checkpoint_dominance_owner_rejects_different_digest_candidate() -> None
     subject = build_frontier_checkpoint(VMState(pc=3), capsule_id="path:0")
     candidate = build_frontier_checkpoint(VMState(pc=4), capsule_id="path:1")
 
-    outcome = evaluate_checkpoint_dominance_action(
+    outcome = choose_checkpoint_dominance_action(
         _dominance_action("path:0"),
         subject,
         (candidate,),
@@ -85,7 +86,7 @@ def test_checkpoint_dominance_owner_ignores_subject_self_candidate() -> None:
     """A dominance owner never certifies removal of its selected subject capsule."""
     subject = build_frontier_checkpoint(VMState(pc=3), capsule_id="path:0")
 
-    outcome = evaluate_checkpoint_dominance_action(
+    outcome = choose_checkpoint_dominance_action(
         _dominance_action("path:0"),
         subject,
         (subject,),
@@ -105,7 +106,7 @@ def test_checkpoint_dominance_owner_rejects_wrong_action_owner_or_kind() -> None
         _dominance_action("path:0", owner=EvidenceOwner.SOLVER),
         _dominance_action("path:0", kind=EvidenceActionKind.TRY_UNSAT_CORE),
     ):
-        outcome = evaluate_checkpoint_dominance_action(action, subject, (candidate,))
+        outcome = choose_checkpoint_dominance_action(action, subject, (candidate,))
         assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
         assert outcome.certificate is None
         assert outcome.valid_removed_capsule_ids == ()
@@ -116,54 +117,7 @@ def test_checkpoint_dominance_owner_rejects_action_subject_mismatch() -> None:
     subject = build_frontier_checkpoint(VMState(pc=3), capsule_id="path:0")
     candidate = build_frontier_checkpoint(VMState(pc=3), capsule_id="path:1")
 
-    outcome = evaluate_checkpoint_dominance_action(
-        _dominance_action("path:1"),
-        subject,
-        (candidate,),
-    )
-
-    assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
-    assert outcome.certificate is None
-    assert outcome.valid_removed_capsule_ids == ()
-
-
-def test_capsule_only_dominance_owner_is_inconclusive_without_checkpoint() -> None:
-    """Capsule digests can propose a bid but cannot certify dominance alone."""
-    subject = build_shadow_capsule(VMState(pc=3), capsule_id="path:0")
-    candidate = build_shadow_capsule(VMState(pc=3), capsule_id="path:1")
-
-    outcome = evaluate_capsule_dominance_action(
-        _dominance_action("path:0"),
-        subject,
-        (candidate,),
-    )
-
-    assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
-    assert outcome.certificate is None
-    assert outcome.valid_removed_capsule_ids == ()
-
-
-def test_capsule_only_dominance_owner_rejects_wrong_action_owner_or_kind() -> None:
-    """Capsule-only dominance still requires a frontier-owned dominance action."""
-    subject = build_shadow_capsule(VMState(pc=3), capsule_id="path:0")
-    candidate = build_shadow_capsule(VMState(pc=3), capsule_id="path:1")
-
-    for action in (
-        _dominance_action("path:0", owner=EvidenceOwner.SOLVER),
-        _dominance_action("path:0", kind=EvidenceActionKind.TRY_UNSAT_CORE),
-    ):
-        outcome = evaluate_capsule_dominance_action(action, subject, (candidate,))
-        assert outcome.kind is EvidenceOutcomeKind.INCONCLUSIVE
-        assert outcome.certificate is None
-        assert outcome.valid_removed_capsule_ids == ()
-
-
-def test_capsule_only_dominance_owner_rejects_action_subject_mismatch() -> None:
-    """A capsule-only dominance action must still identify the selected subject."""
-    subject = build_shadow_capsule(VMState(pc=3), capsule_id="path:0")
-    candidate = build_shadow_capsule(VMState(pc=3), capsule_id="path:1")
-
-    outcome = evaluate_capsule_dominance_action(
+    outcome = choose_checkpoint_dominance_action(
         _dominance_action("path:1"),
         subject,
         (candidate,),

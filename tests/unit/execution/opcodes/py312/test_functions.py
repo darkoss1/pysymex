@@ -4,17 +4,17 @@ import dis
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.analysis.detectors.detector.types import IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.calls.model_dispatch import apply_model
-from pysymex.execution.opcodes.py312 import functions
+import pysymex._internal.execution.opcodes.py312.functions as functions
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.calls.model.dispatch import apply_model
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _has_issue_kind(result: OpcodeResult | None, kind: IssueKind) -> bool:

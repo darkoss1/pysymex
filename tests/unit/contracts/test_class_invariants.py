@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
+from pysymex._internal.config.execution.verification import ExecutionVerificationConfig
+from pysymex._internal.contracts.decorators import invariant
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.execution.executors.verified.executor.runner import VerifiedExecutor
 from pysymex.contracts import ContractKind, VerificationResult
-from pysymex.contracts.decorators import invariant
-from pysymex.execution.executors.verified.executor import VerifiedExecutor
-from pysymex.execution.executors.verified.types import VerifiedExecutionConfig
 
 
 @invariant("self.balance >= 0")
@@ -39,6 +40,29 @@ class _BoundMutableAccount:
     def withdraw(self, amount: int) -> int:
         self.balance = self.balance - amount
         return self.balance
+
+
+@invariant("self.balance >= 0")
+class _BoundDirectBreakAccount:
+    def __init__(self) -> None:
+        self.balance = 0
+
+    def break_invariant(self, amount: int) -> int:
+        self.balance = -1
+        return amount
+
+
+@invariant("self.balance >= 0")
+class _BoundHelperBreakAccount:
+    def __init__(self) -> None:
+        self.balance = 0
+
+    def _break(self) -> None:
+        self.balance = -1
+
+    def break_invariant(self, amount: int) -> int:
+        self._break()
+        return amount
 
 
 @invariant("self.balance >= 0")
@@ -108,8 +132,42 @@ def test_bound_method_exit_invariant_does_not_use_stale_receiver_snapshot() -> N
     assert result.contracts_checked == 2
     assert result.contracts_verified == 1
     assert len(invariant_issues) == 1
-    assert invariant_issues[0].result is VerificationResult.UNSUPPORTED
+    assert invariant_issues[0].result is VerificationResult.VIOLATED
     assert any("exit" in issue.message for issue in invariant_issues)
+
+
+def test_bound_method_direct_invariant_break_is_checked_against_modeled_receiver() -> None:
+    result = VerifiedExecutor().execute_function(
+        _BoundDirectBreakAccount().break_invariant, {"amount": "int"}
+    )
+
+    invariant_issues = [
+        issue for issue in result.contract_issues if issue.kind is ContractKind.INVARIANT
+    ]
+    assert not [issue for issue in result.issues if issue.kind is IssueKind.UNBOUND_VARIABLE]
+    assert "unmodeled_call_abstraction" not in result.degraded_passes
+    assert result.contracts_checked == 2
+    assert result.contracts_verified == 1
+    assert len(invariant_issues) == 1
+    assert invariant_issues[0].result is VerificationResult.VIOLATED
+    assert "exit" in invariant_issues[0].message
+
+
+def test_bound_method_helper_invariant_break_is_checked_against_modeled_receiver() -> None:
+    result = VerifiedExecutor().execute_function(
+        _BoundHelperBreakAccount().break_invariant, {"amount": "int"}
+    )
+
+    invariant_issues = [
+        issue for issue in result.contract_issues if issue.kind is ContractKind.INVARIANT
+    ]
+    assert not [issue for issue in result.issues if issue.kind is IssueKind.UNBOUND_VARIABLE]
+    assert "unmodeled_call_abstraction" not in result.degraded_passes
+    assert result.contracts_checked == 2
+    assert result.contracts_verified == 1
+    assert len(invariant_issues) == 1
+    assert invariant_issues[0].result is VerificationResult.VIOLATED
+    assert "exit" in invariant_issues[0].message
 
 
 def test_nested_modeled_method_invariant_is_checked_through_wrapper() -> None:
@@ -142,7 +200,7 @@ def test_unmodeled_public_receiver_state_is_unsupported_not_verified() -> None:
 
 
 def test_disabled_class_invariant_check_does_not_report_obligation() -> None:
-    config = VerifiedExecutionConfig(check_class_invariants=False)
+    config = ExecutionVerificationConfig(check_class_invariants=False)
     result = VerifiedExecutor(config).execute_function(
         _ValidBoundAccount().withdraw, {"amount": "int"}
     )

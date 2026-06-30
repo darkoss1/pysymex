@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.extended import helpers
-from pysymex.models.builtins import GetattrModel, HasattrModel
+import pysymex._internal.models.builtins.common.dynamic as helpers
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.attributes.getattr import GetattrModel
+from pysymex._internal.models.builtins.attributes.mutation import HasattrModel
 
 
 def _state() -> VMState:

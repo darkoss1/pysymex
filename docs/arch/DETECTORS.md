@@ -36,15 +36,13 @@ The detector path follows the shared soundness contract:
 | --- | --- |
 | Runtime | division by zero, index/key/type/attribute/value errors, assertions, user exceptions |
 | Specialized | format strings, use-after-free, null dereference, unreachable code |
-| Logical | local contradictions, multivariable impossibilities, path-level constraints |
-| Formal | property and oracle validation helpers |
 
 ## Evidence In Source
 
-- Issue and registry types: `pysymex/analysis/detectors/detector`
-- Runtime invocation: `pysymex/execution/detectors/invocation.py`
-- Feasibility helpers: `pysymex/analysis/detectors/feasibility.py`
-- Scanner issue sink: `pysymex/scanner/issue_sink.py`
+- Issue and registry types: `pysymex/_internal/analysis/detectors/detector`
+- Runtime invocation: `pysymex/_internal/execution/detectors/invocation.py`
+- Feasibility helpers: `pysymex/_internal/analysis/detectors/feasibility.py`
+- Scanner issue sink: `pysymex/_internal/scanner/issues.py`
 - Tests: `tests/unit/analysis/detectors`, `tests/unit/execution/detectors`, `tests/unit/scanner`
 
 ## Limits

@@ -2,38 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
-import pysymex
-from pysymex.scanner.file import scan_file
-
-
-def _issue_kind(issue: object) -> object:
-    if isinstance(issue, dict):
-        issue_map = cast("Mapping[str, object]", issue)
-        return issue_map.get("kind")
-    raw_kind = getattr(issue, "kind", None)
-    return getattr(raw_kind, "name", raw_kind)
-
-
-def test_analyze_code_models_pathlib_alias_pure_path_suffix() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "import pathlib as pl\n\nresult = pl.PurePath('a/b.txt').suffix\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2200,
-            timeout=2.0,
-        )
-    )
-
-    assert not any(
-        _issue_kind(issue) in {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NULL_DEREFERENCE", "NAME_ERROR"}
-        for issue in result.issues
-    )
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_models_pathlib_alias_pure_path_suffix(tmp_path: Path) -> None:
@@ -114,3 +85,21 @@ def test_scan_file_allows_guarded_literal_eval_list_index(tmp_path: Path) -> Non
     result = scan_file(target, use_sandbox=False)
 
     assert not any(issue.get("function_name") == "target" for issue in result.issues)
+
+
+def test_scan_file_reports_exact_pure_posix_suffixes_length_division(tmp_path: Path) -> None:
+    target = tmp_path / "pathlib_suffixes_tar_division.py"
+    target.write_text(
+        "from pathlib import PurePosixPath\n\n"
+        "def target(path: str) -> int:\n"
+        "    suffixes = PurePosixPath(path).suffixes\n"
+        "    if path == 'archive.tar.gz' and suffixes[-2:] == ['.tar', '.gz']:\n"
+        "        return 100 // (len(suffixes) - 2)\n"
+        "    return len(suffixes)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert "unsupported_slice_abstraction" not in result.degraded_passes

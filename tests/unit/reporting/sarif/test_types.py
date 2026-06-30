@@ -3,21 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from pysymex.reporting.sarif.types import (
+from pysymex._internal.reporting.sarif.types.base import SarifSeverity
+from pysymex._internal.reporting.sarif.types.locations import (
     CodeFlow,
     LogicalLocation,
     PhysicalLocation,
-    Run,
-    SARIFLog,
-    SARIFResult,
-    Severity,
-    ToolDriver,
 )
+from pysymex._internal.reporting.sarif.types.log import Run, SARIFLog, ToolDriver
+from pysymex._internal.reporting.sarif.types.results import SARIFResult
 
 
 def test_severity_to_sarif_level() -> None:
-    assert Severity.CRITICAL.to_sarif_level() == "error"
-    assert Severity.LOW.to_sarif_level() == "note"
+    assert SarifSeverity.CRITICAL.to_sarif_level() == "error"
+    assert SarifSeverity.LOW.to_sarif_level() == "note"
 
 
 def test_location_and_codeflow_to_dict() -> None:

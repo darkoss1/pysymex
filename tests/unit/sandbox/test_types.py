@@ -2,29 +2,41 @@ from dataclasses import FrozenInstanceError, asdict
 
 import pytest
 
-from pysymex.sandbox.types import (
-    ExecutionStatus,
+from pysymex._internal.config.sandbox.types import (
     ResourceLimits,
     SandboxBackend,
     SandboxConfig,
-    SandboxResult,
+    SandboxResourceLimits,
     SecurityCapabilities,
+)
+from pysymex._internal.sandbox.types import (
+    ExecutionStatus,
+    SandboxResult,
 )
 
 
+def test_sandbox_config_types_have_config_owners() -> None:
+    """Sandbox configuration classes resolve from pysymex._internal.config."""
+    assert SandboxBackend.__module__ == "pysymex._internal.config.sandbox.types"
+    assert SecurityCapabilities.__module__ == "pysymex._internal.config.sandbox.types"
+    assert ResourceLimits.__module__ == "pysymex._internal.config.sandbox.types"
+    assert SandboxResourceLimits.__module__ == "pysymex._internal.config.sandbox.types"
+    assert ResourceLimits is SandboxResourceLimits
+    assert SandboxConfig.__module__ == "pysymex._internal.config.sandbox.types"
+
+
 class TestSandboxBackend:
-    """Test suite for pysymex.sandbox.types.SandboxBackend."""
+    """Test suite for pysymex._internal.config.sandbox.types.SandboxBackend."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
         """Test basic initialization."""
         assert SandboxBackend.LINUX_NAMESPACE.name == "LINUX_NAMESPACE"
         assert SandboxBackend.WINDOWS_APPCONTAINER.name == "WINDOWS_APPCONTAINER"
-        assert SandboxBackend.WASM.name == "WASM"
 
 
 class TestExecutionStatus:
-    """Test suite for pysymex.sandbox.types.ExecutionStatus."""
+    """Test suite for pysymex._internal.sandbox.types.ExecutionStatus."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -40,7 +52,7 @@ class TestExecutionStatus:
 
 
 class TestSecurityCapabilities:
-    """Test suite for pysymex.sandbox.types.SecurityCapabilities."""
+    """Test suite for pysymex._internal.config.sandbox.types.SecurityCapabilities."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -76,7 +88,7 @@ class TestSecurityCapabilities:
 
 
 class TestResourceLimits:
-    """Test suite for pysymex.sandbox.types.ResourceLimits."""
+    """Test suite for pysymex._internal.config.sandbox.types.ResourceLimits."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -115,7 +127,7 @@ class TestResourceLimits:
 
 
 class TestSandboxConfig:
-    """Test suite for pysymex.sandbox.types.SandboxConfig."""
+    """Test suite for pysymex._internal.config.sandbox.types.SandboxConfig."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:
@@ -125,7 +137,6 @@ class TestSandboxConfig:
         assert config.backend is None
         assert config.capture_output is True
         assert config.allow_stdin is False
-        assert config.wasm_python_module is None
 
     @pytest.mark.timeout(30)
     def test_initialization_with_security_requirements(self) -> None:
@@ -156,7 +167,7 @@ class TestSandboxConfig:
 
 
 class TestSandboxResult:
-    """Test suite for pysymex.sandbox.types.SandboxResult."""
+    """Test suite for pysymex._internal.sandbox.types.SandboxResult."""
 
     @pytest.mark.timeout(30)
     def test_initialization(self) -> None:

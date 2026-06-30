@@ -1,140 +1,89 @@
-# Python API
+# Python API Interface
 
-The public Python API is exposed through `pysymex` and `pysymex.api`. Anything under deeper
-packages such as `pysymex.execution`, `pysymex.core`, `pysymex.analysis`, `pysymex.scanner`, or
-`pysymex.sandbox` is implementation-owned unless this page names it as a public entrypoint.
+PySyMex exposes a small flat API at the package root. The symbolic execution engine remains private under `pysymex._internal`; public modules provide clean import paths for the supported user-facing operations and delegate implementation to internal owners.
 
-## Main Entrypoints
+## Canonical Interface Decisions
 
-| Entrypoint | Async | Returns | Notes |
-| --- | --- | --- | --- |
-| `analyze(func, symbolic_args=None, **kwargs)` | yes | `ExecutionResult` | Analyze a Python callable. Alias: `check`. |
-| `analyze_code(code, symbolic_vars=None, **kwargs)` | yes | `ExecutionResult` | Compile and analyze a source string. |
-| `analyze_file(filepath, function_name, symbolic_args=None, **kwargs)` | yes | `ExecutionResult` | Load one function from a Python file. Alias: `scan`. |
-| `scan_directory(dir_path, pattern="**/*.py", ...)` | yes | `list[ScanResult]` | Async directory scanner facade. |
-| `scan_file(file_path, ...)` | no | `ScanResult` | Synchronous single-file scanner facade. |
-| `quick_check(func)` | no | `list[Issue]` | Synchronous convenience check with smaller limits. |
-| `check_division_by_zero(func)` | no | `list[Issue]` | Focused division-by-zero helper. |
-| `check_assertions(func)` | no | `list[Issue]` | Focused assertion helper. |
-| `check_index_errors(func)` | no | `list[Issue]` | Focused index-error helper. |
-| `verify(func, symbolic_args=None, **overrides)` | no | `VerifiedExecutionResult` | Contract-aware verified execution wrapper. Experimental. |
-| `check_contracts(func, symbolic_args=None)` | no | `list[ContractIssue]` | Contract-only convenience helper. Experimental. |
-| `check_arithmetic(func, symbolic_args=None)` | no | `list[ArithmeticIssue]` | Opt-in bounded arithmetic and division-safety helper. |
-| `prove_termination(func, symbolic_args=None)` | no | `TerminationProof` | Public wrapper currently returns `UNKNOWN`. |
+The API surface is structured as follows:
 
-`Z3_AVAILABLE` is also exported at package level. Most runtime exports require Z3; non-Z3 exports
-include configuration and logging helpers.
+| Family | Shape | Canonical path | Result contract | Replaced or compatibility paths |
+| --- | --- | --- | --- | --- |
+| Source scanning | Stateless module | `pysymex.scan.{path,file,directory}` | `ScanResult` or `list[ScanResult]` | Root `scan_file`, `scan_directory`, ambiguous `scan` |
+| Verification | Stateless module | `pysymex.verify.{run,contracts,arithmetic,termination}` | `VerifiedExecutionResult` or focused evidence lists | Root verification helpers |
+| Symbolic inputs | Direct runtime mapping | `dict[str, str]` symbolic args | Engine-owned symbolic type hints | typed public declarations removed |
+| Results | Flat API module | `pysymex.results.{data,count,clean,degraded}` | result/outcome aliases plus common result status helpers | internal result locations remain private |
+| Issues | Flat API module | `pysymex.issues.{data,records,render,count,found}` | finding, severity, contract issue, and arithmetic issue helpers | detector internals remain private |
+| Diagnostics | Flat API module | `pysymex.diagnostics.{configure,get}` | shared `Logger` instance | root logging helpers removed |
+| Reports | Flat API module | `pysymex.reports.{render,result,scan,verification,issues,save}` | rendered `str`, SARIF dict, or written report path | root report helpers removed |
+| Contracts | Advanced declaration namespace | `pysymex.contracts` | contract declarations and public declaration types | compiler/verifier/runtime internals are not exported |
 
-## Minimal Async Example
+Scanning and verification are synchronous because their implementations and CLI callers are synchronous; an async caller can choose its own scheduling policy.
+
+## Usage Example
 
 ```python
-import asyncio
-
-from pysymex import analyze
+import pysymex
 
 
 def risky_divide(x: int, y: int) -> int:
     return x // y
 
 
-result = asyncio.run(analyze(risky_divide, {"x": "int", "y": "int"}))
+# Run verification with symbolic args
+result = pysymex.verify.run(risky_divide, {"x": "int", "y": "int"})
 
-for issue in result.issues:
-    print(issue.kind.name)
-    print(issue.message)
-    print(issue.get_counterexample())
+for issue in result.arithmetic_issues:
+    print(issue.kind, issue.message)
+
+# Check and print results using the reporting API
+if not pysymex.results.clean(result):
+    print(f"Total findings: {pysymex.results.count(result)}")
+    print(pysymex.reports.markdown(result))
 ```
 
-`analyze`, `analyze_code`, `analyze_file`, and top-level `scan_directory` are async. Use
-`asyncio.run(...)` in a synchronous script or `await` them inside an event loop.
+## Stable API Modules
 
-## Analyze Configuration
+The baseline public API consists of:
 
-`analyze` accepts either an `ExecutionConfig` or keyword overrides. Common overrides:
-
-| Option | Default in `analyze` | Meaning |
-| --- | --- | --- |
-| `max_paths` | `1000` | Maximum execution paths to explore. |
-| `max_depth` | `100` | Maximum execution depth. |
-| `max_iterations` | `10000` | Maximum VM iterations. |
-| `timeout` | `60.0` | Analysis timeout in seconds. |
-| `strategy` | `ExplorationStrategy.ADAPTIVE` | Path exploration strategy. |
-| `detect_division_by_zero` | `True` | Enable division-by-zero detection. |
-| `detect_assertion_errors` | `True` | Enable assertion detection. |
-| `detect_index_errors` | `True` | Enable index-error detection. |
-| `detect_type_errors` | `True` | Enable type-error detection. |
-| `detect_overflow` | `False` | Enable bounded-overflow diagnostics. Python ints are otherwise unbounded. |
-
-`analyze_code` uses larger defaults internally: `max_paths=10000`, `max_depth=1000`,
-`max_iterations=100000`, and `timeout_seconds=300.0`.
-
-## File and Directory Scanning
-
-```python
-from pysymex import scan_file
-
-result = scan_file("src/example.py", max_paths=5000, timeout=10)
-print(result.to_dict())
+```text
+pysymex.scan
+pysymex.verify
+pysymex.contracts
+pysymex.results
+pysymex.issues
+pysymex.reports
+pysymex.diagnostics
 ```
 
-`scan_file` is the synchronous single-file scanner from `pysymex.api.scanning`. It returns a
-`ScanResult`, not an `ExecutionResult`.
+The package root (`pysymex`) intentionally exposes only lazy workflow modules and `Z3_AVAILABLE`. Import result, issue, diagnostic, and report types from their flat API modules instead of the package root.
 
-For async directory scans:
+## Architecture and Design Policies
 
-```python
-import asyncio
+### 1. Classification Policy
+Every explicit `__all__` entry is recorded in `public_api_inventory.json` with exactly one classification:
+1. `stable_public_api`
+2. `stable_public_data_type`
+3. `advanced_public_api`
+4. `extension_plugin_api`
+5. `internal_implementation_detail`
 
-from pysymex import scan_directory
+The checked-in inventory is generated by `python scripts/audit_public_api.py`. CI checks it with `python scripts/audit_public_api.py --check`. It also records public-looking definitions, re-export sources, star imports, dynamic export patterns, and documented import paths.
 
+An `__all__` inside an implementation module does not promote that module to a supported user interface. Such entries are classified as internal and are migration targets.
 
-results = asyncio.run(scan_directory("src", pattern="**/*.py", max_paths=100, timeout=30.0))
-```
+### 2. Lazy Loading Policy
+Normal workflow namespaces are explicit modules and are imported normally. The root package may resolve those modules lazily to keep import side effects small, but it must not become a compatibility facade for workflow helpers or public data types. Dynamic namespace construction, star re-exports, and helper/type root aliases are forbidden.
 
-## Result Objects
+### 3. Internal Policy
+`pysymex._internal` is implementation backing only. It is not a supported or documented parallel interface. Public modules may call existing internal entry points directly. External code must not import private implementation modules.
 
-| Result | Important fields |
-| --- | --- |
-| `ExecutionResult` | `issues`, `paths_explored`, `paths_completed`, `paths_pruned`, `coverage`, `total_time_seconds`, `solver_time_seconds`, `solver_stats`, `degraded_passes`. |
-| `ScanResult` | `file_path`, `issues`, `code_objects`, `paths_explored`, `elapsed_time`, `avg_memory_mb`, `error`, `degraded_passes`, `solver_stats`. |
-| `VerifiedExecutionResult` | `issues`, `contract_issues`, `arithmetic_issues`, `termination_proof`, `contracts_checked`, `contracts_verified`, `contracts_violated`, `degraded_passes`. |
+Deeper packages not named above are also implementation-owned even when a module uses `__all__` for its own internal import discipline.
 
-Use `ExecutionResult.has_issues()`, `ExecutionResult.get_issues_by_kind(kind)`,
-`ExecutionResult.to_dict()`, or `ExecutionResult.to_sarif()` for common result handling.
+### 4. Extension Interface
+There is no public extension/plugin ABI yet. Detector, reporter, solver, sandbox, and model protocols remain private until pysymex has a deliberately versioned extension contract with behavioral tests and extension-author documentation.
 
-## Issues
+### 5. Future Additions
+Future public additions require an intentional inventory classification, a snapshot update, a typed behavioral test through the public interface, and documentation updates.
 
-`Issue` records are immutable detector findings. Important fields include `kind`, `message`,
-`constraints`, `model`, bytecode `pc`, source location fields, `counterexample`, `confidence`,
-`severity`, and optional `suppression_reason`.
-
-Use `issue.get_counterexample()` to extract witness values when a model is available.
-
-## Formatting and Logging
-
-| Entrypoint | Purpose |
-| --- | --- |
-| `format_issues(issues, format_type="text")` | Format issue lists as text or JSON. |
-| `format_result(result, format_type)` | Format an execution result through the API formatting facade. |
-| `configure_logging(...)` | Configure PySyMex diagnostics. |
-| `get_logger(...)` | Get a PySyMex logger. |
-
-Library code should use `pysymex.logger` diagnostics rather than `print()`.
-
-## Experimental and Internal APIs
-
-These exports are available but should be treated carefully:
-
-- `VerifiedExecutor`, `VerifiedExecutionConfig`, `VerifiedExecutionResult`, and verification
-  helpers are contract-aware execution APIs still marked experimental in CLI behavior.
-- `SymbolicExecutor`, `VMState`, `SymbolicValue`, `SymbolicString`, `SymbolicList`,
-  `SymbolicDict`, `SymbolicObject`, `SymbolicNone`, and `IncrementalSolver` are useful for tests
-  and advanced work, but they expose engine internals.
-- Deeper package imports may change when architecture owners move. Prefer top-level `pysymex` or
-  `pysymex.api` imports for user code.
-
-## Result Semantics
-
-An empty issue list is not a proof of full program safety. It means no definite issue was emitted
-for the explored supported paths. Check `degraded_passes`, scanner `error`, solver stats, and
-reported unsupported or blocked behavior before interpreting a result.
+### 6. Result Semantics
+An empty issue list is not proof of whole-program safety. It means no definite issue was emitted for the explored supported paths. Inspect degraded passes, blocked or unsupported outcomes, scanner errors, solver status, and path accounting before interpreting a result.

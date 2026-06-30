@@ -7,22 +7,29 @@ import builtins
 import pytest
 import z3
 
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.exceptions.builtins import BUILTIN_EXCEPTIONS
-from pysymex.core.state.factory import create_initial_state
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.exceptions import ExceptionTypeModel, create_exception_models
-from pysymex.models.builtins import get_default_model_registry
-from pysymex.models.builtins.results import is_raised_exception_effect
-from pysymex.models.builtins.types import TypeModelResult
-from pysymex.typing import StackValue
-
+from pysymex._internal.core.exceptions.builtins import BUILTIN_EXCEPTIONS
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.exceptions.models import (
+    ExceptionTypeModel,
+    create_exception_models,
+)
+from pysymex._internal.models.builtins.registry.models import get_default_model_registry
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.models.contracts.types import TypeModelResult
+from pysymex._internal.typing.protocols import StackValue
 
 INVALID_EXCEPTION_GROUP_CASES: list[tuple[type[BaseException], list[StackValue], str]] = [
     (BaseExceptionGroup, [1, [SymbolicValue.from_const(1)]], "TypeError"),
     (ExceptionGroup, ["message", []], "ValueError"),
     (ExceptionGroup, ["message", [1]], "ValueError"),
 ]
+
+
+def create_initial_state() -> VMState:
+    """Create the minimal root state needed by exception model tests."""
+    return VMState(global_vars={"__name__": "__main__"})
 
 
 class TestExceptionsModel:
@@ -76,7 +83,7 @@ class TestExceptionsModel:
         result = ExceptionTypeModel(exc_type).apply([], {}, create_initial_state())
 
         effect = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     @pytest.mark.parametrize(
@@ -96,7 +103,7 @@ class TestExceptionsModel:
         result = ExceptionTypeModel(exc_type).apply(args, {}, create_initial_state())
 
         effect = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     @pytest.mark.parametrize(
@@ -123,7 +130,7 @@ class TestExceptionsModel:
         result = ExceptionTypeModel(exc_type).apply(args, {}, create_initial_state())
 
         effect = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == exception_type
 
     def test_create_exception_models_returns_all_builtins(self) -> None:

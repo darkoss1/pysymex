@@ -2,20 +2,44 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.effects.events import WriteEvent, WriteKind
-from pysymex.core.state.deferred import DeferredStateIssue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.havoc import HavocValue
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.detectors import DeferredDetectorIssue
-from pysymex.execution.frontier import (
-    build_shadow_capsule,
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.effects.events import WriteEvent, WriteKind
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.deferred import DeferredStateIssue
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.detectors.records import DeferredDetectorIssue
+from pysymex._internal.execution.frontier.obligations.capsules import build_shadow_capsule
+from pysymex._internal.execution.frontier.obligations.capsules import (
+    build_shadow_capsule as build_shadow_capsule_owner,
+)
+from pysymex._internal.execution.frontier.obligations.digests import (
     capsule_matches_state,
     capsule_semantic_digest,
-    collect_frontier_telemetry,
     state_shadow_digest,
 )
+from pysymex._internal.execution.frontier.obligations.digests import (
+    capsule_matches_state as capsule_matches_state_owner,
+)
+from pysymex._internal.execution.frontier.obligations.digests import (
+    capsule_semantic_digest as capsule_semantic_digest_owner,
+)
+from pysymex._internal.execution.frontier.obligations.digests import (
+    state_shadow_digest as state_shadow_digest_owner,
+)
+from pysymex._internal.execution.frontier.obligations.telemetry import collect_frontier_telemetry
+from pysymex._internal.execution.frontier.obligations.telemetry import (
+    collect_frontier_telemetry as collect_frontier_telemetry_owner,
+)
+
+
+def test_frontier_obligation_public_exports_point_to_direct_owners() -> None:
+    assert build_shadow_capsule is build_shadow_capsule_owner
+    assert capsule_matches_state is capsule_matches_state_owner
+    assert capsule_semantic_digest is capsule_semantic_digest_owner
+    assert collect_frontier_telemetry is collect_frontier_telemetry_owner
+    assert state_shadow_digest is state_shadow_digest_owner
 
 
 def test_build_shadow_capsule_captures_vmstate_without_mutating_it() -> None:

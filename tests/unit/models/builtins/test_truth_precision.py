@@ -5,20 +5,20 @@ from collections.abc import Sequence
 from typing import cast
 
 import pytest
-
 import z3
 
-import pysymex.models.builtins as builtins_models
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.execution.calls.payload import SymbolicFunctionPayload
-from pysymex.execution.opcodes.common.generators import ModeledGenerator
-from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
-from pysymex.typing import StackValue
+from pysymex._internal.core.calls.payload import SymbolicFunctionPayload
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.generators import ModeledGenerator
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.iteration.truth import AllModel, AnyModel
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -103,7 +103,7 @@ def _solver_status(constraints: Sequence[z3.BoolRef | z3.ExprRef]) -> z3.CheckSa
 
 @pytest.mark.parametrize(
     ("model", "expected"),
-    [(builtins_models.AllModel(), True), (builtins_models.AnyModel(), True)],
+    [(AllModel(), True), (AnyModel(), True)],
 )
 def test_truth_aggregators_decode_literal_symbolic_string(
     model: FunctionModel, expected: bool
@@ -114,7 +114,7 @@ def test_truth_aggregators_decode_literal_symbolic_string(
     assert result.value.value is expected
 
 
-@pytest.mark.parametrize("model", [builtins_models.AllModel(), builtins_models.AnyModel()])
+@pytest.mark.parametrize("model", [AllModel(), AnyModel()])
 def test_truth_aggregators_use_bool_affinity_for_opaque_generator(model: FunctionModel) -> None:
     """Opaque generators should not introduce multi-carrier symbolic fallbacks."""
     source, _constraint = SymbolicList.symbolic("generator_source")
@@ -128,7 +128,7 @@ def test_truth_aggregators_use_bool_affinity_for_opaque_generator(model: Functio
 
 @pytest.mark.parametrize(
     ("model", "expected"),
-    [(builtins_models.AllModel(), True), (builtins_models.AnyModel(), False)],
+    [(AllModel(), True), (AnyModel(), False)],
 )
 def test_truth_aggregators_resolve_empty_heap_list_handle(
     model: FunctionModel, expected: bool
@@ -143,14 +143,14 @@ def test_truth_aggregators_resolve_empty_heap_list_handle(
     assert result.value.value is expected
 
 
-@pytest.mark.parametrize("model", [builtins_models.AllModel(), builtins_models.AnyModel()])
+@pytest.mark.parametrize("model", [AllModel(), AnyModel()])
 def test_truth_aggregators_reject_concretely_typed_symbolic_non_iterable(
     model: FunctionModel,
 ) -> None:
     result = model.apply([SymbolicValue.from_const(1)], {}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -158,7 +158,7 @@ def test_all_modeled_generator_nonzero_guard_rules_out_zero_item() -> None:
     item, item_constraint = SymbolicValue.symbolic_int("item")
     generator = _modeled_generator_for_item(_nonzero_genexpr_code(), item, "all_values")
 
-    result = builtins_models.AllModel().apply([cast(StackValue, generator)], {}, _state())
+    result = AllModel().apply([cast(StackValue, generator)], {}, _state())
 
     assert isinstance(result.value, SymbolicValue)
     assert (
@@ -189,7 +189,7 @@ def test_any_modeled_generator_zero_guard_requires_a_zero_item() -> None:
     item, item_constraint = SymbolicValue.symbolic_int("item")
     generator = _modeled_generator_for_item(_zero_genexpr_code(), item, "any_values")
 
-    result = builtins_models.AnyModel().apply([cast(StackValue, generator)], {}, _state())
+    result = AnyModel().apply([cast(StackValue, generator)], {}, _state())
 
     assert isinstance(result.value, SymbolicValue)
     assert (
@@ -220,7 +220,7 @@ def test_all_modeled_generator_positive_guard_rules_out_nonpositive_item() -> No
     item, item_constraint = SymbolicValue.symbolic_int("item")
     generator = _modeled_generator_for_item(_positive_genexpr_code(), item, "positive_values")
 
-    result = builtins_models.AllModel().apply([cast(StackValue, generator)], {}, _state())
+    result = AllModel().apply([cast(StackValue, generator)], {}, _state())
 
     assert isinstance(result.value, SymbolicValue)
     assert (
@@ -251,7 +251,7 @@ def test_any_modeled_generator_nonpositive_guard_allows_zero_item() -> None:
     item, item_constraint = SymbolicValue.symbolic_int("item")
     generator = _modeled_generator_for_item(_nonpositive_genexpr_code(), item, "nonpositive_values")
 
-    result = builtins_models.AnyModel().apply([cast(StackValue, generator)], {}, _state())
+    result = AnyModel().apply([cast(StackValue, generator)], {}, _state())
 
     assert isinstance(result.value, SymbolicValue)
     assert (
@@ -278,7 +278,7 @@ def test_any_modeled_generator_nonpositive_guard_allows_zero_item() -> None:
     )
 
 
-@pytest.mark.parametrize("model", [builtins_models.AllModel(), builtins_models.AnyModel()])
+@pytest.mark.parametrize("model", [AllModel(), AnyModel()])
 def test_truth_aggregator_direct_generator_truth_requires_truthy_item(
     model: FunctionModel,
 ) -> None:

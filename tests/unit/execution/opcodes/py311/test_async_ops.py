@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py311 import async_ops
+import pysymex._internal.execution.opcodes.py311.async_generators as async_ops
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str) -> dis.Instruction:

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-import pysymex
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _assert_no_issue_kinds(result: object, forbidden: set[str]) -> None:
@@ -33,23 +31,6 @@ def test_scan_file_dict_comprehension_retains_concrete_integer_keys(tmp_path: Pa
     )
 
     result = scan_file(target, use_sandbox=False)
-
-    _assert_no_issue_kinds(
-        result,
-        {"KEY_ERROR", "TYPE_ERROR", "ATTRIBUTE_ERROR", "NAME_ERROR", "UNBOUND_VARIABLE"},
-    )
-
-
-def test_analyze_code_dict_comprehension_retains_concrete_integer_keys() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "mapping = {x: x + 1 for x in [1, 2]}\nresult = mapping[2]\n",
-            max_paths=35,
-            max_depth=90,
-            max_iterations=1800,
-            timeout=2.0,
-        )
-    )
 
     _assert_no_issue_kinds(
         result,

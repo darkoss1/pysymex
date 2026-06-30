@@ -1,13 +1,15 @@
 # Limits
 
-Limits keep symbolic execution bounded. They are part of the result meaning, not just
-configuration. When a limit stops exploration, the analysis is partial.
+Host analysis limits are elective user guardrails. Automatic mode has no numeric default for
+paths, symbolic depth, VM iterations, wall time, or host memory growth. When a configured limit
+stops exploration, the analysis is partial and records degradation.
 
 ## Host Analysis Limits
 
-Host limits track paths, depth, iterations, time, memory growth, constraints, solver calls, and
-cache activity. The execution loop checks these limits while draining the worklist and records a
-stable degraded-pass label when a limit is reached.
+Host telemetry tracks paths, depth, iterations, time, memory growth, constraints, solver calls,
+and cache activity. Its shared SSoT is `pysymex/_internal/limits`; execution, reporting, and API
+error translation all consume that owner. Positive user limits are checked while draining the worklist
+and record a stable degraded-pass label when reached. Omitted limits remain telemetry only.
 
 Common labels use the form `resource_limit_<kind>`, such as `resource_limit_time` or
 `resource_limit_paths`.
@@ -20,13 +22,20 @@ file size, stdout/stderr size, and serialized result payload size inside the iso
 A sandbox timeout or security violation is not an execution proof. It is a blocked or inconclusive
 analysis state.
 
-## Configuration Path
+## Target Resource Analysis
 
-Defaults live in the configuration package. User-facing config files load into a top-level config
-object, then convert analysis limits into resource limits used by execution.
+Target-program resource checks are a different domain. `pysymex/analysis/domains/resources`
+models resources created by the analyzed program, such as files, locks, sockets, generators, and
+context managers. It must not own host execution limits, and `pysymex/limits` must not own
+target-resource lifecycle analysis.
 
-The scanner and executor also accept direct command-line or API values for paths, timeout,
-iterations, sandbox use, deterministic mode, random seed, and cache behavior.
+## Runtime Configuration Path
+
+Automatic defaults live in `pysymex/_internal/config/defaults.py`. The scanner
+and executor accept direct command-line or API values for paths, timeout,
+iterations, sandbox use, and cache behavior, then build `ExecutionConfig` and
+`ResourceLimits` directly. There is no file-based root config graph in the
+current runtime.
 
 ## Result Meaning
 
@@ -40,14 +49,17 @@ iterations, sandbox use, deterministic mode, random seed, and cache behavior.
 
 ## Evidence In Source
 
-- Defaults: `pysymex/config/defaults.py`
-- Config root and sections: `pysymex/config`
-- Host resource tracker: `pysymex/resources`
-- Execution limit recording: `pysymex/execution/resources`
-- Sandbox resource limits: `pysymex/sandbox/types.py`
-- Tests: `tests/unit/execution/resources`, `tests/unit/resources`, `tests/unit/sandbox`
+- Defaults: `pysymex/_internal/config/defaults.py`
+- Runtime config objects: `pysymex/_internal/config/execution`,
+  `pysymex/_internal/config/sandbox`, `pysymex/_internal/config/tracing`
+- Host limit models, mapping, probes, and tracker: `pysymex/_internal/limits`
+- Execution limit recording: `pysymex/_internal/execution/resources`
+- Target resource lifecycle analysis: `pysymex/_internal/analysis/detectors/specialized/resources.py`
+- Sandbox resource limits: `pysymex/_internal/sandbox/types.py`
+- Tests: `tests/unit/limits`, `tests/unit/execution/resources`,
+  `tests/unit/analysis/domains/resources`, `tests/unit/sandbox`
 
-## Limits
+## Explicit Overrides
 
-Increasing limits can improve coverage, but it can also increase solver time and memory use. It
-does not change unsupported semantics into supported semantics.
+Adding or increasing a user limit can change coverage and resource use. It does not change
+unsupported semantics into supported semantics, and reaching it never becomes a proof of safety.

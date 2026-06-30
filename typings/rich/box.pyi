@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-
 class Box: ...
 
-
 ROUNDED: Box
+SIMPLE: Box
+

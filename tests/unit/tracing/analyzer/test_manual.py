@@ -1,19 +1,10 @@
-"""Tests for pysymex.tracing.analyzer.manual — print_ai_manual."""
+"""Tests for pysymex._internal.tracing.analyzer.manual content ownership."""
 
 from __future__ import annotations
 
-import io
-from unittest.mock import MagicMock, patch
-
-from pysymex.tracing.analyzer.manual import print_ai_manual
+from pysymex._internal.tracing.analyzer.manual.text.content import AI_MANUAL
 
 
-def test_print_ai_manual_prints_documentation() -> None:
-    """print_ai_manual writes documentation to stdout buffer."""
-    mock_stdout = MagicMock()
-    mock_stdout.buffer = io.BytesIO()
-    with patch("sys.stdout", mock_stdout):
-        print_ai_manual()
-    output = mock_stdout.buffer.getvalue().decode("utf-8")
-    assert "pysymex Trace Analyzer" in output
-    assert "LLM Diagnostic Manual" in output
+def test_ai_manual_exposes_documentation_text_without_stdout_side_effect() -> None:
+    assert "pysymex Trace Analyzer" in AI_MANUAL
+    assert "LLM Diagnostic Manual" in AI_MANUAL

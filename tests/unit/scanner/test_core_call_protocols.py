@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_respects_callable_instance_guard(tmp_path: Path) -> None:

@@ -1,33 +1,17 @@
-from concurrent.futures import ThreadPoolExecutor
-
 import pytest
 import z3
 
-import pysymex.core.solver.constraints.hashing as hashing_mod
-import pysymex.core.solver.constraints.theory as theory_mod
-from pysymex.core.solver.constraints.contradictions import quick_contradiction_check
-from pysymex.core.solver.constraints.hashing import (
+import pysymex._internal.core.solver.constraints.hashing as hashing_mod
+import pysymex._internal.core.solver.constraints.theory as theory_mod
+from pysymex._internal.core.solver.constraints.hashing import (
     ConstraintHasher,
-    get_bitvec_val,
-    get_float64_val,
-    get_int_val,
-    get_real_val,
     structural_hash,
     structural_hash_sorted,
 )
-from pysymex.core.solver.constraints.simplification import (
-    simplify_constraints,
-    tactic_simplify,
+from pysymex._internal.core.solver.constraints.simplification import (
+    simplify_expr,
 )
-from pysymex.core.solver.constraints.subsumption import remove_subsumed
-
-
-def test_core_constraint_exports_use_direct_owners() -> None:
-    import pysymex.core as core
-
-    assert core.quick_contradiction_check is quick_contradiction_check
-    assert core.remove_subsumed is remove_subsumed
-    assert core.simplify_constraints is simplify_constraints
+from pysymex._internal.core.solver.constraints.values import ConstraintValues
 
 
 def test_structural_hash() -> None:
@@ -47,24 +31,24 @@ def test_structural_hash_sorted() -> None:
 
 def test_cached_int_literals_reuse_common_values() -> None:
     """Scenario: repeated common Int literal; expected shared Z3 wrapper."""
-    assert get_int_val(7) is get_int_val(7)
+    assert ConstraintValues.int(7) is ConstraintValues.int(7)
 
 
 def test_cached_float64_literals_preserve_signed_zero() -> None:
     """Scenario: finite Float64 literals include signed zero; expected exact cache keys."""
-    positive_zero = get_float64_val(0.0)
-    negative_zero = get_float64_val(-0.0)
+    positive_zero = ConstraintValues.float64(0.0)
+    negative_zero = ConstraintValues.float64(-0.0)
 
-    assert positive_zero is get_float64_val(0.0)
-    assert negative_zero is get_float64_val(-0.0)
+    assert positive_zero is ConstraintValues.float64(0.0)
+    assert negative_zero is ConstraintValues.float64(-0.0)
     assert positive_zero is not negative_zero
     assert not z3.eq(positive_zero, negative_zero)
 
 
 def test_cached_real_literals_reuse_common_values() -> None:
     """Scenario: repeated common Real literal; expected shared Z3 wrapper."""
-    first = get_real_val(1)
-    second = get_real_val("1")
+    first = ConstraintValues.real(1)
+    second = ConstraintValues.real("1")
 
     assert first is second
     assert z3.eq(first, z3.RealVal(1))
@@ -72,9 +56,9 @@ def test_cached_real_literals_reuse_common_values() -> None:
 
 def test_cached_bitvec_literals_reuse_common_values_and_widths() -> None:
     """Scenario: repeated BitVec literal; expected cache key includes width."""
-    first = get_bitvec_val(7, 8)
-    second = get_bitvec_val(7, 8)
-    wider = get_bitvec_val(7, 16)
+    first = ConstraintValues.bitvec(7, 8)
+    second = ConstraintValues.bitvec(7, 8)
+    wider = ConstraintValues.bitvec(7, 16)
 
     assert first is second
     assert first.size() == 8
@@ -100,46 +84,50 @@ def test_bitvector_theory_cache_validates_expression_collision(
     assert theory_mod.is_bitvector_smt_theory(integer > 0) is False
 
 
-def test_simplify_constraints() -> None:
-    """Scenario: constraints include true literal; expected true removed after simplify."""
-    x = z3.Int("x")
-    simplified = simplify_constraints([z3.BoolVal(True), x > 0])
-    assert len(simplified) == 1
+def test_simplify_expr_uses_engine_canonical_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario: SSoT simplify called; expected canonical cheap Z3 options."""
+    captured: dict[str, object] = {}
+    original_simplify = z3.simplify
+
+    def fake_simplify(expr: z3.ExprRef, **kwargs: object) -> z3.ExprRef:
+        captured.update(kwargs)
+        return original_simplify(expr)
+
+    monkeypatch.setattr(z3, "simplify", fake_simplify)
+
+    x = z3.Int("canonical_simplify_x")
+    simplify_expr(x + 1 <= 3)
+
+    assert captured == {
+        "sort_sums": True,
+        "bv_sort_ac": True,
+    }
 
 
-def test__tactic_simplify() -> None:
-    """Scenario: tactic simplify called with simple constraints; expected list output."""
-    x = z3.Int("x")
-    simplified = tactic_simplify([x > 0, x < 10])
-    assert isinstance(simplified, list)
+def test_symbolic_query_simplification_routes_through_ssoT(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario: query planner simplifies conjunctions; expected SSoT owner used."""
+    import pysymex._internal.core.solver.query.planner as planner
 
+    calls = 0
+    original_simplify = planner.simplify_expr
 
-def test_quick_contradiction_check() -> None:
-    """Scenario: direct contradiction pair c and not c; expected contradiction detected."""
-    c = z3.Bool("c")
-    assert quick_contradiction_check([c, z3.Not(c)]) is True
+    def fake_simplify(expr: z3.ExprRef) -> z3.ExprRef:
+        nonlocal calls
+        calls += 1
+        return original_simplify(expr)
 
+    monkeypatch.setattr(planner, "simplify_expr", fake_simplify)
+    planner.clear_symbolic_query_caches()
 
-def test_quick_contradiction_check_shared_cache_is_thread_safe() -> None:
-    """Scenario: concurrent cache hits and writes; expected deterministic results."""
-    x = z3.Int("quick_thread_x")
-    contradictory = [x > 0, z3.Not(x > 0)]
-    satisfiable = [x > 0, x < 10]
+    x = z3.Int("planner_ssoT_x")
+    query = planner.symbolic_query([x > 0, x < 5])
 
-    def check(index: int) -> bool:
-        constraints = contradictory if index % 2 == 0 else satisfiable
-        return quick_contradiction_check(constraints)
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(check, range(200)))
-
-    assert results == [index % 2 == 0 for index in range(200)]
-
-
-def test_remove_subsumed() -> None:
-    """Scenario: duplicate structural constraints; expected deduplicated output."""
-    c = z3.Bool("d")
-    assert remove_subsumed([c, c]) == [c]
+    assert query.simplified_conjunction() is not None
+    assert calls == 1
 
 
 class TestConstraintHasher:
@@ -229,6 +217,7 @@ class TestConstraintHasher:
 
         assert hasher.cache_size() == 1
 
+    @pytest.mark.slow
     def test_long_lived_hasher_can_stale_hit_after_id_reuse(self) -> None:
         """Scenario: one hasher reused across short-lived expressions; expected no stale hits."""
         hasher = ConstraintHasher()

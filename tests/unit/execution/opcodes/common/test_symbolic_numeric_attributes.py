@@ -5,11 +5,13 @@ from pathlib import Path
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.common.functions import handle_common_load_method
-from pysymex.scanner.file import scan_file
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.opcodes.common.functions.attribute.load.handler import (
+    handle_common_load_method,
+)
+from pysymex._internal.scanner.file import scan_file
 
 
 def _instr(opname: str, argval: object = None, arg: int | None = None) -> dis.Instruction:

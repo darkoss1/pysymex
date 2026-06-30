@@ -5,34 +5,45 @@ from typing import cast
 import pytest
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.core.constants import Z3_FALSE, Z3_TRUE
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.dict_views import SymbolicDictView
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
-from pysymex.models.containers.dicts.access import (
+from pysymex._internal.core.constants import Z3_FALSE, Z3_TRUE
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.dict_views import SymbolicDictView
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.types.containers.dicts.access import (
     DictContainsModel,
     DictGetitemModel,
     DictGetModel,
 )
-from pysymex.models.containers.dicts.mutations.bulk import (
+from pysymex._internal.models.builtins.types.containers.dicts.mutations.bulk import (
     DictClearModel,
     DictSetdefaultModel,
     DictUpdateModel,
 )
-from pysymex.models.containers.dicts.mutations.items import DictDelitemModel, DictSetitemModel
-from pysymex.models.containers.dicts.mutations.pop import DictPopitemModel, DictPopModel
-from pysymex.models.containers.dicts.operators import DictIorModel, DictOrModel
-from pysymex.models.containers.dicts.views import (
+from pysymex._internal.models.builtins.types.containers.dicts.mutations.items import (
+    DictDelitemModel,
+    DictSetitemModel,
+)
+from pysymex._internal.models.builtins.types.containers.dicts.mutations.pop import (
+    DictPopitemModel,
+    DictPopModel,
+)
+from pysymex._internal.models.builtins.types.containers.dicts.operators import (
+    DictIorModel,
+    DictOrModel,
+)
+from pysymex._internal.models.builtins.types.containers.dicts.views import (
     DictCopyModel,
     DictItemsModel,
     DictKeysModel,
     DictValuesModel,
 )
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -50,6 +61,36 @@ def test_dict_get_faithfulness() -> None:
     assert real is None
 
 
+def test_dict_retains_value_for_unified_symbolic_storage_key() -> None:
+    value = z3.Int("value")
+    stored_key = SymbolicValue(
+        _name="stored_token",
+        z3_int=200 + value,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_none=Z3_FALSE,
+    )
+    lookup_key = SymbolicValue(
+        _name="lookup_token",
+        z3_int=200 + value,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_none=Z3_FALSE,
+    )
+    storage_key = SymbolicString(_name=stored_key.name, _unified=stored_key)
+
+    dictionary = SymbolicDict.from_const_named("registry", {}).__setitem__(storage_key, "gen")
+
+    value_conditions = dictionary.concrete_value_conditions_for_key(lookup_key)
+    assert value_conditions is not None
+    assert len(value_conditions) == 1
+    condition, retained = value_conditions[0]
+    assert z3.is_true(simplify_expr(condition))
+    assert retained == "gen"
+
+
 def test_mutating_dict_models_concrete_none_result() -> None:
     """Concrete path: mutating dict methods return None-like symbolic value."""
     base: dict[str, StackValue] = {"a": 1}
@@ -63,6 +104,81 @@ def test_mutating_dict_models_concrete_none_result() -> None:
     for model, args in cases:
         result = model.apply(args, {}, _state())
         assert isinstance(result.value, SymbolicNone)
+
+
+def test_dict_setitem_int_key_preserves_retained_value_and_length() -> None:
+    """dict.__setitem__ should retain exact values for concrete integer keys."""
+    value, value_constraint = SymbolicValue.symbolic_int("setitem_value")
+    source = SymbolicDict.from_const({1: 1})
+
+    result = DictSetitemModel().apply([source, 2, value], {}, _state())
+
+    assert isinstance(result.value, SymbolicNone)
+    mutation = cast("dict[str, object] | None", result.side_effects.get("dict_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_dict"]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(simplify_expr(updated.z3_len == 2))
+    found, retained = updated.concrete_value_for_key(2)
+    assert found
+    assert isinstance(retained, SymbolicValue)
+
+    solver = z3.Solver()
+    solver.add(value_constraint, retained.z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_setitem_existing_int_key_updates_without_growing() -> None:
+    """dict.__setitem__ should not grow retained dicts for existing keys."""
+    value, value_constraint = SymbolicValue.symbolic_int("replacement")
+    source = SymbolicDict.from_const({1: 1})
+
+    result = DictSetitemModel().apply([source, 1, value], {}, _state())
+
+    mutation = cast("dict[str, object] | None", result.side_effects.get("dict_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_dict"]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(simplify_expr(updated.z3_len == 1))
+    found, retained = updated.concrete_value_for_key(1)
+    assert found
+    assert isinstance(retained, SymbolicValue)
+
+    solver = z3.Solver()
+    solver.add(value_constraint, retained.z3_int != value.z3_int)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_delitem_int_key_removes_retained_value_and_length() -> None:
+    """dict.__delitem__ should remove exact retained concrete integer keys."""
+    source = SymbolicDict.from_const({1: 1, 2: 2})
+
+    result = DictDelitemModel().apply([source, 1], {}, _state())
+
+    assert isinstance(result.value, SymbolicNone)
+    assert "potential_exception" not in result.side_effects
+    mutation = cast("dict[str, object] | None", result.side_effects.get("dict_mutation"))
+    assert mutation is not None
+    updated = mutation["updated_dict"]
+    assert isinstance(updated, SymbolicDict)
+    assert z3.is_true(simplify_expr(updated.z3_len == 1))
+    found, _retained = updated.concrete_value_for_key(1)
+    assert not found
+    found, retained = updated.concrete_value_for_key(2)
+    assert found
+    assert retained == 2
+
+
+def test_dict_delitem_definite_missing_key_raises_without_mutation() -> None:
+    """dict.__delitem__ should not emit a success mutation for definite KeyError."""
+    source = SymbolicDict.from_const({1: 1})
+
+    result = DictDelitemModel().apply([source, 2], {}, _state())
+
+    effect = result.side_effects.get("raised_exception")
+    assert SideEffects.is_raised_exception(effect)
+    assert effect["exception_type"] == "KeyError"
+    assert "dict_mutation" not in result.side_effects
 
 
 def test_symbolic_and_error_paths() -> None:
@@ -109,6 +225,52 @@ def test_dict_pop_missing_key_returns_retained_default_without_mutation() -> Non
     solver.add(value_constraint, result.value.z3_int != value.z3_int)
     assert solver.check() == z3.unsat
     assert "dict_mutation" not in result.side_effects
+
+
+def test_dict_pop_symbolic_int_key_over_exact_values_preserves_relationship() -> None:
+    """dict.pop should preserve finite symbolic key-to-value relationships."""
+    y, y_constraint = SymbolicValue.symbolic_int("pop_key_y")
+    key = SymbolicValue(
+        _name="pop_key",
+        z3_int=y.z3_int % 2,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: 2, 1: 1})
+
+    result = DictPopModel().apply([source, key, 3], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    solver = z3.Solver()
+    solver.add(y_constraint, result.value.z3_int == 0)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_pop_symbolic_int_key_over_exact_string_values_preserves_length() -> None:
+    """dict.pop should preserve retained string lengths for finite symbolic keys."""
+    y, y_constraint = SymbolicValue.symbolic_int("pop_string_key_y")
+    key = SymbolicValue(
+        _name="pop_string_key",
+        z3_int=y.z3_int % 3,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: "a", 1: "bb"})
+
+    result = DictPopModel().apply([source, key, "ccc"], {}, _state())
+
+    assert isinstance(result.value, SymbolicString)
+    solver = z3.Solver()
+    solver.add(y_constraint, result.value.z3_len == 0)
+    assert solver.check() == z3.unsat
 
 
 def test_dict_update_preserves_retained_mapping_values() -> None:
@@ -193,6 +355,52 @@ def test_dict_setdefault_missing_key_sets_and_returns_retained_default() -> None
     assert solver.check() == z3.unsat
 
 
+def test_dict_setdefault_symbolic_int_key_over_exact_values_preserves_relationship() -> None:
+    """dict.setdefault should preserve finite symbolic key-to-value relationships."""
+    y, y_constraint = SymbolicValue.symbolic_int("setdefault_key_y")
+    key = SymbolicValue(
+        _name="setdefault_key",
+        z3_int=y.z3_int % 2,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: 2, 1: 1})
+
+    result = DictSetdefaultModel().apply([source, key, 3], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    solver = z3.Solver()
+    solver.add(y_constraint, result.value.z3_int == 0)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_setdefault_symbolic_int_key_over_exact_strings_preserves_default() -> None:
+    """dict.setdefault should preserve retained strings and string default branches."""
+    y, y_constraint = SymbolicValue.symbolic_int("setdefault_string_key_y")
+    key = SymbolicValue(
+        _name="setdefault_string_key",
+        z3_int=y.z3_int % 3,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: "a", 1: "bb"})
+
+    result = DictSetdefaultModel().apply([source, key, ""], {}, _state())
+
+    assert isinstance(result.value, SymbolicString)
+    solver = z3.Solver()
+    solver.add(y_constraint, y.z3_int % 3 == 2, result.value.z3_len != 0)
+    assert solver.check() == z3.unsat
+
+
 def test_dict_clear_removes_retained_keys_and_known_key_metadata() -> None:
     """dict.clear() should remove retained values and known-key presence."""
     value, _value_constraint = SymbolicValue.symbolic_int("value")
@@ -204,7 +412,7 @@ def test_dict_clear_removes_retained_keys_and_known_key_metadata() -> None:
     assert mutation is not None
     updated = mutation["updated_dict"]
     assert isinstance(updated, SymbolicDict)
-    assert z3.is_true(z3.simplify(updated.z3_len == 0))
+    assert z3.is_true(simplify_expr(updated.z3_len == 0))
 
     key = SymbolicString.from_const("k")
     found, retained = updated.concrete_value_for_key(key)
@@ -212,7 +420,7 @@ def test_dict_clear_removes_retained_keys_and_known_key_metadata() -> None:
     assert retained is None
     presence = updated.concrete_key_presence_condition(key)
     assert presence is not None
-    assert z3.is_false(z3.simplify(presence))
+    assert z3.is_false(simplify_expr(presence))
 
 
 def test_dict_copy_preserves_retained_key_values() -> None:
@@ -313,6 +521,11 @@ def _symbolic_dict() -> SymbolicDict:
 INVALID_POSITIONAL_CASES: list[tuple[FunctionModel, list[StackValue]]] = [
     (DictGetModel(), []),
     (DictGetModel(), ["key", None, None]),
+    (DictSetitemModel(), []),
+    (DictSetitemModel(), ["key"]),
+    (DictSetitemModel(), ["key", None, None]),
+    (DictDelitemModel(), []),
+    (DictDelitemModel(), ["key", None]),
     (DictPopModel(), []),
     (DictPopModel(), ["key", None, None]),
     (DictPopitemModel(), ["unexpected"]),
@@ -338,7 +551,7 @@ def test_dict_public_methods_reject_invalid_positional_arity(
     result = model.apply([_symbolic_dict(), *method_args], {}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -346,6 +559,8 @@ def test_dict_public_methods_reject_invalid_positional_arity(
     ("model", "method_args"),
     [
         (DictGetModel(), ["key"]),
+        (DictSetitemModel(), ["key", 1]),
+        (DictDelitemModel(), ["key"]),
         (DictPopModel(), ["key"]),
         (DictPopitemModel(), []),
         (DictSetdefaultModel(), ["key"]),
@@ -363,7 +578,7 @@ def test_dict_public_methods_reject_unsupported_keywords(
     result = model.apply([_symbolic_dict(), *method_args], {"unexpected": 1}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -420,4 +635,114 @@ def test_dict_get_symbolic_int_key_over_exact_keys_selects_retained_values() -> 
     assert isinstance(result.value, SymbolicValue)
     solver = z3.Solver()
     solver.add(y_constraint, result.value.z3_int == 0)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_get_symbolic_int_key_over_exact_string_values_preserves_relationship() -> None:
+    """dict.get should preserve finite key-to-string-value relationships."""
+    y, y_constraint = SymbolicValue.symbolic_int("string_key_y")
+    key = SymbolicValue(
+        _name="string_key",
+        z3_int=y.z3_int % 2,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: "a", 1: "bb"})
+
+    result = DictGetModel().apply([source, key, "ccc"], {}, _state())
+
+    assert isinstance(result.value, SymbolicString)
+    solver = z3.Solver()
+    solver.add(y_constraint, result.value.z3_len == 0)
+    assert solver.check() == z3.unsat
+
+    solver = z3.Solver()
+    solver.add(y_constraint, y.z3_int % 2 == 1, result.value.z3_str != "bb")
+    assert solver.check() == z3.unsat
+
+
+def test_dict_get_symbolic_int_key_preserves_string_default_branch() -> None:
+    """dict.get should keep the default string branch when a finite key may miss."""
+    y, y_constraint = SymbolicValue.symbolic_int("string_default_y")
+    key = SymbolicValue(
+        _name="string_default_key",
+        z3_int=y.z3_int % 3,
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: "a", 1: "bb"})
+
+    result = DictGetModel().apply([source, key, ""], {}, _state())
+
+    assert isinstance(result.value, SymbolicString)
+    solver = z3.Solver()
+    solver.add(y_constraint, y.z3_int % 3 == 2, result.value.z3_len != 0)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_getitem_symbolic_int_key_over_exact_keys_selects_retained_values() -> None:
+    """dict[key] should preserve the finite key-to-value relationship."""
+    y, y_constraint = SymbolicValue.symbolic_int("y")
+    key = SymbolicValue(
+        _name="key",
+        z3_int=z3.If(y.z3_int == 0, z3.IntVal(0), z3.IntVal(1)),
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: 2, 1: 1})
+
+    result = DictGetitemModel().apply([source, key], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    assert "potential_exception" not in result.side_effects
+    solver = z3.Solver()
+    solver.add(y_constraint, result.value.z3_int == 0)
+    assert solver.check() == z3.unsat
+
+
+def test_dict_contains_symbolic_int_key_over_exact_keys_preserves_membership() -> None:
+    """dict.__contains__ should prove finite symbolic keys are present."""
+    y, y_constraint = SymbolicValue.symbolic_int("y")
+    key = SymbolicValue(
+        _name="key",
+        z3_int=z3.If(y.z3_int == 0, z3.IntVal(0), z3.IntVal(1)),
+        is_int=Z3_TRUE,
+        z3_bool=Z3_FALSE,
+        is_bool=Z3_FALSE,
+        is_str=Z3_FALSE,
+        is_none=Z3_FALSE,
+        affinity_type="int",
+    )
+    source = SymbolicDict.from_const({0: 2, 1: 1})
+
+    result = DictContainsModel().apply([source, key], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    solver = z3.Solver()
+    solver.add(y_constraint, z3.Not(result.value.z3_bool))
+    assert solver.check() == z3.unsat
+
+
+def test_dict_contains_symbolic_bool_key_matches_concrete_int_keys() -> None:
+    """dict.__contains__ should follow Python bool/int key equality."""
+    key, key_constraint = SymbolicValue.symbolic_bool("key")
+    source = SymbolicDict.from_const({0: 2, 1: 1})
+
+    result = DictContainsModel().apply([source, key], {}, _state())
+
+    assert isinstance(result.value, SymbolicValue)
+    solver = z3.Solver()
+    solver.add(key_constraint, z3.Not(result.value.z3_bool))
     assert solver.check() == z3.unsat

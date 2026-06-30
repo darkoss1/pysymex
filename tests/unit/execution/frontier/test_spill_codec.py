@@ -6,21 +6,58 @@ from typing import cast
 import pytest
 import z3
 
-import pysymex.execution.frontier.spill.codec as spill_codec
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
+import pysymex._internal.execution.frontier.spill.codec.constraints as spill_codec_constraints
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoints import (
     FrontierCheckpoint,
-    FrontierQueueEntry,
     build_frontier_checkpoint,
 )
-from pysymex.execution.frontier.spill.codec import (
-    SPILL_FORMAT_VERSION,
-    checkpoint_spill_payload,
-    delete_spilled_frontier_entry,
+from pysymex._internal.execution.frontier.entries import FrontierQueueEntry
+from pysymex._internal.execution.frontier.spill.codec.digests import (
     json_digest_value,
     spill_payload_integrity_digest,
-    spill_path,
 )
+from pysymex._internal.execution.frontier.spill.codec.digests import (
+    json_digest_value as direct_json_digest_value,
+)
+from pysymex._internal.execution.frontier.spill.codec.digests import (
+    spill_payload_integrity_digest as direct_spill_payload_integrity_digest,
+)
+from pysymex._internal.execution.frontier.spill.codec.files import (
+    delete_spilled_frontier_entry,
+    spill_path,
+    write_spill_payload,
+)
+from pysymex._internal.execution.frontier.spill.codec.files import (
+    delete_spilled_frontier_entry as direct_delete_spilled_frontier_entry,
+)
+from pysymex._internal.execution.frontier.spill.codec.files import (
+    spill_path as direct_spill_path,
+)
+from pysymex._internal.execution.frontier.spill.codec.files import (
+    write_spill_payload as direct_write_spill_payload,
+)
+from pysymex._internal.execution.frontier.spill.codec.payloads import (
+    SPILL_FORMAT_VERSION,
+    checkpoint_spill_payload,
+)
+from pysymex._internal.execution.frontier.spill.codec.payloads import (
+    SPILL_FORMAT_VERSION as DIRECT_SPILL_FORMAT_VERSION,
+)
+from pysymex._internal.execution.frontier.spill.codec.payloads import (
+    checkpoint_spill_payload as direct_checkpoint_spill_payload,
+)
+
+
+def test_spill_codec_exports_use_direct_owners() -> None:
+    """Package-level codec exports stay wired to direct owners."""
+    assert SPILL_FORMAT_VERSION == DIRECT_SPILL_FORMAT_VERSION
+    assert checkpoint_spill_payload is direct_checkpoint_spill_payload
+    assert delete_spilled_frontier_entry is direct_delete_spilled_frontier_entry
+    assert json_digest_value is direct_json_digest_value
+    assert spill_payload_integrity_digest is direct_spill_payload_integrity_digest
+    assert spill_path is direct_spill_path
+    assert write_spill_payload is direct_write_spill_payload
 
 
 def test_checkpoint_spill_payload_rejects_stale_snapshots() -> None:
@@ -83,7 +120,7 @@ def test_checkpoint_spill_payload_rejects_smt2_serialization_failure(
         def to_smt2(self) -> str:
             raise z3.Z3Exception("serialization failed")
 
-    monkeypatch.setattr(spill_codec.z3, "Solver", RaisingSolver)
+    monkeypatch.setattr(spill_codec_constraints.z3, "Solver", RaisingSolver)
     symbol = z3.Bool("spill_codec_smt2_failure")
     state = VMState(
         path_constraints=[symbol],

@@ -1,10 +1,31 @@
-"""Tests for pysymex.deps — dependency guards for Z3 runtime requirements."""
+"""Tests for pysymex._internal.deps — dependency guards for Z3 runtime requirements."""
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import z3
 
-import pysymex.deps as mod
+import pysymex._internal.deps as mod
+
+
+def test_import_deps_does_not_eagerly_import_z3_or_logger() -> None:
+    """Importing dependency guards should not load runtime dependencies."""
+    code = (
+        "import sys\n"
+        "import pysymex._internal.deps\n"
+        "print('z3' in sys.modules)\n"
+        "print('pysymex._internal.logging' in sys.modules)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.splitlines() == ["False", "False"]
 
 
 class TestPackageVersion:

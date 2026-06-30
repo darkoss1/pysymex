@@ -1,12 +1,14 @@
-"""Tests for pysymex.typing — shared type aliases, TypeGuards, and Protocols."""
+"""Tests for pysymex._internal.typing — shared type aliases, TypeGuards, and Protocols."""
 
 from __future__ import annotations
 
 import z3
 
-import pysymex.typing as mod
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.scalars.strings import SymbolicString
+import pysymex._internal.guards as guards
+import pysymex._internal.typing.protocols as typing_protocols
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.typing.protocols import SolverProtocol, SymbolicTypeProtocol
 
 
 class TestSymbolicTypeProtocol:
@@ -15,7 +17,7 @@ class TestSymbolicTypeProtocol:
     def test_symbolic_value_satisfies_protocol(self) -> None:
         """SymbolicValue instances satisfy SymbolicTypeProtocol."""
         val = SymbolicValue.from_const(42)
-        assert isinstance(val, mod.SymbolicTypeProtocol)
+        assert isinstance(val, SymbolicTypeProtocol)
 
     def test_name_property(self) -> None:
         """SymbolicValue exposes a name property."""
@@ -46,10 +48,10 @@ class TestSolverProtocol:
 
     def test_incremental_solver_satisfies(self) -> None:
         """IncrementalSolver satisfies SolverProtocol."""
-        from pysymex.core.solver.engine.incremental import IncrementalSolver
+        from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
 
         solver = IncrementalSolver()
-        assert isinstance(solver, mod.SolverProtocol)
+        assert isinstance(solver, SolverProtocol)
 
 
 class TestDetectorProtocol:
@@ -57,7 +59,7 @@ class TestDetectorProtocol:
 
     def test_protocol_exists(self) -> None:
         """DetectorProtocol is a runtime-checkable Protocol."""
-        assert hasattr(mod, "DetectorProtocol")
+        assert hasattr(typing_protocols, "DetectorProtocol")
 
 
 class TestStateViewProtocol:
@@ -65,7 +67,7 @@ class TestStateViewProtocol:
 
     def test_vmstate_satisfies_protocol(self) -> None:
         """VMState satisfies StateViewProtocol at structural level."""
-        from pysymex.core.state.record import VMState
+        from pysymex._internal.core.state.record import VMState
 
         state = VMState()
         # Check that required attributes exist
@@ -75,14 +77,14 @@ class TestStateViewProtocol:
 
     def test_pc_property(self) -> None:
         """VMState exposes pc as int."""
-        from pysymex.core.state.record import VMState
+        from pysymex._internal.core.state.record import VMState
 
         state = VMState()
         assert isinstance(state.pc, int)
 
     def test_stack_property(self) -> None:
         """VMState exposes stack."""
-        from pysymex.core.state.record import VMState
+        from pysymex._internal.core.state.record import VMState
 
         state = VMState()
         assert hasattr(state.stack, "__len__")
@@ -124,20 +126,12 @@ class TestSymbolicStringProtocol:
         assert isinstance(result, z3.ExprRef)
 
 
-class TestVerificationResultProtocol:
-    """Tests for VerificationResultProtocol."""
-
-    def test_protocol_exists(self) -> None:
-        """VerificationResultProtocol exists as a runtime-checkable Protocol."""
-        assert hasattr(mod, "VerificationResultProtocol")
-
-
 class TestSymbolicContainerProtocol:
     """Tests for SymbolicContainerProtocol — runtime_checkable Protocol."""
 
     def test_symbolic_list_has_required_methods(self) -> None:
         """SymbolicList has name, to_z3, is_truthy, is_falsy structural methods."""
-        from pysymex.core.types.containers.lists import SymbolicList
+        from pysymex._internal.core.types.containers.lists import SymbolicList
 
         sl, _ = SymbolicList.symbolic("lst")
         assert hasattr(sl, "name")
@@ -146,73 +140,73 @@ class TestSymbolicContainerProtocol:
         assert hasattr(sl, "could_be_falsy")
 
 
-class TestSummaryProtocol:
-    """Tests for SummaryProtocol — runtime_checkable Protocol."""
-
-    def test_protocol_exists(self) -> None:
-        """SummaryProtocol exists."""
-        assert hasattr(mod, "SummaryProtocol")
-
-
-class TestSummaryBuilderProtocol:
-    """Tests for SummaryBuilderProtocol."""
-
-    def test_protocol_exists(self) -> None:
-        """SummaryBuilderProtocol exists."""
-        assert hasattr(mod, "SummaryBuilderProtocol")
-
-
 class TestIsListOfObjects:
-    """Tests for is_list_of_objects TypeGuard."""
+    """Tests for RuntimeObjectGuards.list TypeGuard."""
 
     def test_list_returns_true(self) -> None:
         """A list passes."""
-        assert mod.is_list_of_objects([1, "a"]) is True
+        assert guards.RuntimeObjectGuards.list([1, "a"]) is True
 
     def test_tuple_returns_false(self) -> None:
         """A tuple does not pass."""
-        assert mod.is_list_of_objects((1, 2)) is False
+        assert guards.RuntimeObjectGuards.list((1, 2)) is False
 
     def test_dict_returns_false(self) -> None:
         """A dict does not pass."""
-        assert mod.is_list_of_objects({"a": 1}) is False
+        assert guards.RuntimeObjectGuards.list({"a": 1}) is False
 
 
 class TestIsTupleOfObjects:
-    """Tests for is_tuple_of_objects TypeGuard."""
+    """Tests for RuntimeObjectGuards.tuple TypeGuard."""
 
     def test_tuple_returns_true(self) -> None:
         """A tuple passes."""
-        assert mod.is_tuple_of_objects((1, 2)) is True
+        assert guards.RuntimeObjectGuards.tuple((1, 2)) is True
 
     def test_list_returns_false(self) -> None:
         """A list does not pass."""
-        assert mod.is_tuple_of_objects([1, 2]) is False
+        assert guards.RuntimeObjectGuards.tuple([1, 2]) is False
 
 
 class TestIsDictOfObjects:
-    """Tests for is_dict_of_objects TypeGuard."""
+    """Tests for RuntimeObjectGuards.dict TypeGuard."""
 
     def test_dict_returns_true(self) -> None:
         """A dict passes."""
-        assert mod.is_dict_of_objects({"a": 1}) is True
+        assert guards.RuntimeObjectGuards.dict({"a": 1}) is True
 
     def test_list_returns_false(self) -> None:
         """A list does not pass."""
-        assert mod.is_dict_of_objects([1]) is False
+        assert guards.RuntimeObjectGuards.dict([1]) is False
 
 
 class TestIsSetOfObjects:
-    """Tests for is_set_of_objects TypeGuard."""
+    """Tests for RuntimeObjectGuards.set TypeGuard."""
 
     def test_set_returns_true(self) -> None:
         """A set passes."""
-        assert mod.is_set_of_objects({1, 2}) is True
+        assert guards.RuntimeObjectGuards.set({1, 2}) is True
 
     def test_frozenset_returns_false(self) -> None:
         """A frozenset does not pass (it's not a set)."""
-        assert mod.is_set_of_objects(frozenset([1])) is False
+        assert guards.RuntimeObjectGuards.set(frozenset([1])) is False
 
     def test_list_returns_false(self) -> None:
         """A list does not pass."""
-        assert mod.is_set_of_objects([1, 2]) is False
+        assert guards.RuntimeObjectGuards.set([1, 2]) is False
+
+
+class TestIsFrozensetOfObjects:
+    """Tests for RuntimeObjectGuards.frozenset TypeGuard."""
+
+    def test_frozenset_returns_true(self) -> None:
+        """A frozenset passes."""
+        assert guards.RuntimeObjectGuards.frozenset(frozenset([1, 2])) is True
+
+    def test_set_returns_false(self) -> None:
+        """A mutable set does not pass."""
+        assert guards.RuntimeObjectGuards.frozenset({1, 2}) is False
+
+    def test_list_returns_false(self) -> None:
+        """A list does not pass."""
+        assert guards.RuntimeObjectGuards.frozenset([1, 2]) is False

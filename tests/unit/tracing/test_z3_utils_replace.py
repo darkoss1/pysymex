@@ -1,11 +1,11 @@
-"""Tests for pysymex.tracing.z3 — _replace and substitute_abstract_names."""
+"""Tests for pysymex._internal.tracing.z3 — _replace and substitute_abstract_names."""
 
 from __future__ import annotations
 
 import z3
 
-from pysymex.tracing.z3.registry import Z3SemanticRegistry
-from pysymex.tracing.z3.serializer import Z3Serializer
+from pysymex._internal.tracing.z3.registry import Z3SemanticRegistry
+from pysymex._internal.tracing.z3.serializer import Z3Serializer
 
 
 class TestSubstituteAbstractNames:

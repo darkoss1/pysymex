@@ -6,25 +6,17 @@ import math
 
 import z3
 
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins import ModelResult
-from pysymex.models.builtins.base import is_raised_exception_effect
-from pysymex.models.builtins.results import (
-    is_potential_exception_effect,
-    is_potential_exception_effect_sequence,
-)
-from pysymex.models.stdlib.math import (
-    MathCeilModel,
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.contracts.results import ModelResult, SideEffects
+from pysymex._internal.models.stdlib.math.exponential import MathExpModel, MathLogModel
+from pysymex._internal.models.stdlib.math.numeric import (
     MathCosModel,
-    MathExpModel,
     MathFabsModel,
-    MathFloorModel,
     MathGcdModel,
-    MathLogModel,
     MathSinModel,
-    MathSqrtModel,
     MathTanModel,
 )
+from pysymex._internal.models.stdlib.math.roots import MathCeilModel, MathFloorModel, MathSqrtModel
 from tests.unit.models.stdlib.math_model_helpers import make_state
 
 
@@ -47,7 +39,7 @@ class TestMathSqrtModel:
         result = MathSqrtModel().apply([-1], {}, make_state())
 
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "ValueError"
         assert raised["message"] == "math domain error"
 
@@ -62,7 +54,7 @@ class TestMathSqrtModel:
         result = MathSqrtModel().apply([x], {}, make_state())
 
         potential = result.side_effects.get("potential_exception")
-        assert is_potential_exception_effect(potential)
+        assert SideEffects.is_potential_exception(potential)
         assert potential["type"] == "ValueError"
         assert potential["message"] == "math domain error"
 
@@ -122,7 +114,7 @@ class TestMathLogModel:
         result = MathLogModel().apply([0], {}, make_state())
 
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "ValueError"
         assert raised["message"] == "math domain error"
 
@@ -130,7 +122,7 @@ class TestMathLogModel:
         result = MathLogModel().apply([8, -2], {}, make_state())
 
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "ValueError"
         assert raised["message"] == "math domain error"
 
@@ -138,7 +130,7 @@ class TestMathLogModel:
         result = MathLogModel().apply([8, 1], {}, make_state())
 
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "ZeroDivisionError"
         assert raised["message"] == "float division by zero"
 
@@ -152,7 +144,7 @@ class TestMathLogModel:
         result = MathLogModel().apply([x], {}, make_state())
 
         potential = result.side_effects.get("potential_exception")
-        assert is_potential_exception_effect(potential)
+        assert SideEffects.is_potential_exception(potential)
         assert potential["type"] == "ValueError"
         assert potential["message"] == "math domain error"
 
@@ -162,7 +154,7 @@ class TestMathLogModel:
         result = MathLogModel().apply([x, base], {}, make_state())
 
         potential = result.side_effects.get("potential_exceptions")
-        assert is_potential_exception_effect_sequence(potential)
+        assert SideEffects.is_potential_exception_sequence(potential)
         assert {effect["type"] for effect in potential} == {"ValueError", "ZeroDivisionError"}
 
     def test_no_args(self) -> None:
@@ -182,7 +174,7 @@ class TestMathExpModel:
         result = MathExpModel().apply([710], {}, make_state())
 
         raised = result.side_effects.get("raised_exception")
-        assert is_raised_exception_effect(raised)
+        assert SideEffects.is_raised_exception(raised)
         assert raised["exception_type"] == "OverflowError"
         assert raised["message"] == "math range error"
 
@@ -196,7 +188,7 @@ class TestMathExpModel:
         result = MathExpModel().apply([x], {}, make_state())
 
         potential = result.side_effects.get("potential_exception")
-        assert is_potential_exception_effect(potential)
+        assert SideEffects.is_potential_exception(potential)
         assert potential["type"] == "OverflowError"
         assert potential["message"] == "math range error"
 

@@ -2,27 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
-import pysymex
-from pysymex.analysis.domains.exceptions.analyzer.context_managers import (
-    known_with_manager_suppresses,
-)
-from pysymex.core.memory.cow.collections import CowDict
-from pysymex.scanner.file import scan_file
-from pysymex.analysis.scan.loading import build_module_globals
-from pysymex.analysis.static.code_objects import get_code_objects_with_context
-
-
-def _issue_kind(issue: object) -> object:
-    if isinstance(issue, dict):
-        issue_map = cast("Mapping[str, object]", issue)
-        return issue_map.get("kind")
-    raw_kind = getattr(issue, "kind", None)
-    return getattr(raw_kind, "name", raw_kind)
+from pysymex._internal.analysis.scan.loading.globals import build_module_globals
+from pysymex._internal.core.memory.cow.dicts import CowDict
+from pysymex._internal.execution.detectors.suppression.managers import SuppressionManagerPolicy
+from pysymex._internal.scanner.code import get_code_objects_with_context
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_allows_matching_user_context_manager_suppression(tmp_path: Path) -> None:
@@ -48,31 +34,6 @@ def test_scan_file_allows_matching_user_context_manager_suppression(tmp_path: Pa
     assert not any(
         issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
         for issue in result.issues
-    )
-
-
-def test_analyze_code_allows_module_plain_context_manager_suppression() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class SuppressZero:\n"
-            "    def __enter__(self):\n"
-            "        return self\n"
-            "\n"
-            "    def __exit__(self, exc_type, exc, tb):\n"
-            "        return exc_type is ZeroDivisionError\n"
-            "\n"
-            "with SuppressZero():\n"
-            "    1 / 0\n"
-            "result = 5\n",
-            max_paths=45,
-            max_depth=130,
-            max_iterations=3000,
-            timeout=2.0,
-        )
-    )
-
-    assert not any(
-        _issue_kind(issue) in {"DIVISION_BY_ZERO", "UNHANDLED_EXCEPTION"} for issue in result.issues
     )
 
 
@@ -159,6 +120,73 @@ def test_scan_file_reports_user_context_manager_matching_another_exception(tmp_p
     )
 
 
+def test_scan_file_reports_division_after_pre_with_modeled_attribute_read(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "context_manager_attribute_read_before_with.py"
+    target.write_text(
+        "class Node:\n"
+        "    __match_args__ = ('kind', 'items')\n"
+        "\n"
+        "    def __init__(self, kind: str, items: list[int]) -> None:\n"
+        "        self.kind = kind\n"
+        "        self.items = items\n"
+        "        self.events = []\n"
+        "\n"
+        "class Gate:\n"
+        "    def __init__(self, node: Node, name: str, suppress_key: bool) -> None:\n"
+        "        self.node = node\n"
+        "        self.name = name\n"
+        "        self.suppress_key = suppress_key\n"
+        "\n"
+        "    def __enter__(self) -> Node:\n"
+        "        self.node.events.append(('enter', self.name))\n"
+        "        self.node.items.append(len(self.node.events))\n"
+        "        return self.node\n"
+        "\n"
+        "    def __exit__(self, exc_type, exc, tb) -> bool:\n"
+        "        self.node.events.append(('exit', self.name, exc_type is not None))\n"
+        "        return self.suppress_key and exc_type is KeyError\n"
+        "\n"
+        "def _mix(node: Node, pivot: int) -> list[tuple[int, int]]:\n"
+        "    pairs = []\n"
+        "    for index, item in enumerate((node.items[0], pivot)):\n"
+        "        try:\n"
+        "            pairs.append((index, item + 13))\n"
+        "        finally:\n"
+        "            node.events.append(('mix-finally', index, len(pairs)))\n"
+        "    return pairs\n"
+        "\n"
+        "def target(mode: int, left: int, right: int, pivot: int) -> int:\n"
+        "    node = Node('red', [left, right, pivot])\n"
+        "    node.items\n"
+        "    total = 0\n"
+        "    with Gate(node, 'outer', mode == 3) as outer:\n"
+        "        with Gate(outer, 'inner', mode == 30) as inner:\n"
+        "            for index, value in _mix(inner, pivot):\n"
+        "                match {'mode': mode, 'index': index, 'node': inner}:\n"
+        "                    case {'mode': 0, 'index': 0, 'node': Node('red', [head, *_])}:\n"
+        "                        return total + head // (left - right)\n"
+        "                    case _:\n"
+        "                        total += value + 13\n"
+        "    return total\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(
+        target,
+        use_sandbox=False,
+        no_cache=True,
+        max_paths=300,
+        max_iterations=20000,
+    )
+
+    assert any(
+        issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+
+
 def test_scan_file_does_not_trust_decorated_exit_method_body(tmp_path: Path) -> None:
     target = tmp_path / "context_manager_decorated_exit.py"
     target.write_text(
@@ -226,6 +254,6 @@ def test_inherited_manager_construction_is_not_certified_for_suppression() -> No
         all_code_with_context=get_code_objects_with_context(code),
     )
 
-    assert not known_with_manager_suppresses(
+    assert not SuppressionManagerPolicy.known_suppresses(
         CowDict(module_globals), "ZeroDivisionError", "ClaimedSuppress", ()
     )

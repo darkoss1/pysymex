@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.types import ExecutionStatus, ResourceLimits, SandboxConfig
+from pysymex._internal.config.sandbox.types import ResourceLimits, SandboxConfig
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.types import ExecutionStatus
 from tests.unit.sandbox.isolation.windows_appcontainer_helpers import (
     InspectableWindowsAppContainerBackend,
     has_live_appcontainer_support,
@@ -62,21 +63,19 @@ class TestWindowsAppContainerBackend:
             pytest.skip(f"live AppContainer backend unavailable: {exc}")
         try:
             status, exit_code, stdout, stderr, _, _ = backend.run_raw_python_for_test(
-                (
-                    "import pathlib, sys\n"
-                    f"host_profile = pathlib.Path({str(host_profile)!r})\n"
-                    "checks = []\n"
-                    "try:\n"
-                    "    list(host_profile.iterdir())\n"
-                    "except Exception:\n"
-                    "    checks.append('list-denied')\n"
-                    "try:\n"
-                    "    (host_profile / 'token.txt').read_text(encoding='utf-8')\n"
-                    "except Exception:\n"
-                    "    checks.append('read-denied')\n"
-                    "print(','.join(sorted(checks)))\n"
-                    "sys.exit(0 if len(checks) == 2 else 94)\n"
-                )
+                "import pathlib, sys\n"
+                f"host_profile = pathlib.Path({str(host_profile)!r})\n"
+                "checks = []\n"
+                "try:\n"
+                "    list(host_profile.iterdir())\n"
+                "except Exception:\n"
+                "    checks.append('list-denied')\n"
+                "try:\n"
+                "    (host_profile / 'token.txt').read_text(encoding='utf-8')\n"
+                "except Exception:\n"
+                "    checks.append('read-denied')\n"
+                "print(','.join(sorted(checks)))\n"
+                "sys.exit(0 if len(checks) == 2 else 94)\n"
             )
             assert status is ExecutionStatus.SUCCESS
             assert exit_code == 0

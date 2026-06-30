@@ -4,12 +4,16 @@ from typing import cast
 
 import z3
 
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.opcodes.common.functions.classes.instances import modeled_instance_value
-from pysymex.models.builtins.core.iterables import SortedModel
-from pysymex.models.objects import SymbolicClass, SymbolicInstance
-from pysymex.typing import StackValue
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.instances import SymbolicInstance
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.opcodes.common.functions.classes.instances.values import (
+    modeled_instance_value,
+)
+from pysymex._internal.models.builtins.iteration.aggregates import SortedModel
+from pysymex._internal.typing.protocols import StackValue
 from tests.unit.models.builtins.core_model_helpers import state
 
 
@@ -56,7 +60,7 @@ def test_sorted_model_sorts_modeled_instances_by_exact_lt_attribute() -> None:
     concrete_items = result.value.concrete_items
     assert concrete_items is not None
     assert _item_attr_values(concrete_items) == [1, 2]
-    assert z3.is_true(z3.simplify(result.value.z3_len == 2))
+    assert z3.is_true(simplify_expr(result.value.z3_len == 2))
 
 
 def test_sorted_model_respects_reverse_for_exact_lt_attribute() -> None:

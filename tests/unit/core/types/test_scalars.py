@@ -1,16 +1,23 @@
-import z3
+import subprocess
+import sys
 
 import pytest
+import z3
 
-from pysymex.core.constants import Z3_ZERO
-from pysymex.core.types.base import (
+from pysymex._internal.core.constants import Z3_ZERO
+from pysymex._internal.core.types.base import (
     SymbolicNoneType,
-    SymbolicNoneType as SymbolicNone,
     SymbolicType,
+    fresh_name,
+)
+from pysymex._internal.core.types.base import (
+    SymbolicNoneType as SymbolicNone,
+)
+from pysymex._internal.core.types.base import (
     SymbolicType as BaseSymbolicType,
 )
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue, fresh_name
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def test_fresh_name() -> None:
@@ -21,6 +28,29 @@ def test_symbolic_type_contract_uses_base_ssot() -> None:
     assert SymbolicType is BaseSymbolicType
     assert SymbolicNone is SymbolicNoneType
     assert isinstance(SymbolicValue.from_const(1), BaseSymbolicType)
+
+
+def test_symbolic_value_factories_are_bound_without_string_import_side_effect() -> None:
+    """Direct value-module imports must not depend on later string-module binding."""
+    code = """
+import z3
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+value = SymbolicValue.from_const(7)
+assert isinstance(value, SymbolicValue), type(value)
+assert value.value == 7
+symbolic, constraint = SymbolicValue.symbolic("direct")
+assert isinstance(symbolic, SymbolicValue), type(symbolic)
+assert z3.is_bool(constraint)
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 class TestSymbolicType:
@@ -71,6 +101,23 @@ class TestSymbolicNone:
 
 
 class TestSymbolicValue:
+    def test_cached_constants_have_isolated_runtime_metadata(self) -> None:
+        first = SymbolicValue.from_const(7)
+        first.set_runtime_type("poisoned")
+
+        second = SymbolicValue.from_const(7)
+
+        assert second is not first
+        assert second.type_tag == "int"
+
+    def test_arbitrarily_large_integer_does_not_require_float_conversion(self) -> None:
+        expected = 10**1000
+
+        value = SymbolicValue.from_const(expected)
+
+        assert value.value == expected
+        assert value.type_tag == "int"
+
     def test_value(self) -> None:
         sv = SymbolicValue.from_const(7)
         assert sv.value == 7
@@ -122,12 +169,15 @@ class TestSymbolicValue:
             sv.is_int,
             sv.is_bool,
             sv.is_str,
+            sv.is_bytes,
             sv.is_path,
             sv.is_obj,
             sv.is_none,
             sv.is_float,
             sv.is_list,
             sv.is_dict,
+            sv.is_tuple,
+            sv.is_set,
         ]
 
         all_false_solver = z3.Solver()
@@ -233,6 +283,14 @@ class TestSymbolicValue:
         assert solver.check() == z3.unsat
         assert out.min_val == 0
         assert out.max_val == 0xFFFFFFFF
+
+    def test_symbolic_bitwise_and_with_nonnegative_mask_records_byte_bounds(self) -> None:
+        value, _ = SymbolicValue.symbolic_int("value")
+
+        out = value & 0xFF
+
+        assert out.min_val == 0
+        assert out.max_val == 0xFF
 
     @pytest.mark.parametrize(
         ("lhs", "rhs", "operator", "expected"),
@@ -351,6 +409,15 @@ class TestSymbolicValue:
 
 
 class TestSymbolicString:
+    def test_cached_constants_have_isolated_precision_metadata(self) -> None:
+        first = SymbolicString.from_const("abc")
+        first.with_character_count_upper_bound("a", 1)
+
+        second = SymbolicString.from_const("abc")
+
+        assert second is not first
+        assert second.character_count_upper_bound("a") is None
+
     def test_z3_str(self) -> None:
         s = SymbolicString.from_const("a")
         assert z3.is_string(s.z3_str)
@@ -387,6 +454,9 @@ class TestSymbolicString:
     def test_symbolic(self) -> None:
         s, c = SymbolicString.symbolic("s")
         assert isinstance(s, SymbolicString) and z3.is_bool(c)
+        assert z3.is_true(c)
+        assert s.unified_value is None
+        assert str(s.z3_str) == "s"
 
     def test_from_const(self) -> None:
         s = SymbolicString.from_const("x")
@@ -416,7 +486,157 @@ class TestSymbolicString:
         out = s.substring(0, 2)
         assert isinstance(out, SymbolicString)
 
+    def test_slice_value_preserves_exact_cpython_concrete_slices(self) -> None:
+        s = SymbolicString.from_const("abcdef")
+        negative_bounds = s.slice_value(slice(-4, -1))
+        oversized_stop = s.slice_value(slice(None, 99))
+        reverse = s.slice_value(slice(None, None, -1))
+
+        assert isinstance(negative_bounds, SymbolicString)
+        assert isinstance(oversized_stop, SymbolicString)
+        assert isinstance(reverse, SymbolicString)
+        assert negative_bounds.concrete_value == "cde"
+        assert oversized_stop.concrete_value == "abcdef"
+        assert reverse.concrete_value == "fedcba"
+
+    def test_slice_value_encodes_negative_symbolic_start_like_cpython(self) -> None:
+        s, _ = SymbolicString.symbolic("slice_source")
+        out = s.slice_value(slice(-2, None))
+
+        assert isinstance(out, SymbolicString)
+
+        solver = z3.Solver()
+        solver.add(s.z3_len == 5)
+        solver.add(out.z3_str != z3.SubString(s.z3_str, z3.IntVal(3), z3.IntVal(2)))
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_clamps_symbolic_negative_start_to_zero_for_short_strings(self) -> None:
+        s, _ = SymbolicString.symbolic("short_slice_source")
+        out = s.slice_value(slice(-4, None))
+
+        assert isinstance(out, SymbolicString)
+
+        solver = z3.Solver()
+        solver.add(s.z3_len == 2)
+        solver.add(out.z3_str != s.z3_str)
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_encodes_negative_symbolic_stop_like_cpython(self) -> None:
+        s, _ = SymbolicString.symbolic("negative_stop_slice_source")
+        out = s.slice_value(slice(None, -1))
+
+        assert isinstance(out, SymbolicString)
+
+        solver = z3.Solver()
+        solver.add(s.z3_len == 5)
+        solver.add(out.z3_str != z3.SubString(s.z3_str, z3.IntVal(0), z3.IntVal(4)))
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_rejects_unencodable_symbolic_step_slices(self) -> None:
+        s, _ = SymbolicString.symbolic("stepped_slice_source")
+
+        assert s.slice_value(slice(None, None, 2)) is None
+
+    def test_remove_prefix_preserves_exact_symbolic_content_when_prefix_matches(self) -> None:
+        source, source_type = SymbolicString.symbolic("remove_prefix_source")
+        prefix, prefix_type = SymbolicString.symbolic("remove_prefix_prefix")
+        removed = source.remove_prefix(prefix, "remove_prefix_result")
+
+        assert removed is not None
+        result, constraints = removed
+
+        solver = z3.Solver()
+        solver.add(source_type, prefix_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("abc"))
+        solver.add(prefix.z3_str == z3.StringVal("a"))
+        solver.add(result.z3_str != z3.StringVal("bc"))
+        assert solver.check() == z3.unsat
+
+    def test_remove_prefix_preserves_original_content_when_prefix_misses(self) -> None:
+        source, source_type = SymbolicString.symbolic("remove_prefix_miss_source")
+        prefix, prefix_type = SymbolicString.symbolic("remove_prefix_miss_prefix")
+        removed = source.remove_prefix(prefix, "remove_prefix_miss_result")
+
+        assert removed is not None
+        result, constraints = removed
+
+        solver = z3.Solver()
+        solver.add(source_type, prefix_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("abc"))
+        solver.add(prefix.z3_str == z3.StringVal("z"))
+        solver.add(result.z3_str != source.z3_str)
+        assert solver.check() == z3.unsat
+
+    def test_remove_suffix_preserves_exact_symbolic_content_when_suffix_matches(self) -> None:
+        source, source_type = SymbolicString.symbolic("remove_suffix_source")
+        suffix, suffix_type = SymbolicString.symbolic("remove_suffix_suffix")
+        removed = source.remove_suffix(suffix, "remove_suffix_result")
+
+        assert removed is not None
+        result, constraints = removed
+
+        solver = z3.Solver()
+        solver.add(source_type, suffix_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("abc"))
+        solver.add(suffix.z3_str == z3.StringVal("c"))
+        solver.add(result.z3_str != z3.StringVal("ab"))
+        assert solver.check() == z3.unsat
+
+    def test_remove_suffix_preserves_original_content_when_suffix_misses(self) -> None:
+        source, source_type = SymbolicString.symbolic("remove_suffix_miss_source")
+        suffix, suffix_type = SymbolicString.symbolic("remove_suffix_miss_suffix")
+        removed = source.remove_suffix(suffix, "remove_suffix_miss_result")
+
+        assert removed is not None
+        result, constraints = removed
+
+        solver = z3.Solver()
+        solver.add(source_type, suffix_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("abc"))
+        solver.add(suffix.z3_str == z3.StringVal("z"))
+        solver.add(result.z3_str != source.z3_str)
+        assert solver.check() == z3.unsat
+
+    def test_strip_value_preserves_exact_cpython_concrete_results(self) -> None:
+        source = SymbolicString.from_const("  abc  ")
+
+        stripped, stripped_constraints = source.strip_value(None, "strip_result", side="both")
+        left, left_constraints = source.strip_value(" ", "lstrip_result", side="left")
+        right, right_constraints = source.strip_value(" ", "rstrip_result", side="right")
+
+        assert stripped.concrete_value == "abc"
+        assert left.concrete_value == "abc  "
+        assert right.concrete_value == "  abc"
+        assert stripped_constraints == []
+        assert left_constraints == []
+        assert right_constraints == []
+
+    def test_lstrip_value_preserves_suffix_relationship_for_symbolic_results(self) -> None:
+        source, source_type = SymbolicString.symbolic("lstrip_source")
+        result, constraints = source.strip_value(None, "lstrip_result", side="left")
+
+        solver = z3.Solver()
+        solver.add(source_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("  abc"))
+        solver.add(z3.Not(z3.SuffixOf(result.z3_str, source.z3_str)))
+        assert solver.check() == z3.unsat
+
+    def test_rstrip_value_preserves_prefix_relationship_for_symbolic_results(self) -> None:
+        source, source_type = SymbolicString.symbolic("rstrip_source")
+        result, constraints = source.strip_value(None, "rstrip_result", side="right")
+
+        solver = z3.Solver()
+        solver.add(source_type, *constraints)
+        solver.add(source.z3_str == z3.StringVal("abc  "))
+        solver.add(z3.Not(z3.PrefixOf(result.z3_str, source.z3_str)))
+        assert solver.check() == z3.unsat
+
     def test_conditional_merge(self) -> None:
         s = SymbolicString.from_const("a")
         out = s.conditional_merge(SymbolicValue.from_const("b"), z3.Bool("c"))
         assert isinstance(out, SymbolicValue)
+
+    def test_radd(self) -> None:
+        s = SymbolicString.from_const("world")
+        res = "hello " + s
+        assert isinstance(res, SymbolicString)

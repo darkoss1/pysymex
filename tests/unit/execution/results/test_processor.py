@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import dis
 
-from pysymex.analysis.detectors import Issue, IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.results.processor import (
-    ResultProcessingContext,
-    process_execution_result,
-)
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.execution.strategies.manager.types import PathManager
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.results.context import ProcessingContext
+from pysymex._internal.execution.results.processor import process_execution_result
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.strategies.manager.types import PathManager
 
 
 class _FakeWorklist(PathManager[VMState]):
@@ -46,7 +45,7 @@ def test_process_execution_result_publishes_issue_and_queues_successor() -> None
     def record_issue(_owner: object, _state: VMState, published: Issue) -> None:
         seen_issues.append(published)
 
-    context = ResultProcessingContext(
+    context = ProcessingContext(
         session=session,
         hook_owner=object(),
         hooks={"on_issue": [record_issue]},
@@ -77,7 +76,7 @@ def test_process_execution_result_routes_terminal_result_once() -> None:
     session = ExecutionSession()
     completed: list[VMState] = []
     state = VMState(pc=3, stack=[1])
-    context = ResultProcessingContext(
+    context = ProcessingContext(
         session=session,
         hook_owner=object(),
         hooks={},

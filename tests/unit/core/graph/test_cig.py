@@ -1,14 +1,14 @@
-"""Tests for pysymex.core.graph.cig."""
+"""Tests for pysymex._internal.core.graph.cig."""
 
 import importlib
 from collections.abc import Hashable
 
-from pysymex.core.graph.cig import ConstraintInteractionGraph
+from pysymex._internal.core.graph.cig import ConstraintInteractionGraph
 
 
 class TestConstraintInteractionGraph:
     def test_graph_package_is_documentation_only(self) -> None:
-        graph_package = importlib.import_module("pysymex.core.graph")
+        graph_package = importlib.import_module("pysymex._internal.core.graph")
 
         assert "ConstraintInteractionGraph" not in vars(graph_package)
 

@@ -1,6 +1,6 @@
 import z3
 
-from pysymex.core.state.branches import BranchChain, BranchRecord
+from pysymex._internal.core.state.branches import BranchChain, BranchRecord
 
 
 class TestBranchRecord:

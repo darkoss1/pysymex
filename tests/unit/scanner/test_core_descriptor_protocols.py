@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_executes_safe_readonly_property_getter(tmp_path: Path) -> None:
@@ -279,6 +279,8 @@ def test_scan_file_reports_value_error_from_property_setter(tmp_path: Path) -> N
 
     assert "unsupported_descriptor_protocol" not in result.degraded_passes
     assert any(
-        issue.get("kind") == "UNHANDLED_EXCEPTION" and "ValueError" in str(issue.get("message", ""))
+        issue.get("function_name") == "target"
+        and issue.get("kind") == "VALUE_ERROR"
+        and "ValueError" in str(issue.get("message", ""))
         for issue in result.issues
     )

@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.scanner.file import scan_file
+import pytest
+
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_reports_explicit_assertion_error_diagnostics_without_impossible_path(
@@ -73,6 +75,7 @@ def test_scan_file_deduplicates_runtime_and_range_warning_for_same_site(
     assert not str(matching[0].get("message", "")).startswith("[Value Range]")
 
 
+@pytest.mark.slow
 def test_scan_file_preserves_trigger_backed_index_error_variant(tmp_path: Path) -> None:
     """Dedup should not replace a model-backed IndexError with a no-trigger variant."""
     target = tmp_path / "fanout_index.py"
@@ -184,6 +187,57 @@ def test_scan_file_reports_unbound_local_without_follow_on_type_error(tmp_path: 
     assert not any(issue.get("kind") == "TYPE_ERROR" for issue in line_four)
 
 
+def test_scan_file_unbound_callee_does_not_continue_into_caller_arithmetic(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "unbound_callee_caller_arithmetic.py"
+    target.write_text(
+        "class Scope:\n"
+        "    def __enter__(self) -> 'Scope':\n"
+        "        return self\n"
+        "    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:\n"
+        "        return False\n\n"
+        "def late(mode: int) -> int:\n"
+        "    if mode == 10:\n"
+        "        if mode > 100:\n"
+        "            hidden = mode\n"
+        "        return hidden\n"
+        "    return mode\n\n"
+        "def target(mode: int) -> int:\n"
+        "    acc = 1\n"
+        "    with Scope():\n"
+        "        match (mode % 2, True):\n"
+        "            case (_, True) if mode == 10:\n"
+        "                acc += late(mode)\n"
+        "            case _:\n"
+        "                acc += late(mode)\n"
+        "    return acc\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert any(
+        issue.get("kind") == "UNBOUND_VARIABLE"
+        and issue.get("function_name") == "late"
+        and issue.get("line") == 11
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "UNHANDLED_EXCEPTION"
+        and issue.get("function_name") == "target"
+        and "UnboundLocalError" in str(issue.get("message"))
+        and "hidden" in str(issue.get("message"))
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR"
+        and issue.get("line") == 19
+        and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+
+
 def test_scan_file_reports_missing_global_name_error(tmp_path: Path) -> None:
     """Undefined globals inside functions are feasible CPython NameError paths."""
     target = tmp_path / "missing_global.py"
@@ -201,6 +255,10 @@ def test_scan_file_reports_missing_global_name_error(tmp_path: Path) -> None:
         issue.get("kind") == "NAME_ERROR"
         and issue.get("function_name") == "target"
         and issue.get("line") == 3
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR" and issue.get("function_name") == "target"
         for issue in result.issues
     )
 
@@ -307,7 +365,7 @@ def test_scan_file_preserves_internal_execution_failure_as_scan_error(tmp_path: 
     target.write_text("def target(value: int) -> int:\n    return value + 1\n", encoding="utf-8")
 
     with patch(
-        "pysymex.scanner.execution.passes.SymbolicExecutor.execute_code",
+        "pysymex._internal.execution.executors.core.SymbolicExecutor.execute_code",
         side_effect=RuntimeError("engine stopped"),
     ):
         result = scan_file(target, use_sandbox=False)
@@ -331,6 +389,59 @@ def test_scan_file_reports_modulo_by_zero_kind(tmp_path: Path) -> None:
 
     assert any(
         issue.get("kind") == "MODULO_BY_ZERO"
+        and issue.get("function_name") == "target"
+        and issue.get("line") == 4
+        for issue in result.issues
+    )
+
+
+def test_scan_file_reports_modulo_by_zero_through_finally_without_division_duplicate(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "modulo_by_zero_finally.py"
+    target.write_text(
+        "def target(x: int, step: int) -> int:\n"
+        "    try:\n"
+        "        if x > 0 and step < 0:\n"
+        "            step = 0\n"
+        "        return x % step\n"
+        "    finally:\n"
+        "        x + 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    modulo_issues = [
+        issue
+        for issue in result.issues
+        if issue.get("kind") == "MODULO_BY_ZERO" and issue.get("function_name") == "target"
+    ]
+    assert len(modulo_issues) == 1
+    assert not any(
+        issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+
+
+def test_scan_file_reports_type_error_raised_before_finally_cleanup(tmp_path: Path) -> None:
+    """Modeled exceptions raised before finally cleanup must escape after RERAISE."""
+    target = tmp_path / "finally_unary_type_error.py"
+    target.write_text(
+        "def target(x: int) -> int:\n"
+        "    try:\n"
+        "        if x == 4:\n"
+        '            return +"text"\n'
+        "        return x\n"
+        "    finally:\n"
+        "        x + 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert any(
+        issue.get("kind") == "TYPE_ERROR"
         and issue.get("function_name") == "target"
         and issue.get("line") == 4
         for issue in result.issues
@@ -429,6 +540,83 @@ def test_scan_file_dict_get_symbolic_int_key_over_existing_keys_is_nonzero(
         and issue.get("function_name") == "target"
         for issue in result.issues
     )
+
+
+def test_scan_file_dict_get_symbolic_int_key_over_string_values_is_nonempty(
+    tmp_path: Path,
+) -> None:
+    """dict.get should preserve retained string lengths for finite symbolic keys."""
+    target = tmp_path / "dict_get_string_values_nonempty.py"
+    target.write_text(
+        "def target(y: int) -> int:\n"
+        "    mapping = {0: 'a', 1: 'bb'}\n"
+        "    item = mapping.get(y % 2, 'ccc')\n"
+        "    return 10 // len(item)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert not any(
+        issue.get("kind") in {"DIVISION_BY_ZERO", "TYPE_ERROR"}
+        and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert result.degraded_passes == []
+
+
+def test_scan_file_dict_get_symbolic_int_key_reports_string_equality_bug(
+    tmp_path: Path,
+) -> None:
+    """dict.get should keep equality against retained finite string values feasible."""
+    target = tmp_path / "dict_get_string_values_equality_bug.py"
+    target.write_text(
+        "def target(y: int) -> int:\n"
+        "    mapping = {0: 'a', 1: 'bb'}\n"
+        "    item = mapping.get(y % 2, 'ccc')\n"
+        "    if item == 'bb':\n"
+        "        return 10 // 0\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert any(
+        issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert result.degraded_passes == []
+
+
+def test_scan_file_dict_get_symbolic_int_key_preserves_empty_string_default_bug(
+    tmp_path: Path,
+) -> None:
+    """dict.get should keep string default branches when finite keys may miss."""
+    target = tmp_path / "dict_get_empty_string_default_bug.py"
+    target.write_text(
+        "def target(y: int) -> int:\n"
+        "    mapping = {0: 'a', 1: 'bb'}\n"
+        "    item = mapping.get(y % 3, '')\n"
+        "    return 10 // len(item)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert any(
+        issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert result.degraded_passes == []
 
 
 def test_scan_file_listcomp_guarded_divisor_has_no_range_zero_warning(

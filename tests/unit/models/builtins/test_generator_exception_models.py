@@ -6,15 +6,15 @@ from typing import cast
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.calls.payload import SymbolicFunctionPayload
-from pysymex.execution.opcodes.common.generators import ModeledGenerator
-from pysymex.models.builtins import AnyModel
-from pysymex.models.builtins.results import is_potential_exception_effect
-from pysymex.typing import StackValue
+from pysymex._internal.core.calls.payload import SymbolicFunctionPayload
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.generators import ModeledGenerator
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.iteration.truth import AnyModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _gate(value: int, flag: int) -> bool:
@@ -94,7 +94,7 @@ def test_any_modeled_generator_routes_builtin_exception_predicate() -> None:
     result = AnyModel().apply([cast(StackValue, generator)], {}, state)
 
     effect = result.side_effects.get("potential_exception")
-    assert is_potential_exception_effect(effect)
+    assert SideEffects.is_potential_exception(effect)
     assert effect["type"] == "LookupError"
     assert effect["message"] == "masked zero"
     _assert_lookup_error_condition(
@@ -117,7 +117,7 @@ def test_any_modeled_generator_routes_nested_predicate_exception() -> None:
     result = AnyModel().apply([cast(StackValue, generator)], {}, state)
 
     effect = result.side_effects.get("potential_exception")
-    assert is_potential_exception_effect(effect)
+    assert SideEffects.is_potential_exception(effect)
     assert effect["type"] == "LookupError"
     assert effect["message"] == "masked zero"
     _assert_lookup_error_condition(

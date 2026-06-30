@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.contracts.function import FunctionModel
 
 
 def _endswith_model() -> FunctionModel:
-    from pysymex.models.containers.strings.search.affixes import StrEndswithModel
+    from pysymex._internal.models.builtins.types.containers.strings.search.affixes import (
+        StrEndswithModel,
+    )
 
     return StrEndswithModel()
 
 
 def _rfind_model() -> FunctionModel:
-    from pysymex.models.containers.strings.search.indexing import StrRfindModel
+    from pysymex._internal.models.builtins.types.containers.strings.search.indexing import (
+        StrRfindModel,
+    )
 
     return StrRfindModel()
 

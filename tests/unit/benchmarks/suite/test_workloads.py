@@ -18,8 +18,8 @@
 
 from __future__ import annotations
 
-from pysymex.benchmarks.suite.workload.registry import create_builtin_benchmarks
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkMode
+from pysymex._internal.benchmarks.suite.types import BenchmarkCategory, BenchmarkMode
+from pysymex._internal.benchmarks.suite.workload.registry import create_builtin_benchmarks
 
 
 def test_create_builtin_benchmarks_is_valid() -> None:
@@ -30,6 +30,7 @@ def test_create_builtin_benchmarks_is_valid() -> None:
     assert any(b.name == "scanner_scan" for b in suite.benchmarks)
     assert any(b.name == "path_cap" for b in suite.benchmarks)
     assert any(b.name == "string_models" for b in suite.benchmarks)
+    assert any(b.name == "scalar_carriers" for b in suite.benchmarks)
     assert any(b.name == "formatters" for b in suite.benchmarks)
     assert any(b.name == "detector_scan" for b in suite.benchmarks)
     assert any(b.name == "except_cache" for b in suite.benchmarks)
@@ -68,6 +69,7 @@ def test_builtin_quick_mode_avoids_stress_only_cases() -> None:
     assert "scanner_scan" in quick_names
     assert "formatters" in quick_names
     assert "container_models" in quick_names
+    assert "scalar_carriers" in quick_names
     assert "except_cache" in quick_names
     assert "line_cache" in quick_names
     assert "literal_cache" in quick_names
@@ -111,7 +113,7 @@ def test_builtin_category_filter_includes_model_and_reporting_cases() -> None:
         bench.name for bench in suite.select(mode=None, category=BenchmarkCategory.REPORTING)
     }
 
-    assert {"string_models", "container_models"}.issubset(model_names)
+    assert {"scalar_carriers", "string_models", "container_models"}.issubset(model_names)
     assert reporting_names == {"formatters"}
 
 
@@ -153,11 +155,10 @@ def test_builtin_category_filter_includes_path_explosion_cases() -> None:
     assert "path_cap" in path_names
 
 
-def test_builtin_benchmarks_accept_legacy_case_aliases() -> None:
+def test_builtin_benchmarks_require_current_case_names() -> None:
     suite = create_builtin_benchmarks()
 
-    assert suite.select(mode=None, case_name="executor_core_function")[0].name == "exec_core"
-    assert (
-        suite.select(mode=None, case_name="frontier_runtime_cegis_core_reuse_pruning")[0].name
-        == "cegis_core"
-    )
+    assert suite.select(mode=None, case_name="executor_core_function") == []
+    assert suite.select(mode=None, case_name="frontier_runtime_cegis_core_reuse_pruning") == []
+    assert suite.select(mode=None, case_name="exec_core")[0].name == "exec_core"
+    assert suite.select(mode=None, case_name="cegis_core")[0].name == "cegis_core"

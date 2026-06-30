@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_reports_call_function_ex_unpack_type_errors(tmp_path: Path) -> None:
@@ -49,6 +49,36 @@ def test_scan_file_reports_call_function_ex_unpack_type_errors(tmp_path: Path) -
     )
 
 
+def test_scan_file_expands_modeled_tuple_star_args_without_symbolic_list_type_error(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "call_function_ex_modeled_tuple_args.py"
+    target.write_text(
+        "def divide(a: int, b: int, *, scale: int = 1) -> int:\n"
+        "    if a == b and scale == 0:\n"
+        "        return 10 // scale\n"
+        "    return a + b + scale\n\n"
+        "def target(x: int) -> int:\n"
+        "    args_table = {'safe': (x,)}\n"
+        "    kwargs_table = {'safe': {'b': x, 'scale': 0}}\n"
+        "    return divide(*args_table['safe'], **kwargs_table['safe'])\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert any(
+        issue.get("kind") == "DIVISION_BY_ZERO" and issue.get("function_name") == "target"
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR"
+        and issue.get("function_name") == "target"
+        and "SymbolicList" in str(issue.get("message"))
+        for issue in result.issues
+    )
+
+
 def test_scan_file_preserves_dict_unpack_non_string_keys(tmp_path: Path) -> None:
     target = tmp_path / "dict_unpack_non_string_keys.py"
     target.write_text(
@@ -70,6 +100,36 @@ def test_scan_file_preserves_dict_unpack_non_string_keys(tmp_path: Path) -> None
     assert not any(
         issue.get("kind") == "DIVISION_BY_ZERO"
         and issue.get("function_name") == "string_lookup_is_not_int_key"
+        for issue in result.issues
+    )
+
+
+def test_scan_file_reports_tuple_symbolic_key_kwargs_as_non_string_keyword(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "call_function_ex_tuple_symbolic_key.py"
+    target.write_text(
+        "def consume(**kwargs):\n"
+        "    return kwargs\n\n"
+        "def target(mode: int) -> dict:\n"
+        "    kwargs = {('nested', mode): 1}\n"
+        "    return consume(**kwargs)\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False, no_cache=True)
+
+    assert result.error is None
+    assert any(
+        issue.get("kind") == "TYPE_ERROR"
+        and issue.get("function_name") == "target"
+        and "keywords must be strings" in str(issue.get("message"))
+        for issue in result.issues
+    )
+    assert not any(
+        issue.get("kind") == "TYPE_ERROR"
+        and issue.get("function_name") == "target"
+        and "unhashable type: 'list'" in str(issue.get("message"))
         for issue in result.issues
     )
 

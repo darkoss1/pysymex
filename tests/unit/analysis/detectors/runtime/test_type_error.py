@@ -1,16 +1,16 @@
-"""Tests for pysymex/analysis/detectors/runtime/type_error.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/type_error.py."""
 
 from __future__ import annotations
 
 import dis
 import time
 
-from pysymex.analysis.detectors.runtime.errors.type import TypeErrorDetector
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.scalars.strings import SymbolicString
+from pysymex._internal.analysis.detectors.runtime.errors.type import TypeErrorDetector
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -31,7 +31,7 @@ def _make_instruction(
 
 
 class TestTypeErrorDetector:
-    """Test suite for pysymex.analysis.detectors.detector.TypeErrorDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.TypeErrorDetector."""
 
     def test_check_reports_plus_mismatch_with_symbolic_string(self) -> None:
         """Report TYPE_ERROR for `str + non-str` concatenation mismatch."""
@@ -112,10 +112,10 @@ class TestTypeErrorDetector:
         )
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(state, instruction, lambda _constraints: True)
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None

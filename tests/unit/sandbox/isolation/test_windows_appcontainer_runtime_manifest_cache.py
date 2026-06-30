@@ -7,12 +7,15 @@ from unittest.mock import patch
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.windows.appcontainer import runtime as runtime_module
-from pysymex.sandbox.isolation.windows.appcontainer.runtime.cache import (
+import pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.runtime_cache as runtime_module
+from pysymex._internal.config.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.cache import (
     RuntimeManifestEntry as _RuntimeManifestEntry,
 )
-from pysymex.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.cache import (
+    build_runtime_manifest_entries,
+)
 from tests.unit.sandbox.isolation.windows_appcontainer_helpers import (
     InspectableWindowsAppContainerBackend,
 )
@@ -87,7 +90,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
         with patch.object(
             runtime_module,
             "build_runtime_manifest_entries",
-            wraps=runtime_module.build_runtime_manifest_entries,
+            wraps=build_runtime_manifest_entries,
         ) as build_manifest:
             first_entries = backend.runtime_source_manifest_for_test(source_root)
             second_entries = backend.runtime_source_manifest_for_test(source_root)
@@ -192,7 +195,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
             changed_file.write_text("x = 999999", encoding="utf-8")
 
             called = False
-            real_build = runtime_module.build_runtime_manifest_entries
+            real_build = build_runtime_manifest_entries
 
             def wrapped_build(files: list[tuple[str, Path]]) -> list[_RuntimeManifestEntry]:
                 nonlocal called
@@ -228,7 +231,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
             cache_file.write_text("{ invalid json", encoding="utf-8")
 
             called = False
-            real_build = runtime_module.build_runtime_manifest_entries
+            real_build = build_runtime_manifest_entries
 
             def wrapped_build(files: list[tuple[str, Path]]) -> list[_RuntimeManifestEntry]:
                 nonlocal called
@@ -266,7 +269,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
             cache_file.write_text(json.dumps(data), encoding="utf-8")
 
             called = False
-            real_build = runtime_module.build_runtime_manifest_entries
+            real_build = build_runtime_manifest_entries
 
             def wrapped_build(files: list[tuple[str, Path]]) -> list[_RuntimeManifestEntry]:
                 nonlocal called
@@ -303,7 +306,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
             cache_file.write_text(json.dumps(data), encoding="utf-8")
 
             called = False
-            real_build = runtime_module.build_runtime_manifest_entries
+            real_build = build_runtime_manifest_entries
 
             def wrapped_build(files: list[tuple[str, Path]]) -> list[_RuntimeManifestEntry]:
                 nonlocal called
@@ -340,7 +343,7 @@ class TestWindowsAppContainerRuntimeManifestCache:
             cache_file.write_text(json.dumps(data), encoding="utf-8")
 
             called = False
-            real_build = runtime_module.build_runtime_manifest_entries
+            real_build = build_runtime_manifest_entries
 
             def wrapped_build(files: list[tuple[str, Path]]) -> list[_RuntimeManifestEntry]:
                 nonlocal called

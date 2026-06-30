@@ -2,40 +2,41 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
-from pysymex.models.containers.sets.constructor import SetModel
-from pysymex.models.containers.sets.mutations.membership import (
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.types.containers.sets.constructor import SetConstructorModel
+from pysymex._internal.models.builtins.types.containers.sets.mutations.membership import (
     SetAddModel,
     SetDiscardModel,
     SetRemoveModel,
 )
-from pysymex.models.containers.sets.mutations.pop_clear import (
+from pysymex._internal.models.builtins.types.containers.sets.mutations.pop_clear import (
     SetClearModel,
     SetPopModel,
 )
-from pysymex.models.containers.sets.queries import SetContainsModel
-from pysymex.models.containers.sets.operations import (
+from pysymex._internal.models.builtins.types.containers.sets.operations import (
     SetCopyModel,
     SetDifferenceModel,
     SetIntersectionModel,
-    SetSymmetricDifferenceModel,
+    SetSymDiffModel,
     SetUnionModel,
 )
-from pysymex.models.containers.sets.queries import (
+from pysymex._internal.models.builtins.types.containers.sets.queries import (
+    SetContainsModel,
     SetIsdisjointModel,
     SetIssubsetModel,
     SetIssupersetModel,
 )
-from pysymex.models.containers.sets.updates import (
-    SetDifferenceUpdateModel,
-    SetIntersectionUpdateModel,
-    SetSymmetricDifferenceUpdateModel,
+from pysymex._internal.models.builtins.types.containers.sets.updates import (
+    SetDiffUpdateModel,
+    SetIntersectUpdateModel,
+    SetSymDiffUpdateModel,
     SetUpdateModel,
 )
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -76,14 +77,14 @@ def test_set_symbolic_and_error_paths() -> None:
 
 def test_set_edge_case_empty_input() -> None:
     """Edge case: empty set constructor args path."""
-    SetModel().apply([], {}, _state())
+    SetConstructorModel().apply([], {}, _state())
 
 
 def test_set_constructor_rejects_definite_non_iterable() -> None:
-    result = SetModel().apply([1], {}, _state())
+    result = SetConstructorModel().apply([1], {}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -97,12 +98,12 @@ INVALID_POSITIONAL_CASES: list[tuple[FunctionModel, list[StackValue]]] = [
     (SetPopModel(), [1]),
     (SetClearModel(), [1]),
     (SetCopyModel(), [1]),
-    (SetSymmetricDifferenceModel(), []),
-    (SetSymmetricDifferenceModel(), [SymbolicValue.from_const(1), SymbolicValue.from_const(2)]),
+    (SetSymDiffModel(), []),
+    (SetSymDiffModel(), [SymbolicValue.from_const(1), SymbolicValue.from_const(2)]),
     (SetIssubsetModel(), []),
     (SetIssupersetModel(), []),
     (SetIsdisjointModel(), []),
-    (SetSymmetricDifferenceUpdateModel(), []),
+    (SetSymDiffUpdateModel(), []),
 ]
 
 
@@ -114,7 +115,7 @@ def test_set_public_methods_reject_invalid_positional_arity(
     result = model.apply([SymbolicValue.from_const(1), *method_args], {}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -128,14 +129,14 @@ PUBLIC_SET_METHODS: list[tuple[FunctionModel, list[StackValue]]] = [
     (SetUnionModel(), []),
     (SetIntersectionModel(), []),
     (SetDifferenceModel(), []),
-    (SetSymmetricDifferenceModel(), [SymbolicValue.from_const(1)]),
+    (SetSymDiffModel(), [SymbolicValue.from_const(1)]),
     (SetIssubsetModel(), [SymbolicValue.from_const(1)]),
     (SetIssupersetModel(), [SymbolicValue.from_const(1)]),
     (SetIsdisjointModel(), [SymbolicValue.from_const(1)]),
     (SetUpdateModel(), []),
-    (SetIntersectionUpdateModel(), []),
-    (SetDifferenceUpdateModel(), []),
-    (SetSymmetricDifferenceUpdateModel(), [SymbolicValue.from_const(1)]),
+    (SetIntersectUpdateModel(), []),
+    (SetDiffUpdateModel(), []),
+    (SetSymDiffUpdateModel(), [SymbolicValue.from_const(1)]),
 ]
 
 
@@ -147,7 +148,7 @@ def test_set_public_methods_reject_keywords(
     result = model.apply([SymbolicValue.from_const(1), *method_args], {"unexpected": 1}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -158,8 +159,8 @@ def test_set_public_methods_reject_keywords(
         SetIntersectionModel(),
         SetDifferenceModel(),
         SetUpdateModel(),
-        SetIntersectionUpdateModel(),
-        SetDifferenceUpdateModel(),
+        SetIntersectUpdateModel(),
+        SetDiffUpdateModel(),
     ],
 )
 def test_variadic_set_methods_accept_no_additional_iterables(model: FunctionModel) -> None:

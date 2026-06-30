@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
@@ -61,7 +61,6 @@ def test_scan_file_alias_dict_popitem_after_drain_reports_key_error_and_division
         use_sandbox=False,
         max_paths=400,
         timeout=20,
-        deterministic_mode=True,
     )
 
     assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")

@@ -5,11 +5,14 @@ from collections.abc import Callable
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py311 import control
-from pysymex.models.objects import SymbolicClass, class_registry
+import pysymex._internal.execution.opcodes.py311.control as control
+from pysymex._internal.core.classes.classes import SymbolicClass
+from pysymex._internal.core.classes.registry import class_registry
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.types.truthiness import get_truthy_expr
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
@@ -42,8 +45,8 @@ def test_handle_no_op() -> None:
 
 def test_get_truthy_expr() -> None:
     """Test get_truthy_expr behavior."""
-    assert z3.is_true(z3.simplify(control.get_truthy_expr(1)))
-    assert z3.is_true(z3.simplify(z3.Not(control.get_truthy_expr(0))))
+    assert z3.is_true(simplify_expr(get_truthy_expr(1)))
+    assert z3.is_true(simplify_expr(z3.Not(get_truthy_expr(0))))
 
 
 def test_handle_return_value() -> None:
@@ -99,7 +102,7 @@ def test_handle_for_iter() -> None:
     """Test handle_for_iter behavior."""
     dispatcher = OpcodeDispatcher()
     dispatcher.set_instructions([_instr("NOP", offset=0), _instr("NOP", offset=4)])
-    state = VMState(stack=[], pc=0)
+    state = VMState(stack=[()], pc=0)
     result = control.handle_for_iter(_instr("FOR_ITER", 4), state, dispatcher)
     assert len(result.new_states) == 1
 

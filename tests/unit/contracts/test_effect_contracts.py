@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pysymex.contracts import assigns, pure
-from pysymex.contracts.types import ContractKind, VerificationResult
+from pysymex._internal.contracts.enums import VerificationResult
+from pysymex.contracts import ContractKind, assigns, pure
 
 contract_effect_global = 0
 
 
 def test_pure_decorator() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     def pure_func(x: int) -> int:
         return x * 2
@@ -22,7 +22,7 @@ def test_pure_decorator() -> None:
 
 
 def test_pure_decorator_catches_modeled_global_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @pure
     def writes_global(x: int) -> int:
@@ -38,7 +38,7 @@ def test_pure_decorator_catches_modeled_global_write() -> None:
 
 
 def test_empty_assigns_catches_modeled_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @assigns()
     def writes_global(x: int) -> int:
@@ -53,7 +53,7 @@ def test_empty_assigns_catches_modeled_write() -> None:
 
 
 def test_pure_catches_modeled_list_append_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @pure
     def appends_to_argument(xs: list[int], x: int) -> int:
@@ -69,7 +69,7 @@ def test_pure_catches_modeled_list_append_write() -> None:
 
 
 def test_empty_assigns_catches_modeled_list_append_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @assigns()
     def appends_to_argument(xs: list[int], x: int) -> int:
@@ -83,8 +83,42 @@ def test_empty_assigns_catches_modeled_list_append_write() -> None:
     assert "xs[*]" in assigns_issues[0].message
 
 
+def test_effect_obligations_track_modeled_bytearray_argument_writes() -> None:
+    from pysymex._internal.execution.executors.verified.api import verify
+
+    @pure
+    def pure_appends_to_bytearray(data: bytearray) -> int:
+        data.append(1)
+        return len(data)
+
+    pure_result = verify(pure_appends_to_bytearray, {"data": "bytearray"})
+    pure_issues = [
+        issue for issue in pure_result.contract_issues if issue.kind is ContractKind.PURE
+    ]
+
+    assert len(pure_issues) == 1
+    assert pure_issues[0].result is VerificationResult.VIOLATED
+    assert "data[*]" in pure_issues[0].message
+    assert "model.append" in pure_issues[0].message
+
+    @assigns()
+    def assigns_appends_to_bytearray(data: bytearray) -> int:
+        data.append(1)
+        return len(data)
+
+    assigns_result = verify(assigns_appends_to_bytearray, {"data": "bytearray"})
+    assigns_issues = [
+        issue for issue in assigns_result.contract_issues if issue.kind is ContractKind.ASSIGNS
+    ]
+
+    assert len(assigns_issues) == 1
+    assert assigns_issues[0].result is VerificationResult.VIOLATED
+    assert "data[*]" in assigns_issues[0].message
+    assert "model.append" in assigns_issues[0].message
+
+
 def test_assigns_allows_declared_modeled_list_append_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @assigns("xs[*]")
     def appends_to_argument(xs: list[int], x: int) -> int:
@@ -99,7 +133,7 @@ def test_assigns_allows_declared_modeled_list_append_write() -> None:
 
 
 def test_assigns_allows_tracked_shallow_attribute_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @assigns("self.balance")
     def deposit(self: object, amount: int) -> int:
@@ -113,8 +147,42 @@ def test_assigns_allows_tracked_shallow_attribute_write() -> None:
     assert res.contracts_verified == 1
 
 
+def test_effect_obligations_track_builtin_setattr_argument_writes() -> None:
+    from pysymex._internal.execution.executors.verified.api import verify
+
+    @pure
+    def pure_setattr(obj: object, amount: int) -> int:
+        setattr(obj, "balance", amount)
+        return amount
+
+    pure_result = verify(pure_setattr, {"obj": "object", "amount": "int"})
+    pure_issues = [
+        issue for issue in pure_result.contract_issues if issue.kind is ContractKind.PURE
+    ]
+
+    assert len(pure_issues) == 1
+    assert pure_issues[0].result is VerificationResult.VIOLATED
+    assert "obj.balance" in pure_issues[0].message
+    assert "builtins.setattr" in pure_issues[0].message
+
+    @assigns()
+    def assigns_empty_setattr(obj: object, amount: int) -> int:
+        setattr(obj, "balance", amount)
+        return amount
+
+    assigns_result = verify(assigns_empty_setattr, {"obj": "object", "amount": "int"})
+    assigns_issues = [
+        issue for issue in assigns_result.contract_issues if issue.kind is ContractKind.ASSIGNS
+    ]
+
+    assert len(assigns_issues) == 1
+    assert assigns_issues[0].result is VerificationResult.VIOLATED
+    assert "obj.balance" in assigns_issues[0].message
+    assert "builtins.setattr" in assigns_issues[0].message
+
+
 def test_assigns_rejects_other_tracked_shallow_attribute_write() -> None:
-    from pysymex.execution.executors.verified.api import verify
+    from pysymex._internal.execution.executors.verified.api import verify
 
     @assigns("self.balance")
     def deposit(self: object, amount: int) -> int:

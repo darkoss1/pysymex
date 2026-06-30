@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from pytest import MonkeyPatch
 
-from pysymex.core.cache import get_exception_entries, get_instructions
-import pysymex.core.cache.control as cache_control_mod
-from pysymex.core.cache.control import clear_process_caches, process_caches_disabled
-from pysymex.execution.engine import line_mapping_cache_stats
+import pysymex._internal.core.cache.control as cache_control_mod
+from pysymex._internal.core.cache.code.exceptions import get_exception_entries
+from pysymex._internal.core.cache.code.instructions import get_instructions
+from pysymex._internal.core.cache.control import clear_process_caches, process_caches_disabled
+from pysymex._internal.execution.engine.bytecode.metadata.lines import line_mapping_cache_stats
+from pysymex._internal.sandbox.bridge.blobs import ModuleBlob
+from pysymex._internal.sandbox.bridge.cache import MODULE_CACHE
 
 
 def _sample() -> int:
@@ -48,3 +51,11 @@ def test_clear_process_caches_removes_existing_instruction_lru_entries() -> None
 
     assert get_instructions.cache_info().currsize == 0
     assert get_exception_entries.cache_info().currsize == 0
+
+
+def test_clear_process_caches_removes_sandbox_module_cache_entries() -> None:
+    MODULE_CACHE[("source", "filename", "sandbox")] = ModuleBlob(b"{}", "<test>")
+
+    clear_process_caches()
+
+    assert not MODULE_CACHE

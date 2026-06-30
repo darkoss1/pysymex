@@ -1,17 +1,14 @@
 import logging
 from io import StringIO
 
-from pysymex.logger import (
-    LogCategory,
-    PythonLoggingBridge,
-    PysymexLogger,
-    reset_logging,
-    setup_python_logging,
-)
+from pysymex._internal.logging.bridge import PythonLoggingBridge, setup_python_logging
+from pysymex._internal.logging.categories import LogCategory
+from pysymex._internal.logging.logger import PysymexLogger
+from pysymex._internal.logging.root import reset_logging
 
 
 class TestPythonLoggingBridge:
-    """Test suite for pysymex.logger.PythonLoggingBridge."""
+    """Test suite for pysymex._internal.logging.PythonLoggingBridge."""
 
     def test_emit_error(self) -> None:
         """Test emit behavior for errors."""
@@ -46,7 +43,7 @@ class TestPythonLoggingBridge:
         target = PysymexLogger(stream=stream, color=False)
         bridge = PythonLoggingBridge(target)
         record = logging.LogRecord(
-            "pysymex.execution",
+            "pysymex._internal.execution",
             logging.INFO,
             "",
             0,
@@ -55,7 +52,7 @@ class TestPythonLoggingBridge:
             None,
         )
         bridge.emit(record)
-        assert "[pysymex.execution] msg" in stream.getvalue()
+        assert "[pysymex._internal.execution] msg" in stream.getvalue()
 
     def test_bridge_warning_bypasses_category_filter(self) -> None:
         """Bridged warnings should remain visible even with focused categories."""
@@ -68,11 +65,11 @@ class TestPythonLoggingBridge:
         )
         bridge = PythonLoggingBridge(target)
         record = logging.LogRecord(
-            "pysymex.analysis.other", logging.WARNING, "", 0, "warn", (), None
+            "pysymex._internal.analysis.other", logging.WARNING, "", 0, "warn", (), None
         )
         bridge.emit(record)
 
-        assert "[WARN] [pysymex.analysis.other] warn" in stream.getvalue()
+        assert "[WARN] [pysymex._internal.analysis.other] warn" in stream.getvalue()
         assert [entry.message for entry in target.get_entries()] == ["warn"]
 
     def test_emit_preserves_exception_info(self) -> None:

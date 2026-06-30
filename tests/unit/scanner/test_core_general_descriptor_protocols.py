@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-import pysymex
-from pysymex.execution.opcodes.common.functions.attribute.fallbacks import (
+from pysymex._internal.execution.opcodes.common.functions.attribute.fallbacks import (
     UNSUPPORTED_DESCRIPTOR_PROTOCOL,
 )
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _assert_no_issue_kinds(result: object, forbidden: set[str]) -> None:
@@ -44,8 +42,10 @@ def test_scan_file_data_descriptor_getter_precedes_instance_storage(tmp_path: Pa
 
     result = scan_file(target, use_sandbox=False)
 
+    assert "unsupported_vm_state" not in result.degraded_passes
     assert "unsupported_descriptor_protocol" not in result.degraded_passes
     assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNKNOWN" for issue in result.issues)
 
 
 def test_scan_file_data_descriptor_precedes_instance_dict_shadowing(tmp_path: Path) -> None:
@@ -69,29 +69,6 @@ def test_scan_file_data_descriptor_precedes_instance_dict_shadowing(tmp_path: Pa
 
     assert "unsupported_descriptor_protocol" not in result.degraded_passes
     _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR"})
-
-
-def test_analyze_code_data_descriptor_precedes_instance_dict_shadowing() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Descriptor:\n"
-            "    def __get__(self, instance, owner):\n"
-            "        return 3\n"
-            "    def __set__(self, instance, value):\n"
-            "        instance.stored = value\n"
-            "class Owner:\n"
-            "    value = Descriptor()\n\n"
-            "item = Owner()\n"
-            "item.__dict__['value'] = 5\n"
-            "result = item.value\n",
-            max_paths=35,
-            max_depth=100,
-            max_iterations=2200,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NAME_ERROR"})
 
 
 def test_scan_file_non_data_descriptor_yields_to_instance_storage(tmp_path: Path) -> None:
@@ -132,8 +109,10 @@ def test_scan_file_executes_data_descriptor_setter(tmp_path: Path) -> None:
 
     result = scan_file(target, use_sandbox=False)
 
+    assert "unsupported_vm_state" not in result.degraded_passes
     assert "unsupported_descriptor_protocol" not in result.degraded_passes
     assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNKNOWN" for issue in result.issues)
 
 
 def test_scan_file_executes_data_descriptor_deleter(tmp_path: Path) -> None:
@@ -259,25 +238,6 @@ def test_scan_file_executes_nested_descriptor_setter_without_attribute_error(
 
     assert "unsupported_descriptor_protocol" not in result.degraded_passes
     _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR"})
-
-
-def test_analyze_code_executes_descriptor_getter_without_static_prebinding() -> None:
-    result = asyncio.run(
-        pysymex.analyze_code(
-            "class Descriptor:\n"
-            "    def __get__(self, instance: object, owner: object) -> int:\n"
-            "        return 3\n"
-            "class Owner:\n"
-            "    value = Descriptor()\n\n"
-            "result = Owner().value + 1\n",
-            max_paths=30,
-            max_depth=80,
-            max_iterations=1500,
-            timeout=2.0,
-        )
-    )
-
-    _assert_no_issue_kinds(result, {"ATTRIBUTE_ERROR", "TYPE_ERROR", "NAME_ERROR"})
 
 
 def test_scan_file_getattr_builtin_data_descriptor_precedes_instance_storage(

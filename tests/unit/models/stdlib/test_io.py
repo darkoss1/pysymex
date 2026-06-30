@@ -4,13 +4,14 @@ from typing import cast
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.results import is_potential_exception_effect
-from pysymex.models.stdlib.models.bisect import (
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.models.stdlib.bisect.models import (
     BisectLeftModel,
     BisectModel,
     BisectRightModel,
@@ -18,8 +19,8 @@ from pysymex.models.stdlib.models.bisect import (
     InsortModel,
     InsortRightModel,
 )
-from pysymex.models.stdlib.models.copy import CopyModel, DeepcopyModel
-from pysymex.models.stdlib.models.heapq import (
+from pysymex._internal.models.stdlib.copy.models import CopyModel, DeepcopyModel
+from pysymex._internal.models.stdlib.heapq.models import (
     HeapifyModel,
     HeappopModel,
     HeappushModel,
@@ -28,13 +29,14 @@ from pysymex.models.stdlib.models.heapq import (
     NlargestModel,
     NsmallestModel,
 )
-from pysymex.models.stdlib.models.io_stream import (
+from pysymex._internal.models.stdlib.io.models import (
     BytesIOModel,
     IOGetvalueModel,
     IOReadModel,
     IOWriteModel,
     StringIOModel,
 )
+from pysymex._internal.models.stdlib.registry import get_stdlib_model
 
 
 def _state() -> VMState:
@@ -42,7 +44,7 @@ def _state() -> VMState:
 
 
 class TestCopyModel:
-    """Test suite for pysymex.models.stdlib.models.CopyModel."""
+    """Test suite for pysymex._internal.models.stdlib.CopyModel."""
 
     def test_faithfulness(self) -> None:
         result = CopyModel().apply([7], {}, _state())
@@ -53,7 +55,7 @@ class TestCopyModel:
 
 
 class TestDeepcopyModel:
-    """Test suite for pysymex.models.stdlib.models.DeepcopyModel."""
+    """Test suite for pysymex._internal.models.stdlib.DeepcopyModel."""
 
     def test_faithfulness(self) -> None:
         DeepcopyModel().apply([1], {}, _state())
@@ -63,7 +65,7 @@ class TestDeepcopyModel:
 
 
 class TestStringIOModel:
-    """Test suite for pysymex.models.stdlib.models.StringIOModel."""
+    """Test suite for pysymex._internal.models.stdlib.StringIOModel."""
 
     def test_faithfulness(self) -> None:
         StringIOModel().apply([], {}, _state())
@@ -73,7 +75,7 @@ class TestStringIOModel:
 
 
 class TestBytesIOModel:
-    """Test suite for pysymex.models.stdlib.models.BytesIOModel."""
+    """Test suite for pysymex._internal.models.stdlib.BytesIOModel."""
 
     def test_faithfulness(self) -> None:
         BytesIOModel().apply([], {}, _state())
@@ -83,7 +85,7 @@ class TestBytesIOModel:
 
 
 class TestIOReadModel:
-    """Test suite for pysymex.models.stdlib.models.IOReadModel."""
+    """Test suite for pysymex._internal.models.stdlib.IOReadModel."""
 
     def test_faithfulness(self) -> None:
         IOReadModel().apply([], {}, _state())
@@ -91,9 +93,12 @@ class TestIOReadModel:
     def test_error_path(self) -> None:
         IOReadModel().apply([1], {}, _state())
 
+    def test_file_read_alias_resolves_to_io_read_model(self) -> None:
+        assert isinstance(get_stdlib_model("file.read"), IOReadModel)
+
 
 class TestIOWriteModel:
-    """Test suite for pysymex.models.stdlib.models.IOWriteModel."""
+    """Test suite for pysymex._internal.models.stdlib.IOWriteModel."""
 
     def test_faithfulness(self) -> None:
         sym = SymbolicString.from_const("abc")
@@ -103,9 +108,12 @@ class TestIOWriteModel:
     def test_error_path(self) -> None:
         IOWriteModel().apply([], {}, _state())
 
+    def test_file_write_alias_resolves_to_io_write_model(self) -> None:
+        assert isinstance(get_stdlib_model("file.write"), IOWriteModel)
+
 
 class TestIOGetvalueModel:
-    """Test suite for pysymex.models.stdlib.models.IOGetvalueModel."""
+    """Test suite for pysymex._internal.models.stdlib.IOGetvalueModel."""
 
     def test_faithfulness(self) -> None:
         IOGetvalueModel().apply([], {}, _state())
@@ -115,7 +123,7 @@ class TestIOGetvalueModel:
 
 
 class TestHeappushModel:
-    """Test suite for pysymex.models.stdlib.models.HeappushModel."""
+    """Test suite for pysymex._internal.models.stdlib.HeappushModel."""
 
     def test_faithfulness(self) -> None:
         result = HeappushModel().apply([[], 1], {}, _state())
@@ -130,11 +138,11 @@ class TestHeappushModel:
         result = HeappushModel().apply([heap, SymbolicValue.from_const(7)], {}, _state())
         mutation = cast("dict[str, object]", result.side_effects["list_mutation"])
         updated = cast("SymbolicList", mutation["updated_list"])
-        assert z3.simplify(updated.z3_len).as_long() == 1
+        assert simplify_expr(updated.z3_len).as_long() == 1
 
 
 class TestHeappopModel:
-    """Test suite for pysymex.models.stdlib.models.HeappopModel."""
+    """Test suite for pysymex._internal.models.stdlib.HeappopModel."""
 
     def test_faithfulness(self) -> None:
         HeappopModel().apply([[]], {}, _state())
@@ -146,16 +154,16 @@ class TestHeappopModel:
         heap = SymbolicList.from_const([7])
         result = HeappopModel().apply([heap], {}, _state())
         effect = result.side_effects.get("potential_exception")
-        assert is_potential_exception_effect(effect)
+        assert SideEffects.is_potential_exception(effect)
         assert effect["type"] == "IndexError"
         assert effect["message"] == "index out of range"
         mutation = cast("dict[str, object]", result.side_effects["list_mutation"])
         updated = cast("SymbolicList", mutation["updated_list"])
-        assert z3.simplify(updated.z3_len).as_long() == 0
+        assert simplify_expr(updated.z3_len).as_long() == 0
 
 
 class TestHeapifyModel:
-    """Test suite for pysymex.models.stdlib.models.HeapifyModel."""
+    """Test suite for pysymex._internal.models.stdlib.HeapifyModel."""
 
     def test_faithfulness(self) -> None:
         result = HeapifyModel().apply([[]], {}, _state())
@@ -167,7 +175,7 @@ class TestHeapifyModel:
 
 
 class TestHeapreplaceModel:
-    """Test suite for pysymex.models.stdlib.models.HeapreplaceModel."""
+    """Test suite for pysymex._internal.models.stdlib.HeapreplaceModel."""
 
     def test_faithfulness(self) -> None:
         HeapreplaceModel().apply([[1], 2], {}, _state())
@@ -177,7 +185,7 @@ class TestHeapreplaceModel:
 
 
 class TestHeappushpopModel:
-    """Test suite for pysymex.models.stdlib.models.HeappushpopModel."""
+    """Test suite for pysymex._internal.models.stdlib.HeappushpopModel."""
 
     def test_faithfulness(self) -> None:
         HeappushpopModel().apply([[1], 2], {}, _state())
@@ -187,7 +195,7 @@ class TestHeappushpopModel:
 
 
 class TestNlargestModel:
-    """Test suite for pysymex.models.stdlib.models.NlargestModel."""
+    """Test suite for pysymex._internal.models.stdlib.NlargestModel."""
 
     def test_faithfulness(self) -> None:
         result = NlargestModel().apply([2, [1, 2, 3]], {}, _state())
@@ -199,7 +207,7 @@ class TestNlargestModel:
 
 
 class TestNsmallestModel:
-    """Test suite for pysymex.models.stdlib.models.NsmallestModel."""
+    """Test suite for pysymex._internal.models.stdlib.NsmallestModel."""
 
     def test_faithfulness(self) -> None:
         result = NsmallestModel().apply([2, [1, 2, 3]], {}, _state())
@@ -211,7 +219,7 @@ class TestNsmallestModel:
 
 
 class TestBisectLeftModel:
-    """Test suite for pysymex.models.stdlib.models.BisectLeftModel."""
+    """Test suite for pysymex._internal.models.stdlib.BisectLeftModel."""
 
     def test_faithfulness(self) -> None:
         BisectLeftModel().apply([[1, 2, 3], 2], {}, _state())
@@ -231,7 +239,7 @@ class TestBisectLeftModel:
 
 
 class TestBisectRightModel:
-    """Test suite for pysymex.models.stdlib.models.BisectRightModel."""
+    """Test suite for pysymex._internal.models.stdlib.BisectRightModel."""
 
     def test_faithfulness(self) -> None:
         BisectRightModel().apply([[1, 2, 3], 2], {}, _state())
@@ -251,7 +259,7 @@ class TestBisectRightModel:
 
 
 class TestBisectModel:
-    """Test suite for pysymex.models.stdlib.models.BisectModel."""
+    """Test suite for pysymex._internal.models.stdlib.BisectModel."""
 
     def test_faithfulness(self) -> None:
         BisectModel().apply([[1, 2, 3], 2], {}, _state())
@@ -261,7 +269,7 @@ class TestBisectModel:
 
 
 class TestInsortLeftModel:
-    """Test suite for pysymex.models.stdlib.models.InsortLeftModel."""
+    """Test suite for pysymex._internal.models.stdlib.InsortLeftModel."""
 
     def test_faithfulness(self) -> None:
         result = InsortLeftModel().apply([[1, 2], 3], {}, _state())
@@ -273,7 +281,7 @@ class TestInsortLeftModel:
 
 
 class TestInsortRightModel:
-    """Test suite for pysymex.models.stdlib.models.InsortRightModel."""
+    """Test suite for pysymex._internal.models.stdlib.InsortRightModel."""
 
     def test_faithfulness(self) -> None:
         result = InsortRightModel().apply([[1, 2], 3], {}, _state())
@@ -285,7 +293,7 @@ class TestInsortRightModel:
 
 
 class TestInsortModel:
-    """Test suite for pysymex.models.stdlib.models.InsortModel."""
+    """Test suite for pysymex._internal.models.stdlib.InsortModel."""
 
     def test_faithfulness(self) -> None:
         result = InsortModel().apply([[1, 2], 3], {}, _state())

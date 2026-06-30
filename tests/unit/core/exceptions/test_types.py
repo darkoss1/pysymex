@@ -1,29 +1,20 @@
 from importlib import import_module
 
-from pytest import MonkeyPatch
 import z3
+from pytest import MonkeyPatch
 
-from pysymex.core.exceptions.analyzer.core import ExceptionAnalyzer
-from pysymex.core.exceptions.categories import ExceptionCategory, get_exception_category
-from pysymex.core.exceptions.contracts import RaisesContract, raises
-from pysymex.core.exceptions.objects import (
-    ExceptionHandler,
+from pysymex._internal.core.exceptions.categories import ExceptionCategory, get_exception_category
+from pysymex._internal.core.exceptions.objects import (
     ExceptionOccurrenceResult,
     ExceptionOccurrenceStatus,
-    FinallyHandler,
     SymbolicException,
-    TryBlock,
 )
-from pysymex.core.exceptions.state import ExceptionState
 
 
 def test_core_exception_exports_use_direct_owners() -> None:
-    import pysymex.core as core
+    import pysymex
 
-    assert core.ExceptionAnalyzer is ExceptionAnalyzer
-    assert core.ExceptionHandler is ExceptionHandler
-    assert core.ExceptionState is ExceptionState
-    assert core.SymbolicException is SymbolicException
+    assert not hasattr(pysymex, "SymbolicException")
 
 
 class TestExceptionCategory:
@@ -41,17 +32,13 @@ def test_get_exception_category() -> None:
 
 def test_exception_package_exports_canonical_symbols() -> None:
     """Scenario: exception package exports resolve to canonical exception modules."""
-    categories = import_module("pysymex.core.exceptions.categories")
-    contracts = import_module("pysymex.core.exceptions.contracts")
-    objects = import_module("pysymex.core.exceptions.objects")
-    state = import_module("pysymex.core.exceptions.state")
+    categories = import_module("pysymex._internal.core.exceptions.categories")
+    objects = import_module("pysymex._internal.core.exceptions.objects")
 
     assert ExceptionCategory is categories.ExceptionCategory
     assert SymbolicException is objects.SymbolicException
     assert ExceptionOccurrenceResult is objects.ExceptionOccurrenceResult
     assert ExceptionOccurrenceStatus is objects.ExceptionOccurrenceStatus
-    assert ExceptionState is state.ExceptionState
-    assert RaisesContract is contracts.RaisesContract
 
 
 class TestSymbolicException:
@@ -186,111 +173,3 @@ class TestSymbolicException:
 
         assert result.status is ExceptionOccurrenceStatus.UNKNOWN
         assert exc.must_occur(solver) is False
-
-
-class TestExceptionHandler:
-    """Test suite for ExceptionHandler."""
-
-    def test_catches(self) -> None:
-        """Scenario: broad handler catches specific exception instance."""
-        handler = ExceptionHandler((Exception,), target_pc=1)
-        exc = SymbolicException.concrete(ValueError)
-        assert handler.catches(exc) is True
-
-    def test_catches_type(self) -> None:
-        """Scenario: Exception handler catches ValueError type."""
-        handler = ExceptionHandler((Exception,), target_pc=1)
-        assert handler.catches_type(ValueError) is True
-
-
-class TestFinallyHandler:
-    """Test suite for FinallyHandler."""
-
-    def test_initialization(self) -> None:
-        """Scenario: finally handler stores target and exit PCs."""
-        fh = FinallyHandler(target_pc=10, exit_pc=20)
-        assert (fh.target_pc, fh.exit_pc) == (10, 20)
-
-
-class TestExceptionState:
-    """Test suite for ExceptionState."""
-
-    def test_push_try(self) -> None:
-        """Scenario: push try block; expected stack size increments."""
-        state = ExceptionState()
-        block = TryBlock(0, 1)
-        state.push_try(block)
-        assert len(state.try_stack) == 1
-
-    def test_pop_try(self) -> None:
-        """Scenario: pop after push; expected same try block returned."""
-        state = ExceptionState()
-        block = TryBlock(0, 1)
-        state.push_try(block)
-        assert state.pop_try() == block
-
-    def test_current_try(self) -> None:
-        """Scenario: one stacked try block; expected current_try returns it."""
-        state = ExceptionState()
-        block = TryBlock(0, 1)
-        state.push_try(block)
-        assert state.current_try() == block
-
-    def test_raise_exception(self) -> None:
-        """Scenario: raise exception in state; expected current_exception updated."""
-        state = ExceptionState()
-        exc = SymbolicException.concrete(ValueError)
-        _ = state.raise_exception(exc)
-        assert state.current_exception == exc
-
-    def test_handle_exception(self) -> None:
-        """Scenario: matching handler in try stack; expected returned target PC."""
-        state = ExceptionState()
-        handler = ExceptionHandler((ValueError,), target_pc=7)
-        state.push_try(TryBlock(0, 10, handlers=[handler]))
-        handled, pc = state.handle_exception(SymbolicException.concrete(ValueError))
-        assert (handled, pc) == (handler, 7)
-
-    def test_clear_exception(self) -> None:
-        """Scenario: clear existing current exception; expected None."""
-        state = ExceptionState(current_exception=SymbolicException.concrete(ValueError))
-        state.clear_exception()
-        assert state.current_exception is None
-
-    def test_suppress(self) -> None:
-        """Scenario: suppress current exception; expected exception added to suppressed list."""
-        exc = SymbolicException.concrete(ValueError)
-        state = ExceptionState(current_exception=exc)
-        state.suppress(exc)
-        assert state.suppressed == [exc]
-
-    def test_clone(self) -> None:
-        """Scenario: clone state; expected separate object with copied stack."""
-        state = ExceptionState(try_stack=[TryBlock(0, 1)])
-        clone = state.clone()
-        assert clone is not state
-
-
-class TestRaisesContract:
-    """Test suite for RaisesContract."""
-
-    def test_type_name(self) -> None:
-        """Scenario: contract from type class; expected class name."""
-        contract = RaisesContract(ValueError)
-        assert contract.type_name == "ValueError"
-
-    def test_matches(self) -> None:
-        """Scenario: ValueError contract and matching concrete exception; expected true."""
-        contract = RaisesContract(ValueError)
-        exc = SymbolicException.concrete(ValueError)
-        assert contract.matches(exc) is True
-
-
-def test_raises() -> None:
-    """Scenario: @raises decorator application; expected __raises__ contract list attached."""
-
-    @raises(ValueError)
-    def f() -> None:
-        return None
-
-    assert hasattr(f, "__raises__")

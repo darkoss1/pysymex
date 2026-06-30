@@ -6,20 +6,29 @@ import pysymex.contracts as c
 def test_has_exports() -> None:
     """Test that contract types are exported."""
     exports = [
+        "And",
         "Contract",
-        "ContractCompiler",
         "ContractKind",
-        "ContractVerifier",
+        "ContractSeverity",
         "ContractViolation",
         "FunctionContract",
-        "VerificationReport",
+        "Implies",
+        "Not",
+        "Or",
         "VerificationResult",
+        "assigns",
+        "assumes",
         "ensures",
-        "function_contracts",
-        "get_function_contract",
+        "exists",
+        "unique",
+        "forall",
         "invariant",
-        "loop_invariant",
+        "loop",
+        "pure",
         "requires",
     ]
     for export in exports:
         assert hasattr(c, export)
+
+    assert not hasattr(c, "function_contracts")
+    assert not hasattr(c, "ContractRegistry.get")

@@ -5,25 +5,34 @@ from pathlib import Path
 
 import pytest
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.frontier import (
-    FrontierMaterializationError,
-    FrontierReconstructionStatus,
-    FrontierRuntimeMode,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.frontier.checkpoints import FrontierReconstructionStatus
+from pysymex._internal.execution.frontier.entries import FrontierMaterializationError
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
+from pysymex._internal.execution.frontier.spill.codec.digests import spill_payload_integrity_digest
+from pysymex._internal.execution.frontier.spill.policy import (
     FrontierSpillPolicy,
     FrontierSpillStatus,
-    FrontierWorkStore,
-    state_shadow_digest,
 )
-from pysymex.execution.frontier.spill.values import (
-    SpillValueDecodeError,
-    SpillValueEncoder,
+from pysymex._internal.execution.frontier.spill.values.decoding import (
     decode_spill_value_ref,
     decode_spill_value_table,
 )
-from pysymex.execution.frontier.spill.codec import spill_payload_integrity_digest
-from pysymex.typing import StackValue
+from pysymex._internal.execution.frontier.spill.values.decoding import (
+    decode_spill_value_ref as decode_spill_value_ref_owner,
+)
+from pysymex._internal.execution.frontier.spill.values.decoding import (
+    decode_spill_value_table as decode_spill_value_table_owner,
+)
+from pysymex._internal.execution.frontier.spill.values.encoding import SpillValueEncoder
+from pysymex._internal.execution.frontier.spill.values.encoding import (
+    SpillValueEncoder as SpillValueEncoderOwner,
+)
+from pysymex._internal.execution.frontier.spill.values.types import SpillValueDecodeError
+from pysymex._internal.execution.frontier.store.core import FrontierWorkStore
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:
@@ -32,6 +41,13 @@ def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:
         filesystem_spill_enabled=True,
         spill_directory=tmp_path / "frontier-spill",
     )
+
+
+def test_spill_values_public_exports_point_to_family_owners() -> None:
+    """Package-level value exports stay wired to direct encode/decode owners."""
+    assert SpillValueEncoder is SpillValueEncoderOwner
+    assert decode_spill_value_ref is decode_spill_value_ref_owner
+    assert decode_spill_value_table is decode_spill_value_table_owner
 
 
 def test_frontier_spill_policy_preserves_bytes_root_aliases(tmp_path: Path) -> None:

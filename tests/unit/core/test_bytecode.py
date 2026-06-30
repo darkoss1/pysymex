@@ -7,12 +7,22 @@ import sys
 from types import SimpleNamespace
 from typing import cast
 
-from pysymex.core.bytecode import (
+from pysymex._internal.core.bytecode import (
+    CALL_OPCODES,
+    DIRECT_CALL_OPCODES,
+    UNPACKED_CALL_OPCODES,
+    get_position_line,
     get_starts_line,
     instruction_stream_key,
     resolve_binary_op_symbol,
     resolve_compare_op_symbol,
 )
+
+
+def test_call_opcode_families_distinguish_argcount_and_unpack_encodings() -> None:
+    assert DIRECT_CALL_OPCODES == {"CALL", "CALL_FUNCTION", "CALL_KW", "CALL_METHOD"}
+    assert UNPACKED_CALL_OPCODES == {"CALL_FUNCTION_EX"}
+    assert CALL_OPCODES == DIRECT_CALL_OPCODES | UNPACKED_CALL_OPCODES
 
 
 class TestGetStartsLine:
@@ -39,6 +49,24 @@ class TestGetStartsLine:
             result = get_starts_line(instr)
             if result is not None:
                 assert not isinstance(result, bool)
+
+
+class TestGetPositionLine:
+    def test_returns_position_lineno_when_it_is_real_int(self) -> None:
+        instruction = cast(
+            "dis.Instruction",
+            SimpleNamespace(positions=SimpleNamespace(lineno=42)),
+        )
+
+        assert get_position_line(instruction) == 42
+
+    def test_never_returns_bool_position_lineno(self) -> None:
+        instruction = cast(
+            "dis.Instruction",
+            SimpleNamespace(positions=SimpleNamespace(lineno=True)),
+        )
+
+        assert get_position_line(instruction) is None
 
 
 class TestInstructionStreamKey:
@@ -96,3 +124,11 @@ class TestResolveCompareOpSymbol:
         )
 
         assert resolve_compare_op_symbol(instruction) == ">"
+
+    def test_resolves_python313_bool_compare_display_wrapper(self) -> None:
+        instruction = cast(
+            "dis.Instruction",
+            SimpleNamespace(opname="COMPARE_OP", arg=119, argval="bool(!=)", argrepr="bool(!=)"),
+        )
+
+        assert resolve_compare_op_symbol(instruction) == "!="

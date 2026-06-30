@@ -4,12 +4,13 @@ import dis
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py313 import compare
+import pysymex._internal.execution.opcodes.py313.compare as compare
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: str | int = 0) -> dis.Instruction:
@@ -44,7 +45,7 @@ def test_handle_is_op() -> None:
     assert len(result.new_states) == 1
     top = result.new_states[0].peek()
     assert isinstance(top, SymbolicValue)
-    assert z3.is_true(z3.simplify(top.z3_bool))
+    assert z3.is_true(simplify_expr(top.z3_bool))
 
 
 def test_handle_contains_op() -> None:

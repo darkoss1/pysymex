@@ -1,4 +1,5 @@
-from pysymex.core.memory.cow.collections import CowDict, CowSet
+from pysymex._internal.core.memory.cow.dicts import CowDict
+from pysymex._internal.core.memory.cow.sets import CowSet
 
 
 class TestCowDict:

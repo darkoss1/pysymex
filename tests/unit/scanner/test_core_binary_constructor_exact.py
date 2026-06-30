@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def _has_issue_kind(result: object, function_name: str, kind: str) -> bool:
@@ -132,3 +132,32 @@ def test_scan_file_binary_constructors_report_invalid_codec_argument_types(
     assert _has_issue_kind(result, "bytes_bad_errors", "TYPE_ERROR")
     assert _has_issue_kind(result, "bytearray_bad_encoding", "TYPE_ERROR")
     assert _has_issue_kind(result, "bytearray_bad_errors", "TYPE_ERROR")
+
+
+def test_scan_file_memoryview_tolist_preserves_nonzero_source(tmp_path: Path) -> None:
+    target = tmp_path / "memoryview_tolist_nonzero.py"
+    target.write_text(
+        "def target() -> int:\n"
+        "    data = memoryview(b'\\x01').tolist()\n"
+        "    return 10 // data[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert not _has_issue_kind(result, "target", "DIVISION_BY_ZERO")
+    assert not _has_issue_kind(result, "target", "INDEX_ERROR")
+
+
+def test_scan_file_memoryview_tolist_reports_zero_source(tmp_path: Path) -> None:
+    target = tmp_path / "memoryview_tolist_zero.py"
+    target.write_text(
+        "def target() -> int:\n"
+        "    data = memoryview(b'\\x00').tolist()\n"
+        "    return 10 // data[0]\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert _has_issue_kind(result, "target", "DIVISION_BY_ZERO")

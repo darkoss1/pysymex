@@ -6,11 +6,15 @@ from unittest.mock import patch
 
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.windows.appcontainer.backend import WindowsAppContainerBackend
-from pysymex.sandbox.isolation.windows.appcontainer.backend import has_windows_appcontainer_support
-from pysymex.sandbox.isolation.windows.appcontainer.shared import RUNTIME_CACHE_POLICY_VERSION
-from pysymex.sandbox.types import SandboxConfig
+from pysymex._internal.config.sandbox.types import SandboxConfig
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.windows.appcontainer.backend import (
+    AppContainerBackend,
+    has_windows_appcontainer_support,
+)
+from pysymex._internal.sandbox.isolation.windows.appcontainer.shared import (
+    RUNTIME_CACHE_POLICY_VERSION,
+)
 from tests.unit.sandbox.isolation.windows_appcontainer_helpers import (
     InspectableWindowsAppContainerBackend,
 )
@@ -19,15 +23,15 @@ from tests.unit.sandbox.isolation.windows_appcontainer_helpers import (
 class TestWindowsAppContainerBackend:
     @pytest.mark.timeout(30)
     def test_support_probe_is_false_off_windows(self) -> None:
-        with patch("pysymex.sandbox.isolation.windows.native.api.sys.platform", "linux"):
+        with patch("pysymex._internal.sandbox.isolation.windows.native.api.sys.platform", "linux"):
             assert has_windows_appcontainer_support() is False
 
     @pytest.mark.timeout(30)
     def test_setup_fails_closed_when_appcontainer_apis_are_unavailable(self) -> None:
-        backend = WindowsAppContainerBackend(SandboxConfig())
+        backend = AppContainerBackend(SandboxConfig())
         with (
             patch(
-                "pysymex.sandbox.isolation.windows.appcontainer.backend.has_windows_native_appcontainer_support",
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.backend.has_windows_native_appcontainer_support",
                 return_value=False,
             ),
             pytest.raises(SandboxSetupError, match="AppContainer APIs"),
@@ -65,20 +69,43 @@ class TestWindowsAppContainerBackend:
 
     @pytest.mark.timeout(30)
     def test_appcontainer_job_process_limit_is_always_one(self) -> None:
-        assert WindowsAppContainerBackend.effective_active_process_limit(0) == 1
-        assert WindowsAppContainerBackend.effective_active_process_limit(1) == 1
-        assert WindowsAppContainerBackend.effective_active_process_limit(4) == 1
+        assert AppContainerBackend.effective_active_process_limit(0) == 1
+        assert AppContainerBackend.effective_active_process_limit(1) == 1
+        assert AppContainerBackend.effective_active_process_limit(4) == 1
 
     @pytest.mark.timeout(30)
     def test_win32_ctypes_bindings_stay_in_native_helper(self) -> None:
         """Keep raw Win32 structure layouts out of AppContainer orchestration."""
         root = Path(__file__).resolve().parents[4]
         orchestration = (
-            root / "pysymex" / "sandbox" / "isolation" / "windows" / "appcontainer" / "backend.py"
+            root
+            / "pysymex"
+            / "_internal"
+            / "sandbox"
+            / "isolation"
+            / "windows"
+            / "appcontainer"
+            / "backend.py"
         )
-        native_api = root / "pysymex" / "sandbox" / "isolation" / "windows" / "native" / "api.py"
+        native_api = (
+            root
+            / "pysymex"
+            / "_internal"
+            / "sandbox"
+            / "isolation"
+            / "windows"
+            / "native"
+            / "api.py"
+        )
         native_shared = (
-            root / "pysymex" / "sandbox" / "isolation" / "windows" / "native" / "shared.py"
+            root
+            / "pysymex"
+            / "_internal"
+            / "sandbox"
+            / "isolation"
+            / "windows"
+            / "native"
+            / "shared.py"
         )
 
         orchestration_source = orchestration.read_text(encoding="utf-8")
@@ -126,7 +153,14 @@ class TestWindowsAppContainerBackend:
             patch.object(backend, "_python_runtime_source_root", return_value=source_root),
             patch.object(backend, "_runtime_cache_root", return_value=cache_root),
             patch.object(backend, "_grant_runtime_cache_access", side_effect=record_runtime_grant),
-            patch("pysymex.sandbox.isolation.windows.appcontainer.runtime.sys.platform", "win32"),
+            patch(
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.build.sys.platform",
+                "win32",
+            ),
+            patch(
+                "pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.runtime_cache.sys.platform",
+                "win32",
+            ),
         ):
             backend.stage_python_runtime_for_test()
 
@@ -224,7 +258,10 @@ class TestWindowsAppContainerBackend:
         monkeypatch.setattr(Path, "rename", flaky_rename)
 
         backend = InspectableWindowsAppContainerBackend(SandboxConfig())
-        with patch("pysymex.sandbox.isolation.windows.appcontainer.runtime.sys.platform", "win32"):
+        with patch(
+            "pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.build.sys.platform",
+            "win32",
+        ):
             backend.rename_runtime_cache_for_test(temp_path, runtime_path)
 
         assert calls == 2

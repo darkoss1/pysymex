@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_executes_safe_custom_setattr_body(tmp_path: Path) -> None:
@@ -19,7 +19,9 @@ def test_scan_file_executes_safe_custom_setattr_body(tmp_path: Path) -> None:
 
     result = scan_file(target, use_sandbox=False)
 
+    assert "unsupported_vm_state" not in result.degraded_passes
     assert not any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNKNOWN" for issue in result.issues)
 
 
 def test_scan_file_preserves_custom_setattr_bug_body(tmp_path: Path) -> None:
@@ -36,7 +38,9 @@ def test_scan_file_preserves_custom_setattr_bug_body(tmp_path: Path) -> None:
 
     result = scan_file(target, use_sandbox=False)
 
+    assert "unsupported_vm_state" not in result.degraded_passes
     assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNKNOWN" for issue in result.issues)
 
 
 def test_scan_file_executes_custom_delattr_body(tmp_path: Path) -> None:
@@ -52,8 +56,10 @@ def test_scan_file_executes_custom_delattr_body(tmp_path: Path) -> None:
 
     result = scan_file(target, use_sandbox=False)
 
+    assert "unsupported_vm_state" not in result.degraded_passes
     assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
     assert not any(issue.get("kind") == "ATTRIBUTE_ERROR" for issue in result.issues)
+    assert not any(issue.get("kind") == "UNKNOWN" for issue in result.issues)
 
 
 def test_scan_file_clean_custom_delattr_has_no_attribute_error(tmp_path: Path) -> None:

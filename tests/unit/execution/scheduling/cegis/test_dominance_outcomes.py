@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
-    EvidenceCertificateKind,
     EvidenceOwner,
-    EvidenceOutcomeKind,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.dominance import (
     dominance_certificate_outcome,
+)
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
+    EvidenceCertificateKind,
+    EvidenceOutcomeKind,
 )
 
 

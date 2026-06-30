@@ -5,12 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from pysymex.reporting.formatters import (
-    JSONFormatter,
-    MarkdownFormatter,
-    TextFormatter,
-    format_result,
-)
+from pysymex._internal.reporting.formatters.dispatch import format_result
+from pysymex._internal.reporting.formatters.json import JSONFormatter
+from pysymex._internal.reporting.formatters.markup import MarkdownFormatter
+from pysymex._internal.reporting.formatters.text import TextFormatter
 
 
 @dataclass

@@ -1,6 +1,6 @@
 import z3
 
-from pysymex.core.solver.constraints.chain import ConstraintChain
+from pysymex._internal.core.solver.constraints.chain import ConstraintChain
 
 
 class TestConstraintChain:

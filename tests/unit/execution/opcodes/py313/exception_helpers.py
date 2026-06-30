@@ -4,7 +4,7 @@ import dis
 import types
 from dataclasses import dataclass
 
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:

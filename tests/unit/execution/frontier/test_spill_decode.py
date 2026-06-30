@@ -8,18 +8,22 @@ from typing import cast
 import pytest
 import z3
 
-import pysymex.execution.frontier.spill.decode as spill_decode
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
+import pysymex._internal.execution.frontier.spill.decode.constraints as spill_decode_constraints
+import pysymex._internal.execution.frontier.spill.fields.decode as decode_fields
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoints import FrontierReconstructionStatus
+from pysymex._internal.execution.frontier.entries import (
     FrontierMaterializationError,
     FrontierQueueEntry,
-    FrontierReconstructionStatus,
-    FrontierRuntimeMode,
-    FrontierSpillPolicy,
-    FrontierWorkStore,
 )
-from pysymex.execution.frontier.spill.codec import spill_payload_integrity_digest
-from pysymex.execution.frontier.spill import materialize_spilled_frontier_entry
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.spill.codec.digests import spill_payload_integrity_digest
+from pysymex._internal.execution.frontier.spill.decode.entry import realize_spilled_frontier_entry
+from pysymex._internal.execution.frontier.spill.decode.entry import (
+    realize_spilled_frontier_entry as materialize_spilled_frontier_entry_owner,
+)
+from pysymex._internal.execution.frontier.spill.policy import FrontierSpillPolicy
+from pysymex._internal.execution.frontier.store.core import FrontierWorkStore
 
 
 def _filesystem_spill_policy(tmp_path: Path) -> FrontierSpillPolicy:
@@ -63,14 +67,19 @@ def _refresh_spill_integrity(payload: dict[str, object]) -> None:
 def _assert_materialization_format_mismatch(path: Path) -> None:
     entry = FrontierQueueEntry(spilled_checkpoint_path=path)
     with pytest.raises(FrontierMaterializationError) as exc_info:
-        materialize_spilled_frontier_entry(entry)
+        realize_spilled_frontier_entry(entry)
     assert exc_info.value.status is FrontierReconstructionStatus.SPILL_FORMAT_MISMATCH
+
+
+def test_spill_decode_public_export_points_to_entry_owner() -> None:
+    """Package-level decode export stays wired to the file-loading owner."""
+    assert realize_spilled_frontier_entry is materialize_spilled_frontier_entry_owner
 
 
 def test_materialize_spilled_frontier_entry_requires_spilled_entry() -> None:
     """Spill materialization rejects resident entries."""
     with pytest.raises(ValueError, match="not spilled"):
-        materialize_spilled_frontier_entry(FrontierQueueEntry(state=VMState(pc=1)))
+        realize_spilled_frontier_entry(FrontierQueueEntry(state=VMState(pc=1)))
 
 
 def test_materialize_spilled_frontier_entry_reports_missing_files(tmp_path: Path) -> None:
@@ -131,7 +140,7 @@ def test_materialize_spilled_frontier_entry_rejects_digest_mismatch(tmp_path: Pa
 
     entry = FrontierQueueEntry(spilled_checkpoint_path=spill_path)
     with pytest.raises(FrontierMaterializationError) as exc_info:
-        materialize_spilled_frontier_entry(entry)
+        realize_spilled_frontier_entry(entry)
 
     assert exc_info.value.status is FrontierReconstructionStatus.DIGEST_MISMATCH
 
@@ -151,7 +160,7 @@ def test_spill_decode_object_payload_rejects_non_string_mapping_keys() -> None:
     """Decoded payload helpers reject Python mappings that JSON should not produce."""
     object_payload = cast(
         "Callable[[object], Mapping[str, object] | None]",
-        getattr(spill_decode, "_object_payload"),
+        decode_fields.object_payload,
     )
 
     assert object_payload({1: "bad"}) is None
@@ -174,7 +183,7 @@ def test_spill_decode_required_json_value_rejects_non_json_values(
     }
     required_json_value = cast(
         "Callable[[Mapping[str, object], str], object]",
-        getattr(spill_decode, "_required_json_value"),
+        decode_fields.required_json_value,
     )
 
     with pytest.raises(FrontierMaterializationError) as exc_info:
@@ -196,6 +205,8 @@ def test_materialize_spilled_frontier_entry_rejects_non_bool_smt2_results(
     def parse_non_bool_constraints(_payload: str) -> list[z3.ArithRef]:
         return [z3.IntVal(1)]
 
-    monkeypatch.setattr(spill_decode.z3, "parse_smt2_string", parse_non_bool_constraints)
+    monkeypatch.setattr(
+        spill_decode_constraints.z3, "parse_smt2_string", parse_non_bool_constraints
+    )
 
     _assert_materialization_format_mismatch(spill_path)

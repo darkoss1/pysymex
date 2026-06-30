@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import dis
+
 import z3
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.state.record import VMState
-from pysymex.core.constants import Z3_FALSE, Z3_TRUE
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py312 import functions, locals
+import pysymex._internal.execution.opcodes.py312.functions as functions
+from pysymex._internal.core.constants import Z3_FALSE, Z3_TRUE
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, arg: int | None = None) -> dis.Instruction:
@@ -41,11 +42,10 @@ def test_handle_call_stack_resilience() -> None:
 
 def test_handle_import_name_relative() -> None:
     """Test that IMPORT_NAME handles levels > 0 correctly."""
-    # Stack: [level, fromlist]
     state = VMState(stack=[1, SymbolicNone()], pc=0)
     state = state.set_global("__package__", "rich")
 
-    # from . import box (level 1)
+    # Relative lookup scenario for name resolution at level 1.
     functions.handle_import_name(_instr("IMPORT_NAME", "box", arg=1), state, OpcodeDispatcher())
 
     top = state.peek()
@@ -72,19 +72,3 @@ def test_handle_load_method_inference() -> None:
     top = state.peek()
     assert isinstance(top, SymbolicValue)
     assert top.model_name == "dict.get"
-
-
-def test_handle_load_global_naming_heuristic() -> None:
-    """Test that LOAD_GLOBAL with a name like _MAP applies the is_dict constraint concretely."""
-    state = VMState(pc=0)
-
-    # LOAD_GLOBAL _SUBSTITUTIONS
-    locals.handle_load_global(
-        _instr("LOAD_GLOBAL", "_SUBSTITUTIONS", arg=0), state, OpcodeDispatcher()
-    )
-
-    top = state.peek()
-    assert isinstance(top, SymbolicValue)
-
-    # Check if is_dict is concretely True
-    assert z3.is_true(z3.simplify(top.is_dict))

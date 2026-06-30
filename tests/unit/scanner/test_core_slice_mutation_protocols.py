@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_scan_file_executes_concrete_built_slice_store(tmp_path: Path) -> None:
@@ -21,6 +21,28 @@ def test_scan_file_executes_concrete_built_slice_store(tmp_path: Path) -> None:
     result = scan_file(target, use_sandbox=False)
 
     assert not any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
+    assert "unsupported_slice_abstraction" not in result.degraded_passes
+
+
+def test_scan_file_reports_bytearray_slice_alias_zero_division(tmp_path: Path) -> None:
+    target = tmp_path / "bytearray_slice_alias_division.py"
+    target.write_text(
+        "def target(a: int, b: int, flag: int) -> int:\n"
+        "    data = bytearray([7, 1, 3])\n"
+        "    alias = data\n"
+        "    if flag & 1:\n"
+        "        alias[1:2] = bytes([(a - b) & 255])\n"
+        "    else:\n"
+        "        alias[1] = ((a - b) | 1) & 255\n"
+        "    if flag == 1 and a == b:\n"
+        "        return 100 // data[1]\n"
+        "    return data[1] + 1\n",
+        encoding="utf-8",
+    )
+
+    result = scan_file(target, use_sandbox=False)
+
+    assert any(issue.get("kind") == "DIVISION_BY_ZERO" for issue in result.issues)
     assert "unsupported_slice_abstraction" not in result.degraded_passes
 
 

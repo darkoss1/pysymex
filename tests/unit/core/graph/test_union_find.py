@@ -1,8 +1,8 @@
-"""Tests for pysymex.core.graph.union_find."""
+"""Tests for pysymex._internal.core.graph.union.find."""
 
 import pytest
 
-from pysymex.core.graph.union_find import UnionFind
+from pysymex._internal.core.graph.union.find import UnionFind
 
 
 class TestUnionFind:

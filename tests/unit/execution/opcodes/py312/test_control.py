@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import dis
 
+import pytest
 import z3
 
-from pysymex.core.state.types import CallFrame
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.opcodes.py312 import control
+import pysymex._internal.execution.opcodes.py312.control as control
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.state.types import CallFrame
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.types.truthiness import get_truthy_expr
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 
 
 def _instr(opname: str, argval: object = None, offset: int = 0) -> dis.Instruction:
@@ -28,8 +31,8 @@ def test_handle_no_op() -> None:
 
 def test_get_truthy_expr() -> None:
     """Test get_truthy_expr behavior."""
-    assert z3.is_true(z3.simplify(control.get_truthy_expr(1)))
-    assert z3.is_true(z3.simplify(z3.Not(control.get_truthy_expr(0))))
+    assert z3.is_true(simplify_expr(get_truthy_expr(1)))
+    assert z3.is_true(simplify_expr(z3.Not(get_truthy_expr(0))))
 
 
 def test_handle_return_value() -> None:
@@ -93,10 +96,11 @@ def test_handle_resume() -> None:
 
 
 def test_handle_reserved() -> None:
-    """Test handle_reserved behavior (no-op, same as NOP)."""
+    """RESERVED is internal bytecode and must not be treated as a no-op."""
     state = VMState(pc=0)
-    control.handle_nop_and_reserved(_instr("RESERVED"), state, OpcodeDispatcher())
-    assert state.pc == 1
+    with pytest.raises(RuntimeError, match="Unsupported internal opcode: RESERVED"):
+        control.handle_reserved(_instr("RESERVED"), state, OpcodeDispatcher())
+    assert state.pc == 0
 
 
 def test_handle_pop_jump_if_none() -> None:
@@ -154,7 +158,7 @@ def test_handle_for_iter() -> None:
     """Test handle_for_iter behavior."""
     dispatcher = OpcodeDispatcher()
     dispatcher.set_instructions([_instr("NOP", offset=0), _instr("NOP", offset=4)])
-    state = VMState(stack=[], pc=0)
+    state = VMState(stack=[()], pc=0)
     result = control.handle_for_iter(_instr("FOR_ITER", 4), state, dispatcher)
     assert len(result.new_states) == 1
 
@@ -171,6 +175,18 @@ def test_handle_end_for() -> None:
     state = VMState(stack=[1, 2], pc=0)
     control.handle_end_for(_instr("END_FOR"), state, OpcodeDispatcher())
     assert state.stack == [1]
+
+
+def test_handle_end_for_pops_cleanup_sentinel_before_following_pop_top() -> None:
+    """Python 3.12 ``END_FOR; POP_TOP`` should remove sentinel, then iterator."""
+    dispatcher = OpcodeDispatcher()
+    dispatcher.set_instructions([_instr("END_FOR"), _instr("POP_TOP")])
+    sentinel = SymbolicNone()
+    state = VMState(stack=["with_exit", "iterator", sentinel], pc=0)
+
+    control.handle_end_for(_instr("END_FOR"), state, dispatcher)
+
+    assert state.stack == ["with_exit", "iterator"]
 
 
 def test_handle_get_len() -> None:
@@ -200,7 +216,7 @@ def test_handle_call_intrinsic_1_list_to_tuple_concrete_list() -> None:
     assert isinstance(tuple_value, SymbolicList)
     assert tuple_value.name == "tuple_7"
     assert tuple_value.concrete_items == [1, 2]
-    assert z3.is_true(z3.simplify(tuple_value.z3_len == z3.IntVal(2)))
+    assert z3.is_true(simplify_expr(tuple_value.z3_len == z3.IntVal(2)))
 
 
 def test_handle_call_intrinsic_1_list_to_tuple_resolves_heap_backed_list() -> None:
@@ -216,7 +232,7 @@ def test_handle_call_intrinsic_1_list_to_tuple_resolves_heap_backed_list() -> No
     assert isinstance(tuple_value, SymbolicList)
     assert tuple_value.name == "tuple_8"
     assert tuple_value.concrete_items == [3, 4]
-    assert z3.is_true(z3.simplify(tuple_value.z3_len == z3.IntVal(2)))
+    assert z3.is_true(simplify_expr(tuple_value.z3_len == z3.IntVal(2)))
 
 
 def test_handle_call_intrinsic_2() -> None:

@@ -3,8 +3,8 @@ from __future__ import annotations
 import types
 from pathlib import Path
 
-from pysymex.execution.executors import SymbolicExecutor
-from pysymex.scanner.file import scan_file
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.scanner.file import scan_file
 
 
 class _Observer:
@@ -28,7 +28,6 @@ def test_scan_file_observer_tracks_canonical_auto_tuned_execution(tmp_path: Path
         target,
         auto_tune=True,
         use_sandbox=False,
-        deterministic_mode=True,
         trace_enabled=False,
         execution_observer=observer,
     )

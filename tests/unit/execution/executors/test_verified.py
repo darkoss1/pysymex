@@ -2,104 +2,90 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from pysymex.contracts import ContractKind, VerificationResult
-from pysymex.contracts.decorator_registry import get_or_create_contract
-from pysymex.contracts.decorators import assigns, assumes, ensures, pure, requires
-from pysymex.analysis.static.properties import PropertyKind
-from pysymex.execution.executors.verified.api import (
+import pytest
+
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.config.execution.verification import ExecutionVerificationConfig
+from pysymex._internal.contracts.decorator.registry import ContractRegistry
+from pysymex._internal.contracts.decorators import assigns, assumes, ensures, pure, requires
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.execution.executors.verified.api import (
     check_arithmetic,
     check_contracts,
     prove_termination,
     verify,
 )
-from pysymex.execution.executors.verified.executor import VerifiedExecutor
-from pysymex.execution.executors.verified.types import (
-    ArithmeticIssue,
-    ContractIssue,
-    InferredProperty,
-    VerifiedExecutionConfig,
-    VerifiedExecutionResult,
+from pysymex._internal.execution.executors.verified.executor.projection.arithmetic import (
+    is_projectable_arithmetic_issue,
+    project_arithmetic_issue,
 )
-from pysymex.execution.termination import TerminationStatus
-from pysymex.execution.results.result import ExecutionResult
-
-
-class TestVerifiedExecutionConfig:
-    """Test suite for pysymex.execution.executors.verified.VerifiedExecutionConfig."""
-
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        cfg = VerifiedExecutionConfig(max_paths=11, check_termination=True)
-        assert cfg.max_paths == 11
-        assert cfg.check_termination is True
-
-
-class TestContractIssue:
-    """Test suite for pysymex.execution.executors.verified.ContractIssue."""
-
-    def test_format(self) -> None:
-        """Test format behavior."""
-        issue = ContractIssue(
-            kind=ContractKind.ENSURES,
-            condition="x > 0",
-            message="failed",
-            result=VerificationResult.VIOLATED,
-        )
-        text = issue.format()
-        assert "ENSURES" in text
-
-
-class TestArithmeticIssue:
-    """Test suite for pysymex.execution.executors.verified.ArithmeticIssue."""
-
-    def test_format(self) -> None:
-        """Test format behavior."""
-        issue = ArithmeticIssue(kind="overflow", expression="x + 1", message="bad")
-        text = issue.format()
-        assert "ARITHMETIC" in text
-
-
-class TestInferredProperty:
-    """Test suite for pysymex.execution.executors.verified.InferredProperty."""
-
-    def test_initialization(self) -> None:
-        """Test basic initialization."""
-        prop = InferredProperty(
-            kind=PropertyKind.MONOTONIC_INC, description="monotone", confidence=0.5
-        )
-        assert prop.description == "monotone"
-
-
-class TestVerifiedExecutionResult:
-    """Test suite for pysymex.execution.executors.verified.VerifiedExecutionResult."""
-
-    def test_is_verified(self) -> None:
-        """Test is_verified behavior."""
-        result = VerifiedExecutionResult()
-        assert result.is_verified is True
-
-    def test_has_issues(self) -> None:
-        """Test has_issues behavior."""
-        result = VerifiedExecutionResult(
-            contract_issues=[ContractIssue(kind=ContractKind.REQUIRES, condition="x", message="m")]
-        )
-        assert result.has_issues is True
-
-    def test_format_summary(self) -> None:
-        """Test format_summary behavior."""
-        result = VerifiedExecutionResult(function_name="f", paths_explored=1, paths_completed=1)
-        summary = result.format_summary()
-        assert "Verified Execution: f" in summary
-
-    def test_degraded_result_is_not_verified(self) -> None:
-        result = VerifiedExecutionResult(degraded_passes=["solver_unknown_detector_query"])
-
-        assert result.is_verified is False
-        assert "Analysis degraded: solver_unknown_detector_query" in result.format_summary()
+from pysymex._internal.execution.executors.verified.executor.projection.contracts import (
+    is_adjacent_contract_unknown,
+    project_unknown_contract_issue,
+)
+from pysymex._internal.execution.executors.verified.executor.runner import VerifiedExecutor
+from pysymex._internal.execution.executors.verified.executor.runner import (
+    VerifiedExecutor as VerifiedExecutorOwner,
+)
+from pysymex._internal.execution.executors.verified.properties.types import (
+    ProofStatus,
+    PropertyKind,
+)
+from pysymex._internal.execution.results.result import ExecutionResult
+from pysymex._internal.execution.termination import TerminationStatus
+from pysymex.contracts import ContractKind, VerificationResult
 
 
 class TestVerifiedExecutor:
-    """Test suite for pysymex.execution.executors.verified.VerifiedExecutor."""
+    """Test suite for pysymex._internal.execution.executors.verified.VerifiedExecutor."""
+
+    def test_public_export_points_to_direct_owner(self) -> None:
+        """The package import surface stays wired to the verified runner owner."""
+        assert VerifiedExecutor is VerifiedExecutorOwner
+
+    def test_arithmetic_projection_owner_converts_core_detector_issue(self) -> None:
+        """Arithmetic issue projection stays owned outside core result assembly."""
+        issue = Issue(
+            kind=IssueKind.OVERFLOW,
+            message="bounded integer overflow is feasible",
+            model={"left": 1},
+            line_number=12,
+        )
+
+        projected = project_arithmetic_issue(issue)
+
+        assert is_projectable_arithmetic_issue(issue) is True
+        assert projected.kind == "overflow"
+        assert projected.expression == issue.message
+        assert projected.counterexample == {"left": 1}
+        assert projected.line_number == 12
+
+    def test_unknown_contract_projection_owner_preserves_unsupported_result(self) -> None:
+        """Contract-adjacent UNKNOWN projection preserves unsupported classification."""
+        issue = Issue(
+            kind=IssueKind.UNKNOWN,
+            message="precondition could not be modeled",
+            line_number=9,
+            function_name="sample",
+        )
+
+        projected = project_unknown_contract_issue(issue)
+
+        assert is_adjacent_contract_unknown(issue) is True
+        assert projected is not None
+        assert projected.kind is ContractKind.REQUIRES
+        assert projected.result is VerificationResult.UNSUPPORTED
+        assert projected.line_number == 9
+        assert projected.function_name == "sample"
+
+    def test_nested_unknown_contract_projection_remains_runtime_owned(self) -> None:
+        """Callee-owned runtime contract messages are left to runtime aggregation."""
+        issue = Issue(
+            kind=IssueKind.UNKNOWN,
+            message="precondition of callee could not be modeled",
+        )
+
+        assert project_unknown_contract_issue(issue) is None
 
     def test_execute_function(self) -> None:
         """Test execute_function behavior."""
@@ -107,7 +93,7 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x + 1
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=40))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
         result = executor.execute_function(sample, {"x": "int"})
         assert result.function_name == "sample"
 
@@ -115,9 +101,9 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x + 1
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=40))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
         with patch(
-            "pysymex.execution.executors.core.SymbolicExecutor.execute_function",
+            "pysymex._internal.execution.executors.core.SymbolicExecutor.execute_function",
             return_value=ExecutionResult(degraded_passes=["solver_unknown_detector_query"]),
         ):
             result = executor.execute_function(sample, {"x": "int"})
@@ -125,12 +111,26 @@ class TestVerifiedExecutor:
         assert result.degraded_passes == ["solver_unknown_detector_query"]
         assert result.is_verified is False
 
+    def test_execute_function_propagates_inner_symbolic_execution_failure(self) -> None:
+        def sample(x: int) -> int:
+            return x + 1
+
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
+        with (
+            patch(
+                "pysymex._internal.execution.executors.core.SymbolicExecutor.execute_function",
+                side_effect=RuntimeError("symbolic core failed"),
+            ),
+            pytest.raises(RuntimeError, match="symbolic core failed"),
+        ):
+            executor.execute_function(sample, {"x": "int"})
+
     def test_unsupported_contract_is_not_counted_as_violation(self) -> None:
         @requires("mystery(x) > 0")
         def sample(x: int) -> int:
             return x
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=40))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
         result = executor.execute_function(sample, {"x": "int"})
 
         assert result.contracts_checked == 1
@@ -163,7 +163,7 @@ class TestVerifiedExecutor:
 
             return helper(x * x)
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=80))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=80))
         result = executor.execute_function(sample, {"x": "int"})
 
         assert "core_symbolic_execution_failed" not in result.degraded_passes
@@ -174,7 +174,7 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=40))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
         result = executor.execute_function(sample, {"x": "int"})
 
         assert len(result.contract_issues) == 1
@@ -201,7 +201,7 @@ class TestVerifiedExecutor:
             """:requires: x > 0"""
             return x
 
-        executor = VerifiedExecutor(VerifiedExecutionConfig(max_paths=4, max_iterations=40))
+        executor = VerifiedExecutor(ExecutionVerificationConfig(max_paths=4, max_iterations=40))
         result = executor.execute_function(sample, {"x": "int"})
 
         assert result.contracts_checked == 0
@@ -212,7 +212,9 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x
 
-        config = VerifiedExecutionConfig(max_paths=4, max_iterations=40, check_postconditions=False)
+        config = ExecutionVerificationConfig(
+            max_paths=4, max_iterations=40, check_postconditions=False
+        )
         result = VerifiedExecutor(config).execute_function(sample, {"x": "int"})
 
         assert result.contracts_checked == 0
@@ -224,7 +226,9 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x
 
-        config = VerifiedExecutionConfig(max_paths=4, max_iterations=40, check_preconditions=False)
+        config = ExecutionVerificationConfig(
+            max_paths=4, max_iterations=40, check_preconditions=False
+        )
         result = VerifiedExecutor(config).execute_function(sample, {"x": "int"})
 
         assert result.contracts_checked == 1
@@ -258,7 +262,7 @@ class TestVerifiedExecutor:
         def sample(x: int) -> int:
             return x
 
-        contract = get_or_create_contract(sample)
+        contract = ContractRegistry.get_or_create(sample)
         contract.add_loop_invariant(0, "x >= 0")
 
         result = VerifiedExecutor().execute_function(sample, {"x": "int"})
@@ -266,6 +270,46 @@ class TestVerifiedExecutor:
         assert result.contracts_checked == 1
         assert result.contract_issues[0].kind is ContractKind.LOOP_INVARIANT
         assert result.contract_issues[0].result is VerificationResult.UNSUPPORTED
+
+    def test_infer_properties_records_bounded_execution_when_enabled(self) -> None:
+        def sample(x: int) -> int:
+            return x + 1
+
+        config = ExecutionVerificationConfig(
+            infer_properties=True,
+            max_paths=3,
+            max_iterations=30,
+        )
+        result = VerifiedExecutor(config).execute_function(sample, {"x": "int"})
+
+        assert len(result.inferred_properties) == 1
+        inferred = result.inferred_properties[0]
+        assert inferred.kind is PropertyKind.BOUNDED
+        assert inferred.confidence == 1.0
+        assert inferred.proof is not None
+        assert inferred.proof.status is ProofStatus.PROVEN
+
+    def test_infer_properties_records_unknown_for_structural_infinite_loop(self) -> None:
+        def spin(x: int) -> int:
+            while True:
+                x += 1
+            return x
+
+        config = ExecutionVerificationConfig(
+            infer_properties=True,
+            max_paths=2,
+            max_iterations=20,
+        )
+        result = VerifiedExecutor(config).execute_function(spin, {"x": "int"})
+
+        assert result.degraded_passes == []
+        assert any(issue.kind is IssueKind.INFINITE_LOOP for issue in result.issues)
+        assert len(result.inferred_properties) == 1
+        inferred = result.inferred_properties[0]
+        assert inferred.kind is PropertyKind.BOUNDED
+        assert inferred.confidence == 0.0
+        assert inferred.proof is not None
+        assert inferred.proof.status is ProofStatus.UNKNOWN
 
 
 def test_verify() -> None:
@@ -298,11 +342,27 @@ def test_check_arithmetic() -> None:
     assert isinstance(issues, list)
 
 
-def test_prove_termination() -> None:
-    """Test prove_termination behavior."""
+def test_prove_termination_reports_bounded_completed_execution() -> None:
+    """Completed bounded execution is reported as termination evidence."""
 
     def sample(x: int) -> int:
         return x + 1
 
-    proof = prove_termination(sample, {"x": "int"})
+    proof = prove_termination(sample, {"x": "int"}, max_paths=3, max_iterations=30)
+
+    assert proof.status is TerminationStatus.TERMINATES
+    assert "completed all accounted paths" in proof.message
+
+
+def test_prove_termination_reports_unknown_without_completed_paths() -> None:
+    """Structural infinite-loop evidence does not become a termination proof."""
+
+    def spin(x: int) -> int:
+        while True:
+            x += 1
+        return x
+
+    proof = prove_termination(spin, {"x": "int"}, max_paths=2, max_iterations=20)
+
     assert proof.status is TerminationStatus.UNKNOWN
+    assert proof.message == "Termination inconclusive: no symbolic paths completed"

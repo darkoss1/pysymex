@@ -2,10 +2,46 @@
 
 from __future__ import annotations
 
-from pysymex.execution.detectors import DetectorQueryEvent
-from pysymex.execution.fallback import FallbackEvent, FallbackKind
-from pysymex.execution.feasibility.telemetry import PathFeasibilityEvent
-from pysymex.execution.session.state import ExecutionSession
+from pysymex._internal.analysis.detectors.detector.types import Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.execution.detectors.telemetry import DetectorQueryEvent
+from pysymex._internal.execution.fallback.types import FallbackEvent, FallbackKind
+from pysymex._internal.execution.feasibility.telemetry import PathFeasibilityEvent
+from pysymex._internal.execution.session.events import (
+    add_unique_observer,
+    event_with_resolved_line,
+    notify_observers,
+)
+from pysymex._internal.execution.session.lifecycle import SessionLifecycleMixin
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.execution.session.telemetry import SessionTelemetryMixin
+
+
+def test_session_event_helpers_use_direct_owners() -> None:
+    assert add_unique_observer is add_unique_observer
+    assert event_with_resolved_line is event_with_resolved_line
+    assert notify_observers is notify_observers
+    assert issubclass(ExecutionSession, SessionLifecycleMixin)
+    assert issubclass(ExecutionSession, SessionTelemetryMixin)
+
+
+def test_reset_for_run_preserves_infrastructure_degradation_and_clears_run_state() -> None:
+    session = ExecutionSession()
+    session.issues.append(Issue(kind=IssueKind.UNKNOWN, message="unit"))
+    session.coverage.add(4)
+    session.phase_counts["execute_step"] = 9
+    session.last_stack.append("value")
+    session.detector_query_cache_hits = 3
+
+    session.reset_for_run(["infrastructure_unavailable"])
+
+    assert session.issues == []
+    assert session.coverage == set()
+    assert session.paths_explored == 1
+    assert session.degraded_passes == ["infrastructure_unavailable"]
+    assert session.phase_counts["execute_step"] == 0
+    assert session.last_stack == []
+    assert session.detector_query_cache_hits == 0
 
 
 def test_record_degraded_passes_preserves_first_seen_order_without_duplicates() -> None:

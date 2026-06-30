@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.base import ModelResult
-from pysymex.models.builtins.core.len import LenModel
-from pysymex.models.builtins.extended.registry import EXTENDED_MODELS
-from pysymex.models.builtins.extended.truth import AllModel, AnyModel
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.iteration.truth import AllModel, AnyModel
+from pysymex._internal.models.builtins.registry.builtin_models import builtin_models
+from pysymex._internal.models.builtins.sequences.len import LenModel
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import ModelResult
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -37,7 +38,9 @@ def test_all_any_parametrized_faithfulness(items: list[int | bool]) -> None:
     assert _bool_value(any_res.value) == any(items)
 
 
-def test_extended_auto_discovery_apply() -> None:
-    for model in EXTENDED_MODELS:
+def test_builtin_family_discovery_apply() -> None:
+    for model in builtin_models():
+        if not isinstance(model, FunctionModel):
+            continue
         result = model.apply([], {}, _state())
         assert isinstance(result, ModelResult)

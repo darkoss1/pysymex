@@ -1,182 +1,95 @@
-"""Tests for pysymex.config dataclass models."""
+"""Tests for live pysymex._internal.config dataclass models."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import pysymex.config as mod
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.config.execution.verification import ExecutionVerificationConfig
+from pysymex._internal.config.logging.settings import LoggerConfig
+from pysymex._internal.config.sandbox.types import (
+    SandboxBackend,
+    SandboxConfig,
+    SandboxResourceLimits,
+    SecurityCapabilities,
+)
+from pysymex._internal.config.solver.floats import FloatConfig
+from pysymex._internal.config.tracing.settings import TracerConfig
 
 
-def test_config_implementations_live_under_config_package() -> None:
-    """Config implementation modules are owned by pysymex.config."""
-    config_root = Path("pysymex") / "config"
+def test_config_implementations_live_under_internal_config_package() -> None:
+    """Configuration implementation stays internal; there is no public config facade."""
+    package_root = Path("pysymex")
+    config_root = package_root / "_internal" / "config"
+    public_facade = package_root / "config.py"
     offenders = [
         str(path)
-        for path in Path("pysymex").rglob("config.py")
+        for path in package_root.rglob("config.py")
         if not path.is_relative_to(config_root)
     ]
+    assert not public_facade.exists()
+    assert config_root.is_dir()
     assert offenders == []
 
 
-class TestSolverConfig:
-    """Tests for SolverConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default SolverConfig has expected values."""
-        cfg = mod.SolverConfig()
-        assert cfg.strategy == "incremental"
-        assert cfg.cache_size == 50000
-        assert cfg.warm_start is True
-
-    def test_to_dict_keys(self) -> None:
-        """to_dict contains all field names."""
-        d = mod.SolverConfig().to_dict()
-        assert "strategy" in d
-        assert "cache_size" in d
-        assert "solver_timeout_ms" in d
-        assert len(d) == 8
-
-    def test_to_dict_values_match_fields(self) -> None:
-        """to_dict values match instance field values."""
-        cfg = mod.SolverConfig(strategy="portfolio", cache_size=100)
-        d = cfg.to_dict()
-        assert d["strategy"] == "portfolio"
-        assert d["cache_size"] == 100
-
-
-class TestConcurrencyConfig:
-    """Tests for ConcurrencyConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default ConcurrencyConfig has concurrency disabled."""
-        cfg = mod.ConcurrencyConfig()
-        assert cfg.enabled is False
-        assert cfg.detect_races is True
-
-    def test_to_dict(self) -> None:
-        """to_dict round-trips correctly."""
-        cfg = mod.ConcurrencyConfig(enabled=True, max_interleavings=500)
-        d = cfg.to_dict()
-        assert d["enabled"] is True
-        assert d["max_interleavings"] == 500
+def test_domain_config_has_no_flat_legacy_modules() -> None:
+    """Domain config implementations live under subpackages, not root-level buckets."""
+    config_root = Path("pysymex") / "_internal" / "config"
+    legacy_files = (
+        "analysis.py",
+        "concurrency.py",
+        "detectors.py",
+        "execution.py",
+        "floats.py",
+        "limits.py",
+        "logging.py",
+        "output.py",
+        "sandbox_bridge.py",
+        "sections.py",
+        "solver.py",
+        "tracing.py",
+        "verification.py",
+    )
+    present_legacy_files = [
+        str(config_root / file_name)
+        for file_name in legacy_files
+        if (config_root / file_name).exists()
+    ]
+    assert present_legacy_files == []
 
 
-class TestDetectorConfig:
-    """Tests for DetectorConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default detectors are mostly enabled."""
-        cfg = mod.DetectorConfig()
-        assert cfg.division_by_zero is True
-        assert cfg.overflow is False
-
-    def test_to_dict(self) -> None:
-        """to_dict returns all detector flags."""
-        d = mod.DetectorConfig().to_dict()
-        assert len(d) == 8
-        assert d["overflow"] is False
-
-
-class TestAnalysisLimits:
-    """Tests for AnalysisLimits dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default limits have sensible values."""
-        lim = mod.AnalysisLimits()
-        assert lim.max_paths == 1000
-        assert lim.timeout_seconds == 60.0
-
-    def test_to_dict(self) -> None:
-        """to_dict round-trips correctly."""
-        lim = mod.AnalysisLimits(max_paths=500)
-        d = lim.to_dict()
-        assert d["max_paths"] == 500
-        assert len(d) == 8
-
-    def test_to_resource_limits(self) -> None:
-        """to_resource_limits maps profile fields to engine limits."""
-        lim = mod.AnalysisLimits(max_paths=500, max_constraint_size=12)
-        engine = lim.to_resource_limits()
-        assert engine.max_paths == 500
-        assert engine.max_constraints == 12
+def test_ghost_profile_config_modules_stay_removed() -> None:
+    """The old TOML/profile config graph must not return as a parallel runtime API."""
+    config_root = Path("pysymex") / "_internal" / "config"
+    removed_modules = (
+        config_root / "root.py",
+        config_root / "io.py",
+        config_root / "analysis" / "detectors.py",
+        config_root / "analysis" / "limits.py",
+        config_root / "analysis" / "profile.py",
+        config_root / "output" / "reporting.py",
+        config_root / "solver" / "settings.py",
+    )
+    present = [str(path) for path in removed_modules if path.exists()]
+    assert present == []
 
 
-class TestOutputConfig:
-    """Tests for OutputConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default output config uses text format."""
-        cfg = mod.OutputConfig()
-        assert cfg.format == "text"
-        assert cfg.output_dir is None
-        assert cfg.color is True
-
-    def test_to_dict(self) -> None:
-        """to_dict includes None values."""
-        d = mod.OutputConfig().to_dict()
-        assert d["output_dir"] is None
-        assert d["format"] == "text"
+def test_runtime_config_classes_have_config_package_owners() -> None:
+    """Runtime config dataclasses resolve from the config package."""
+    assert ExecutionConfig.__module__ == "pysymex._internal.config.execution.settings"
+    assert (
+        ExecutionVerificationConfig.__module__ == "pysymex._internal.config.execution.verification"
+    )
+    assert ExecutionConfig is ExecutionConfig
+    assert ExecutionVerificationConfig is ExecutionVerificationConfig
 
 
-class TestAnalysisConfig:
-    """Tests for AnalysisConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default analysis config uses adaptive strategy."""
-        cfg = mod.AnalysisConfig()
-        assert cfg.strategy == "adaptive"
-        assert cfg.incremental_solving is True
-
-    def test_to_dict(self) -> None:
-        """to_dict includes list fields."""
-        d = mod.AnalysisConfig().to_dict()
-        assert isinstance(d["include_patterns"], list)
-        assert isinstance(d["exclude_patterns"], list)
-
-    def test_default_exclude_patterns(self) -> None:
-        """Default excludes skip test and venv directories."""
-        cfg = mod.AnalysisConfig()
-        assert "**/tests/**" in cfg.exclude_patterns
-        assert "**/.venv/**" in cfg.exclude_patterns
-
-
-class TestPysymexConfig:
-    """Tests for PysymexConfig dataclass."""
-
-    def test_defaults(self) -> None:
-        """Default PysymexConfig has all sub-configs."""
-        cfg = mod.PysymexConfig()
-        assert isinstance(cfg.detectors, mod.DetectorConfig)
-        assert isinstance(cfg.limits, mod.AnalysisLimits)
-        assert cfg.project_root is None
-        assert cfg.config_file is None
-
-    def test_to_dict_contains_all_sections(self) -> None:
-        """to_dict produces all top-level sections."""
-        d = mod.PysymexConfig().to_dict()
-        assert "detectors" in d
-        assert "limits" in d
-        assert "output" in d
-        assert "analysis" in d
-        assert "solver" in d
-        assert "concurrency" in d
-
-    def test_to_toml_returns_string(self) -> None:
-        """to_toml produces valid TOML-like string."""
-        toml = mod.PysymexConfig().to_toml()
-        assert isinstance(toml, str)
-        assert "[tool.pysymex]" in toml
-        assert "[tool.pysymex.detectors]" in toml
-        assert "[tool.pysymex.limits]" in toml
-
-    def test_to_toml_booleans_lowercase(self) -> None:
-        """TOML booleans are lowercased (true/false not True/False)."""
-        toml = mod.PysymexConfig().to_toml()
-        assert "division_by_zero = true" in toml
-        assert "overflow = false" in toml
-
-
-def test_scan_mode_catalog_is_symbolic_only() -> None:
-    """CLI scan mode catalog documents symbolic execution as the only product mode."""
-    assert mod.SCAN_MODE_CHOICES == ("symbolic",)
-    assert mod.DEFAULT_SCAN_MODE == "symbolic"
+def test_config_sections_have_runtime_domain_package_owners() -> None:
+    """Live config sections belong to the domains that consume them."""
+    assert FloatConfig.__module__ == "pysymex._internal.config.solver.floats"
+    assert LoggerConfig.__module__ == "pysymex._internal.config.logging.settings"
+    assert SandboxBackend.__module__ == "pysymex._internal.config.sandbox.types"
+    assert SandboxConfig.__module__ == "pysymex._internal.config.sandbox.types"
+    assert SandboxResourceLimits.__module__ == "pysymex._internal.config.sandbox.types"
+    assert SecurityCapabilities.__module__ == "pysymex._internal.config.sandbox.types"
+    assert TracerConfig.__module__ == "pysymex._internal.config.tracing.settings"

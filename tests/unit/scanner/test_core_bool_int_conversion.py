@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.config import is_object_dict
-from pysymex.scanner.types import IssueRecord
-from pysymex.scanner.file import scan_file
+from pysymex._internal.analysis.records import IssueRecord
+from pysymex._internal.config.values import ConfigValues
+from pysymex._internal.scanner.file import scan_file
 
 
 def _counterexample_limit(issue: IssueRecord) -> object:
     counterexample = issue.get("counterexample")
-    if not is_object_dict(counterexample):
+    if not ConfigValues.is_object_dict(counterexample):
         return None
     return counterexample.get("limit")
 

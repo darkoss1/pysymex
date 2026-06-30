@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.scanner.file import scan_file
-from pysymex.analysis.scan.preflight import (
-    collect_bytearray_modulo_index_diagnostics,
-    collect_equality_guarded_zero_division_diagnostics,
-    collect_guarded_index_offset_diagnostics,
-    collect_masked_zero_division_diagnostics,
-    collect_self_canceling_zero_division_diagnostics,
+from pysymex._internal.analysis.scan.preflight.bytearray.core import find_bytearray_modulo_index
+from pysymex._internal.analysis.scan.preflight.equality.zero.core import (
+    find_equality_guarded_zero_division,
 )
+from pysymex._internal.analysis.scan.preflight.guarded.index.core import find_guarded_index_offset
+from pysymex._internal.analysis.scan.preflight.masked.zero.core import find_masked_zero_division
+from pysymex._internal.analysis.scan.preflight.self.canceling.zero import (
+    find_self_canceling_zero_division,
+)
+from pysymex._internal.scanner.file import scan_file
 
 
 def test_bytearray_modulo_index_diagnostic_reports_unguarded_oversized_modulo() -> None:
     """The bytearray fallback reports simple modulo ranges wider than the concrete buffer."""
-    issues = collect_bytearray_modulo_index_diagnostics(
+    issues = find_bytearray_modulo_index(
         "def target(x: int) -> int:\n"
         "    table = bytearray([1, 2, 3, 4])\n"
         "    idx = x % 13\n"
@@ -30,7 +32,7 @@ def test_bytearray_modulo_index_diagnostic_reports_unguarded_oversized_modulo() 
 
 def test_bytearray_modulo_index_diagnostic_ignores_guarded_modulo_index() -> None:
     """An explicit upper-bound guard prevents the syntactic fallback report."""
-    issues = collect_bytearray_modulo_index_diagnostics(
+    issues = find_bytearray_modulo_index(
         "def target(x: int) -> int:\n"
         "    table = bytearray([1, 2, 3, 4])\n"
         "    idx = x % 13\n"
@@ -44,7 +46,7 @@ def test_bytearray_modulo_index_diagnostic_ignores_guarded_modulo_index() -> Non
 
 def test_guarded_index_offset_reports_off_by_offset_access() -> None:
     """A guard for ``index < len(data)-1`` does not protect ``data[index+2]``."""
-    issues = collect_guarded_index_offset_diagnostics(
+    issues = find_guarded_index_offset(
         "def target(index: int) -> int:\n"
         "    data = [1, 2, 3]\n"
         "    if 0 <= index < len(data) - 1:\n"
@@ -59,7 +61,7 @@ def test_guarded_index_offset_reports_off_by_offset_access() -> None:
 
 def test_guarded_index_offset_tracks_dict_alias_sequence_length() -> None:
     """Dictionary aliases to known sequences keep enough length information."""
-    issues = collect_guarded_index_offset_diagnostics(
+    issues = find_guarded_index_offset(
         "def target(index: int) -> int:\n"
         "    cells = [1, 2, 3]\n"
         "    shared = {'cells': cells}\n"
@@ -74,7 +76,7 @@ def test_guarded_index_offset_tracks_dict_alias_sequence_length() -> None:
 
 def test_guarded_index_offset_ignores_access_within_guard_margin() -> None:
     """The same guard protects ``data[index+1]`` for a sequence of length three."""
-    issues = collect_guarded_index_offset_diagnostics(
+    issues = find_guarded_index_offset(
         "def target(index: int) -> int:\n"
         "    data = [1, 2, 3]\n"
         "    if 0 <= index < len(data) - 1:\n"
@@ -87,7 +89,7 @@ def test_guarded_index_offset_ignores_access_within_guard_margin() -> None:
 
 def test_masked_zero_division_diagnostic_reports_guarded_zero_divisor() -> None:
     """The masked-zero fallback reports division inside a proven zero branch."""
-    issues = collect_masked_zero_division_diagnostics(
+    issues = find_masked_zero_division(
         "def target(x: int) -> int:\n"
         "    masked = x & 7\n"
         "    if masked == 0:\n"
@@ -102,7 +104,7 @@ def test_masked_zero_division_diagnostic_reports_guarded_zero_divisor() -> None:
 
 def test_masked_zero_division_diagnostic_ignores_reassigned_divisor() -> None:
     """Reassigning the guarded variable before division clears the syntactic zero fact."""
-    issues = collect_masked_zero_division_diagnostics(
+    issues = find_masked_zero_division(
         "def target(x: int) -> int:\n"
         "    masked = x & 7\n"
         "    if masked == 0:\n"
@@ -116,7 +118,7 @@ def test_masked_zero_division_diagnostic_ignores_reassigned_divisor() -> None:
 
 def test_equality_guarded_zero_division_reports_short_circuit_divisor() -> None:
     """An active equality guard proves subtraction of the guarded names is zero."""
-    issues = collect_equality_guarded_zero_division_diagnostics(
+    issues = find_equality_guarded_zero_division(
         "def target(a: int, b: int, c: int) -> int:\n"
         "    if a > 0 and c == b:\n"
         "        return 100 // (c - b)\n"
@@ -131,7 +133,7 @@ def test_equality_guarded_zero_division_reports_short_circuit_divisor() -> None:
 
 def test_equality_guarded_zero_division_ignores_reassigned_name() -> None:
     """Reassigning a guarded operand before division invalidates the equality fact."""
-    issues = collect_equality_guarded_zero_division_diagnostics(
+    issues = find_equality_guarded_zero_division(
         "def target(b: int, c: int) -> int:\n"
         "    if c == b:\n"
         "        c = b + 1\n"
@@ -163,7 +165,7 @@ def test_scan_file_emits_equality_guarded_zero_diagnostic(tmp_path: Path) -> Non
 
 def test_self_canceling_zero_division_reports_dict_alias_subtraction() -> None:
     """Equivalent dictionary values subtracted through different keys are zero."""
-    issues = collect_self_canceling_zero_division_diagnostics(
+    issues = find_self_canceling_zero_division(
         "def target(x: int) -> int:\n"
         "    divisor = 1\n"
         "    if x == 7:\n"
@@ -179,7 +181,7 @@ def test_self_canceling_zero_division_reports_dict_alias_subtraction() -> None:
 
 def test_self_canceling_zero_division_ignores_reassigned_divisor() -> None:
     """A later concrete non-zero assignment clears a prior self-canceling fact."""
-    issues = collect_self_canceling_zero_division_diagnostics(
+    issues = find_self_canceling_zero_division(
         "def target(x: int) -> int:\n"
         "    divisor = x - x\n"
         "    divisor = 1\n"

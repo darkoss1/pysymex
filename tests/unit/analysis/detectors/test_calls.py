@@ -5,16 +5,16 @@ from __future__ import annotations
 import dis
 from typing import cast
 
-from pysymex.analysis.detectors.calls import (
+from pysymex._internal.analysis.detectors.calls import (
     call_target_candidate_indices,
     extract_argc,
     get_call_target_name,
     is_plausible_callable_name,
     resolve_call_target_name,
 )
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.typing import StackValue
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _instruction(

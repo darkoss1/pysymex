@@ -1,26 +1,29 @@
 from __future__ import annotations
 
 import dis
+import types
 from collections.abc import Callable
 from dataclasses import dataclass
-import types
 from typing import cast
 
-from pysymex.analysis.detectors import IssueKind
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.state.record import VMState
-from pysymex.core.types.base import SymbolicNoneType as SymbolicNone
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.dispatch.dispatcher import OpcodeDispatcher
-from pysymex.execution.dispatch.result import OpcodeResult
-from pysymex.execution.opcodes.common.functions import (
-    handle_common_call,
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType as SymbolicNone
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
+from pysymex._internal.execution.dispatch.result import OpcodeResult
+from pysymex._internal.execution.opcodes.common.functions.call import handle_common_call
+from pysymex._internal.execution.opcodes.common.functions.call_ex import (
     handle_common_call_function_ex,
+)
+from pysymex._internal.execution.opcodes.common.functions.setup import (
     handle_common_load_build_class,
     handle_common_make_function,
 )
-from pysymex.execution.calls.model_dispatch import path_is_sat
-from pysymex.typing import StackValue
+from pysymex._internal.execution.opcodes.common.satisfiability import PathSatisfiability
+from pysymex._internal.typing.protocols import StackValue
 
 
 @dataclass(frozen=True)
@@ -236,7 +239,7 @@ def test_handle_common_call_prunes_unhandled_maybe_none_callable_to_normal_path(
     assert result.terminal is False
     assert result.issues == []
     assert len(result.new_states) == 1
-    assert not path_is_sat([*result.new_states[0].path_constraints, func.is_none])
+    assert not PathSatisfiability.is_sat([*result.new_states[0].path_constraints, func.is_none])
 
 
 def test_handle_common_call_routes_maybe_none_callable_to_handler_branch() -> None:
@@ -297,6 +300,14 @@ def test_handle_common_call_function_ex_expands_concrete_dict_star_args() -> Non
     assert result.new_states[0].local_vars["value"] == "a"
 
 
+def test_handle_common_call_function_ex_expands_concrete_symbolic_list_star_args() -> None:
+    result = _call_function_ex(_one_arg, SymbolicList.from_const([3]))
+
+    assert result.terminal is False
+    assert result.issues == []
+    assert result.new_states[0].local_vars["value"] == 3
+
+
 def test_handle_common_call_function_ex_reports_invalid_kwargs_mapping() -> None:
     result = _call_function_ex(_call_ex_target, (), 1)
 
@@ -326,7 +337,7 @@ def test_handle_common_call_function_ex_prunes_unhandled_maybe_none_callable() -
     assert result.terminal is False
     assert result.issues == []
     assert len(result.new_states) == 1
-    assert not path_is_sat([*result.new_states[0].path_constraints, func.is_none])
+    assert not PathSatisfiability.is_sat([*result.new_states[0].path_constraints, func.is_none])
 
 
 def test_handle_common_call_function_ex_routes_maybe_none_callable_to_handler_branch() -> None:

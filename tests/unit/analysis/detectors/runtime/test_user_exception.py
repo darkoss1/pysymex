@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/user_exception.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/user/exception.py."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import dis
 
 import z3
 
-from pysymex.analysis.detectors.runtime.user_exception import UserExceptionDetector
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.state.record import VMState
-
-from pysymex.analysis.detectors.detector.types import IssueKind
+from pysymex._internal.analysis.detectors.runtime.user.exception import UserExceptionDetector
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -39,13 +39,13 @@ class _MockSymbolicException:
 
 
 class TestUserExceptionDetector:
-    """Test suite for pysymex.analysis.detectors.runtime.user_exception.UserExceptionDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.runtime.user.exception.UserExceptionDetector."""
 
     def test_relevant_opcodes_are_raise_only(self) -> None:
         """Declare only opcodes that can represent explicit raises."""
         detector = UserExceptionDetector()
 
-        assert detector.relevant_opcodes == frozenset({"RAISE_VARARGS", "RERAISE"})
+        assert detector.relevant_opcodes == frozenset({"RAISE_VARARGS"})
 
     def test_check_ignores_non_raise_varargs(self) -> None:
         """Return None when the instruction is not RAISE_VARARGS."""
@@ -90,8 +90,8 @@ class TestUserExceptionDetector:
         assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
         assert "ZeroDivisionError" in issue.message
 
-    def test_check_detects_cleanup_reraise_with_retained_exception(self) -> None:
-        """Final RERAISE reports the exception retained by CPython cleanup bytecode."""
+    def test_check_ignores_cleanup_reraise_with_retained_exception(self) -> None:
+        """Cleanup RERAISE propagation is reported at the explicit bare raise site."""
         detector = UserExceptionDetector()
         instruction = _make_instruction("RERAISE", arg=1, argval=1)
         state = VMState(
@@ -103,12 +103,10 @@ class TestUserExceptionDetector:
 
         issue = detector.check(state, instruction, lambda _c: True)
 
-        assert issue is not None
-        assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
-        assert "ZeroDivisionError" in issue.message
+        assert issue is None
 
-    def test_check_preserves_modeled_value_error_kind(self) -> None:
-        """Internally modeled runtime ``ValueError`` keeps its specific issue kind."""
+    def test_check_ignores_cleanup_reraise_with_modeled_value_error(self) -> None:
+        """Modeled cleanup propagation does not duplicate the model's own issue."""
         detector = UserExceptionDetector()
         instruction = _make_instruction("RERAISE", arg=1, argval=1)
         state = VMState(
@@ -123,9 +121,7 @@ class TestUserExceptionDetector:
 
         issue = detector.check(state, instruction, lambda _c: True)
 
-        assert issue is not None
-        assert issue.kind == IssueKind.VALUE_ERROR
-        assert "__len__() should return >= 0" in issue.message
+        assert issue is None
 
     def test_check_ignores_empty_stack(self) -> None:
         """Return None when the stack is smaller than argc."""
@@ -155,6 +151,23 @@ class TestUserExceptionDetector:
         assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
         assert "RuntimeError" in issue.message
 
+    def test_check_classifies_value_error_class_as_value_error(self) -> None:
+        """Explicit ``raise ValueError`` belongs to the ValueError issue family."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        state = VMState(
+            stack=[ValueError],
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.VALUE_ERROR
+        assert issue.message == "Possible ValueError"
+
     def test_check_detects_exception_instance(self) -> None:
         """Report UNHANDLED_EXCEPTION when raising an exception instance."""
         detector = UserExceptionDetector()
@@ -169,6 +182,83 @@ class TestUserExceptionDetector:
         assert issue is not None
         assert issue.kind == IssueKind.UNHANDLED_EXCEPTION
         assert "RuntimeError" in issue.message
+
+    def test_check_classifies_value_error_instance_as_value_error(self) -> None:
+        """Explicit ``raise ValueError(...)`` keeps the stable exception detail."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        state = VMState(
+            stack=[ValueError("closed handle")],  # type: ignore[arg-type,list-item] # test mock
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.VALUE_ERROR
+        assert issue.message == "Possible ValueError: closed handle"
+
+    def test_check_classifies_attribute_error_instance_as_attribute_error(self) -> None:
+        """Explicit ``raise AttributeError(...)`` belongs to the attribute issue family."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        state = VMState(
+            stack=[AttributeError("missing_hard")],  # type: ignore[arg-type,list-item] # test mock
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.ATTRIBUTE_ERROR
+        assert issue.message == "Possible AttributeError: missing_hard"
+
+    def test_check_classifies_supported_builtin_runtime_exception_families(self) -> None:
+        """Supported built-in runtime exceptions use their specific issue kinds."""
+        expected = (
+            (IndexError("bad index"), IssueKind.INDEX_ERROR),
+            (KeyError("missing"), IssueKind.KEY_ERROR),
+            (TypeError("bad type"), IssueKind.TYPE_ERROR),
+        )
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+
+        for exc, issue_kind in expected:
+            state = VMState(
+                stack=[exc],  # type: ignore[arg-type,list-item] # test mock
+                path_constraints=[],
+                pc=1,
+                current_instructions=[instruction],
+            )
+
+            issue = detector.check(state, instruction, lambda _c: True)
+
+            assert issue is not None
+            assert issue.kind == issue_kind
+
+    def test_check_classifies_modeled_value_error_carrier_with_detail(self) -> None:
+        """Constructor-modeled exception carriers keep the ValueError detail."""
+        detector = UserExceptionDetector()
+        instruction = _make_instruction("RAISE_VARARGS", arg=1, argval=1)
+        modeled = SymbolicException.concrete(ValueError, "closed handle")
+        carrier = SymbolicValue.from_const(modeled)
+        carrier.attach_modeled_object(modeled)
+        state = VMState(
+            stack=[carrier],
+            path_constraints=[],
+            pc=1,
+            current_instructions=[instruction],
+        )
+
+        issue = detector.check(state, instruction, lambda _c: True)
+
+        assert issue is not None
+        assert issue.kind == IssueKind.VALUE_ERROR
+        assert issue.message == "Possible ValueError: closed handle"
 
     def test_check_detects_symbolic_exception(self) -> None:
         """Report UNHANDLED_EXCEPTION when raising a mock symbolic object named Error/Exception."""

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from pysymex.benchmarks.suite.types import BenchmarkCategory, BenchmarkResult, RegressionResult
+from pysymex._internal.benchmarks.suite.types import (
+    BenchmarkCategory,
+    BenchmarkResult,
+    RegressionResult,
+)
 
 
 def test_benchmark_result_computed_metrics_and_dict() -> None:

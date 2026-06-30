@@ -2,27 +2,28 @@ from __future__ import annotations
 
 import pytest
 
-from pysymex.typing import StackValue
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.models.builtins.base import FunctionModel, is_raised_exception_effect
-from pysymex.models.containers.bytes.decoding import BytesDecodeModel
-from pysymex.models.containers.bytes.formatting import (
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.models.builtins.types.containers.bytes.decoding import BytesDecodeModel
+from pysymex._internal.models.builtins.types.containers.bytes.formatting import (
     BytesCenterModel,
     BytesHexModel,
     BytesLjustModel,
     BytesRjustModel,
     BytesZfillModel,
 )
-from pysymex.models.containers.bytes.search.affixes import BytesEndswithModel, BytesStartswithModel
-from pysymex.models.containers.bytes.search.counts import BytesCountModel
-from pysymex.models.containers.bytes.search.indexing import (
+from pysymex._internal.models.builtins.types.containers.bytes.search.affixes import (
+    BytesEndswithModel,
+    BytesStartswithModel,
+)
+from pysymex._internal.models.builtins.types.containers.bytes.search.counts import BytesCountModel
+from pysymex._internal.models.builtins.types.containers.bytes.search.indexing import (
     BytesFindModel,
     BytesIndexModel,
     BytesRfindModel,
     BytesRindexModel,
 )
-from pysymex.models.containers.bytes.splitting import (
+from pysymex._internal.models.builtins.types.containers.bytes.splitting import (
     BytesJoinModel,
     BytesPartitionModel,
     BytesRpartitionModel,
@@ -30,15 +31,23 @@ from pysymex.models.containers.bytes.splitting import (
     BytesSplitlinesModel,
     BytesSplitModel,
 )
-from pysymex.models.containers.bytes.transforms.replace import BytesReplaceModel
-from pysymex.models.containers.bytes.transforms.trimming import (
+from pysymex._internal.models.builtins.types.containers.bytes.transforms.replace import (
+    BytesReplaceModel,
+)
+from pysymex._internal.models.builtins.types.containers.bytes.transforms.trimming import (
     BytesLstripModel,
     BytesRemovePrefixModel,
     BytesRemoveSuffixModel,
     BytesRstripModel,
     BytesStripModel,
 )
-from pysymex.models.containers.bytes.translation import BytesExpandtabsModel, BytesTranslateModel
+from pysymex._internal.models.builtins.types.containers.bytes.translation import (
+    BytesExpandtabsModel,
+    BytesTranslateModel,
+)
+from pysymex._internal.models.contracts.function import FunctionModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -83,7 +92,7 @@ def test_positional_bytes_methods_enforce_contract(
     ]
     for args, kwargs in invalid_calls:
         effect = model.apply(args, kwargs, _state()).side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     assert (
@@ -121,7 +130,7 @@ def test_positional_bytes_methods_enforce_contract(
 def test_bytes_methods_reject_missing_required_operand(model: FunctionModel) -> None:
     effect = model.apply([_receiver()], {}, _state()).side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -161,7 +170,7 @@ def test_named_bytes_methods_enforce_contract(
     ]
     for args, kwargs in invalid_calls:
         effect = model.apply(args, kwargs, _state()).side_effects.get("raised_exception")
-        assert is_raised_exception_effect(effect)
+        assert SideEffects.is_raised_exception(effect)
         assert effect["exception_type"] == "TypeError"
 
     assert (

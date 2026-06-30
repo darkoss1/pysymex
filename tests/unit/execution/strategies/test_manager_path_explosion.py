@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from pysymex.execution.config.settings import ExecutionConfig
-from pysymex.execution.executors.core import SymbolicExecutor
-from pysymex.execution.frontier import FrontierRuntimeMode
-from pysymex.execution.results.result import ExecutionResult
-
+from pysymex._internal.config.execution.settings import ExecutionConfig
+from pysymex._internal.execution.executors.core import SymbolicExecutor
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.results.result import ExecutionResult
 
 _BRANCH_EXPLOSION_SOURCE = """
 def branch_explosion(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int) -> int:
@@ -46,14 +45,14 @@ def branch_explosion(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: 
 
 
 def test_native_runtime_handles_path_explosion_cap_deterministically() -> None:
-    """Default native ordering drives many paths to completion under a path cap."""
+    """Native ordering drives many exact-feasible branches to the path cap."""
     native_result = _execute_branch_explosion(
         FrontierRuntimeMode.POLAR_CEGIS_RUNTIME,
     )
 
     assert native_result.paths_explored == 65
     assert native_result.paths_completed == 60
-    assert native_result.solver_stats["queries"] == 128
+    assert native_result.solver_stats["queries"] == 0
     assert native_result.degraded_passes == ["resource_limit_paths"]
 
 
@@ -69,10 +68,7 @@ def _execute_branch_explosion(mode: FrontierRuntimeMode) -> ExecutionResult:
         max_iterations=50000,
         timeout_seconds=30.0,
         enable_cross_function=False,
-        enable_type_inference=False,
         enable_fp_filtering=False,
-        deterministic_mode=False,
-        random_seed=7,
         frontier_runtime_mode=mode,
     )
     return SymbolicExecutor(config).execute_function(

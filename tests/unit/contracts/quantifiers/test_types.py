@@ -1,10 +1,16 @@
 import z3
-from pysymex.contracts.quantifiers.factories import exists_unique
-from pysymex.contracts.quantifiers.types import QuantifierKind, QuantifierVar, BoundSpec, Quantifier
+
+from pysymex._internal.contracts.quantifiers.factories import exists_unique
+from pysymex._internal.contracts.quantifiers.types import (
+    BoundSpec,
+    Quantifier,
+    QuantifierKind,
+    QuantifierVar,
+)
 
 
 class TestQuantifierKind:
-    """Test suite for pysymex.contracts.quantifiers.types.QuantifierKind."""
+    """Test suite for pysymex._internal.contracts.quantifiers.types.QuantifierKind."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -15,7 +21,7 @@ class TestQuantifierKind:
 
 
 class TestQuantifierVar:
-    """Test suite for pysymex.contracts.quantifiers.types.QuantifierVar."""
+    """Test suite for pysymex._internal.contracts.quantifiers.types.QuantifierVar."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -34,7 +40,7 @@ class TestQuantifierVar:
 
 
 class TestBoundSpec:
-    """Test suite for pysymex.contracts.quantifiers.types.BoundSpec."""
+    """Test suite for pysymex._internal.contracts.quantifiers.types.BoundSpec."""
 
     def test_to_constraint(self) -> None:
         """Test to_constraint behavior."""
@@ -54,7 +60,7 @@ class TestBoundSpec:
 
 
 class TestQuantifier:
-    """Test suite for pysymex.contracts.quantifiers.types.Quantifier."""
+    """Test suite for pysymex._internal.contracts.quantifiers.types.Quantifier."""
 
     def test_to_z3(self) -> None:
         """Test to_z3 behavior."""

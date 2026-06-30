@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/assertion_error.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/assertion_error.py."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.errors.assertion import AssertionErrorDetector
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
+from pysymex._internal.analysis.detectors.runtime.errors.assertion import AssertionErrorDetector
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
 
 
 def _make_instruction(
@@ -34,7 +34,7 @@ def _make_instruction(
 
 
 class TestAssertionErrorDetector:
-    """Test suite for pysymex.analysis.detectors.detector.AssertionErrorDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.AssertionErrorDetector."""
 
     def test_check_reports_assertion_by_stack_marker(self) -> None:
         """Report ASSERTION_ERROR when stack top clearly contains AssertionError."""
@@ -115,7 +115,7 @@ class TestAssertionErrorDetector:
         x = z3.Int("unknown_assertion_path")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(
@@ -128,7 +128,7 @@ class TestAssertionErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is not None
         assert "Path feasibility inconclusive" in issue.message

@@ -1,4 +1,4 @@
-"""Tests for pysymex/analysis/detectors/runtime/key_error.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/key_error.py."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import time
 
 import z3
 
-from pysymex.analysis.detectors.runtime.errors.key import KeyErrorDetector
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.analysis.detectors.runtime.errors.key import KeyErrorDetector
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -43,7 +43,7 @@ def _is_sat(constraints: list[z3.BoolRef]) -> bool:
 
 
 class TestKeyErrorDetector:
-    """Test suite for pysymex.analysis.detectors.detector.KeyErrorDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.KeyErrorDetector."""
 
     def test_relevant_opcodes_include_normal_subscript_reads(self) -> None:
         """Runtime dispatch must invoke the detector for ordinary ``dict[key]`` reads."""
@@ -274,7 +274,7 @@ class TestKeyErrorDetector:
         x = z3.Int("unknown_key_error_path")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(stack=[{"present": 1}, "missing"], path_constraints=[x > 0], pc=1),
@@ -282,7 +282,7 @@ class TestKeyErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is not None
         assert "Path feasibility inconclusive" in issue.message
@@ -299,7 +299,7 @@ class TestKeyErrorDetector:
         key, key_constraint = SymbolicString.symbolic("unknown_key")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(
@@ -311,7 +311,7 @@ class TestKeyErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is not None
         assert "Path feasibility inconclusive" in issue.message

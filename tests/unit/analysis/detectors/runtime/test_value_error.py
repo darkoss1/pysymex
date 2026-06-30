@@ -1,22 +1,22 @@
-"""Tests for pysymex/analysis/detectors/runtime/value_error.py."""
+"""Tests for pysymex/_internal/analysis/detectors/runtime/value_error.py."""
 
 from __future__ import annotations
 
 import dis
 import time
-from typing import cast
 
 import z3
 
-from pysymex.typing import StackValue
-from pysymex.analysis.detectors.runtime.value_error import ValueErrorDetector
-from pysymex.analysis.detectors.runtime.value_error.literals import is_known_empty_iterable
-from pysymex.core.solver.engine.context import active_incremental_solver
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.analysis.detectors.runtime.value.detector import ValueErrorDetector
+from pysymex._internal.analysis.detectors.runtime.value.iterable.facts import (
+    is_known_empty_iterable,
+)
+from pysymex._internal.core.solver.engine.context import SolverContext
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 def _make_instruction(
@@ -40,7 +40,7 @@ def _make_instruction(
 
 
 class TestValueErrorDetector:
-    """Test suite for pysymex.analysis.detectors.detector.ValueErrorDetector."""
+    """Test suite for pysymex._internal.analysis.detectors.detector.ValueErrorDetector."""
 
     def test_check_reports_marker_from_locals(self) -> None:
         """Report VALUE_ERROR when local variable carries ValueError marker."""
@@ -62,6 +62,21 @@ class TestValueErrorDetector:
         state = VMState(stack=[int, "not-an-int"], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
+
+    def test_check_ignores_shadowed_int_literal_call(self) -> None:
+        """Do not report ValueError when a source callable shadows builtin int."""
+        detector = ValueErrorDetector()
+        instruction = _make_instruction("CALL", arg=1, argval=1)
+
+        def shadowed_int(_value: object) -> int:
+            return 1
+
+        shadowed_int.__name__ = "int"
+        state = VMState(stack=[shadowed_int, "not-an-int"], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
 
     def test_check_formats_symbolic_string_int_literal_diagnostic(self) -> None:
         """Diagnostics should show the exact string, not the symbolic wrapper repr."""
@@ -134,30 +149,31 @@ class TestValueErrorDetector:
         detector = ValueErrorDetector()
         instruction = _make_instruction("CALL", arg=1, argval=1)
 
-        class _FromHexCallable:
-            __name__ = "fromhex"
-
-        state = VMState(
-            stack=[cast("StackValue", _FromHexCallable()), "zz"],
-            path_constraints=[],
-            pc=1,
-        )
+        state = VMState(stack=[bytes.fromhex, "zz"], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is not None
+
+    def test_check_ignores_shadowed_fromhex_literal_call(self) -> None:
+        """Do not report bytes.fromhex ValueError for a source callable named fromhex."""
+        detector = ValueErrorDetector()
+        instruction = _make_instruction("CALL", arg=1, argval=1)
+
+        def shadowed_fromhex(_value: object) -> bytes:
+            return b"ok"
+
+        shadowed_fromhex.__name__ = "fromhex"
+        state = VMState(stack=[shadowed_fromhex, "zz"], path_constraints=[], pc=1)
+
+        issue = detector.check(state, instruction, lambda _constraints: True)
+
+        assert issue is None
 
     def test_check_ignores_fromhex_call_with_too_many_arguments(self) -> None:
         """Do not report ValueError when bytes.fromhex arity is a TypeError case."""
         detector = ValueErrorDetector()
         instruction = _make_instruction("CALL", arg=2, argval=2)
 
-        class _FromHexCallable:
-            __name__ = "fromhex"
-
-        state = VMState(
-            stack=[cast("StackValue", _FromHexCallable()), "zz", 0],
-            path_constraints=[],
-            pc=1,
-        )
+        state = VMState(stack=[bytes.fromhex, "zz", 0], path_constraints=[], pc=1)
         issue = detector.check(state, instruction, lambda _constraints: True)
         assert issue is None
 
@@ -211,14 +227,14 @@ class TestValueErrorDetector:
         symbolic_list, len_constraint = SymbolicList.symbolic("unknown_min_items")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             is_known_empty = is_known_empty_iterable(
                 symbolic_list,
                 [len_constraint, symbolic_list.z3_len == 0],
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert not is_known_empty
 
@@ -309,7 +325,7 @@ class TestValueErrorDetector:
         shift, shift_constraint = SymbolicValue.symbolic_int("unknown_shift")
         solver = IncrementalSolver(timeout_ms=1000)
         solver.set_deadline(time.perf_counter() - 1.0)
-        token = active_incremental_solver.set(solver)
+        token = SolverContext.active.set(solver)
         try:
             issue = detector.check(
                 VMState(stack=[1, shift], path_constraints=[shift_constraint], pc=1),
@@ -317,7 +333,7 @@ class TestValueErrorDetector:
                 lambda _constraints: True,
             )
         finally:
-            active_incremental_solver.reset(token)
+            SolverContext.active.reset(token)
 
         assert issue is None
 

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-import pysymex.models.builtins as builtins_models
-from pysymex.core.state.record import VMState
-from pysymex.core.types.containers.sequences import SymbolicIterator
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.havoc import HavocValue
-from pysymex.models.builtins.base import is_raised_exception_effect
-from pysymex.typing import StackValue
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.havoc import HavocValue
+from pysymex._internal.models.builtins.iteration.iter_model import IterModel
+from pysymex._internal.models.builtins.iteration.next_model import NextModel
+from pysymex._internal.models.contracts.results import SideEffects
+from pysymex._internal.typing.protocols import StackValue
 
 
 def _state() -> VMState:
@@ -17,10 +18,10 @@ def _state() -> VMState:
 
 @pytest.mark.parametrize("producer", [1, "value", [1]])
 def test_two_argument_iter_rejects_definite_non_callable_producer(producer: StackValue) -> None:
-    result = builtins_models.IterModel().apply([producer, None], {}, _state())
+    result = IterModel().apply([producer, None], {}, _state())
     effect = result.side_effects.get("raised_exception")
 
-    assert is_raised_exception_effect(effect)
+    assert SideEffects.is_raised_exception(effect)
     assert effect["exception_type"] == "TypeError"
 
 
@@ -28,7 +29,7 @@ def test_next_on_opaque_generator_returns_havoc_without_type_error() -> None:
     source, _constraint = SymbolicList.symbolic("generator_source")
     generator = SymbolicIterator("generator", source, is_generator=True)
 
-    result = builtins_models.NextModel().apply([generator], {}, _state())
+    result = NextModel().apply([generator], {}, _state())
 
     assert isinstance(result.value, HavocValue)
     assert "raised_exception" not in result.side_effects

@@ -1,15 +1,18 @@
 import sys
 from pathlib import Path
 
-from pysymex.sandbox.isolation.windows.appcontainer.backend import (
-    WindowsAppContainerBackend,
+from pysymex._internal.sandbox.isolation.windows.appcontainer.backend import (
+    AppContainerBackend,
     has_windows_appcontainer_support,
 )
-from pysymex.sandbox.isolation.windows.appcontainer.runtime.cache import RuntimeManifestEntry
-from pysymex.sandbox.types import ExecutionStatus
+from pysymex._internal.sandbox.isolation.windows.appcontainer.runtime.cache import (
+    RuntimeManifestEntry,
+)
+from pysymex._internal.sandbox.isolation.windows.appcontainer.shared import NativeProcessResult
+from pysymex._internal.sandbox.types import ExecutionStatus
 
 
-class InspectableWindowsAppContainerBackend(WindowsAppContainerBackend):
+class InspectableWindowsAppContainerBackend(AppContainerBackend):
     def set_jail_path_for_test(self, path: Path) -> None:
         self._jail_path = path
 
@@ -36,6 +39,9 @@ class InspectableWindowsAppContainerBackend(WindowsAppContainerBackend):
 
     def strip_staged_python_startup_warning_for_test(self, stderr: bytes) -> bytes:
         return self._strip_staged_python_startup_warning(stderr)
+
+    def validate_combined_self_check_for_test(self, result: NativeProcessResult) -> None:
+        self._validate_combined_self_check(result)
 
     def mark_verified_for_test(self) -> None:
         self._is_setup = True

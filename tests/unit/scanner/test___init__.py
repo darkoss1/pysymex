@@ -1,28 +1,15 @@
-"""Tests for scanner package exports."""
+"""Scanner implementation package privacy."""
 
 from __future__ import annotations
 
-import pytest
+from pathlib import Path
 
-import pysymex.scanner
+import pysymex
 
 
-class TestScannerInit:
-    """Test class for scanner package initialization."""
-
-    def test_scanner_init_getattr_resolves_symbol(self) -> None:
-        """Verify __getattr__ dynamically resolves exported symbols like scan_file."""
-        assert hasattr(pysymex.scanner, "scan_file")
-        assert callable(pysymex.scanner.scan_file)
-
-    def test_scanner_init_getattr_raises_attribute_error(self) -> None:
-        """Verify __getattr__ raises AttributeError for unknown symbols."""
-        with pytest.raises(AttributeError, match="has no attribute"):
-            getattr(pysymex.scanner, "this_symbol_does_not_exist")
-
-    def test_scanner_init_dir_lists_exports(self) -> None:
-        """Verify __dir__ lists the contents of the module's defined exports."""
-        exports = dir(pysymex.scanner)
-        assert "scan_file" in exports
-        assert "scan_directory" in exports
-        assert "ScanSession" in exports
+def test_scanner_root_does_not_compete_with_public_scan_namespace() -> None:
+    package_root = Path(pysymex.__file__).parent
+    assert not (package_root / "scanner").exists()
+    assert not hasattr(pysymex, "scanner")
+    assert not hasattr(pysymex, "scan_file")
+    assert not hasattr(pysymex, "scan_directory")

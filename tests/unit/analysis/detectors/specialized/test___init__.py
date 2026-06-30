@@ -1,29 +1,18 @@
-"""Tests for pysymex/analysis/detectors/specialized/__init__.py."""
+"""Tests for the specialized detector package initializer."""
 
-import dis
-from pysymex.analysis.detectors.specialized import __all__
+import ast
+from pathlib import Path
 
 
-def MockInstr(
-    opname: str, argval: object = None, argrepr: str = "", arg: int = 0, offset: int = 10
-) -> dis.Instruction:
-    import dis
-
-    def _dummy() -> None:
-        pass
-
-    template = next(dis.get_instructions(_dummy))
-    return template._replace(
-        opname=opname,
-        opcode=dis.opmap.get(opname, 0),
-        arg=arg,
-        argval=argval,
-        argrepr=argrepr,
-        offset=offset,
+def test_specialized_detector_initializer_has_no_runtime_surface() -> None:
+    init_file = (
+        Path(__file__).parents[5]
+        / "pysymex"
+        / "_internal"
+        / "analysis"
+        / "detectors"
+        / "specialized"
+        / "__init__.py"
     )
-
-
-def test_exports() -> None:
-    """Test module exports."""
-    assert len(__all__) >= 0
-    assert isinstance(__all__, list)
+    init_tree = ast.parse(init_file.read_text(encoding="utf-8"))
+    assert init_tree.body == []

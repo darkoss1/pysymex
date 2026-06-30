@@ -7,8 +7,8 @@ import time
 import pytest
 import z3
 
-from pysymex.core.solver.engine.incremental import IncrementalSolver
-from pysymex.core.solver.engine.results import SolverResult
+from pysymex._internal.core.solver.engine.incremental import IncrementalSolver
+from pysymex._internal.core.solver.engine.results import SolverResult
 
 
 class TestSolverResult:
@@ -164,16 +164,18 @@ class TestIncrementalSolver:
     def test_check_sat_result_does_not_cache_unknown(self, monkeypatch: pytest.MonkeyPatch) -> None:
         solver = IncrementalSolver()
         x = z3.Int("x_result_unknown_recheck")
+        y = z3.Int("y_result_unknown_recheck")
+        constraint = x + y == 3
 
         def unknown_check(*assumptions: z3.BoolRef) -> z3.CheckSatResult:
             _ = assumptions
             return z3.unknown
 
         monkeypatch.setattr(solver.solver, "check", unknown_check)
-        first = solver.check_sat_result([x == 3])
+        first = solver.check_sat_result([constraint])
 
         monkeypatch.undo()
-        second = solver.check_sat_result([x == 3])
+        second = solver.check_sat_result([constraint])
 
         assert first.is_unknown
         assert second.is_sat
@@ -256,6 +258,28 @@ class TestIncrementalSolver:
         assert stats["unsat_results"] == 1
         assert stats["unknown_results"] == 1
 
+    def test_get_stats_separates_logical_queries_from_physical_z3_checks(self) -> None:
+        solver = IncrementalSolver()
+        calls = 0
+        real_check = solver.solver.check
+
+        def counted_check(*assumptions: z3.BoolRef) -> z3.CheckSatResult:
+            nonlocal calls
+            calls += 1
+            return real_check(*assumptions)
+
+        solver.solver.check = counted_check
+        x = z3.Int("x_stats_physical_checks")
+
+        assert solver.check(x > 0).is_sat
+        assert solver.check(x > 0).is_sat
+
+        stats = solver.get_stats()
+        assert calls == 1
+        assert stats["logical_queries"] == 2
+        assert stats["z3_check_calls"] == 1
+        assert stats["queries"] == 1
+
     def test_reset_clears_all_per_run_solver_stats(self) -> None:
         solver = IncrementalSolver(use_cache=False)
         x = z3.Int("x_stats_reset")
@@ -267,6 +291,8 @@ class TestIncrementalSolver:
 
         stats = solver.get_stats()
         assert stats["queries"] == 0
+        assert stats["logical_queries"] == 0
+        assert stats["z3_check_calls"] == 0
         assert stats["sat_results"] == 0
         assert stats["unsat_results"] == 0
         assert stats["unknown_results"] == 0

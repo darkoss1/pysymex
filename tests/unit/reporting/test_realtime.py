@@ -6,16 +6,13 @@ from typing import Any, cast
 
 import pytest
 
-from pysymex.reporting.realtime import (
-    GlobalState,
-    HTML_TEMPLATE,
-    RealtimeVisualizationPlugin,
-    global_state,
-    run_realtime_scan,
-)
-from pysymex.reporting.realtime.execution import execute_realtime_file
-from pysymex.scanner.file import scan_file
-from pysymex.scanner.types import ScanResult
+from pysymex._internal.reporting.realtime.execution import execute_realtime_file
+from pysymex._internal.reporting.realtime.plugin import RealtimePlugin
+from pysymex._internal.reporting.realtime.scan import run_realtime_scan
+from pysymex._internal.reporting.realtime.state import GlobalState, global_state
+from pysymex._internal.reporting.realtime.template import HTML_TEMPLATE
+from pysymex._internal.scanner.file import scan_file
+from pysymex._internal.scanner.types import ScanResult
 
 
 class _Engine:
@@ -26,7 +23,13 @@ class _Engine:
         self.hooks[name] = handler
 
 
-def _ignore_server_shutdown(server: object) -> None:
+def _fake_start_realtime_server(**kwargs: object) -> object:
+    _ = kwargs
+    return object()
+
+
+def _ignore_server_shutdown(_server: object, **kwargs: object) -> None:
+    _ = kwargs
     pass
 
 
@@ -84,7 +87,7 @@ def test_realtime_template_renders_live_scan_data_as_text() -> None:
 
 
 def test_realtime_plugin_registers_pre_step_hook() -> None:
-    plugin = RealtimeVisualizationPlugin()
+    plugin = RealtimePlugin()
     hooks = plugin.get_hooks()
     assert "pre_step" in hooks
 
@@ -105,17 +108,17 @@ def test_execute_realtime_file_delegates_policy_to_canonical_scanner(
         observed.update(kwargs)
         return ScanResult(file_path=str(file_path), timestamp="now")
 
-    monkeypatch.setattr("pysymex.reporting.realtime.execution.scan_file", fake_scan_file)
-    plugin = RealtimeVisualizationPlugin(sleep_ms=0)
+    monkeypatch.setattr("pysymex._internal.reporting.realtime.execution.scan_file", fake_scan_file)
+    plugin = RealtimePlugin(sleep_ms=0)
 
     execute_realtime_file(
         target,
         10,
         1.0,
         plugin,
+        max_depth=123,
         auto_tune=True,
         use_sandbox=False,
-        deterministic_mode=True,
         no_cache=True,
         max_iterations=7,
         trace_enabled=False,
@@ -123,10 +126,10 @@ def test_execute_realtime_file_delegates_policy_to_canonical_scanner(
 
     assert observed["file_path"] == target
     assert observed["max_paths"] == 10
+    assert observed["max_depth"] == 123
     assert observed["timeout"] == 1.0
     assert observed["auto_tune"] is True
     assert observed["use_sandbox"] is False
-    assert observed["deterministic_mode"] is True
     assert observed["no_cache"] is True
     assert observed["max_iterations"] == 7
     assert observed["execution_observer"] is plugin
@@ -135,15 +138,14 @@ def test_execute_realtime_file_delegates_policy_to_canonical_scanner(
 def test_execute_realtime_file_returns_canonical_scanner_result(tmp_path: Path) -> None:
     target = tmp_path / "division.py"
     target.write_text("def target(value: int) -> int:\n    return 1 // value\n", encoding="utf-8")
-    expected = scan_file(target, use_sandbox=False, deterministic_mode=True, trace_enabled=False)
+    expected = scan_file(target, use_sandbox=False, trace_enabled=False)
 
     actual = execute_realtime_file(
         target,
         100,
         30.0,
-        RealtimeVisualizationPlugin(sleep_ms=0),
+        RealtimePlugin(sleep_ms=0),
         use_sandbox=False,
-        deterministic_mode=True,
         trace_enabled=False,
     )
 
@@ -160,9 +162,12 @@ def test_run_realtime_scan_marks_failed_analysis_and_resets_state(
     global_state.stats["files"] = 99
     global_state.stats["scan_errors"] = 99
 
-    monkeypatch.setattr("pysymex.reporting.realtime.scan.start_realtime_server", object)
     monkeypatch.setattr(
-        "pysymex.reporting.realtime.scan.shutdown_realtime_server",
+        "pysymex._internal.reporting.realtime.scan.start_realtime_server",
+        _fake_start_realtime_server,
+    )
+    monkeypatch.setattr(
+        "pysymex._internal.reporting.realtime.scan.shutdown_realtime_server",
         _ignore_server_shutdown,
     )
 
@@ -182,13 +187,16 @@ def test_run_realtime_scan_marks_degraded_analysis(
 ) -> None:
     target = tmp_path / "degraded.py"
     target.write_text("x = 1\n", encoding="utf-8")
-    monkeypatch.setattr("pysymex.reporting.realtime.scan.start_realtime_server", object)
     monkeypatch.setattr(
-        "pysymex.reporting.realtime.scan.shutdown_realtime_server",
+        "pysymex._internal.reporting.realtime.scan.start_realtime_server",
+        _fake_start_realtime_server,
+    )
+    monkeypatch.setattr(
+        "pysymex._internal.reporting.realtime.scan.shutdown_realtime_server",
         _ignore_server_shutdown,
     )
     monkeypatch.setattr(
-        "pysymex.reporting.realtime.scan.execute_realtime_file",
+        "pysymex._internal.reporting.realtime.scan.execute_realtime_file",
         _degraded_realtime_result,
     )
 
@@ -201,7 +209,7 @@ def test_run_realtime_scan_marks_degraded_analysis(
 
 
 def test_global_state_resets_custom_lists_and_serializes() -> None:
-    from pysymex.reporting.realtime.graph import initialize_graph
+    from pysymex._internal.reporting.realtime.graph import initialize_graph
 
     global_state.issues_list.append({"test": "issue"})
     global_state.visited_functions.append("test_func")
@@ -217,7 +225,7 @@ def test_global_state_resets_custom_lists_and_serializes() -> None:
 
 
 def test_plugin_begin_code_keeps_function_node_unique(tmp_path: Path) -> None:
-    from pysymex.reporting.realtime.graph import initialize_graph
+    from pysymex._internal.reporting.realtime.graph import initialize_graph
 
     target_file = tmp_path / "test.py"
     initialize_graph([target_file], tmp_path)
@@ -227,7 +235,7 @@ def test_plugin_begin_code_keeps_function_node_unique(tmp_path: Path) -> None:
         co_name = "target_func"
         co_filename = str(target_file)
 
-    plugin = RealtimeVisualizationPlugin(sleep_ms=0)
+    plugin = RealtimePlugin(sleep_ms=0)
     plugin.begin_code(cast("Any", FakeCode()))
     plugin.begin_code(cast("Any", FakeCode()))
 
@@ -241,15 +249,15 @@ def test_plugin_begin_code_keeps_function_node_unique(tmp_path: Path) -> None:
 
 
 def test_plugin_hooks_populate_execution_tree_and_issues(tmp_path: Path) -> None:
-    from pysymex.analysis.detectors.detector.types import Issue, IssueKind
-    from pysymex.reporting.realtime.graph import initialize_graph
+    from pysymex._internal.analysis.detectors.detector.types import Issue, IssueKind
+    from pysymex._internal.reporting.realtime.graph import initialize_graph
 
     # 1. Initialize
     target_file = tmp_path / "test.py"
     initialize_graph([target_file], tmp_path)
     global_state.active_file = target_file
 
-    plugin = RealtimeVisualizationPlugin(sleep_ms=0)
+    plugin = RealtimePlugin(sleep_ms=0)
     hooks = plugin.get_hooks()
     pre_step = hooks["pre_step"]
     on_fork = hooks["on_fork"]

@@ -6,14 +6,17 @@ import types
 
 import pytest
 
-from pysymex.core.exceptions.objects import SymbolicException
-from pysymex.core.state.record import VMState
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.execution.opcodes.py313 import exceptions
+import pysymex._internal.execution.opcodes.py313.exceptions as exceptions
+from pysymex._internal.core.exceptions.objects import SymbolicException
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.core.types.base import SymbolicNoneType
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.execution.dispatch.dispatcher.core import OpcodeDispatcher
 from tests.unit.execution.opcodes.py313.exception_helpers import (
     Entry,
     code_object,
     dispatcher_for,
+    instr,
     instruction_by_offset,
 )
 
@@ -72,6 +75,21 @@ def f(x):
     next_state = result.new_states[0]
     assert len(next_state.stack) == 1
     assert next_state.pc == dispatcher.offset_to_index(handler.offset)
+
+
+def test_handle_push_exc_info_activates_exception_below_lasti_metadata() -> None:
+    """``lasti`` metadata must not replace the active exception."""
+    exc = SymbolicException.concrete(ZeroDivisionError)
+    lasti = SymbolicValue.from_const(28)
+    state = VMState(stack=["exit", exc, lasti], pc=0)
+
+    exceptions.handle_push_exc_info(instr("PUSH_EXC_INFO"), state, OpcodeDispatcher())
+
+    assert state.active_exception is exc
+    assert state.stack[0] == "exit"
+    assert state.stack[1] is exc
+    assert isinstance(state.stack[2], SymbolicNoneType)
+    assert state.stack[3] is lasti
 
 
 def test_handle_reraise_uses_exception_table_cleanup_stack_shape() -> None:

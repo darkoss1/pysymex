@@ -1,23 +1,30 @@
 import ctypes
+from collections.abc import Callable
 from ctypes import wintypes
-from typing import Any
+from typing import Any, cast
+
 import pytest
 
-from pysymex.sandbox.errors import SandboxSetupError
-from pysymex.sandbox.isolation.windows.native.last_error import set_windows_last_error
-from pysymex.sandbox.isolation.windows.native.process import WindowsNativeProcessMixin
-from pysymex.sandbox.isolation.windows.native.shared import (
-    AttributeList,
+from pysymex._internal.sandbox.errors import SandboxSetupError
+from pysymex._internal.sandbox.isolation.windows.native.process import WindowsNativeProcessMixin
+from pysymex._internal.sandbox.isolation.windows.native.shared import (
     ERROR_INSUFFICIENT_BUFFER,
-    PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT,
-    PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON,
     PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
     PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
     PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+    PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT,
+    PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON,
     SE_GROUP_ENABLED,
+    AttributeList,
     SidAndAttributes,
 )
+
+
+def _set_ctypes_last_error(error: int) -> None:
+    setter = getattr(ctypes, "set_last_error", None)
+    assert callable(setter)
+    cast(Callable[[int], None], setter)(error)
 
 
 class _FakeKernel32:
@@ -35,9 +42,9 @@ class _FakeKernel32:
         self.attribute_counts.append(attribute_count)
         ctypes.cast(size, ctypes.POINTER(ctypes.c_size_t)).contents.value = 128
         if attribute_list is None:
-            set_windows_last_error(ERROR_INSUFFICIENT_BUFFER)
+            _set_ctypes_last_error(ERROR_INSUFFICIENT_BUFFER)
             return 0
-        set_windows_last_error(0)
+        _set_ctypes_last_error(0)
         return 1
 
 

@@ -4,10 +4,10 @@ from collections.abc import Generator
 
 import pytest
 
-from pysymex.stats.collectors.base import MetricCollector
-from pysymex.stats.registry import StatsRegistry
-from pysymex.stats.sinks.base import StatsSink
-from pysymex.stats.types import Event, EventType
+from pysymex._internal.stats.collectors.base import MetricCollector
+from pysymex._internal.stats.registry import StatsRegistry
+from pysymex._internal.stats.sinks.base import StatsSink
+from pysymex._internal.stats.types import Event, EventType
 
 MetricValue = float | int | str
 pytestmark = pytest.mark.usefixtures("clean_registry")
@@ -89,12 +89,12 @@ def test_emit() -> None:
 
 def test_hot_solver_event_helper_noops_when_stats_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
     """Solver hot-path telemetry should not allocate events unless stats is running."""
-    from pysymex.core.solver.engine import events as solver_events
+    import pysymex._internal.core.solver.engine.events as solver_events
 
     registry = StatsRegistry()
     monkeypatch.setattr(solver_events, "_stats_registry", registry)
 
-    solver_events.emit_event(EventType.SOLVER_QUERY, 1.0)
+    solver_events.emit_solver_event(EventType.SOLVER_QUERY, 1.0)
 
     assert len(registry.get_buffer()) == 0
 
@@ -103,12 +103,12 @@ def test_hot_executor_event_helper_noops_when_stats_stopped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Executor hot-path telemetry should not allocate path events unless stats is running."""
-    from pysymex.execution.executors.executor import events as executor_events
+    import pysymex._internal.execution.executors.executor.events as executor_events
 
     registry = StatsRegistry()
     monkeypatch.setattr(executor_events, "_stats_registry", registry)
 
-    executor_events.emit_event(EventType.PATH_EXPLORED, 1.0)
+    executor_events.emit_executor_event(EventType.PATH_EXPLORED, 1.0)
 
     assert len(registry.get_buffer()) == 0
 

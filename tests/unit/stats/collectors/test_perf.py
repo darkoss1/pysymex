@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from pysymex.stats.collectors.perf import PerfCollector
-from pysymex.stats.types import Event, EventType
+from pysymex._internal.stats.collectors.perf import PerfCollector
+from pysymex._internal.stats.types import Event, EventType
 
 
 class TestPerfCollector:

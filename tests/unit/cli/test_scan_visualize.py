@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from pysymex.cli.scan.symbolic import handle_symbolic_scan
-from pysymex.scanner.types import ScanResult
+from pysymex._internal.cli.commands.scan.symbolic import handle_symbolic_scan
+from pysymex._internal.scanner.types import ScanResult
 
 
 def test_visualize_symbolic_scan_forwards_canonical_scan_policy(tmp_path: Path) -> None:
@@ -16,17 +16,16 @@ def test_visualize_symbolic_scan_forwards_canonical_scan_policy(tmp_path: Path) 
         format="json",
         output=None,
         verbose=False,
-        recursive=False,
         visualize=True,
         stats=False,
         reproduce=False,
         max_paths=29,
+        max_depth=77,
         timeout=4.0,
         auto=True,
         no_sandbox=True,
-        deterministic=False,
-        seed=17,
         no_cache=True,
+        detect_overflow=True,
         max_iterations=13,
         trace=False,
         trace_output_dir=".pysymex/traces",
@@ -40,20 +39,24 @@ def test_visualize_symbolic_scan_forwards_canonical_scan_policy(tmp_path: Path) 
         return [ScanResult(file_path=str(path), timestamp="now")]
 
     with (
-        patch("pysymex.reporting.realtime.run_realtime_scan", side_effect=fake_realtime),
-        patch("pysymex.cli.scan.symbolic.emit_cli_output"),
+        patch(
+            "pysymex._internal.reporting.realtime.scan.run_realtime_scan", side_effect=fake_realtime
+        ),
+        patch("pysymex._internal.cli.commands.scan.symbolic.emit_cli_output"),
     ):
         return_code = handle_symbolic_scan(args, target, 0.0)
 
     assert return_code == 0
     assert observed["path"] == target
     assert observed["max_paths"] == 29
+    assert observed["max_depth"] == 77
     assert observed["timeout"] == 4.0
     assert observed["auto_tune"] is True
     assert observed["use_sandbox"] is False
-    assert observed["deterministic_mode"] is True
-    assert observed["random_seed"] == 17
     assert observed["no_cache"] is True
+    assert observed["detect_overflow"] is True
     assert observed["max_iterations"] == 13
     assert observed["trace_enabled"] is False
     assert observed["trace_verbosity"] == "full"
+    assert callable(observed["open_url"])
+    assert callable(observed["message_sink"])

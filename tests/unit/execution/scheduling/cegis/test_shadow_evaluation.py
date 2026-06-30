@@ -2,20 +2,33 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import build_frontier_checkpoint, build_shadow_capsule
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.checkpoints import build_frontier_checkpoint
+from pysymex._internal.execution.frontier.obligations.capsules import build_shadow_capsule
+from pysymex._internal.execution.scheduling.cegis.bids.capsules import shadow_bids_for_capsule
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
     EvidenceBid,
-    EvidenceOutcomeKind,
     EvidenceOwner,
-    SchedulerDecision,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.evaluation.decision import (
     evaluate_shadow_decision,
+)
+from pysymex._internal.execution.scheduling.cegis.evaluation.decision import (
+    evaluate_shadow_decision as evaluate_shadow_decision_owner,
+)
+from pysymex._internal.execution.scheduling.cegis.evaluation.frontier import (
     evaluate_shadow_frontier,
+)
+from pysymex._internal.execution.scheduling.cegis.evaluation.frontier import (
+    evaluate_shadow_frontier as evaluate_shadow_frontier_owner,
+)
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import EvidenceOutcomeKind
+from pysymex._internal.execution.scheduling.cegis.policy import (
+    SchedulerDecision,
     select_deterministic_bid,
-    shadow_bids_for_capsule,
 )
 
 
@@ -60,6 +73,12 @@ def _generous_budget() -> BudgetVector:
         reconstruction_units=10,
         path_budget=10,
     )
+
+
+def test_shadow_evaluation_public_exports_point_to_direct_owners() -> None:
+    """Package-level CEGIS evaluation exports stay wired to direct owners."""
+    assert evaluate_shadow_decision is evaluate_shadow_decision_owner
+    assert evaluate_shadow_frontier is evaluate_shadow_frontier_owner
 
 
 def test_evaluate_shadow_decision_runs_solver_owner_and_plans_unsat_removal() -> None:

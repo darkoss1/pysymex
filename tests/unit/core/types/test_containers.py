@@ -1,14 +1,17 @@
-import z3
 import pytest
+import z3
 
-from pysymex.core.types.containers.bytes import SymbolicBytes
-from pysymex.core.types.containers.dicts import SymbolicDict
-from pysymex.core.types.containers.lists import SymbolicList
-from pysymex.core.types.containers.objects import SymbolicObject
-from pysymex.core.types.containers.sequences import SymbolicIterator, SymbolicSet
-from pysymex.core.types.numeric.int import SymbolicInt
-from pysymex.core.types.scalars.strings import SymbolicString
-from pysymex.core.types.scalars.values import SymbolicValue
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
+from pysymex._internal.core.types.containers.bytes import SymbolicBytes
+from pysymex._internal.core.types.containers.dicts import SymbolicDict
+from pysymex._internal.core.types.containers.iterators import SymbolicIterator
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.core.types.containers.objects import SymbolicObject
+from pysymex._internal.core.types.containers.sets import SymbolicSet
+from pysymex._internal.core.types.containers.tuples import SymbolicTuple
+from pysymex._internal.core.types.numeric.int import SymbolicInt
+from pysymex._internal.core.types.scalars.strings import SymbolicString
+from pysymex._internal.core.types.scalars.values import SymbolicValue
 
 
 class TestSymbolicList:
@@ -44,6 +47,14 @@ class TestSymbolicList:
     def test_from_const(self) -> None:
         s = SymbolicList.from_const([1, 2])
         assert z3.is_int_value(s.z3_len)
+
+    def test_from_const_stores_integer_payload(self) -> None:
+        s = SymbolicList.from_const([7])
+
+        stored = simplify_expr(s.__getitem__(0).z3_int)
+
+        assert z3.is_int_value(stored)
+        assert stored.as_long() == 7
 
     def test_empty(self) -> None:
         s = SymbolicList.empty()
@@ -145,6 +156,26 @@ class TestSymbolicDict:
         d = SymbolicDict.from_const({"a": 1})
         assert isinstance(d, SymbolicDict)
 
+    def test_setitem_retains_nested_concrete_item_roots(self) -> None:
+        d = SymbolicDict.from_const_named("d", {"items": [1, 2]})
+
+        found, value = d.concrete_value_for_key("items")
+
+        assert found
+        assert isinstance(value, SymbolicList)
+        assert value.name == "d[*]"
+
+    def test_delitem_preserves_remaining_concrete_items(self) -> None:
+        d = SymbolicDict.from_const({"a": 1, "b": 2})
+
+        updated = d.__delitem__("a")
+
+        assert "a" not in updated
+        assert "b" in updated
+        found, value = updated.concrete_value_for_key("b")
+        assert found
+        assert value == 2
+
     def test_contains_reports_definite_concrete_membership(self) -> None:
         d = SymbolicDict.from_const({"a": 1, 2: 3})
 
@@ -186,6 +217,56 @@ class TestSymbolicDict:
         a, _ = SymbolicDict.symbolic("a")
         b, _ = SymbolicDict.symbolic("b")
         assert a.conditional_merge(b, z3.Bool("c")) is not None
+
+
+class TestSymbolicTuple:
+    def test_concrete_index_returns_retained_item_identity(self) -> None:
+        item = object()
+        s = SymbolicTuple.from_elements(item)
+
+        assert s[0] is item
+
+    def test_symbolic_value_index_selects_integer_payloads(self) -> None:
+        index, index_constraint = SymbolicValue.symbolic_int("tuple_index")
+        s = SymbolicTuple.from_elements(11, 22, 33)
+        loaded = s[index]
+
+        assert isinstance(loaded, SymbolicValue)
+
+        solver = z3.Solver()
+        solver.add(index_constraint, index.z3_int == 1, loaded.z3_int != 22)
+        assert solver.check() == z3.unsat
+
+    def test_symbolic_int_index_normalizes_negative_index(self) -> None:
+        index = SymbolicInt.symbolic("tuple_negative_index")
+        s = SymbolicTuple.from_elements(11, 22, 33)
+        loaded = s[index]
+
+        assert isinstance(loaded, SymbolicValue)
+
+        solver = z3.Solver()
+        solver.add(index.z3_int == -1, loaded.z3_int != 33)
+        assert solver.check() == z3.unsat
+
+    def test_symbolic_index_preserves_supported_branch_when_other_item_is_unmodeled(
+        self,
+    ) -> None:
+        index = SymbolicInt.symbolic("tuple_mixed_index")
+        s = SymbolicTuple.from_elements(44, object())
+        loaded = s[index]
+
+        assert isinstance(loaded, SymbolicValue)
+
+        solver = z3.Solver()
+        solver.add(index.z3_int == 0, loaded.z3_int != 44)
+        assert solver.check() == z3.unsat
+
+    def test_in_bounds_uses_python_negative_index_range(self) -> None:
+        s = SymbolicTuple.from_elements(1, 2, 3)
+
+        assert z3.is_true(simplify_expr(s.in_bounds(SymbolicValue.from_const(-1))))
+        assert z3.is_false(simplify_expr(s.in_bounds(SymbolicValue.from_const(-4))))
+        assert z3.is_false(simplify_expr(s.in_bounds(SymbolicValue.from_const(3))))
 
 
 class TestSymbolicObject:
@@ -319,6 +400,57 @@ class TestSymbolicBytes:
         b3 = SymbolicBytes.concrete(b"world")
         assert b1 is not b3  # Different bytes return different instances!
 
+    def test_slice_value_preserves_exact_cpython_concrete_slices(self) -> None:
+        b = SymbolicBytes.concrete(b"abcdef")
+        negative_bounds = b.slice_value(slice(-4, -1))
+        oversized_stop = b.slice_value(slice(None, 99))
+        reverse = b.slice_value(slice(None, None, -1))
+
+        assert isinstance(negative_bounds, SymbolicBytes)
+        assert isinstance(oversized_stop, SymbolicBytes)
+        assert isinstance(reverse, SymbolicBytes)
+        assert negative_bounds.concrete_value == b"cde"
+        assert oversized_stop.concrete_value == b"abcdef"
+        assert reverse.concrete_value == b"fedcba"
+
+    def test_slice_value_encodes_negative_symbolic_start_like_cpython(self) -> None:
+        b = SymbolicBytes.symbolic("bytes_slice_source")
+        out = b.slice_value(slice(-2, None))
+
+        assert isinstance(out, SymbolicBytes)
+
+        solver = z3.Solver()
+        solver.add(b.z3_len == 5)
+        solver.add(out.z3_bytes != z3.SubSeq(b.z3_bytes, z3.IntVal(3), z3.IntVal(2)))
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_clamps_symbolic_negative_start_to_zero_for_short_bytes(self) -> None:
+        b = SymbolicBytes.symbolic("short_bytes_slice_source")
+        out = b.slice_value(slice(-4, None))
+
+        assert isinstance(out, SymbolicBytes)
+
+        solver = z3.Solver()
+        solver.add(b.z3_len == 2)
+        solver.add(out.z3_bytes != b.z3_bytes)
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_encodes_negative_symbolic_stop_like_cpython(self) -> None:
+        b = SymbolicBytes.symbolic("negative_stop_bytes_slice_source")
+        out = b.slice_value(slice(None, -1))
+
+        assert isinstance(out, SymbolicBytes)
+
+        solver = z3.Solver()
+        solver.add(b.z3_len == 5)
+        solver.add(out.z3_bytes != z3.SubSeq(b.z3_bytes, z3.IntVal(0), z3.IntVal(4)))
+        assert solver.check() == z3.unsat
+
+    def test_slice_value_rejects_unencodable_symbolic_step_slices(self) -> None:
+        b = SymbolicBytes.symbolic("stepped_bytes_slice_source")
+
+        assert b.slice_value(slice(None, None, 2)) is None
+
 
 class TestSymbolicSet:
     def test_from_const_preserves_exact_integer_membership_and_length(self) -> None:
@@ -336,3 +468,30 @@ class TestSymbolicSet:
         assert z3.is_false(updated.contains(SymbolicInt.concrete(1)).z3_bool)
         assert z3.is_true(updated.contains(SymbolicInt.concrete(2)).z3_bool)
         assert updated.length.z3_int.as_long() == 1
+
+    def test_hash_contract(self) -> None:
+        s = SymbolicSet.from_const({1})
+        assert hash(s) == object.__hash__(s)
+
+
+class TestHashContracts:
+    def test_all_containers_hash_contract(self) -> None:
+        # SymbolicBytes
+        b = SymbolicBytes.concrete(b"hello")
+        assert hash(b) == object.__hash__(b)
+
+        # SymbolicTuple
+        t = SymbolicTuple.from_elements(1, 2)
+        assert hash(t) == object.__hash__(t)
+
+        # SymbolicList
+        lst, _ = SymbolicList.symbolic("lst")
+        assert hash(lst) == object.__hash__(lst)
+
+        # SymbolicDict
+        d = SymbolicDict.empty()
+        assert hash(d) == object.__hash__(d)
+
+        # SymbolicObject
+        obj = SymbolicObject.from_const(object())
+        assert hash(obj) == object.__hash__(obj)

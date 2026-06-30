@@ -2,25 +2,25 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-import z3
 import pytest
+import z3
 
-from pysymex.core.constants import Z3_TRUE
-from pysymex.execution.opcodes.common.collections.helpers import path_is_sat
+from pysymex._internal.core.constants import Z3_TRUE
+from pysymex._internal.execution.opcodes.common.satisfiability import PathSatisfiability
 
 
 def test_path_is_sat_uses_solver_for_long_nontrivial_contradictions() -> None:
     x = z3.Int("x")
     padding = [z3.Int(f"p{i}") == i for i in range(12)]
 
-    assert path_is_sat([*padding, x > 0, x < 0]) is False
+    assert PathSatisfiability.is_sat([*padding, x > 0, x < 0]) is False
 
 
 def test_path_is_sat_keeps_satisfiable_long_paths_feasible() -> None:
     x = z3.Int("x")
     padding = [z3.Int(f"q{i}") == i for i in range(12)]
 
-    assert path_is_sat([*padding, x > 0, x < 5]) is True
+    assert PathSatisfiability.is_sat([*padding, x > 0, x < 5]) is True
 
 
 def test_path_is_sat_preserves_known_prefix_after_literal_filtering(
@@ -42,12 +42,12 @@ def test_path_is_sat_preserves_known_prefix_after_literal_filtering(
         return True
 
     monkeypatch.setattr(
-        "pysymex.execution.opcodes.common.path_feasibility.path_may_be_feasible",
+        "pysymex._internal.execution.opcodes.common.satisfiability.path_may_be_feasible",
         feasible,
     )
 
     assert (
-        path_is_sat(
+        PathSatisfiability.is_sat(
             [Z3_TRUE, x > 0, Z3_TRUE, y > 0, x < 5],
             known_sat_prefix_len=4,
         )

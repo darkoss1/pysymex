@@ -1,9 +1,21 @@
 from __future__ import annotations
 
-
-from pysymex.core.types.containers.lists import SymbolicList
-
-from pysymex.models.stdlib import functools as functools_models
+from pysymex._internal.core.types.containers.lists import SymbolicList
+from pysymex._internal.models.stdlib.functools.cache import (
+    CachedPropertyModel,
+    LRUCacheModel,
+    model_cached_property,
+    model_lru_cache,
+)
+from pysymex._internal.models.stdlib.functools.cmp import model_cmp_to_key
+from pysymex._internal.models.stdlib.functools.core import (
+    PartialModel,
+    model_partial,
+    model_reduce,
+    model_singledispatch,
+    model_total_ordering,
+    model_wraps,
+)
 
 
 def _identity(value: object) -> object:
@@ -34,7 +46,7 @@ def _cmp(a: object, b: object) -> int:
 
 
 class TestWrappedWrapper:
-    """Test suite for pysymex.models.stdlib.functools.WrappedWrapper."""
+    """Test suite for pysymex._internal.models.stdlib.functools.WrappedWrapper."""
 
     def test_faithfulness(self) -> None:
         def wrapped() -> int:
@@ -43,66 +55,66 @@ class TestWrappedWrapper:
         def wrapper() -> int:
             return 2
 
-        decorated = functools_models.model_wraps(wrapped)(wrapper)
+        decorated = model_wraps(wrapped)(wrapper)
         assert getattr(decorated, "__name__") == wrapped.__name__
 
     def test_error_path(self) -> None:
-        assert callable(functools_models.model_wraps(_none_fn))
+        assert callable(model_wraps(_none_fn))
 
 
 class TestPartialModel:
-    """Test suite for pysymex.models.stdlib.functools.PartialModel."""
+    """Test suite for pysymex._internal.models.stdlib.functools.PartialModel."""
 
     def test_faithfulness(self) -> None:
-        partial = functools_models.PartialModel(_identity, 1)
+        partial = PartialModel(_identity, 1)
         assert partial.func is not None
 
     def test_error_path(self) -> None:
-        partial = functools_models.PartialModel(_none_fn)
+        partial = PartialModel(_none_fn)
         assert partial.args == ()
 
 
 def test_model_partial() -> None:
-    result = functools_models.model_partial(_identity, 1)
-    assert isinstance(result, functools_models.PartialModel)
+    result = model_partial(_identity, 1)
+    assert isinstance(result, PartialModel)
 
 
 def test_model_reduce() -> None:
     lst = SymbolicList.empty("x")
-    functools_models.model_reduce(_reduce_pick_first, lst)
+    model_reduce(_reduce_pick_first, lst)
 
 
 class TestLRUCacheModel:
-    """Test suite for pysymex.models.stdlib.functools.LRUCacheModel."""
+    """Test suite for pysymex._internal.models.stdlib.functools.LRUCacheModel."""
 
     def test_faithfulness(self) -> None:
-        model = functools_models.LRUCacheModel(maxsize=32)
+        model = LRUCacheModel(maxsize=32)
         assert model.maxsize == 32
 
     def test_error_path(self) -> None:
-        model = functools_models.LRUCacheModel(maxsize=None)
+        model = LRUCacheModel(maxsize=None)
         assert model.maxsize is None
 
 
 def test_model_lru_cache() -> None:
-    assert isinstance(functools_models.model_lru_cache(), functools_models.LRUCacheModel)
+    assert isinstance(model_lru_cache(), LRUCacheModel)
 
 
 class TestCachedPropertyModel:
-    """Test suite for pysymex.models.stdlib.functools.CachedPropertyModel."""
+    """Test suite for pysymex._internal.models.stdlib.functools.CachedPropertyModel."""
 
     def test_faithfulness(self) -> None:
-        model = functools_models.CachedPropertyModel(_prop_value)
+        model = CachedPropertyModel(_prop_value)
         assert model.func is not None
 
     def test_error_path(self) -> None:
-        model = functools_models.CachedPropertyModel(_prop_none)
+        model = CachedPropertyModel(_prop_none)
         assert model.__doc__ is None
 
 
 def test_model_cached_property() -> None:
-    result = functools_models.model_cached_property(_prop_value)
-    assert isinstance(result, functools_models.CachedPropertyModel)
+    result = model_cached_property(_prop_value)
+    assert isinstance(result, CachedPropertyModel)
 
 
 def test_model_wraps() -> None:
@@ -112,7 +124,7 @@ def test_model_wraps() -> None:
     def wrapper() -> int:
         return 2
 
-    decorated = functools_models.model_wraps(wrapped)(wrapper)
+    decorated = model_wraps(wrapped)(wrapper)
     assert getattr(decorated, "__wrapped__") is wrapped
 
 
@@ -120,23 +132,13 @@ def test_model_total_ordering() -> None:
     class X:
         pass
 
-    assert functools_models.model_total_ordering(X) is X
+    assert model_total_ordering(X) is X
 
 
 def test_model_cmp_to_key() -> None:
-    key_type = functools_models.model_cmp_to_key(_cmp)
+    key_type = model_cmp_to_key(_cmp)
     assert key_type(1) < key_type(2)
 
 
 def test_model_singledispatch() -> None:
-    assert functools_models.model_singledispatch(_identity) is _identity
-
-
-def test_get_functools_model() -> None:
-    assert callable(functools_models.get_functools_model("partial"))
-    assert functools_models.get_functools_model("missing") is None
-
-
-def test_register_functools_models() -> None:
-    registered = functools_models.register_functools_models()
-    assert "functools.partial" in registered
+    assert model_singledispatch(_identity) is _identity

@@ -1,25 +1,30 @@
-"""Tests for pysymex.tracing.tracer.proxy — TracingSolverProxy telemetry."""
+"""Tests for pysymex._internal.tracing.tracer.proxy — TracingSolverProxy telemetry."""
 
 from __future__ import annotations
 
 import z3
 
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.tracing.tracer.proxy import TracingSolverProxy
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.execution.feasibility.persistence import PathExtendingSolver
+from pysymex._internal.tracing.tracer.proxy.solver import TracingSolverProxy
 
 
 class _InnerSolver:
     """Fake solver for testing TracingSolverProxy."""
 
-    def __init__(self) -> None:
+    def __init__(self, check_result: SolverResult | z3.CheckSatResult = z3.sat) -> None:
         self._cache_hits = 0
         self.pushed = 0
         self.custom_attr = ""
         self.new_val = 0
+        self.extended: list[z3.BoolRef] = []
+        self.check_result = check_result
 
-    def check(self, *_: z3.BoolRef, need_model: bool = True) -> z3.CheckSatResult:
+    def check(
+        self, *_assumptions: z3.BoolRef, need_model: bool = True
+    ) -> SolverResult | z3.CheckSatResult:
         self._cache_hits += 1
-        return z3.sat
+        return self.check_result
 
     def push(self) -> None:
         self.pushed += 1
@@ -29,6 +34,9 @@ class _InnerSolver:
 
     def add(self, *_: z3.BoolRef) -> None:
         return None
+
+    def extend_path(self, constraints: list[z3.BoolRef]) -> None:
+        self.extended.extend(constraints)
 
     def reset(self) -> None:
         self.pushed = 0
@@ -49,8 +57,15 @@ class _InnerSolver:
             else SolverResult.unsat()
         )
 
-    def check_sat_cached(self, constraints: list[z3.BoolRef]) -> SolverResult:
-        return self.check_sat_result(constraints)
+    def check_sat_cached(
+        self,
+        constraints: list[z3.BoolRef],
+        known_sat_prefix_len: int | None = None,
+    ) -> SolverResult:
+        return self.check_sat_result(
+            constraints,
+            known_sat_prefix_len=known_sat_prefix_len,
+        )
 
     def get_model(self, constraints: list[z3.BoolRef]) -> z3.ModelRef | None:
         solver = z3.Solver()
@@ -109,6 +124,14 @@ class TestTracingSolverProxy:
         result = proxy.check()
         assert result == z3.sat
 
+    def test_check_preserves_structured_solver_result(self) -> None:
+        """check() does not collapse structured inner solver results to raw Z3 status."""
+        structured_result = SolverResult.unsat()
+        proxy, _, tracer = self._proxy(inner=_InnerSolver(check_result=structured_result))
+        result = proxy.check()
+        assert result is structured_result
+        assert tracer.last_result == "unsat"
+
     def test_check_emits_telemetry(self) -> None:
         """check() fires on_solve on the tracer."""
         proxy, _, tracer = self._proxy()
@@ -128,6 +151,14 @@ class TestTracingSolverProxy:
         """add() delegates to inner solver."""
         proxy, _, _ = self._proxy()
         proxy.add()  # Should not raise
+
+    def test_extend_path_satisfies_runtime_protocol_and_delegates(self) -> None:
+        """The proxy remains visible as a path-extending solver."""
+        proxy, inner, _ = self._proxy()
+        constraint = z3.BoolVal(True)
+        assert isinstance(proxy, PathExtendingSolver)
+        proxy.extend_path([constraint])
+        assert inner.extended == [constraint]
 
     def test_reset_delegates(self) -> None:
         """reset() delegates to inner solver."""

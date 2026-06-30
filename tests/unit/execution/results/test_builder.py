@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import cast
 
-from pysymex.execution.fallback import FallbackEvent, FallbackKind, SoundnessTag
-from pysymex.execution.results.builder import build_execution_result
-from pysymex.execution.session.state import ExecutionSession
-from pysymex.resources.models import ResourceSnapshot
+from pysymex._internal.execution.fallback.types import FallbackEvent, FallbackKind, SoundnessTag
+from pysymex._internal.execution.results.result import ExecutionResult
+from pysymex._internal.execution.session.state.core import ExecutionSession
+from pysymex._internal.limits.models import ResourceSnapshot
 
 
-def test_build_execution_result_worklist_stats_include_fallback_visibility() -> None:
+def test_execution_result_from_session_worklist_stats_include_fallback_visibility() -> None:
     """POLAR worklist diagnostics expose unsupported and precision-loss fallback facts."""
     session = ExecutionSession()
     session.record_fallback_event(
@@ -30,7 +30,7 @@ def test_build_execution_result_worklist_stats_include_fallback_visibility() -> 
         )
     )
 
-    result = build_execution_result(
+    result = ExecutionResult.from_session(
         session=session,
         final_issues=[],
         resource_snapshot=ResourceSnapshot(),

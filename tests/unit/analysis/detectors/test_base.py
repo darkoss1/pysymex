@@ -1,29 +1,11 @@
-from pysymex.analysis.detectors.detector.types import IssueKind
 import dis
 from unittest.mock import Mock
-from pysymex.analysis.detectors.detector.contract import Detector
-from pysymex.analysis.detectors.detector.registry import DetectorRegistry
-from pysymex.analysis.detectors.detector.types import DetectorInfo, IsSatFn, Issue
-from pysymex.core.state.record import VMState
 
-
-def MockInstr(
-    opname: str, argval: object = None, argrepr: str = "", arg: int = 0, offset: int = 10
-) -> dis.Instruction:
-    import dis
-
-    def _dummy() -> None:
-        pass
-
-    template = next(dis.get_instructions(_dummy))
-    return template._replace(
-        opname=opname,
-        opcode=dis.opmap.get(opname, 0),
-        arg=arg,
-        argval=argval,
-        argrepr=argrepr,
-        offset=offset,
-    )
+from pysymex._internal.analysis.detectors.detector.contract import Detector
+from pysymex._internal.analysis.detectors.detector.registry import DetectorRegistry
+from pysymex._internal.analysis.detectors.detector.types import DetectorInfo, IsSatFn, Issue
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.core.state.record import VMState
 
 
 class DummyDetector(Detector):

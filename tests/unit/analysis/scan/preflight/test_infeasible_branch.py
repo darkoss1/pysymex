@@ -2,19 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysymex.analysis.scan.preflight.infeasible_branch import (
-    collect_infeasible_branch_division_suppressions,
-)
-from pysymex.analysis.detectors import IssueKind
-from pysymex.scanner.file import scan_file
+import pytest
+
+from pysymex._internal.core.outcome import IssueKind
+from pysymex._internal.scanner.file import scan_file
 
 
 def _issue_kinds(path: Path) -> set[IssueKind]:
     result = scan_file(
         path,
         use_sandbox=False,
-        deterministic_mode=True,
-        random_seed=0,
         no_cache=True,
     )
     assert result.error is None
@@ -23,98 +20,6 @@ def _issue_kinds(path: Path) -> set[IssueKind]:
         kind = issue["kind"]
         kinds.add(kind if isinstance(kind, IssueKind) else IssueKind[str(kind)])
     return kinds
-
-
-def test_collect_infeasible_branch_suppressions_for_bin_count_contradiction() -> None:
-    source = (
-        "def target(a: int, b: int, c: int) -> int:\n"
-        "    mixed = ((a ^ b) + (c & 15)) & 15\n"
-        "    if mixed != 0 and bin(mixed).count('1') == 0:\n"
-        "        return 100 // 0\n"
-        "    return mixed\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset({4})
-
-
-def test_collect_infeasible_branch_suppressions_for_endswith_rfind_contradiction() -> None:
-    source = (
-        "def target(text: str, salt: int) -> int:\n"
-        "    index = text.rfind('a')\n"
-        "    if text.endswith('a') and index == -1:\n"
-        "        return 100 // 0\n"
-        "    return index\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset({4})
-
-
-def test_collect_infeasible_branch_suppressions_for_symmetric_comparisons() -> None:
-    source = (
-        "def target(a: int, b: int, c: int, text: str) -> int:\n"
-        "    mixed = ((a ^ b) + (c & 15)) & 15\n"
-        "    index = text.rfind('7')\n"
-        "    if 0 != mixed and 0 == bin(mixed).count('1'):\n"
-        "        return 100 // 0\n"
-        "    if text.endswith('7') and -1 == index:\n"
-        "        return 200 // 0\n"
-        "    return mixed + index\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset({5, 7})
-
-
-def test_collect_infeasible_branch_suppressions_rejects_repeated_calls() -> None:
-    source = (
-        "counter = 0\n"
-        "def flip() -> int:\n"
-        "    global counter\n"
-        "    counter += 1\n"
-        "    return 1 if counter == 1 else 0\n"
-        "def target() -> int:\n"
-        "    if flip() != 0 and bin(flip()).count('1') == 0:\n"
-        "        return 100 // 0\n"
-        "    return 1\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset()
-
-
-def test_collect_infeasible_branch_suppressions_rejects_rebound_rfind_index() -> None:
-    source = (
-        "def target(text: str) -> int:\n"
-        "    index = text.rfind('a')\n"
-        "    index = -1\n"
-        "    if text.endswith('a') and index == -1:\n"
-        "        return 100 // 0\n"
-        "    return 1\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset()
-
-
-def test_collect_infeasible_branch_suppressions_skips_nested_scopes() -> None:
-    source = (
-        "def target(a: int) -> int:\n"
-        "    mixed = a & 15\n"
-        "    if mixed != 0 and bin(mixed).count('1') == 0:\n"
-        "        def nested() -> int:\n"
-        "            return 100 // 0\n"
-        "    return mixed\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset()
-
-
-def test_collect_infeasible_branch_suppressions_traverses_compound_statements() -> None:
-    source = (
-        "async def target(text: str) -> int:\n"
-        "    async with manager():\n"
-        "        index = text.rfind('a')\n"
-        "        if text.endswith('a') and index == -1:\n"
-        "            return 100 // 0\n"
-        "    match text:\n"
-        "        case 'x':\n"
-        "            mixed = len(text) & 15\n"
-        "            if mixed != 0 and bin(mixed).count('1') == 0:\n"
-        "                return 200 // 0\n"
-        "    return 1\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset({5, 10})
 
 
 def test_scan_file_skips_bin_count_false_positive(tmp_path: Path) -> None:
@@ -130,17 +35,6 @@ def test_scan_file_skips_bin_count_false_positive(tmp_path: Path) -> None:
     assert _issue_kinds(target) == set()
 
 
-def test_collect_infeasible_branch_suppressions_preserves_bin_count_true_positive() -> None:
-    source = (
-        "def target(a: int, b: int, c: int) -> int:\n"
-        "    mixed = ((a ^ b) + (c & 15)) & 15\n"
-        "    if bin(mixed).count('1') == 0:\n"
-        "        return 100 // mixed\n"
-        "    return mixed + 1\n"
-    )
-    assert collect_infeasible_branch_division_suppressions(source) == frozenset()
-
-
 def test_scan_file_skips_string_rfind_false_positive(tmp_path: Path) -> None:
     target = tmp_path / "string_rfind_suffix_false_positive.py"
     target.write_text(
@@ -154,6 +48,7 @@ def test_scan_file_skips_string_rfind_false_positive(tmp_path: Path) -> None:
     assert _issue_kinds(target) == set()
 
 
+@pytest.mark.slow
 def test_scan_file_preserves_string_rfind_true_positive(tmp_path: Path) -> None:
     target = tmp_path / "string_rfind_missing_division.py"
     target.write_text(

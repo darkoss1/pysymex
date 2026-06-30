@@ -4,26 +4,26 @@ from typing import cast
 
 import z3
 
-from pysymex.core.graph.cig import ConstraintInteractionGraph
-from pysymex.core.solver.engine.results import SolverResult
-from pysymex.core.state.record import VMState
-from pysymex.execution.frontier import (
-    FrontierRuntimeMode,
-    materialize_frontier_queue_entry,
-    state_shadow_digest,
-)
-from pysymex.execution.scheduling.cegis import (
-    BudgetVector,
+from pysymex._internal.core.graph.cig import ConstraintInteractionGraph
+from pysymex._internal.core.solver.engine.results import SolverResult
+from pysymex._internal.core.state.record import VMState
+from pysymex._internal.execution.frontier.entries import realize_frontier_queue_entry
+from pysymex._internal.execution.frontier.modes import FrontierRuntimeMode
+from pysymex._internal.execution.frontier.obligations.digests import state_shadow_digest
+from pysymex._internal.execution.scheduling.cegis.bids.types import (
     EvidenceAction,
     EvidenceActionKind,
+    EvidenceOwner,
+)
+from pysymex._internal.execution.scheduling.cegis.budgets import BudgetVector
+from pysymex._internal.execution.scheduling.cegis.outcomes.solver import solver_unsat_core_outcome
+from pysymex._internal.execution.scheduling.cegis.outcomes.types import (
     EvidenceCertificate,
     EvidenceCertificateKind,
     EvidenceOutcome,
     EvidenceOutcomeKind,
-    EvidenceOwner,
-    solver_unsat_core_outcome,
 )
-from pysymex.execution.strategies.manager.path import AdaptivePathManager
+from pysymex._internal.execution.strategies.manager.path import AdaptivePathManager
 
 
 def _solver_action(capsule_id: str) -> EvidenceAction:
@@ -39,7 +39,7 @@ def _solver_action(capsule_id: str) -> EvidenceAction:
 
 
 def _manager_with_two_states() -> tuple[AdaptivePathManager, VMState, VMState]:
-    manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+    manager = AdaptivePathManager(ConstraintInteractionGraph())
     removed_state = VMState(pc=1, pending_constraint_count=1)
     kept_state = VMState(pc=2, pending_constraint_count=1)
     manager.add_state(removed_state)
@@ -69,7 +69,7 @@ def _assert_resident_state_matches(selected: VMState | None, expected: VMState) 
 
 
 def _queued_states(manager: AdaptivePathManager) -> tuple[VMState, ...]:
-    return tuple(materialize_frontier_queue_entry(entry) for entry in manager.states.values())
+    return tuple(realize_frontier_queue_entry(entry) for entry in manager.states.values())
 
 
 def _queued_state_digests(manager: AdaptivePathManager) -> frozenset[object]:
@@ -129,7 +129,7 @@ def test_preview_evidence_outcome_identifies_removal_without_mutating_frontier()
 
 def test_preview_shadow_cegis_frontier_evaluates_owner_without_mutating_frontier() -> None:
     """Manager-level CEGIS preview can identify proof-backed work without pruning it."""
-    manager = AdaptivePathManager(ConstraintInteractionGraph(), deterministic=True)
+    manager = AdaptivePathManager(ConstraintInteractionGraph())
     x = z3.Int("manager_shadow_cegis_unsat")
     removed_state = VMState(
         pc=1,
@@ -169,7 +169,6 @@ def test_runtime_cegis_mode_keeps_unsat_state_explorable_after_native_selection(
     """Runtime native ordering may defer proof evidence but never consumes it implicitly."""
     manager = AdaptivePathManager(
         ConstraintInteractionGraph(),
-        deterministic=True,
         frontier_runtime_mode=FrontierRuntimeMode.POLAR_CEGIS_RUNTIME,
     )
     x = z3.Int("manager_runtime_cegis_unsat")
@@ -189,9 +188,6 @@ def test_runtime_cegis_mode_keeps_unsat_state_explorable_after_native_selection(
     later_selected = manager.get_next_state()
     _assert_resident_state_matches(later_selected, removed_state)
     shadow_cegis = _shadow_cegis_stats(manager)
-    assert shadow_cegis["runtime_preview_count"] == 0
-    assert shadow_cegis["runtime_removed_state_count"] == 0
-    assert shadow_cegis["runtime_nonremoving_count"] == 0
     assert shadow_cegis["evidence_apply_count"] == 0
     assert shadow_cegis["evidence_apply_removed_state_count"] == 0
     assert shadow_cegis["runtime_execution_no_selection_count"] == 2
@@ -201,7 +197,6 @@ def test_runtime_cegis_mode_keeps_solver_sat_state_explorable() -> None:
     """Runtime mode never treats SAT owner evidence as removable work."""
     manager = AdaptivePathManager(
         ConstraintInteractionGraph(),
-        deterministic=True,
         frontier_runtime_mode=FrontierRuntimeMode.POLAR_CEGIS_RUNTIME,
     )
     x = z3.Int("manager_runtime_cegis_sat")
@@ -212,9 +207,6 @@ def test_runtime_cegis_mode_keeps_solver_sat_state_explorable() -> None:
 
     _assert_resident_state_matches(selected, state)
     shadow_cegis = _shadow_cegis_stats(manager)
-    assert shadow_cegis["runtime_preview_count"] == 0
-    assert shadow_cegis["runtime_removed_state_count"] == 0
-    assert shadow_cegis["runtime_nonremoving_count"] == 0
     assert shadow_cegis["evidence_apply_count"] == 0
     assert shadow_cegis["runtime_execution_no_selection_count"] == 1
 

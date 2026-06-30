@@ -2,7 +2,19 @@ import dis
 from collections.abc import Callable
 from typing import cast
 
-from pysymex.core.cache import get_exception_entries, get_instructions
+from pysymex._internal.core.cache.code.exceptions import get_exception_entries
+from pysymex._internal.core.cache.code.exceptions import (
+    get_exception_entries as direct_get_exception_entries,
+)
+from pysymex._internal.core.cache.code.instructions import get_instructions
+from pysymex._internal.core.cache.code.instructions import (
+    get_instructions as direct_get_instructions,
+)
+
+
+def test_code_object_cache_exports_use_direct_owners() -> None:
+    assert get_instructions is direct_get_instructions
+    assert get_exception_entries is direct_get_exception_entries
 
 
 def test_get_instructions() -> None:

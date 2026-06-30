@@ -1,16 +1,18 @@
 import z3
-from pysymex.analysis.runtime.summaries.types import (
-    ParameterInfo,
-    ModifiedVariable,
-    ReadVariable,
+
+from pysymex._internal.analysis.runtime.summaries.types import (
     CallSite,
-    ExceptionInfo,
     FunctionSummary,
+    ModifiedVariable,
+    ParameterInfo,
+    ReadVariable,
+    SummaryExceptionInfo,
 )
+from pysymex._internal.core.solver.constraints.simplification import simplify_expr
 
 
 class TestParameterInfo:
-    """Test suite for pysymex.analysis.runtime.summaries.types.ParameterInfo."""
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.ParameterInfo."""
 
     def test_to_z3(self) -> None:
         """Test to_z3 behavior."""
@@ -24,7 +26,7 @@ class TestParameterInfo:
 
 
 class TestModifiedVariable:
-    """Test suite for pysymex.analysis.runtime.summaries.types.ModifiedVariable."""
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.ModifiedVariable."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -34,7 +36,7 @@ class TestModifiedVariable:
 
 
 class TestReadVariable:
-    """Test suite for pysymex.analysis.runtime.summaries.types.ReadVariable."""
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.ReadVariable."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
@@ -44,26 +46,26 @@ class TestReadVariable:
 
 
 class TestCallSite:
-    """Test suite for pysymex.analysis.runtime.summaries.types.CallSite."""
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.CallSite."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        c = CallSite("foo", [1], {"b": 2}, 10, True, "self")
+        c = CallSite("foo", [1], {"b": 2}, 10, "self")
         assert c.callee == "foo"
         assert c.args == [1]
 
 
-class TestExceptionInfo:
-    """Test suite for pysymex.analysis.runtime.summaries.types.ExceptionInfo."""
+class TestSummaryExceptionInfo:
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.SummaryExceptionInfo."""
 
     def test_initialization(self) -> None:
         """Test basic initialization."""
-        e = ExceptionInfo("ValueError", z3.BoolVal(True))
+        e = SummaryExceptionInfo("ValueError", z3.BoolVal(True))
         assert e.exc_type == "ValueError"
 
 
 class TestFunctionSummary:
-    """Test suite for pysymex.analysis.runtime.summaries.types.FunctionSummary."""
+    """Test suite for pysymex._internal.analysis.runtime.summaries.types.FunctionSummary."""
 
     def test_get_parameter(self) -> None:
         """Test get_parameter behavior."""
@@ -112,7 +114,7 @@ class TestFunctionSummary:
     def test_add_exception(self) -> None:
         """Test add_exception behavior."""
         s = FunctionSummary("f")
-        s.add_exception(ExceptionInfo("ValueError"))
+        s.add_exception(SummaryExceptionInfo("ValueError"))
         assert len(s.may_raise) == 1
 
     def test_modifies_globals(self) -> None:
@@ -134,14 +136,14 @@ class TestFunctionSummary:
         s = FunctionSummary("f")
         assert s.get_all_preconditions() is not None
         s.add_precondition(z3.BoolVal(True))
-        assert z3.is_true(z3.simplify(s.get_all_preconditions()))
+        assert z3.is_true(simplify_expr(s.get_all_preconditions()))
 
     def test_get_all_postconditions(self) -> None:
         """Test get_all_postconditions behavior."""
         s = FunctionSummary("f")
         assert s.get_all_postconditions() is not None
         s.add_postcondition(z3.BoolVal(False))
-        assert z3.is_false(z3.simplify(s.get_all_postconditions()))
+        assert z3.is_false(simplify_expr(s.get_all_postconditions()))
 
     def test_clone(self) -> None:
         """Test clone behavior."""

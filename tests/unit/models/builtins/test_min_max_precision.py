@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import z3
 
-from pysymex.core.types.scalars.values import SymbolicValue
-from pysymex.models.builtins.core.max import MaxModel
-from pysymex.models.builtins.core.min import MinModel
+from pysymex._internal.core.types.scalars.values import SymbolicValue
+from pysymex._internal.models.builtins.numeric.max import MaxModel
+from pysymex._internal.models.builtins.numeric.min import MinModel
 from tests.unit.models.builtins.core_model_helpers import state
 
 
